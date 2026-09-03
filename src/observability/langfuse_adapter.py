@@ -248,6 +248,7 @@ def create_langfuse_trace_adapter(
     kwargs: dict[str, Any] = {
         "public_key": settings.public_key.get_secret_value(),
         "secret_key": settings.secret_key.get_secret_value(),
+        "timeout": 10,
     }
     if settings.base_url:
         kwargs["base_url"] = settings.base_url

@@ -379,7 +379,10 @@ class IntegratedTaskExecutor:
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
     async def _execute_peer_analysis(self, task: Task) -> TaskExecutionResult:
-        input_ids = set(self._aggregate.runtime.task(task.task_id).task_input_evidence_ids)
+        routed_task = self._aggregate.runtime.task(task.task_id)
+        input_ids = set(routed_task.task_input_evidence_ids) | set(
+            routed_task.task_output_evidence_ids
+        )
         evidence = [
             record
             for record in self._aggregate.artifacts.evidence
@@ -444,6 +447,9 @@ class IntegratedTaskExecutor:
             self._aggregate.runtime.task(dependency).evidence_acquisition_status
             for dependency in task.dependencies
         }
+        dependency_statuses.add(
+            self._aggregate.runtime.task(task.task_id).evidence_acquisition_status
+        )
         if accepted:
             status = "completed"
             limitation = False

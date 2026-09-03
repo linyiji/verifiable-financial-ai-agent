@@ -136,6 +136,7 @@ def test_factory_enables_fake_sdk_without_exposing_credentials() -> None:
         "public_key": "public-sentinel",
         "secret_key": "secret-sentinel",
         "base_url": "https://langfuse.invalid",
+        "timeout": 10,
     }
     assert "public-sentinel" not in repr(result)
     assert "secret-sentinel" not in repr(result)
