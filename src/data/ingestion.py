@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import NAMESPACE_URL, uuid5
 
@@ -8,6 +8,7 @@ from src.data.freshness import FreshnessPolicy, policy_for
 from src.data.provider import Provider, ProviderRequest
 from src.data.repository import EvidenceRepository
 from src.data.validation import ValidatedRecord, mark_duplicate_conflicts, validate_record
+from src.domain.base import JsonObject
 from src.domain.enums import EvidenceCategory, EvidenceStatus
 from src.domain.evidence import AcceptedEvidenceBundle, EvidenceRecord
 
@@ -81,6 +82,7 @@ class EvidenceIngestionService:
                 raw_artifact_ref=artifact_ref,
                 snapshot_hash=snapshot.snapshot_hash,
                 provenance=provenance,
+                raw_record=snapshot.records[validated.raw_index],
             )
             for validated in diagnostics
             if validated.normalized is not None
@@ -123,6 +125,7 @@ def _to_evidence_record(
     raw_artifact_ref: str,
     snapshot_hash: str,
     provenance: EvidenceProvenance,
+    raw_record: JsonObject,
 ) -> EvidenceRecord:
     assert validated.normalized is not None
     assert validated.period is not None
@@ -138,12 +141,16 @@ def _to_evidence_record(
         provider=provider,
         source_locator=source_locator,
         producer_task_id=provenance.producer_task_id,
-        source_endpoint=provenance.source_endpoint,
+        source_endpoint=provenance.source_endpoint
+        or _optional_text(raw_record.get("source_endpoint")),
         evidence_purpose=provenance.evidence_purpose,
         evidence_category=provenance.evidence_category,
         retrieved_at=retrieved_at,
-        observed_at=provenance.observed_at or retrieved_at,
-        provider_timestamp=provenance.provider_timestamp,
+        observed_at=_optional_datetime(raw_record.get("observed_at"))
+        or provenance.observed_at
+        or retrieved_at,
+        provider_timestamp=_optional_datetime(raw_record.get("provider_timestamp"))
+        or provenance.provider_timestamp,
         period=validated.period,
         as_of=validated.as_of,
         raw_artifact_ref=raw_artifact_ref,
@@ -185,3 +192,24 @@ def _assert_same_evidence_identity(existing: EvidenceRecord, candidate: Evidence
     )
     if any(getattr(existing, field) != getattr(candidate, field) for field in identity_fields):
         raise ValueError(f"evidence identity collision: {candidate.evidence_id}")
+
+
+def _optional_text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _optional_datetime(value: object) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)

@@ -113,9 +113,7 @@ _register(
     "income",
     "income_statement",
 )
-_register(
-    FMPEndpointSpec(FMPEndpoint.INCOME, "/stable/income-statement", "quarterly_financials")
-)
+_register(FMPEndpointSpec(FMPEndpoint.INCOME, "/stable/income-statement", "quarterly_financials"))
 _register(
     FMPEndpointSpec(FMPEndpoint.BALANCE, "/stable/balance-sheet-statement", "balance_sheet"),
     "balance",
@@ -289,9 +287,7 @@ class FMPProvider:
         legacy_params = dict(params)
         if legacy_params.get("period") == "annual":
             legacy_params.pop("period")
-        payload = await self._transport.get_json(
-            spec.path.removeprefix("/stable/"), legacy_params
-        )
+        payload = await self._transport.get_json(spec.path.removeprefix("/stable/"), legacy_params)
         status = FMPAccessStatus.NO_DATA if _is_empty(payload) else FMPAccessStatus.AVAILABLE
         return FMPResponseEnvelope(
             endpoint=spec.endpoint,
@@ -350,11 +346,19 @@ def map_payload(
         return _map_statements(_object_list(payload), set(request.fields))
     if spec.endpoint is FMPEndpoint.PROFILE:
         return _map_objects(
-            _object_list(payload), request, retrieved_at, curated_fields=_PROFILE_FIELDS
+            _object_list(payload),
+            request,
+            retrieved_at,
+            endpoint=spec.endpoint,
+            curated_fields=_PROFILE_FIELDS,
         )
     if spec.endpoint is FMPEndpoint.QUOTE:
         return _map_objects(
-            _object_list(payload), request, retrieved_at, curated_fields=_QUOTE_FIELDS
+            _object_list(payload),
+            request,
+            retrieved_at,
+            endpoint=spec.endpoint,
+            curated_fields=_QUOTE_FIELDS,
         )
     if spec.endpoint is FMPEndpoint.HISTORICAL:
         return _map_historical(payload, request, retrieved_at)
@@ -409,12 +413,15 @@ def _map_objects(
     request: ProviderRequest,
     retrieved_at: datetime,
     *,
+    endpoint: FMPEndpoint,
     curated_fields: set[str],
 ) -> list[JsonObject]:
     records: list[JsonObject] = []
     for item_index, item in enumerate(objects[: request.limit]):
         currency = str(item.get("currency", "USD")).upper()
-        as_of = _safe_as_of(item, request, retrieved_at)
+        provider_timestamp = _provider_timestamp(item)
+        observed_at = provider_timestamp or retrieved_at
+        as_of = observed_at.date().isoformat()
         fields = set(request.fields) if request.fields else curated_fields
         for field in fields:
             if field not in item or item[field] is None:
@@ -434,6 +441,11 @@ def _map_objects(
                     "value": value,
                     "unit": unit,
                     "currency": normalized_currency,
+                    "source_endpoint": endpoint.value,
+                    "observed_at": observed_at.isoformat(),
+                    "provider_timestamp": (
+                        provider_timestamp.isoformat() if provider_timestamp is not None else None
+                    ),
                 }
             )
     return records
@@ -480,7 +492,7 @@ def _map_peers(payload: Any, request: ProviderRequest, retrieved_at: datetime) -
                     peer_symbols.extend(str(peer) for peer in peers)
                 elif item.get("symbol") and str(item["symbol"]).upper() != request.symbol.upper():
                     peer_symbols.append(str(item["symbol"]))
-    as_of = min(request.as_of, retrieved_at.date()).isoformat()
+    as_of = retrieved_at.date().isoformat()
     return [
         {
             "field": f"peer_symbol_{index}",
@@ -488,6 +500,9 @@ def _map_peers(payload: Any, request: ProviderRequest, retrieved_at: datetime) -
             "as_of": as_of,
             "value": symbol,
             "unit": "SYMBOL",
+            "source_endpoint": FMPEndpoint.PEERS.value,
+            "observed_at": retrieved_at.isoformat(),
+            "provider_timestamp": None,
         }
         for index, symbol in enumerate(dict.fromkeys(peer_symbols[: request.limit]))
     ]
@@ -496,13 +511,17 @@ def _map_peers(payload: Any, request: ProviderRequest, retrieved_at: datetime) -
 def _map_analyst(
     objects: list[dict[str, Any]], request: ProviderRequest, retrieved_at: datetime
 ) -> list[JsonObject]:
-    allowed = set(request.fields) if request.fields else {
-        "strongBuy",
-        "buy",
-        "hold",
-        "sell",
-        "strongSell",
-    }
+    allowed = (
+        set(request.fields)
+        if request.fields
+        else {
+            "strongBuy",
+            "buy",
+            "hold",
+            "sell",
+            "strongSell",
+        }
+    )
     records: list[JsonObject] = []
     for item in objects[: request.limit]:
         as_of = item.get("date") or _safe_as_of(item, request, retrieved_at)
@@ -558,9 +577,7 @@ def _map_transcript(
         year = item.get("year")
         quarter = item.get("quarter")
         period = (
-            f"Q{quarter}FY{year}"
-            if year and quarter
-            else (request.expected_period or "CURRENT")
+            f"Q{quarter}FY{year}" if year and quarter else (request.expected_period or "CURRENT")
         )
         as_of = item.get("date") or _safe_as_of(item, request, retrieved_at)
         records.extend(
@@ -633,10 +650,17 @@ def _numeric_unit(field: str, currency: str) -> str:
 
 
 def _unit_for(field: str, value: Any, currency: str) -> tuple[str | None, str | None]:
+    canonical = normalize_field(field)
+    if canonical in {
+        "full_time_employees",
+        "volume",
+        "avg_volume",
+    }:
+        return "COUNT", None
     if isinstance(value, bool):
         return "BOOLEAN", None
     if isinstance(value, str):
-        return ("SYMBOL", None) if normalize_field(field) == "symbol" else ("TEXT", None)
+        return ("SYMBOL", None) if canonical == "symbol" else ("TEXT", None)
     if isinstance(value, (int, float)):
         unit = _numeric_unit(field, currency)
         return unit, currency if unit == currency else None
@@ -670,6 +694,38 @@ def _safe_as_of(item: dict[str, Any], request: ProviderRequest, retrieved_at: da
         except ValueError:
             pass
     return min(request.as_of, retrieved_at.date()).isoformat()
+
+
+def _provider_timestamp(item: dict[str, Any]) -> datetime | None:
+    for field in ("timestamp", "lastUpdated", "lastUpdate", "updatedAt"):
+        value = item.get(field)
+        if value is None or isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            seconds = float(value)
+            if seconds > 10_000_000_000:
+                seconds /= 1000
+            try:
+                return datetime.fromtimestamp(seconds, tz=UTC)
+            except (OverflowError, OSError, ValueError):
+                continue
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                continue
+            if stripped.isdigit():
+                try:
+                    return datetime.fromtimestamp(int(stripped), tz=UTC)
+                except (OverflowError, OSError, ValueError):
+                    continue
+            try:
+                parsed = datetime.fromisoformat(stripped.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC)
+    return None
 
 
 def _object_list(payload: Any) -> list[dict[str, Any]]:
