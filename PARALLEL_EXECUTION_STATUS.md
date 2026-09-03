@@ -10,8 +10,8 @@ Frontend: `DEFERRED_PENDING_FINAL_UX_BASELINE`
 | H FinRobot Exact Audit & Reuse | McClintock | `ws/finrobot-audit` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/finrobot-audit` | MERGED | 9 WS; 86 full; Ruff/secret/boundary PASS | optional renderer dependency change deferred |
 | I Live FMP Integration | Franklin | `ws/live-fmp` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/live-fmp` | RUNNING | pending | none |
 | J PostgreSQL Durable Persistence | McClintock | `ws/postgresql` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/postgresql` | RUNNING | pending | local PostgreSQL service unavailable; conditional integration planned |
-| K TeamoRouter LLM Integration | Harvey | `ws/teamorouter-llm` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/teamorouter-llm` | RUNNING | pending | none |
-| L Langfuse Integration | pending | `ws/langfuse` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/langfuse` | QUEUED | pending | waits for worker slot; credentials not set |
+| K TeamoRouter LLM Integration | Harvey | `ws/teamorouter-llm` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/teamorouter-llm` | MERGED | 10 WS; 87 full; Ruff/secret PASS; real Planner PASS | real Scheme used bounded deterministic fallback |
+| L Langfuse Integration | Harvey | `ws/langfuse` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/langfuse` | RUNNING | pending | credentials not set; Noop/fake-SDK gate |
 
 Status values: `QUEUED`, `RUNNING`, `BLOCKED`, `TESTING`, `PASS`, `FAIL`, `MERGED`.
 
