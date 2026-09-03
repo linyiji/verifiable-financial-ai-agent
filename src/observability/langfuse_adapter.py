@@ -16,6 +16,28 @@ class LangfuseClientBoundary(Protocol):
 
     def create_event(self, *, name: str, attributes: JsonObject) -> Any: ...
 
+    def start_generation(
+        self,
+        *,
+        name: str,
+        model: str | None,
+        attributes: JsonObject,
+        usage_details: JsonObject | None,
+        cost_details: JsonObject | None,
+    ) -> Any: ...
+
+    def update_generation(
+        self,
+        generation: Any,
+        *,
+        model: str | None,
+        attributes: JsonObject,
+        usage_details: JsonObject | None,
+        cost_details: JsonObject | None,
+    ) -> None: ...
+
+    def flush(self) -> None: ...
+
 
 class LangfuseTraceAdapter:
     """Small SDK boundary; wrapped fail-open by `build_trace_adapter`."""
@@ -41,6 +63,50 @@ class LangfuseTraceAdapter:
             name=name,
             attributes=sanitize_trace_attributes(attributes),
         )
+
+    @asynccontextmanager
+    async def generation(
+        self,
+        name: str,
+        *,
+        model: str | None = None,
+        attributes: JsonObject | None = None,
+        usage_details: JsonObject | None = None,
+        cost_details: JsonObject | None = None,
+    ) -> AsyncIterator[Any]:
+        generation = self._client.start_generation(
+            name=name,
+            model=model,
+            attributes=sanitize_trace_attributes(attributes),
+            usage_details=usage_details,
+            cost_details=cost_details,
+        )
+        try:
+            yield generation
+        finally:
+            end = getattr(generation, "end", None)
+            if callable(end):
+                end()
+
+    async def complete_generation(
+        self,
+        generation: Any,
+        *,
+        model: str | None = None,
+        attributes: JsonObject | None = None,
+        usage_details: JsonObject | None = None,
+        cost_details: JsonObject | None = None,
+    ) -> None:
+        self._client.update_generation(
+            generation,
+            model=model,
+            attributes=sanitize_trace_attributes(attributes),
+            usage_details=usage_details,
+            cost_details=cost_details,
+        )
+
+    async def flush(self) -> None:
+        self._client.flush()
 
 
 class LangfuseSDKClient:
@@ -68,6 +134,54 @@ class LangfuseSDKClient:
             raise RuntimeError("installed Langfuse SDK has no supported event API")
         return create_event(name=name, metadata=attributes)
 
+    def start_generation(
+        self,
+        *,
+        name: str,
+        model: str | None,
+        attributes: JsonObject,
+        usage_details: JsonObject | None,
+        cost_details: JsonObject | None,
+    ) -> Any:
+        start_current = getattr(self._sdk_client, "start_as_current_generation", None)
+        if not callable(start_current):
+            raise RuntimeError("installed Langfuse SDK has no supported generation API")
+        kwargs: dict[str, Any] = {"name": name, "metadata": attributes}
+        if model is not None:
+            kwargs["model"] = model
+        if usage_details is not None:
+            kwargs["usage_details"] = usage_details
+        if cost_details is not None:
+            kwargs["cost_details"] = cost_details
+        return _ManagedSDKSpan(start_current(**kwargs))
+
+    def update_generation(
+        self,
+        generation: Any,
+        *,
+        model: str | None,
+        attributes: JsonObject,
+        usage_details: JsonObject | None,
+        cost_details: JsonObject | None,
+    ) -> None:
+        update = getattr(generation, "update", None)
+        if not callable(update):
+            raise RuntimeError("installed Langfuse SDK generation has no update API")
+        kwargs: dict[str, Any] = {"metadata": attributes}
+        if model is not None:
+            kwargs["model"] = model
+        if usage_details is not None:
+            kwargs["usage_details"] = usage_details
+        if cost_details is not None:
+            kwargs["cost_details"] = cost_details
+        update(**kwargs)
+
+    def flush(self) -> None:
+        flush = getattr(self._sdk_client, "flush", None)
+        if not callable(flush):
+            raise RuntimeError("installed Langfuse SDK has no supported flush API")
+        flush()
+
 
 class _ManagedSDKSpan:
     def __init__(self, manager: Any) -> None:
@@ -81,6 +195,12 @@ class _ManagedSDKSpan:
         if not self._ended:
             self._manager.__exit__(None, None, None)
             self._ended = True
+
+    def update(self, **kwargs: Any) -> Any:
+        update = getattr(self._span, "update", None)
+        if not callable(update):
+            raise RuntimeError("installed Langfuse SDK observation has no update API")
+        return update(**kwargs)
 
 
 class TraceAdapterClassification(StrEnum):
@@ -130,7 +250,7 @@ def create_langfuse_trace_adapter(
         "secret_key": settings.secret_key.get_secret_value(),
     }
     if settings.base_url:
-        kwargs["host"] = settings.base_url
+        kwargs["base_url"] = settings.base_url
     try:
         sdk_client = factory(**kwargs)
     except Exception:
@@ -154,9 +274,13 @@ def _load_sdk_factory() -> Callable[..., Any] | None:
 
 
 def _span_identifier(span: Any, kind: str) -> str | None:
-    direct = getattr(span, f"{kind}_id", None)
-    if isinstance(direct, (str, int)):
-        return _format_identifier(direct)
+    direct_names = [f"{kind}_id"]
+    if kind == "span":
+        direct_names.extend(("observation_id", "id"))
+    for name in direct_names:
+        direct = getattr(span, name, None)
+        if isinstance(direct, (str, int)):
+            return _format_identifier(direct)
     getter = getattr(span, f"get_{kind}_id", None)
     if callable(getter):
         value = getter()

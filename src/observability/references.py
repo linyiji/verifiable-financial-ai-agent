@@ -42,6 +42,8 @@ class TraceReference(TimestampedModel):
 class TraceReferenceRepository(Protocol):
     async def add(self, reference: TraceReference) -> None: ...
 
+    async def list_by_run(self, run_id: str) -> list[TraceReference]: ...
+
 
 class InMemoryTraceReferenceRepository:
     """Business DB bridge stores identifiers only, never Langfuse trace content."""
