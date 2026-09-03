@@ -7,9 +7,9 @@ Frontend: `DEFERRED_PENDING_FINAL_UX_BASELINE`
 | WS | Worker | Branch | Worktree | Status | Tests | Blocker |
 | -- | ------ | ------ | -------- | ------ | ----- | ------- |
 | Config / Secret Safety Gate | Coordinator | `main` | `/Users/mac/Verifiable_Financial_Agent_System` | PASS | 77 passed; Ruff PASS; secret scan PASS | none |
-| H FinRobot Exact Audit & Reuse | McClintock | `ws/finrobot-audit` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/finrobot-audit` | RUNNING | pending | none |
+| H FinRobot Exact Audit & Reuse | McClintock | `ws/finrobot-audit` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/finrobot-audit` | MERGED | 9 WS; 86 full; Ruff/secret/boundary PASS | optional renderer dependency change deferred |
 | I Live FMP Integration | Franklin | `ws/live-fmp` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/live-fmp` | RUNNING | pending | none |
-| J PostgreSQL Durable Persistence | pending | `ws/postgresql` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/postgresql` | QUEUED | pending | waits for worker slot |
+| J PostgreSQL Durable Persistence | McClintock | `ws/postgresql` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/postgresql` | RUNNING | pending | local PostgreSQL service unavailable; conditional integration planned |
 | K TeamoRouter LLM Integration | Harvey | `ws/teamorouter-llm` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/teamorouter-llm` | RUNNING | pending | none |
 | L Langfuse Integration | pending | `ws/langfuse` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/langfuse` | QUEUED | pending | waits for worker slot; credentials not set |
 
