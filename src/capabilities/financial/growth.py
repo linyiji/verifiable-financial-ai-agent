@@ -6,6 +6,7 @@ from src.capabilities.financial.common import (
     decimal_value,
     require_accepted,
 )
+from src.capabilities.provenance import calculation_source_provenance
 from src.domain.base import JsonObject
 from src.domain.calculation import CalculationRecord
 from src.domain.capability import CapabilityContext, CapabilityDefinition
@@ -45,6 +46,9 @@ class RevenueGrowthCapability:
         value = calculate_revenue_growth(
             decimal_value(prior.normalized_value), decimal_value(current.normalized_value)
         )
+        provenance = calculation_source_provenance(
+            __file__, source_ref=self.definition.implementation_ref
+        )
         return CalculationRecord(
             calculation_id=str(inputs["calculation_id"]),
             run_id=context.run_id,
@@ -60,4 +64,7 @@ class RevenueGrowthCapability:
             output_value=value,
             output_unit="ratio",
             status=CalculationStatus.PASS,
+            code_hash=provenance.code_hash,
+            source_ref=provenance.source_ref,
+            runtime_version=provenance.runtime_version,
         )
