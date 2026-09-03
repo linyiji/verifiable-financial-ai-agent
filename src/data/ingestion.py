@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import NAMESPACE_URL, uuid5
 
@@ -8,6 +8,7 @@ from src.data.freshness import FreshnessPolicy, policy_for
 from src.data.provider import Provider, ProviderRequest
 from src.data.repository import EvidenceRepository
 from src.data.validation import ValidatedRecord, mark_duplicate_conflicts, validate_record
+from src.domain.base import JsonObject
 from src.domain.enums import EvidenceStatus
 from src.domain.evidence import AcceptedEvidenceBundle, EvidenceRecord
 
@@ -67,6 +68,7 @@ class EvidenceIngestionService:
                 retrieved_at=snapshot.retrieved_at,
                 raw_artifact_ref=artifact_ref,
                 snapshot_hash=snapshot.snapshot_hash,
+                raw_record=snapshot.records[validated.raw_index],
             )
             for validated in diagnostics
             if validated.normalized is not None
@@ -98,6 +100,7 @@ def _to_evidence_record(
     retrieved_at: datetime,
     raw_artifact_ref: str,
     snapshot_hash: str,
+    raw_record: JsonObject,
 ) -> EvidenceRecord:
     assert validated.normalized is not None
     assert validated.period is not None
@@ -112,7 +115,10 @@ def _to_evidence_record(
         object_id=object_id,
         provider=provider,
         source_locator=source_locator,
+        source_endpoint=_optional_text(raw_record.get("source_endpoint")),
         retrieved_at=retrieved_at,
+        observed_at=_optional_datetime(raw_record.get("observed_at")),
+        provider_timestamp=_optional_datetime(raw_record.get("provider_timestamp")),
         period=validated.period,
         as_of=validated.as_of,
         raw_artifact_ref=raw_artifact_ref,
@@ -129,3 +135,24 @@ def _to_evidence_record(
 def _canonical_decimal(value: Decimal) -> str:
     rendered = format(value.normalize(), "f")
     return "0" if Decimal(rendered).is_zero() else rendered
+
+
+def _optional_text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _optional_datetime(value: object) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
