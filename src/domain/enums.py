@@ -46,6 +46,24 @@ class EvidenceStatus(StrEnum):
     PARTIAL = "PARTIAL"
 
 
+class EvidenceCategory(StrEnum):
+    COMPANY_PROFILE = "COMPANY_PROFILE"
+    FINANCIAL_STATEMENT = "FINANCIAL_STATEMENT"
+    MARKET = "MARKET"
+    PEER = "PEER"
+    NEWS = "NEWS"
+    ANALYST = "ANALYST"
+    TRANSCRIPT = "TRANSCRIPT"
+    OTHER = "OTHER"
+
+
+class EvidenceAcquisitionStatus(StrEnum):
+    COMPLETED = "COMPLETED"
+    PARTIAL = "PARTIAL"
+    ENTITLEMENT_BLOCKED = "ENTITLEMENT_BLOCKED"
+    FAILED = "FAILED"
+
+
 class ReviewStatus(StrEnum):
     PASS = "PASS"
     REVIEW = "REVIEW"
@@ -75,4 +93,3 @@ class CorrectionStatus(StrEnum):
     RESOLVED = "RESOLVED"
     FAILED = "FAILED"
     ESCALATED = "ESCALATED"
-

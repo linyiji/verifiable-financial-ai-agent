@@ -3,7 +3,12 @@ from __future__ import annotations
 from pydantic import Field, model_validator
 
 from src.domain.base import JsonObject, TimestampedModel
-from src.domain.enums import ReplanDecision, TaskOrigin, TaskStatus
+from src.domain.enums import (
+    EvidenceAcquisitionStatus,
+    ReplanDecision,
+    TaskOrigin,
+    TaskStatus,
+)
 
 
 class Task(TimestampedModel):
@@ -21,6 +26,9 @@ class Task(TimestampedModel):
     progress: float = Field(default=0.0, ge=0.0, le=1.0)
     attempt_count: int = Field(default=0, ge=0)
     result_ref: str | None = None
+    task_input_evidence_ids: list[str] = Field(default_factory=list)
+    task_output_evidence_ids: list[str] = Field(default_factory=list)
+    evidence_acquisition_status: EvidenceAcquisitionStatus | None = None
 
 
 class PlannedTaskGraph(TimestampedModel):

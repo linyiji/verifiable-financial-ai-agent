@@ -28,6 +28,8 @@ class RuntimeEventType(StrEnum):
     REPLAN_APPROVED = "replan.approved"
     REPLAN_REJECTED = "replan.rejected"
     GRAPH_TASK_ADDED = "graph.task_added"
+    GRAPH_EDGE_ADDED = "graph.edge_added"
+    GRAPH_EDGE_REMOVED = "graph.edge_removed"
     GRAPH_VERSION_CHANGED = "graph.version_changed"
     EVIDENCE_ACCEPTED = "evidence.accepted"
     EVIDENCE_CONFLICT = "evidence.conflict"

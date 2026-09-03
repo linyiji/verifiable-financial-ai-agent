@@ -21,5 +21,8 @@ class CalculationRecord(TimestampedModel):
     status: CalculationStatus
     review_status: ReviewStatus | None = None
     code_hash: str | None = None
+    source_ref: str | None = None
+    runtime_version: str | None = None
+    review_record_id: str | None = None
+    canonical_record_id: str | None = None
     proof_ref: str | None = None
-

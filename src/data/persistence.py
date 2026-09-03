@@ -8,7 +8,7 @@ from sqlalchemy import JSON, Date, DateTime, String, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.domain.enums import EvidenceStatus
+from src.domain.enums import EvidenceCategory, EvidenceStatus
 from src.domain.evidence import EvidenceRecord
 from src.infrastructure.database.base import Base
 
@@ -21,7 +21,15 @@ class EvidenceRecordRow(Base):
     object_id: Mapped[str] = mapped_column(String(128), index=True)
     provider: Mapped[str] = mapped_column(String(128))
     source_locator: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    producer_task_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    source_endpoint: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    evidence_purpose: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    evidence_category: Mapped[str] = mapped_column(String(32), default=EvidenceCategory.OTHER.value)
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_timestamp: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     period: Mapped[str] = mapped_column(String(64))
     as_of: Mapped[date] = mapped_column(Date)
     raw_artifact_ref: Mapped[str] = mapped_column(String(2048))
@@ -59,10 +67,9 @@ class SQLAlchemyEvidenceRepository:
 
 def _to_row(record: EvidenceRecord) -> EvidenceRecordRow:
     payload = record.model_dump(mode="python")
-    payload["normalized_value"] = json.loads(
-        json.dumps(payload["normalized_value"], default=str)
-    )
+    payload["normalized_value"] = json.loads(json.dumps(payload["normalized_value"], default=str))
     payload["status"] = record.status.value
+    payload["evidence_category"] = record.evidence_category.value
     return EvidenceRecordRow(**payload)
 
 
@@ -73,7 +80,13 @@ def _to_domain(row: EvidenceRecordRow) -> EvidenceRecord:
         object_id=row.object_id,
         provider=row.provider,
         source_locator=row.source_locator,
+        producer_task_id=row.producer_task_id,
+        source_endpoint=row.source_endpoint,
+        evidence_purpose=row.evidence_purpose,
+        evidence_category=EvidenceCategory(row.evidence_category),
         retrieved_at=row.retrieved_at,
+        observed_at=row.observed_at,
+        provider_timestamp=row.provider_timestamp,
         period=row.period,
         as_of=row.as_of,
         raw_artifact_ref=row.raw_artifact_ref,

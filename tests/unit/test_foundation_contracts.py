@@ -5,7 +5,14 @@ from pydantic import ValidationError
 
 from contracts.api.models import PrepareResearchRunRequest
 from src.adapters.risc0.pending import PendingProofAdapter
-from src.domain.enums import ProofStatus, RunStatus, TaskStatus
+from src.domain.enums import (
+    EvidenceAcquisitionStatus,
+    EvidenceCategory,
+    ProofStatus,
+    RunStatus,
+    TaskStatus,
+)
+from src.domain.peer import PeerCandidate, PeerSelectionDecision
 from src.domain.proof import ProofRequest
 from src.domain.runtime_event import RuntimeEvent, RuntimeEventType
 from src.domain.task import PlannedTaskGraph, Task
@@ -58,6 +65,38 @@ def test_runtime_event_schema_covers_model_event_types() -> None:
     assert set(schema["properties"]["type"]["enum"]) == {
         event_type.value for event_type in RuntimeEventType
     }
+
+
+def test_phase2_1_semantic_contract_additions_are_backward_compatible() -> None:
+    task = Task(
+        task_id="TASK-EVIDENCE",
+        run_id="RUN-1",
+        task_type="evidence_collection",
+        goal="Collect company evidence",
+        assigned_agent="research_news_analyst",
+        skill_id="evidence_collection_v1",
+        task_output_evidence_ids=["EVD-1"],
+        evidence_acquisition_status=EvidenceAcquisitionStatus.PARTIAL,
+    )
+    candidate = PeerCandidate(
+        candidate_symbol="AMD",
+        source_evidence_ids=["EVD-PEER-1"],
+        industry="Semiconductors",
+        sector="Technology",
+        data_available=True,
+        metric_comparable=True,
+    )
+    decision = PeerSelectionDecision(
+        candidate_symbol="AMD",
+        selected=True,
+        reason_summary="Same industry with comparable financial data.",
+        selection_source="rule_v1",
+        source_evidence_ids=candidate.source_evidence_ids,
+    )
+
+    assert task.evidence_acquisition_status is EvidenceAcquisitionStatus.PARTIAL
+    assert EvidenceCategory.NEWS.value == "NEWS"
+    assert decision.selected is True
 
 
 @pytest.mark.asyncio
