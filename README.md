@@ -2,6 +2,32 @@
 
 > Foundation runtime baseline: backend Python `>=3.11,<3.12`, frontend Node.js `>=24,<25`.
 
+## Phase-1 quickstart
+
+The current executable scope is an offline, controlled vertical slice. It creates a Research
+Object, generates and confirms a deterministic fallback Scheme, runs a dependency graph with real
+parallel tasks, validates the bundled NVIDIA fixture, produces Revenue Growth and EBITDA Margin
+through registered native capabilities, performs task-local correction and Lead-controlled replan,
+then independently reviews and releases one Canonical Execution Record and its A/B/C outputs.
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
+PYTHONPATH=. pytest -q
+PYTHONPATH=. ruff check .
+PYTHONPATH=. uvicorn apps.api.main:app --reload
+```
+
+The API is available at `http://127.0.0.1:8000`; OpenAPI is at `/docs`. The default composition
+uses an in-memory SQLite database and the controlled fixture at
+`tests/fixtures/nvda_financials.json`. No live FMP credential is required. The Phase-1 proof adapter
+returns `NOT_IMPLEMENTED`; the application never represents that status as a verified proof.
+
+For frontend tooling, use the already-installed Node 24 runtime and run `npm run check:runtime`.
+No frontend framework is selected or replaced in this phase; `apps/web/` remains the reserved
+integration boundary.
+
 本目录是当前产品的 **V1 工程设计基线**，用于直接放入：
 
 `/user/mac/Verifiable_Financial_Agent_System`
