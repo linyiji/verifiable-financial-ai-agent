@@ -16,7 +16,15 @@ _SENSITIVE_KEY_PARTS = (
     "refresh_token",
     "secret",
     "access_token",
+    "request_body",
+    "response_body",
+    "prompt",
+    "messages",
+    "raw_payload",
+    "normalized_value",
 )
+
+_SENSITIVE_EXACT_KEYS = {"content", "input", "output", "raw_value", "value"}
 
 
 def sanitize_trace_attributes(attributes: JsonObject | None) -> JsonObject:
@@ -29,7 +37,9 @@ def _sanitize_mapping(value: dict[str, Any]) -> JsonObject:
     output: JsonObject = {}
     for key, item in value.items():
         normalized = key.lower().replace("-", "_")
-        if any(part in normalized for part in _SENSITIVE_KEY_PARTS):
+        if normalized in _SENSITIVE_EXACT_KEYS or any(
+            part in normalized for part in _SENSITIVE_KEY_PARTS
+        ):
             output[key] = "[REDACTED]"
         else:
             output[key] = _sanitize_value(item)
