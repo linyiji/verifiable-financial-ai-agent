@@ -218,10 +218,7 @@ async def test_terminal_failure_blocks_transitive_dependents_and_checkpoints() -
 async def test_event_store_allocates_monotonic_sequences_under_concurrency() -> None:
     store = InMemoryRuntimeEventStore()
     emitted = await asyncio.gather(
-        *(
-            store.emit(run_id="RUN-1", event_type=RuntimeEventType.TASK_PROGRESS)
-            for _ in range(50)
-        )
+        *(store.emit(run_id="RUN-1", event_type=RuntimeEventType.TASK_PROGRESS) for _ in range(50))
     )
 
     assert sorted(event.sequence for event in emitted) == list(range(1, 51))
@@ -280,6 +277,7 @@ async def test_graph_mutation_requires_approving_lead_and_preserves_plan() -> No
     assert all(task.task_id != "FOLLOW-UP" for task in state.planned_graph.tasks)
     assert [event.type for event in await store.replay("RUN-1")] == [
         RuntimeEventType.GRAPH_TASK_ADDED,
+        RuntimeEventType.GRAPH_EDGE_ADDED,
         RuntimeEventType.GRAPH_VERSION_CHANGED,
     ]
 

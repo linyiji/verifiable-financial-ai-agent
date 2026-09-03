@@ -8,7 +8,8 @@ from pydantic import Field
 
 from src.domain.base import JsonObject, TimestampedModel
 from src.domain.enums import RunStatus, TaskStatus
-from src.runtime.state import RuntimeState
+from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph
+from src.runtime.state import RuntimeState, RuntimeStateError
 
 
 class RuntimeCheckpoint(TimestampedModel):
@@ -42,6 +43,34 @@ class RuntimeCheckpoint(TimestampedModel):
             review_state=dict(state.review_state),
             proof_state=dict(state.proof_state),
             cost=state.cost,
+        )
+
+    def restore(self, *, planned_graph: PlannedTaskGraph) -> RuntimeState:
+        """Restore the mutable runtime while retaining the approved plan snapshot."""
+
+        if planned_graph.run_id != self.run_id:
+            raise RuntimeStateError("checkpoint and planned graph belong to different runs")
+        actual_graph = ActualRuntimeGraph.model_validate(self.actual_graph)
+        if actual_graph.run_id != self.run_id:
+            raise RuntimeStateError("checkpoint actual graph belongs to a different run")
+        if actual_graph.version != self.actual_graph_version:
+            raise RuntimeStateError("checkpoint graph version does not match its payload")
+        actual_task_states = {task.task_id: task.status for task in actual_graph.tasks}
+        if actual_task_states != self.task_states:
+            raise RuntimeStateError("checkpoint task states do not match its graph payload")
+        return RuntimeState(
+            run_id=self.run_id,
+            planned_graph=planned_graph.model_copy(deep=True),
+            actual_graph=actual_graph,
+            run_status=self.run_status,
+            completed_output_refs={
+                task_id: list(refs) for task_id, refs in self.completed_output_refs.items()
+            },
+            evidence_refs=list(self.evidence_refs),
+            workspace_refs=list(self.workspace_refs),
+            review_state=dict(self.review_state),
+            proof_state=dict(self.proof_state),
+            cost=self.cost,
         )
 
 
