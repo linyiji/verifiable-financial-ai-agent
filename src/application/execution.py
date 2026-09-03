@@ -165,6 +165,11 @@ class IntegratedTaskExecutor:
         )
 
     async def _execute_risk_analysis(self, task: Task) -> TaskExecutionResult:
+        synthesis = next(
+            candidate
+            for candidate in self._aggregate.runtime.actual_graph.tasks
+            if candidate.task_type == "report_synthesis"
+        )
         request = ReplanRequest(
             replan_id=f"REPLAN-{task.run_id}-RISK",
             run_id=task.run_id,
@@ -172,7 +177,15 @@ class IntegratedTaskExecutor:
             requested_by=task.assigned_agent,
             reason_code="MATERIAL_RISK_FOLLOW_UP",
             reason_detail="Specialist requests a focused risk follow-up child task.",
-            proposed_graph_change={"add_child_task_type": "risk_follow_up"},
+            proposed_graph_change={
+                "operation": "insert_task_between",
+                "add_child_task_type": "risk_follow_up",
+                "remove_edge": [task.task_id, synthesis.task_id],
+                "add_edges": [
+                    [task.task_id, f"{task.run_id}:risk-follow-up"],
+                    [f"{task.run_id}:risk-follow-up", synthesis.task_id],
+                ],
+            },
         )
         specialist_result = SpecialistResult(
             output={"risk_signal": "requires_follow_up"},
@@ -217,14 +230,16 @@ class IntegratedTaskExecutor:
             goal="Validate the material risk signal as a bounded child task",
             assigned_agent="risk_analyst",
             skill_id="risk_analysis_v1",
-            dependencies=[task.task_id],
+            dependencies=[],
             origin=TaskOrigin.REPLAN,
             reason_code=pending.reason_code,
         )
-        await GraphMutationService(self._service.event_store).add_tasks(
+        await GraphMutationService(self._service.event_store).insert_node_between(
             state=self._aggregate.runtime,
             request=decision.request,
-            tasks=[child],
+            task=child,
+            predecessor_task_id=task.task_id,
+            successor_task_id=synthesis.task_id,
             actor=GraphMutationActor("research_lead", GraphMutationRole.RESEARCH_LEAD),
         )
         self._aggregate.artifacts.replans.append(

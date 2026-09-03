@@ -72,6 +72,15 @@ async def test_offline_vertical_slice_uses_every_frozen_boundary() -> None:
         task for task in aggregate.runtime.actual_graph.tasks if task.origin is TaskOrigin.REPLAN
     )
     assert child.parent_task_id and child.parent_task_id.endswith(":risk")
+    risk_task = aggregate.runtime.task(child.parent_task_id)
+    synthesis_task = next(
+        task
+        for task in aggregate.runtime.actual_graph.tasks
+        if task.task_type == "report_synthesis"
+    )
+    assert child.dependencies == [risk_task.task_id]
+    assert risk_task.task_id not in synthesis_task.dependencies
+    assert child.task_id in synthesis_task.dependencies
     assert all(task.task_id != child.task_id for task in aggregate.runtime.planned_graph.tasks)
     assert aggregate.artifacts.review is not None
     assert aggregate.artifacts.review.status.value == "PASS"
@@ -129,6 +138,42 @@ async def test_offline_vertical_slice_uses_every_frozen_boundary() -> None:
     )
     assert event_types.index(RuntimeEventType.REPLAN_APPROVED) < event_types.index(
         RuntimeEventType.GRAPH_TASK_ADDED
+    )
+    graph_audit = [
+        event
+        for event in events
+        if event.type
+        in {
+            RuntimeEventType.GRAPH_TASK_ADDED,
+            RuntimeEventType.GRAPH_EDGE_ADDED,
+            RuntimeEventType.GRAPH_EDGE_REMOVED,
+            RuntimeEventType.GRAPH_VERSION_CHANGED,
+        }
+    ]
+    assert [event.type for event in graph_audit] == [
+        RuntimeEventType.GRAPH_TASK_ADDED,
+        RuntimeEventType.GRAPH_EDGE_ADDED,
+        RuntimeEventType.GRAPH_EDGE_REMOVED,
+        RuntimeEventType.GRAPH_EDGE_ADDED,
+        RuntimeEventType.GRAPH_VERSION_CHANGED,
+    ]
+    completion_sequence = {
+        event.task_id: event.sequence
+        for event in events
+        if event.type is RuntimeEventType.TASK_COMPLETED
+    }
+    start_sequence = {
+        event.task_id: event.sequence
+        for event in events
+        if event.type is RuntimeEventType.TASK_STARTED
+    }
+    assert (
+        completion_sequence[risk_task.task_id]
+        < start_sequence[child.task_id]
+        < completion_sequence[child.task_id]
+        < start_sequence[synthesis_task.task_id]
+        < completion_sequence[synthesis_task.task_id]
+        < next(event.sequence for event in events if event.type is RuntimeEventType.REVIEW_STARTED)
     )
     assert event_types[-2:] == [
         RuntimeEventType.RELEASE_COMPLETED,

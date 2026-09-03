@@ -144,9 +144,7 @@ class DependencyScheduler:
 
     def _promote_ready_tasks(self, state: RuntimeState) -> list[Task]:
         completed = {
-            task.task_id
-            for task in state.actual_graph.tasks
-            if task.status is TaskStatus.COMPLETED
+            task.task_id for task in state.actual_graph.tasks if task.status is TaskStatus.COMPLETED
         }
         ready: list[Task] = []
         for task in state.actual_graph.tasks:
@@ -178,8 +176,13 @@ class DependencyScheduler:
         task: Task,
         executor: TaskExecutor,
     ) -> None:
+        task_id = task.task_id
         last_error: Exception | None = None
         for attempt in range(1, self._retry_policy.max_attempts + 1):
+            # A concurrent graph mutation atomically swaps the Actual Graph copy.
+            # Resolve by identity on every state update so in-flight tasks never
+            # complete against a detached pre-mutation Task instance.
+            task = state.task(task_id)
             if task.status is not TaskStatus.READY:
                 transition_task(task, TaskStatus.READY)
             transition_task(task, TaskStatus.RUNNING)
@@ -196,9 +199,10 @@ class DependencyScheduler:
                     TaskExecutionContext(run_id=state.run_id, attempt=attempt),
                 )
             except asyncio.CancelledError:
-                task.status = TaskStatus.CANCELLED
+                state.task(task_id).status = TaskStatus.CANCELLED
                 raise
             except Exception as error:
+                task = state.task(task_id)
                 last_error = error
                 if attempt < self._retry_policy.max_attempts:
                     transition_task(task, TaskStatus.READY)
@@ -224,6 +228,7 @@ class DependencyScheduler:
                 )
                 raise
             else:
+                task = state.task(task_id)
                 task.result_ref = result.result_ref
                 task.progress = 1.0
                 state.completed_output_refs[task.task_id] = list(result.output_refs)
