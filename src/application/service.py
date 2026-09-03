@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -34,6 +35,7 @@ from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
 from src.observability import NoopTraceAdapter
 from src.observability.instrumentation import RuntimeInstrumentation
+from src.observability.references import TraceReferenceRepository
 from src.output import (
     CanonicalExecutionRecordBuilder,
     FinancialReportRenderer,
@@ -72,6 +74,9 @@ class ResearchApplicationService:
         evidence_collector: EvidenceCollector | None = None,
         event_store: RuntimeEventStore | None = None,
         checkpoint_store: CheckpointStore | None = None,
+        instrumentation: RuntimeInstrumentation | None = None,
+        trace_reference_repository: TraceReferenceRepository | None = None,
+        run_id_factory: Callable[[], str] | None = None,
     ) -> None:
         self.repository = repository or InMemoryApplicationRepository()
         self.event_store = event_store or InMemoryRuntimeEventStore()
@@ -81,7 +86,12 @@ class ResearchApplicationService:
             Path(__file__).resolve().parents[2] / "tests/fixtures/nvda_financials.json"
         )
         self.trace_adapter = trace_adapter or NoopTraceAdapter()
-        self.instrumentation = RuntimeInstrumentation(self.trace_adapter)
+        self.trace_reference_repository = trace_reference_repository
+        self.instrumentation = instrumentation or RuntimeInstrumentation(
+            self.trace_adapter,
+            reference_repository=trace_reference_repository,
+        )
+        self._run_id_factory = run_id_factory or (lambda: f"RUN-{uuid4()}")
         self.scheme_generator = scheme_generator or DeterministicSchemeGenerator()
         self.planner = planner or ResearchLeadPlanner()
         self.evidence_collector = evidence_collector or FixtureEvidenceCollector(
@@ -188,7 +198,9 @@ class ResearchApplicationService:
         draft = await self.repository.get_draft(draft_id)
         if draft is None:
             raise NotFoundError("draft", draft_id)
-        run_id = f"RUN-{uuid4()}"
+        run_id = self._run_id_factory()
+        if not run_id.strip():
+            raise ValueError("run_id_factory returned a blank run id")
         scheme = draft.scheme_snapshot.model_copy(update={"confirmed_at": datetime.now(UTC)})
         async with self.instrumentation.planning(run_id=run_id):
             planned = self.planner.plan(run_id=run_id, goal=draft.goal, scheme=scheme)
@@ -320,23 +332,27 @@ class ResearchApplicationService:
 
     async def _assure_and_release(self, aggregate: RunAggregate) -> None:
         run_id = aggregate.run.run_id
-        await self.event_store.emit(
+        async with self.instrumentation.review(
             run_id=run_id,
-            event_type=RuntimeEventType.REVIEW_STARTED,
-        )
-        review = DeterministicReviewer().review(
-            review_id=f"REVIEW-{run_id}",
-            run_id=run_id,
-            evidence=aggregate.artifacts.evidence,
-            calculations=aggregate.artifacts.calculations,
-        )
-        aggregate.artifacts.review = review
-        aggregate.runtime.review_state = review.model_dump(mode="json")
-        await self.event_store.emit(
-            run_id=run_id,
-            event_type=RuntimeEventType.REVIEW_RESOLVED,
-            payload={"review_id": review.review_id, "status": review.status.value},
-        )
+            attributes={"review_id": f"REVIEW-{run_id}"},
+        ):
+            await self.event_store.emit(
+                run_id=run_id,
+                event_type=RuntimeEventType.REVIEW_STARTED,
+            )
+            review = DeterministicReviewer().review(
+                review_id=f"REVIEW-{run_id}",
+                run_id=run_id,
+                evidence=aggregate.artifacts.evidence,
+                calculations=aggregate.artifacts.calculations,
+            )
+            aggregate.artifacts.review = review
+            aggregate.runtime.review_state = review.model_dump(mode="json")
+            await self.event_store.emit(
+                run_id=run_id,
+                event_type=RuntimeEventType.REVIEW_RESOLVED,
+                payload={"review_id": review.review_id, "status": review.status.value},
+            )
 
         proof_policy = ProofPolicy(require_material_calculations=False)
         proof_requirements = {
@@ -371,6 +387,11 @@ class ResearchApplicationService:
                 details={"reason_codes": list(release_decision.reason_codes)},
             )
 
+        trace_references = (
+            await self.trace_reference_repository.list_by_run(run_id)
+            if self.trace_reference_repository is not None
+            else []
+        )
         record = CanonicalExecutionRecordBuilder.build(
             record_id=f"CER-{run_id}",
             run_id=run_id,
@@ -388,6 +409,7 @@ class ResearchApplicationService:
             replan_refs=[item.replan_id for item in aggregate.artifacts.replans],
             review_refs=[review.review_id],
             proof_refs=[proof.proof_id],
+            trace_refs=[reference.reference_id for reference in trace_references],
             runtime_outcome=RunStatus.RELEASED.value,
         )
         aggregate.artifacts.calculations = link_calculation_lineage(
