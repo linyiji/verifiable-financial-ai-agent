@@ -1,4 +1,10 @@
-from src.adapters.fmp.models import FMPAccessError, FMPAccessStatus, FMPEndpoint, FMPFetchResult
+from src.adapters.fmp.models import (
+    FMPAccessError,
+    FMPAccessStatus,
+    FMPEndpoint,
+    FMPFetchResult,
+    FMPResponseEnvelope,
+)
 from src.adapters.fmp.provider import FMPProvider, FMPTransport, HttpxFMPTransport
 from src.adapters.fmp.selection import (
     FinancialProviderMode,
@@ -12,6 +18,7 @@ __all__ = [
     "FMPEndpoint",
     "FMPFetchResult",
     "FMPProvider",
+    "FMPResponseEnvelope",
     "FMPTransport",
     "FinancialProviderMode",
     "FinancialProviderSelection",

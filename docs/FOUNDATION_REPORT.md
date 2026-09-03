@@ -6,6 +6,9 @@ Foundation freezes the repository skeleton, Python/Node baselines, domain and tr
 runtime events and statuses, capability/trace/proof interfaces, database base, repository protocol,
 and test fixture baseline. Business implementations remain owned by parallel workstreams.
 
+Frontend implementation remains `DEFERRED_PENDING_FINAL_UX_BASELINE`. Retained HTML prototypes are
+draft/reference assets and are not final or canonical frontend baselines.
+
 ## Runtime baseline
 
 - Python: `>=3.11,<3.12`

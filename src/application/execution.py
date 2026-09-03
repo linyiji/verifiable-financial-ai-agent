@@ -50,13 +50,13 @@ class IntegratedTaskExecutor:
                     "message": "Task dispatched to its application execution adapter.",
                 },
             )
-            handler = getattr(self, f"_execute_{task.task_type}", self._execute_generic)
+            handler = self._handler_for(task)
             return await handler(task)
         finally:
             self._active -= 1
 
     async def _execute_evidence_collection(self, task: Task) -> TaskExecutionResult:
-        result = await self._service.ingest_fixture_evidence(self._aggregate)
+        result = await self._service.ingest_research_evidence(self._aggregate)
         self._aggregate.artifacts.evidence = list(result.accepted.records)
         self._aggregate.runtime.evidence_refs = [
             record.evidence_id for record in result.accepted.records
@@ -75,10 +75,7 @@ class IntegratedTaskExecutor:
 
     async def _execute_fundamental_analysis(self, task: Task) -> TaskExecutionResult:
         evidence = self._aggregate.artifacts.evidence
-        prior = _find(evidence, field="revenue", period="FY2025")
-        current = _find(evidence, field="revenue", period="FY2026")
-        quarterly = _find(evidence, field="revenue", period="Q1FY2026")
-        ebitda = _find(evidence, field="ebitda", period="FY2026")
+        prior, current, mismatch, ebitda = _select_financial_inputs(evidence)
         context = CapabilityContext(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -109,7 +106,7 @@ class IntegratedTaskExecutor:
                 "ebitda_margin",
                 {
                     "ebitda": ebitda,
-                    "revenue": quarterly,
+                    "revenue": mismatch,
                     "calculation_id": f"CALC-{task.run_id}-MARGIN-BAD",
                 },
                 context,
@@ -129,7 +126,7 @@ class IntegratedTaskExecutor:
                 detected_by="ebitda_margin",
                 attempt=1,
                 action="SELECT_PERIOD_ALIGNED_REVENUE",
-                input_refs=[ebitda.evidence_id, quarterly.evidence_id],
+                input_refs=[ebitda.evidence_id, mismatch.evidence_id],
                 output_refs=[current.evidence_id],
                 status=CorrectionStatus.RESOLVED,
                 resolved_at=datetime.now(UTC),
@@ -250,12 +247,48 @@ class IntegratedTaskExecutor:
         }
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
+    def _handler_for(self, task: Task):
+        by_skill = {
+            "evidence_collection_v1": self._execute_evidence_collection,
+            "fundamental_analysis_v1": self._execute_fundamental_analysis,
+            "risk_analysis_v1": self._execute_risk_analysis,
+        }
+        if task.origin is TaskOrigin.PLAN and task.skill_id in by_skill:
+            return by_skill[task.skill_id]
+        return getattr(self, f"_execute_{task.task_type}", self._execute_generic)
+
 
 def _find(records: list, *, field: str, period: str):
     for record in records:
         if record.normalized_field == field and record.period == period:
             return record
     raise LookupError(f"accepted evidence missing: {field}/{period}")
+
+
+def _select_financial_inputs(records: list):
+    revenues = sorted(
+        (
+            record
+            for record in records
+            if record.normalized_field == "revenue" and record.period.startswith("FY")
+        ),
+        key=lambda record: (record.as_of, record.period),
+    )
+    if len(revenues) < 2:
+        raise LookupError("accepted evidence requires two annual revenue periods")
+    prior, current = revenues[-2:]
+    ebitda = _find(records, field="ebitda", period=current.period)
+    mismatch = next(
+        (
+            record
+            for record in records
+            if record.normalized_field == "revenue"
+            and record.period != current.period
+            and record.period.startswith("Q")
+        ),
+        prior,
+    )
+    return prior, current, mismatch, ebitda
 
 
 def decimal_as_float(value: object) -> float:

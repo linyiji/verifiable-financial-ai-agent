@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import inspect
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 from src.adapters.risc0 import PendingProofAdapter
-from src.agentic import DeterministicSchemeGenerator, ResearchLeadPlanner
+from src.agentic import DeterministicSchemeGenerator, ResearchLeadPlanner, SchemeGenerator
 from src.application.errors import ApplicationError, NotFoundError
+from src.application.evidence_collection import EvidenceCollector, FixtureEvidenceCollector
 from src.application.execution import IntegratedTaskExecutor, decimal_as_float
 from src.application.models import ResearchRunDraft, RunAggregate
 from src.application.repository import ApplicationRepository, InMemoryApplicationRepository
@@ -15,10 +17,7 @@ from src.assurance.proof_policy import ProofPolicy
 from src.capabilities.financial.growth import RevenueGrowthCapability
 from src.capabilities.financial.profitability import EbitdaMarginCapability
 from src.capabilities.registry import CapabilityRegistry
-from src.data.fixtures import FixtureProvider
-from src.data.freshness import FreshnessPolicy
-from src.data.ingestion import EvidenceIngestionResult, EvidenceIngestionService
-from src.data.provider import ProviderRequest
+from src.data.ingestion import EvidenceIngestionResult
 from src.data.repository import EvidenceRepository, InMemoryEvidenceRepository
 from src.domain.enums import CapabilityBackend, ProofStatus, RunStatus
 from src.domain.proof import ProofRequest
@@ -27,6 +26,7 @@ from src.domain.research_object import ResearchObject
 from src.domain.research_run import ResearchRun
 from src.domain.runtime_event import RuntimeEventType
 from src.observability import NoopTraceAdapter
+from src.observability.instrumentation import RuntimeInstrumentation
 from src.output import (
     CanonicalExecutionRecordBuilder,
     FinancialReportRenderer,
@@ -58,6 +58,9 @@ class ResearchApplicationService:
         fixture_path: Path | None = None,
         trace_adapter: object | None = None,
         evidence_repository: EvidenceRepository | None = None,
+        scheme_generator: SchemeGenerator | None = None,
+        planner: object | None = None,
+        evidence_collector: EvidenceCollector | None = None,
     ) -> None:
         self.repository = repository or InMemoryApplicationRepository()
         self.event_store = InMemoryRuntimeEventStore()
@@ -67,6 +70,13 @@ class ResearchApplicationService:
             Path(__file__).resolve().parents[2] / "tests/fixtures/nvda_financials.json"
         )
         self.trace_adapter = trace_adapter or NoopTraceAdapter()
+        self.instrumentation = RuntimeInstrumentation(self.trace_adapter)
+        self.scheme_generator = scheme_generator or DeterministicSchemeGenerator()
+        self.planner = planner or ResearchLeadPlanner()
+        self.evidence_collector = evidence_collector or FixtureEvidenceCollector(
+            repository=self.evidence_repository,
+            fixture_path=self.fixture_path,
+        )
         self._idempotency: dict[tuple[str, str], object] = {}
 
         registry = CapabilityRegistry()
@@ -135,10 +145,11 @@ class ResearchApplicationService:
             as_of=as_of,
             preferences=preferences,
         )
-        scheme = await DeterministicSchemeGenerator().generate(
-            research_object=research_object,
-            goal=goal,
-        )
+        async with self.instrumentation.scheme(run_id=f"DRAFT:{goal_id}"):
+            scheme = await self.scheme_generator.generate(
+                research_object=research_object,
+                goal=goal,
+            )
         draft = ResearchRunDraft(
             draft_id=f"DRAFT-{uuid4()}",
             goal=goal,
@@ -167,7 +178,9 @@ class ResearchApplicationService:
             raise NotFoundError("draft", draft_id)
         run_id = f"RUN-{uuid4()}"
         scheme = draft.scheme_snapshot.model_copy(update={"confirmed_at": datetime.now(UTC)})
-        plan = ResearchLeadPlanner().plan(run_id=run_id, goal=draft.goal, scheme=scheme)
+        async with self.instrumentation.planning(run_id=run_id):
+            planned = self.planner.plan(run_id=run_id, goal=draft.goal, scheme=scheme)
+            plan = await planned if inspect.isawaitable(planned) else planned
         runtime = RuntimeState.create(run_id=run_id, planned_graph=plan)
         run = ResearchRun(
             run_id=run_id,
@@ -224,7 +237,7 @@ class ResearchApplicationService:
         aggregate.run.status = RunStatus.RUNNING
         aggregate.run.started_at = datetime.now(UTC)
         try:
-            async with self.trace_adapter.span("research_run", attributes={"run_id": run_id}):
+            async with self.instrumentation.run(run_id=run_id):
                 executor = IntegratedTaskExecutor(self, aggregate)
                 scheduler = DependencyScheduler(
                     event_store=self.event_store,
@@ -250,22 +263,17 @@ class ResearchApplicationService:
         return await self._aggregate(run_id)
 
     async def ingest_fixture_evidence(self, aggregate: RunAggregate) -> EvidenceIngestionResult:
-        service = EvidenceIngestionService(
-            repository=self.evidence_repository,
-            # Explicit controlled policy for the historical FY2025/FY2026 statement fixture.
-            freshness_policy=FreshnessPolicy(max_age_days=800),
-        )
+        """Backward-compatible alias for Phase-1 callers."""
+
+        return await self.ingest_research_evidence(aggregate)
+
+    async def ingest_research_evidence(self, aggregate: RunAggregate) -> EvidenceIngestionResult:
         research_object = await self._object(aggregate.run.research_object_id)
-        return await service.ingest(
-            provider=FixtureProvider(self.fixture_path),
-            request=ProviderRequest(
-                symbol=research_object.symbol,
-                dataset="annual_financials",
-                as_of=aggregate.run.as_of,
-                fields=("revenue", "ebitda"),
-            ),
+        return await self.evidence_collector.collect(
+            symbol=research_object.symbol,
             run_id=aggregate.run.run_id,
             object_id=research_object.object_id,
+            as_of=aggregate.run.as_of,
         )
 
     async def _assure_and_release(self, aggregate: RunAggregate) -> None:

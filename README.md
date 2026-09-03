@@ -2,7 +2,17 @@
 
 > Foundation runtime baseline: backend Python `>=3.11,<3.12`, frontend Node.js `>=24,<25`.
 
-## Phase-1 quickstart
+## Current backend status
+
+Phase 1 and the Phase-2 backend integration are implemented. Phase 2 adds unified secret-safe
+settings, live FMP evidence collection, TeamoRouter structured Scheme/Planner adapters, a pinned
+FinRobot reuse audit, PostgreSQL migrations/durable repository paths, and optional fail-open
+Langfuse instrumentation. The controlled Phase-1 fixture remains the default API composition.
+
+Frontend implementation is explicitly `DEFERRED_PENDING_FINAL_UX_BASELINE`. Existing HTML
+prototypes remain references only; none is declared final or canonical.
+
+## Quickstart
 
 The current executable scope is an offline, controlled vertical slice. It creates a Research
 Object, generates and confirms a deterministic fallback Scheme, runs a dependency graph with real
@@ -17,6 +27,7 @@ python -m pip install -e '.[dev]'
 PYTHONPATH=. pytest -q
 PYTHONPATH=. ruff check .
 PYTHONPATH=. python scripts/run_acceptance.py
+PYTHONPATH=. python scripts/run_phase2_acceptance.py  # requires ignored .env.local credentials
 PYTHONPATH=. uvicorn apps.api.main:app --reload
 ```
 
@@ -27,7 +38,7 @@ returns `NOT_IMPLEMENTED`; the application never represents that status as a ver
 
 For frontend tooling, use the already-installed Node 24 runtime and run `npm run check:runtime`.
 No frontend framework is selected or replaced in this phase; `apps/web/` remains the reserved
-integration boundary.
+integration boundary pending the user's final UX baseline correction.
 
 本目录是当前产品的 **V1 工程设计基线**，用于直接放入：
 

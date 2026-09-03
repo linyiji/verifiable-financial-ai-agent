@@ -12,6 +12,8 @@ Frontend: `DEFERRED_PENDING_FINAL_UX_BASELINE`
 | J PostgreSQL Durable Persistence | McClintock | `ws/postgresql` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/postgresql` | MERGED | 4 passed; 1 expected skip; Ruff/Alembic/secret PASS | real PostgreSQL environment absent |
 | K TeamoRouter LLM Integration | Harvey | `ws/teamorouter-llm` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/teamorouter-llm` | MERGED | 10 WS; 87 full; Ruff/secret PASS; real Planner PASS | real Scheme used bounded deterministic fallback |
 | L Langfuse Integration | Harvey | `ws/langfuse` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/langfuse` | MERGED | 9 focused; 84 branch full; Ruff/secret PASS | real connectivity deferred: credentials not configured |
+| Phase 2 Integration | Coordinator | `main` | `/Users/mac/Verifiable_Financial_Agent_System` | PASS | 123 passed; 1 expected skip; real NVDA run RELEASED | Scheme provider unavailable; deterministic fallback used |
+| Phase 2 Acceptance | Coordinator | `main` | `/Users/mac/Verifiable_Financial_Agent_System` | PASS | 123 passed; 1 expected skip; Ruff/compile/Node/secret PASS | P2-014 and P2-019 explicitly deferred |
 
 Status values: `QUEUED`, `RUNNING`, `BLOCKED`, `TESTING`, `PASS`, `FAIL`, `MERGED`.
 
