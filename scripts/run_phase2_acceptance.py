@@ -106,6 +106,7 @@ async def run(output: Path) -> dict[str, Any]:
     )
     _write_json(output / "calculation_records.json", calculations)
     _write_json(output / "runtime_events.json", [item.model_dump(mode="json") for item in events])
+    _write_json(output / "task_outputs.json", artifacts.task_outputs)
     _write_json(
         output / "canonical_execution_record.json",
         artifacts.canonical_record.model_dump(mode="json"),
@@ -136,14 +137,49 @@ async def run(output: Path) -> dict[str, Any]:
         },
         "planned_task_count": len(aggregate.runtime.planned_graph.tasks),
         "actual_task_count": len(aggregate.runtime.actual_graph.tasks),
+        "actual_graph_version": aggregate.runtime.actual_graph.version,
         "parallel_task_peak": artifacts.parallel_task_peak,
+        "task_evidence": {
+            task.task_id: {
+                "acquisition_status": (
+                    task.evidence_acquisition_status.value
+                    if task.evidence_acquisition_status
+                    else None
+                ),
+                "input_evidence_ids": task.task_input_evidence_ids,
+                "output_evidence_ids": task.task_output_evidence_ids,
+            }
+            for task in aggregate.runtime.actual_graph.tasks
+        },
+        "peer_selection": next(
+            (
+                value
+                for task_id, value in artifacts.task_outputs.items()
+                if ":analyze-peers" in task_id or task_id.endswith(":peers")
+            ),
+            None,
+        ),
+        "evidence_event_count": sum(
+            event.type.value == "evidence.accepted" for event in events
+        ),
+        "graph_edge_event_count": sum(
+            event.type.value in {"graph.edge_added", "graph.edge_removed"}
+            for event in events
+        ),
         "calculations": [
             {
                 "calculation_id": item.calculation_id,
                 "capability_id": item.capability_id,
+                "capability_version": item.capability_version,
+                "formula_id": item.formula_id,
+                "code_hash": item.code_hash,
+                "source_ref": item.source_ref,
+                "runtime_version": item.runtime_version,
                 "input_evidence_ids": item.input_evidence_ids,
                 "output_value": str(item.output_value),
                 "output_unit": item.output_unit,
+                "review_record_id": item.review_record_id,
+                "canonical_record_id": item.canonical_record_id,
             }
             for item in artifacts.calculations
         ],
