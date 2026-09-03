@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    delete,
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -28,7 +29,11 @@ from src.domain.research_scheme import ResearchSchemeSnapshot
 from src.domain.runtime_event import RuntimeEvent
 from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph
 from src.infrastructure.database.base import Base
-from src.infrastructure.database.models import CorrectionRecordRow, ReplanRecordRow
+from src.infrastructure.database.models import (
+    CorrectionRecordRow,
+    ReplanRecordRow,
+    TaskDependencyRow,
+)
 from src.runtime.state import RuntimeState
 
 
@@ -358,6 +363,26 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 )
             else:
                 row.payload = task.model_dump(mode="json")
+
+        await session.flush()
+        await session.execute(
+            delete(TaskDependencyRow).where(TaskDependencyRow.run_id == aggregate.run.run_id)
+        )
+        for graph_kind, tasks in (
+            ("PLANNED", aggregate.runtime.planned_graph.tasks),
+            ("ACTUAL", aggregate.runtime.actual_graph.tasks),
+        ):
+            for task in tasks:
+                session.add_all(
+                    TaskDependencyRow(
+                        run_id=aggregate.run.run_id,
+                        graph_kind=graph_kind,
+                        task_id=task.task_id,
+                        dependency_task_id=dependency_task_id,
+                        position=position,
+                    )
+                    for position, dependency_task_id in enumerate(task.dependencies)
+                )
 
         for calculation in aggregate.artifacts.calculations:
             row = await session.get(CalculationRecordRow, calculation.calculation_id)

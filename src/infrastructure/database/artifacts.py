@@ -1,5 +1,7 @@
 """Typed durable repositories for run records stored as canonical JSON payloads."""
 
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -19,9 +21,27 @@ from src.domain.correction import CorrectionRecord
 from src.domain.released_research_result import ReleasedResearchResult
 from src.domain.review import ReviewRecord
 from src.domain.task import ReplanRequest, Task
-from src.infrastructure.database.models import CorrectionRecordRow, ReplanRecordRow
+from src.infrastructure.database.models import (
+    CorrectionRecordRow,
+    ReplanRecordRow,
+    TaskDependencyRow,
+)
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+class TaskDependencyGraphKind(StrEnum):
+    PLANNED = "PLANNED"
+    ACTUAL = "ACTUAL"
+
+
+@dataclass(frozen=True, slots=True)
+class TaskDependencyRecord:
+    run_id: str
+    graph_kind: TaskDependencyGraphKind
+    task_id: str
+    dependency_task_id: str
+    position: int
 
 
 class SQLAlchemyRunRecordRepository:
@@ -36,6 +56,34 @@ class SQLAlchemyRunRecordRepository:
 
     async def list_tasks(self, run_id: str) -> list[Task]:
         return await self._list(TaskRow, Task, run_id)
+
+    async def list_task_dependencies(
+        self,
+        run_id: str,
+        *,
+        graph_kind: TaskDependencyGraphKind,
+    ) -> list[TaskDependencyRecord]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(TaskDependencyRow)
+                    .where(
+                        TaskDependencyRow.run_id == run_id,
+                        TaskDependencyRow.graph_kind == graph_kind.value,
+                    )
+                    .order_by(TaskDependencyRow.task_id, TaskDependencyRow.position)
+                )
+            ).all()
+        return [
+            TaskDependencyRecord(
+                run_id=row.run_id,
+                graph_kind=TaskDependencyGraphKind(row.graph_kind),
+                task_id=row.task_id,
+                dependency_task_id=row.dependency_task_id,
+                position=row.position,
+            )
+            for row in rows
+        ]
 
     async def save_calculation(self, entity: CalculationRecord) -> CalculationRecord:
         await self._upsert(
