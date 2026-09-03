@@ -8,8 +8,18 @@ from src.data.freshness import FreshnessPolicy, policy_for
 from src.data.provider import Provider, ProviderRequest
 from src.data.repository import EvidenceRepository
 from src.data.validation import ValidatedRecord, mark_duplicate_conflicts, validate_record
-from src.domain.enums import EvidenceStatus
+from src.domain.enums import EvidenceCategory, EvidenceStatus
 from src.domain.evidence import AcceptedEvidenceBundle, EvidenceRecord
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceProvenance:
+    producer_task_id: str | None = None
+    source_endpoint: str | None = None
+    evidence_purpose: str | None = None
+    evidence_category: EvidenceCategory = EvidenceCategory.OTHER
+    observed_at: datetime | None = None
+    provider_timestamp: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +27,7 @@ class EvidenceIngestionResult:
     accepted: AcceptedEvidenceBundle
     records: tuple[EvidenceRecord, ...]
     diagnostics: tuple[ValidatedRecord, ...]
+    created_records: tuple[EvidenceRecord, ...] = ()
 
 
 class EvidenceIngestionService:
@@ -40,8 +51,10 @@ class EvidenceIngestionService:
         request: ProviderRequest,
         run_id: str,
         object_id: str,
+        provenance: EvidenceProvenance | None = None,
     ) -> EvidenceIngestionResult:
         snapshot = await provider.fetch(request)
+        provenance = provenance or EvidenceProvenance()
         artifact_ref = snapshot.raw_artifact_ref
         if self._artifact_store is not None:
             artifact_ref = await self._artifact_store.put_raw_snapshot(
@@ -67,15 +80,25 @@ class EvidenceIngestionService:
                 retrieved_at=snapshot.retrieved_at,
                 raw_artifact_ref=artifact_ref,
                 snapshot_hash=snapshot.snapshot_hash,
+                provenance=provenance,
             )
             for validated in diagnostics
             if validated.normalized is not None
         )
+        persisted_records: list[EvidenceRecord] = []
+        created_records: list[EvidenceRecord] = []
         for record in records:
-            await self._repository.add(record)
+            existing = await self._repository.get(record.evidence_id)
+            if existing is None:
+                await self._repository.add(record)
+                persisted_records.append(record)
+                created_records.append(record)
+                continue
+            _assert_same_evidence_identity(existing, record)
+            persisted_records.append(existing)
 
         accepted_records = [
-            record for record in records if record.status is EvidenceStatus.ACCEPTED
+            record for record in persisted_records if record.status is EvidenceStatus.ACCEPTED
         ]
         return EvidenceIngestionResult(
             accepted=AcceptedEvidenceBundle(
@@ -83,8 +106,9 @@ class EvidenceIngestionService:
                 records=accepted_records,
                 created_at=snapshot.retrieved_at,
             ),
-            records=records,
+            records=tuple(persisted_records),
             diagnostics=tuple(diagnostics),
+            created_records=tuple(created_records),
         )
 
 
@@ -98,6 +122,7 @@ def _to_evidence_record(
     retrieved_at: datetime,
     raw_artifact_ref: str,
     snapshot_hash: str,
+    provenance: EvidenceProvenance,
 ) -> EvidenceRecord:
     assert validated.normalized is not None
     assert validated.period is not None
@@ -112,7 +137,13 @@ def _to_evidence_record(
         object_id=object_id,
         provider=provider,
         source_locator=source_locator,
+        producer_task_id=provenance.producer_task_id,
+        source_endpoint=provenance.source_endpoint,
+        evidence_purpose=provenance.evidence_purpose,
+        evidence_category=provenance.evidence_category,
         retrieved_at=retrieved_at,
+        observed_at=provenance.observed_at or retrieved_at,
+        provider_timestamp=provenance.provider_timestamp,
         period=validated.period,
         as_of=validated.as_of,
         raw_artifact_ref=raw_artifact_ref,
@@ -129,3 +160,28 @@ def _to_evidence_record(
 def _canonical_decimal(value: Decimal) -> str:
     rendered = format(value.normalize(), "f")
     return "0" if Decimal(rendered).is_zero() else rendered
+
+
+def _assert_same_evidence_identity(existing: EvidenceRecord, candidate: EvidenceRecord) -> None:
+    identity_fields = (
+        "run_id",
+        "object_id",
+        "provider",
+        "source_locator",
+        "source_endpoint",
+        "evidence_purpose",
+        "evidence_category",
+        "observed_at",
+        "provider_timestamp",
+        "period",
+        "as_of",
+        "raw_artifact_ref",
+        "normalized_field",
+        "normalized_value",
+        "unit",
+        "currency",
+        "snapshot_hash",
+        "status",
+    )
+    if any(getattr(existing, field) != getattr(candidate, field) for field in identity_fields):
+        raise ValueError(f"evidence identity collision: {candidate.evidence_id}")
