@@ -396,6 +396,24 @@ class ResearchApplicationService:
             canonical_record=record,
         )
         calculations = {item.capability_id: item for item in aggregate.artifacts.calculations}
+        live_evidence = any(item.provider == "fmp" for item in aggregate.artifacts.evidence)
+        research_news_result = next(
+            (
+                output
+                for task_id, output in aggregate.artifacts.task_outputs.items()
+                if ":analyze-research-news" in task_id
+                or task_id.endswith(":research-news")
+            ),
+            {"status": "not_available", "limitation": True},
+        )
+        risk_result = next(
+            (
+                output
+                for task_id, output in aggregate.artifacts.task_outputs.items()
+                if task_id.endswith(":risk-follow-up")
+            ),
+            {"finding": "No additional quantified risk conclusion is available."},
+        )
         structured = {
             "research_object": aggregate.run.research_object_id,
             "financial_summary": {
@@ -409,11 +427,22 @@ class ResearchApplicationService:
                     for task_id, output in aggregate.artifacts.task_outputs.items()
                     if ":analyze-peers" in task_id or task_id.endswith(":peers")
                 ),
-                {"status": "limited_by_offline_fixture"},
+                {"status": "not_available"},
             ),
-            "valuation_result": {"status": "not_quantified_in_phase_1_fixture"},
-            "investment_thesis": {"status": "reviewed_fixture_demonstration"},
+            "research_news_result": research_news_result,
+            "valuation_result": {"status": "not_quantified_in_current_scope"},
+            "investment_thesis": {"status": "reviewed_execution"},
         }
+        limitations = [
+            "RISC Zero proof is NOT_IMPLEMENTED and no proof claim is made.",
+        ]
+        if not live_evidence:
+            limitations.insert(0, "Offline controlled fixture only.")
+        if research_news_result.get("limitation"):
+            limitations.append(
+                "Research-news analysis is limited because no accepted licensed news or "
+                "transcript evidence was available."
+            )
         result = ReleasedResearchResultBuilder.build(
             result_id=f"RESULT-{run_id}",
             canonical_record=record,
@@ -424,14 +453,11 @@ class ResearchApplicationService:
                 {
                     "judgment_ref": f"JUDGMENT-{run_id}-V1",
                     "version": 1,
-                    "text": "Offline fixture demonstration; not investment advice.",
+                    "text": "Evidence-backed research execution; not investment advice.",
                 }
             ],
-            risk_output={"finding": "No quantified risk conclusion in the fixture."},
-            limitations=[
-                "Offline controlled fixture only.",
-                "RISC Zero proof is NOT_IMPLEMENTED and no proof claim is made.",
-            ],
+            risk_output=risk_result,
+            limitations=limitations,
         )
         object_id = aggregate.run.research_object_id
         report = FinancialReportRenderer.render(result, research_object=object_id)

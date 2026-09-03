@@ -411,6 +411,17 @@ async def test_runtime_scopes_specialized_collection_tasks_and_links_lineage() -
     assert len(peer.task_output_evidence_ids) == 9
     assert news.evidence_acquisition_status is EvidenceAcquisitionStatus.ENTITLEMENT_BLOCKED
     assert news.task_output_evidence_ids == []
+    news_analysis = aggregate.artifacts.task_outputs[
+        f"{aggregate.run.run_id}:analyze-research-news"
+    ]
+    assert news_analysis == {
+        "status": "entitlement_blocked",
+        "accepted_evidence_ids": [],
+        "limitation": True,
+        "reason_code": "NEWS_TRANSCRIPT_ENTITLEMENT_BLOCKED",
+    }
+    assert aggregate.artifacts.released_result is not None
+    assert "fixture" not in str(aggregate.artifacts.released_result).lower()
     assert fundamentals.task_input_evidence_ids
     assert not set(company.task_output_evidence_ids) & set(peer.task_output_evidence_ids)
     peer_output = aggregate.artifacts.task_outputs[

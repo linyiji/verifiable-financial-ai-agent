@@ -10,7 +10,13 @@ from src.data.peers import PeerCompanyFacts, PeerSelectionService
 from src.domain.capability import CapabilityContext
 from src.domain.correction import CorrectionRecord
 from src.domain.decision import StructuredAgentDecision
-from src.domain.enums import CorrectionStatus, ReplanDecision, TaskOrigin
+from src.domain.enums import (
+    CorrectionStatus,
+    EvidenceAcquisitionStatus,
+    EvidenceCategory,
+    ReplanDecision,
+    TaskOrigin,
+)
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import ReplanRequest, Task
 from src.runtime.graph import (
@@ -310,10 +316,54 @@ class IntegratedTaskExecutor:
 
     async def _execute_risk_follow_up(self, task: Task) -> TaskExecutionResult:
         self._aggregate.artifacts.task_outputs[task.task_id] = {
-            "finding": "No additional quantified risk can be supported by the offline fixture.",
+            "finding": (
+                "No additional quantified risk can be supported by the available "
+                "accepted evidence."
+            ),
             "limitation": True,
         }
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
+
+    async def _execute_research_news_analysis(self, task: Task) -> TaskExecutionResult:
+        """Represent unavailable licensed news as a limitation, never as a success claim."""
+
+        accepted = [
+            record
+            for record in self._aggregate.artifacts.evidence
+            if record.evidence_id
+            in self._aggregate.runtime.task(task.task_id).task_input_evidence_ids
+            and record.evidence_category
+            in {EvidenceCategory.NEWS, EvidenceCategory.TRANSCRIPT}
+        ]
+        dependency_statuses = {
+            self._aggregate.runtime.task(dependency).evidence_acquisition_status
+            for dependency in task.dependencies
+        }
+        if accepted:
+            status = "completed"
+            limitation = False
+            reason = None
+        elif EvidenceAcquisitionStatus.ENTITLEMENT_BLOCKED in dependency_statuses:
+            status = "entitlement_blocked"
+            limitation = True
+            reason = "NEWS_TRANSCRIPT_ENTITLEMENT_BLOCKED"
+        else:
+            status = "insufficient_evidence"
+            limitation = True
+            reason = "NO_ACCEPTED_NEWS_OR_TRANSCRIPT_EVIDENCE"
+
+        output: dict[str, object] = {
+            "status": status,
+            "accepted_evidence_ids": [record.evidence_id for record in accepted],
+            "limitation": limitation,
+        }
+        if reason is not None:
+            output["reason_code"] = reason
+        self._aggregate.artifacts.task_outputs[task.task_id] = output
+        return TaskExecutionResult(
+            result_ref=f"research-news://{task.task_id}/{status}",
+            output_refs=tuple(record.evidence_id for record in accepted),
+        )
 
     async def _execute_generic(self, task: Task) -> TaskExecutionResult:
         input_ids = list(self._aggregate.runtime.task(task.task_id).task_input_evidence_ids)
