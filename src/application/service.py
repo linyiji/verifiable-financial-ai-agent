@@ -46,9 +46,11 @@ from src.output import (
     build_canonical_record_projections,
 )
 from src.runtime import (
+    CheckpointStore,
     DependencyScheduler,
     InMemoryCheckpointStore,
     InMemoryRuntimeEventStore,
+    RuntimeEventStore,
     RuntimeState,
 )
 from src.tooling.native import NativeToolBackend
@@ -68,10 +70,12 @@ class ResearchApplicationService:
         scheme_generator: SchemeGenerator | None = None,
         planner: object | None = None,
         evidence_collector: EvidenceCollector | None = None,
+        event_store: RuntimeEventStore | None = None,
+        checkpoint_store: CheckpointStore | None = None,
     ) -> None:
         self.repository = repository or InMemoryApplicationRepository()
-        self.event_store = InMemoryRuntimeEventStore()
-        self.checkpoint_store = InMemoryCheckpointStore()
+        self.event_store = event_store or InMemoryRuntimeEventStore()
+        self.checkpoint_store = checkpoint_store or InMemoryCheckpointStore()
         self.evidence_repository = evidence_repository or InMemoryEvidenceRepository()
         self.fixture_path = fixture_path or (
             Path(__file__).resolve().parents[2] / "tests/fixtures/nvda_financials.json"
