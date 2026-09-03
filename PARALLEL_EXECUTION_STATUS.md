@@ -13,7 +13,7 @@ Frontend: `DEFERRED_PENDING_FINAL_UX_BASELINE`
 | K TeamoRouter LLM Integration | Harvey | `ws/teamorouter-llm` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/teamorouter-llm` | MERGED | 10 WS; 87 full; Ruff/secret PASS; real Planner PASS | real Scheme used bounded deterministic fallback |
 | L Langfuse Integration | Harvey | `ws/langfuse` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/langfuse` | MERGED | superseded by WS-S Japan Cloud CONNECTED smoke and real run trace | none |
 | Phase 2 Integration | Coordinator | `main` | `/Users/mac/Verifiable_Financial_Agent_System` | PASS | authoritative real NVDA run RELEASED with live FMP and real Scheme/Planner | News/Transcript entitlement explicitly limited |
-| Phase 2 Acceptance | Coordinator | `main` | `/Users/mac/Verifiable_Financial_Agent_System` | TESTING | P2-019 PASS; final full regression/Ruff/compile/secret scan pending | none |
+| Phase 2 Acceptance | Coordinator | `main` | `/Users/mac/Verifiable_Financial_Agent_System` | PASS | 159 full; P2-019 PASS; Ruff/changed-format/compile/secret PASS | none |
 
 Status values: `QUEUED`, `RUNNING`, `BLOCKED`, `TESTING`, `PASS`, `FAIL`, `MERGED`.
 
