@@ -251,12 +251,13 @@ class EvidenceTaskRouter:
         symbol: str,
         object_id: str,
         as_of: date,
+        acquire: bool = True,
     ) -> TaskEvidenceRoutingResult:
         if task.run_id != self._store.run_id:
             raise ValueError("task and evidence store belong to different runs")
 
         acquisition_result: TaskEvidenceRoutingResult | None = None
-        scope = self._ACQUISITION_SCOPES.get(task.task_type)
+        scope = self._acquisition_scope(task) if acquire else None
         if scope is not None:
             acquisition = await self._collector.collect_scope(
                 task_id=task.task_id,
@@ -287,6 +288,18 @@ class EvidenceTaskRouter:
             event_intents=acquisition_result.event_intents,
             endpoint_statuses=acquisition_result.endpoint_statuses,
         )
+
+    def _acquisition_scope(self, task: Task) -> EvidenceAcquisitionScope | None:
+        """Resolve specialized collection tasks without changing the shared Task contract."""
+
+        if task.task_type != "evidence_collection":
+            return self._ACQUISITION_SCOPES.get(task.task_type)
+        semantic_hint = f"{task.task_id} {task.goal}".lower().replace("_", "-")
+        if "peer" in semantic_hint or "comparable" in semantic_hint:
+            return EvidenceAcquisitionScope.PEER
+        if "news" in semantic_hint or "transcript" in semantic_hint:
+            return EvidenceAcquisitionScope.RESEARCH_NEWS
+        return EvidenceAcquisitionScope.COMPANY
 
 
 def _append_unique(items: list[str], value: str) -> None:

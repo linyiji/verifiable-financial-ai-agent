@@ -26,6 +26,10 @@ class IntegratedTaskExecutor:
     def __init__(self, service: object, aggregate: object) -> None:
         self._service = service
         self._aggregate = aggregate
+        self._has_specialized_collection_tasks = sum(
+            task.task_type == "evidence_collection"
+            for task in aggregate.runtime.actual_graph.tasks
+        ) > 1
         self._active = 0
         self.parallel_peak = 0
 
@@ -50,31 +54,39 @@ class IntegratedTaskExecutor:
                     "message": "Task dispatched to its application execution adapter.",
                 },
             )
+            routing = await self._service.route_task_evidence(
+                self._aggregate,
+                task,
+                acquire=self._should_acquire_evidence(task),
+            )
+            for intent in routing.event_intents:
+                await self._service.event_store.emit(
+                    run_id=intent.run_id,
+                    task_id=intent.task_id,
+                    event_type=intent.type,
+                    payload=intent.payload,
+                )
             handler = self._handler_for(task)
             return await handler(task)
         finally:
             self._active -= 1
 
     async def _execute_evidence_collection(self, task: Task) -> TaskExecutionResult:
-        result = await self._service.ingest_research_evidence(self._aggregate)
-        self._aggregate.artifacts.evidence = list(result.accepted.records)
-        self._aggregate.runtime.evidence_refs = [
-            record.evidence_id for record in result.accepted.records
-        ]
-        for record in result.accepted.records:
-            await self._service.event_store.emit(
-                run_id=task.run_id,
-                task_id=task.task_id,
-                event_type=RuntimeEventType.EVIDENCE_ACCEPTED,
-                payload={"evidence_id": record.evidence_id, "field": record.normalized_field},
-            )
+        routed = self._aggregate.runtime.task(task.task_id)
+        acquisition = routed.evidence_acquisition_status
+        status = acquisition.value.lower() if acquisition is not None else "not_requested"
         return TaskExecutionResult(
-            result_ref=f"evidence://{task.run_id}/accepted",
-            output_refs=tuple(self._aggregate.runtime.evidence_refs),
+            result_ref=f"evidence://{task.run_id}/{task.task_id.rsplit(':', 1)[-1]}/{status}",
+            output_refs=tuple(routed.task_output_evidence_ids),
         )
 
     async def _execute_fundamental_analysis(self, task: Task) -> TaskExecutionResult:
-        evidence = self._aggregate.artifacts.evidence
+        input_ids = set(self._aggregate.runtime.task(task.task_id).task_input_evidence_ids)
+        evidence = [
+            record
+            for record in self._aggregate.artifacts.evidence
+            if record.evidence_id in input_ids
+        ]
         prior, current, mismatch, ebitda = _select_financial_inputs(evidence)
         context = CapabilityContext(
             run_id=task.run_id,
@@ -196,7 +208,9 @@ class IntegratedTaskExecutor:
                 decision_type="REQUEST_REPLAN",
                 reason_code=request.reason_code,
                 summary=request.reason_detail,
-                evidence_ids=list(self._aggregate.runtime.evidence_refs),
+                evidence_ids=list(
+                    self._aggregate.runtime.task(task.task_id).task_input_evidence_ids
+                ),
                 requires_review=True,
             ),
             replan_request=request,
@@ -256,9 +270,10 @@ class IntegratedTaskExecutor:
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
     async def _execute_generic(self, task: Task) -> TaskExecutionResult:
+        input_ids = list(self._aggregate.runtime.task(task.task_id).task_input_evidence_ids)
         self._aggregate.artifacts.task_outputs[task.task_id] = {
             "status": "completed",
-            "accepted_evidence_ids": list(self._aggregate.runtime.evidence_refs),
+            "accepted_evidence_ids": input_ids,
         }
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
@@ -271,6 +286,14 @@ class IntegratedTaskExecutor:
         if task.origin is TaskOrigin.PLAN and task.skill_id in by_skill:
             return by_skill[task.skill_id]
         return getattr(self, f"_execute_{task.task_type}", self._execute_generic)
+
+    def _should_acquire_evidence(self, task: Task) -> bool:
+        if task.task_type == "evidence_collection":
+            return True
+        return not self._has_specialized_collection_tasks and task.task_type in {
+            "peer_analysis",
+            "research_news_analysis",
+        }
 
 
 def _find(records: list, *, field: str, period: str):

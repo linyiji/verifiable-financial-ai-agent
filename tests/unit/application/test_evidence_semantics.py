@@ -17,10 +17,16 @@ from src.application.evidence_collection import (
     evidence_request_plans,
 )
 from src.application.evidence_routing import EvidenceTaskRouter, RunEvidenceStore
+from src.application.service import ResearchApplicationService
 from src.data.repository import InMemoryEvidenceRepository
-from src.domain.enums import EvidenceAcquisitionStatus, EvidenceCategory
+from src.domain.enums import (
+    EvidenceAcquisitionStatus,
+    EvidenceCategory,
+    RunStatus,
+    TaskOrigin,
+)
 from src.domain.runtime_event import RuntimeEventType
-from src.domain.task import Task
+from src.domain.task import PlannedTaskGraph, Task
 
 AS_OF = date(2026, 9, 4)
 RETRIEVED_AT = datetime(2026, 9, 4, 12, tzinfo=UTC)
@@ -166,6 +172,71 @@ def _task(suffix: str, task_type: str) -> Task:
     )
 
 
+class SpecializedEvidencePlanner:
+    def plan(self, *, run_id, goal, scheme) -> PlannedTaskGraph:
+        del goal, scheme
+
+        def task(
+            suffix: str,
+            task_type: str,
+            skill_id: str,
+            dependencies: tuple[str, ...] = (),
+        ) -> Task:
+            return Task(
+                task_id=f"{run_id}:{suffix}",
+                run_id=run_id,
+                task_type=task_type,
+                goal=suffix.replace("-", " "),
+                assigned_agent="semantic-test-agent",
+                skill_id=skill_id,
+                dependencies=[f"{run_id}:{item}" for item in dependencies],
+                origin=TaskOrigin.PLAN,
+            )
+
+        tasks = [
+            task("collect-company-evidence", "evidence_collection", "evidence_collection_v1"),
+            task("collect-peer-evidence", "evidence_collection", "evidence_collection_v1"),
+            task(
+                "collect-research-news-evidence",
+                "evidence_collection",
+                "evidence_collection_v1",
+            ),
+            task(
+                "analyze-fundamentals",
+                "fundamental_analysis",
+                "fundamental_analysis_v1",
+                ("collect-company-evidence",),
+            ),
+            task(
+                "analyze-peers",
+                "peer_analysis",
+                "peer_analysis_v1",
+                ("collect-company-evidence", "collect-peer-evidence"),
+            ),
+            task(
+                "analyze-research-news",
+                "research_news_analysis",
+                "research_news_analysis_v1",
+                ("collect-research-news-evidence",),
+            ),
+            task(
+                "analyze-risks",
+                "risk_analysis",
+                "risk_analysis_v1",
+                ("analyze-fundamentals", "analyze-peers", "analyze-research-news"),
+            ),
+            task(
+                "synthesize-report",
+                "report_synthesis",
+                "report_synthesis_v1",
+                ("analyze-fundamentals", "analyze-peers", "analyze-risks"),
+            ),
+        ]
+        return PlannedTaskGraph(
+            graph_id=f"{run_id}:semantic-plan", run_id=run_id, tasks=tasks
+        )
+
+
 def test_request_plans_enforce_scoped_ownership() -> None:
     company = evidence_request_plans(
         symbol="NVDA", as_of=AS_OF, scope=EvidenceAcquisitionScope.COMPANY
@@ -296,3 +367,70 @@ async def test_repeated_acquisition_reuses_ids_without_duplicate_event_intents()
     assert second.event_intents == ()
     assert second.output_evidence_ids == first.output_evidence_ids
     assert len(await repository.list_by_run(RUN_ID)) == 46
+
+
+@pytest.mark.asyncio
+async def test_runtime_scopes_specialized_collection_tasks_and_links_lineage() -> None:
+    repository = InMemoryEvidenceRepository()
+    collector = LiveFMPEvidenceCollector(
+        provider=FMPProvider(SemanticFMPTransport()), repository=repository
+    )
+    service = ResearchApplicationService(
+        evidence_repository=repository,
+        evidence_collector=collector,
+        planner=SpecializedEvidencePlanner(),
+    )
+    research_object = await service.create_object(
+        symbol="NVDA", company_name="NVIDIA Corporation", exchange="NASDAQ"
+    )
+    draft = await service.prepare_run(
+        research_object_id=research_object.object_id,
+        research_goal="Verify scoped evidence semantics",
+        as_of=AS_OF,
+        preferences={},
+    )
+    aggregate = await service.confirm_run(draft_id=draft.draft_id, confirm_scheme=True)
+    aggregate = await service.execute_run(aggregate.run.run_id)
+
+    assert aggregate.run.status is RunStatus.RELEASED
+    assert len(aggregate.artifacts.evidence) == 49
+    events = await service.event_store.replay(aggregate.run.run_id)
+    evidence_events = [
+        event for event in events if event.type is RuntimeEventType.EVIDENCE_ACCEPTED
+    ]
+    assert len(evidence_events) == 49
+    assert len({event.payload["evidence_id"] for event in evidence_events}) == 49
+
+    company = aggregate.runtime.task(f"{aggregate.run.run_id}:collect-company-evidence")
+    peer = aggregate.runtime.task(f"{aggregate.run.run_id}:collect-peer-evidence")
+    news = aggregate.runtime.task(
+        f"{aggregate.run.run_id}:collect-research-news-evidence"
+    )
+    fundamentals = aggregate.runtime.task(f"{aggregate.run.run_id}:analyze-fundamentals")
+    assert len(company.task_output_evidence_ids) == 40
+    assert len(peer.task_output_evidence_ids) == 9
+    assert news.evidence_acquisition_status is EvidenceAcquisitionStatus.ENTITLEMENT_BLOCKED
+    assert news.task_output_evidence_ids == []
+    assert fundamentals.task_input_evidence_ids
+    assert not set(company.task_output_evidence_ids) & set(peer.task_output_evidence_ids)
+
+    starts = {
+        event.task_id: event.sequence
+        for event in events
+        if event.type is RuntimeEventType.TASK_STARTED
+    }
+    completes = {
+        event.task_id: event.sequence
+        for event in events
+        if event.type is RuntimeEventType.TASK_COMPLETED
+    }
+    follow_up_id = f"{aggregate.run.run_id}:risk-follow-up"
+    synthesis_id = f"{aggregate.run.run_id}:synthesize-report"
+    assert completes[follow_up_id] < starts[synthesis_id]
+    assert all(
+        calculation.code_hash
+        and calculation.review_record_id == aggregate.artifacts.review.review_id
+        and calculation.canonical_record_id
+        == aggregate.artifacts.canonical_record.record_id
+        for calculation in aggregate.artifacts.calculations
+    )

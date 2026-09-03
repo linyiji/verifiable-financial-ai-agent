@@ -227,8 +227,6 @@ class LiveFMPEvidenceCollector:
                 as_of=as_of,
             )
             acquisitions.append(acquisition)
-            self.endpoint_statuses.extend(acquisition.endpoint_statuses)
-            self.scope_outcomes[scope] = acquisition.status
 
         company = next(
             item for item in acquisitions if item.scope is EvidenceAcquisitionScope.COMPANY
@@ -286,6 +284,8 @@ class LiveFMPEvidenceCollector:
             statuses=endpoint_statuses,
             accepted=ingestion.accepted.records,
         )
+        self.endpoint_statuses.extend(endpoint_statuses)
+        self.scope_outcomes[scope] = status
         return EvidenceTaskAcquisitionResult(
             task_id=task_id,
             scope=scope,

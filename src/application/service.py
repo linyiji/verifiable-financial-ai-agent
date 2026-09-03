@@ -9,11 +9,17 @@ from src.adapters.risc0 import PendingProofAdapter
 from src.agentic import DeterministicSchemeGenerator, ResearchLeadPlanner, SchemeGenerator
 from src.application.errors import ApplicationError, NotFoundError
 from src.application.evidence_collection import EvidenceCollector, FixtureEvidenceCollector
+from src.application.evidence_routing import (
+    EvidenceTaskRouter,
+    RunEvidenceStore,
+    TaskEvidenceRoutingResult,
+)
 from src.application.execution import IntegratedTaskExecutor, decimal_as_float
 from src.application.models import ResearchRunDraft, RunAggregate
 from src.application.repository import ApplicationRepository, InMemoryApplicationRepository
 from src.assurance import DeterministicReviewer, ReleaseGate
 from src.assurance.proof_policy import ProofPolicy
+from src.capabilities.calculation_lineage import link_calculation_lineage
 from src.capabilities.financial.growth import RevenueGrowthCapability
 from src.capabilities.financial.profitability import EbitdaMarginCapability
 from src.capabilities.registry import CapabilityRegistry
@@ -25,6 +31,7 @@ from src.domain.research_goal import ResearchGoal
 from src.domain.research_object import ResearchObject
 from src.domain.research_run import ResearchRun
 from src.domain.runtime_event import RuntimeEventType
+from src.domain.task import Task
 from src.observability import NoopTraceAdapter
 from src.observability.instrumentation import RuntimeInstrumentation
 from src.output import (
@@ -77,6 +84,7 @@ class ResearchApplicationService:
             repository=self.evidence_repository,
             fixture_path=self.fixture_path,
         )
+        self._evidence_stores: dict[str, RunEvidenceStore] = {}
         self._idempotency: dict[tuple[str, str], object] = {}
 
         registry = CapabilityRegistry()
@@ -276,6 +284,36 @@ class ResearchApplicationService:
             as_of=aggregate.run.as_of,
         )
 
+    async def route_task_evidence(
+        self,
+        aggregate: RunAggregate,
+        task: Task,
+        *,
+        acquire: bool,
+    ) -> TaskEvidenceRoutingResult:
+        """Route run-global evidence while persisting only references on each Task."""
+
+        research_object = await self._object(aggregate.run.research_object_id)
+        store = self._evidence_stores.setdefault(
+            aggregate.run.run_id, RunEvidenceStore(aggregate.run.run_id)
+        )
+        router = EvidenceTaskRouter(collector=self.evidence_collector, store=store)  # type: ignore[arg-type]
+        routing = await router.route(
+            task,
+            symbol=research_object.symbol,
+            object_id=research_object.object_id,
+            as_of=aggregate.run.as_of,
+            acquire=acquire,
+        )
+        routing.apply_to(task)
+        routing.apply_to(aggregate.runtime.task(task.task_id))
+        accepted_ids = set(store.select_ids())
+        aggregate.artifacts.evidence = [
+            record for record in store.records if record.evidence_id in accepted_ids
+        ]
+        aggregate.runtime.evidence_refs = list(store.select_ids())
+        return routing
+
     async def _assure_and_release(self, aggregate: RunAggregate) -> None:
         run_id = aggregate.run.run_id
         await self.event_store.emit(
@@ -347,6 +385,11 @@ class ResearchApplicationService:
             review_refs=[review.review_id],
             proof_refs=[proof.proof_id],
             runtime_outcome=RunStatus.RELEASED.value,
+        )
+        aggregate.artifacts.calculations = link_calculation_lineage(
+            aggregate.artifacts.calculations,
+            review=review,
+            canonical_record=record,
         )
         calculations = {item.capability_id: item for item in aggregate.artifacts.calculations}
         structured = {
