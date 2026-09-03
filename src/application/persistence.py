@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, UniqueConstraint, select
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Integer,
+    String,
+    UniqueConstraint,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,6 +28,7 @@ from src.domain.research_scheme import ResearchSchemeSnapshot
 from src.domain.runtime_event import RuntimeEvent
 from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph
 from src.infrastructure.database.base import Base
+from src.infrastructure.database.models import CorrectionRecordRow, ReplanRecordRow
 from src.runtime.state import RuntimeState
 
 
@@ -76,7 +86,10 @@ class TaskRow(Base):
 
 class RuntimeEventRow(Base):
     __tablename__ = "runtime_events"
-    __table_args__ = (UniqueConstraint("run_id", "sequence"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence", name="uq_runtime_events_run_sequence"),
+        CheckConstraint("sequence > 0", name="ck_runtime_events_positive_sequence"),
+    )
 
     event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     run_id: Mapped[str] = mapped_column(String(128), index=True)
@@ -259,7 +272,8 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                         )
                     )
                 else:
-                    row.sequence = event.sequence
+                    if row.run_id != event.run_id or row.sequence != event.sequence:
+                        raise ValueError("persisted runtime event identity is immutable")
                     row.payload = payload
             await session.commit()
 
@@ -357,6 +371,32 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 )
             else:
                 row.payload = calculation.model_dump(mode="json")
+
+        for correction in aggregate.artifacts.corrections:
+            row = await session.get(CorrectionRecordRow, correction.correction_id)
+            if row is None:
+                session.add(
+                    CorrectionRecordRow(
+                        correction_id=correction.correction_id,
+                        run_id=aggregate.run.run_id,
+                        payload=correction.model_dump(mode="json"),
+                    )
+                )
+            else:
+                row.payload = correction.model_dump(mode="json")
+
+        for replan in aggregate.artifacts.replans:
+            row = await session.get(ReplanRecordRow, replan.replan_id)
+            if row is None:
+                session.add(
+                    ReplanRecordRow(
+                        replan_id=replan.replan_id,
+                        run_id=aggregate.run.run_id,
+                        payload=replan.model_dump(mode="json"),
+                    )
+                )
+            else:
+                row.payload = replan.model_dump(mode="json")
 
         review = aggregate.artifacts.review
         if review is not None:
