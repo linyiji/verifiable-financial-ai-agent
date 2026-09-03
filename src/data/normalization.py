@@ -12,7 +12,7 @@ class NormalizationError(ValueError):
 @dataclass(frozen=True, slots=True)
 class NormalizedValue:
     field: str
-    value: Decimal | int | str | bool
+    value: Decimal | str | bool
     unit: str
     currency: str | None
 
@@ -111,6 +111,29 @@ def normalize_value(field: Any, value: Any, unit: Any, currency: Any = None) -> 
             field=canonical_field,
             value=_decimal(value),
             unit=canonical_unit,
+            currency=None,
+        )
+
+    if canonical_unit in {"TEXT", "SYMBOL"}:
+        if not isinstance(value, str) or not value.strip():
+            raise NormalizationError(f"{canonical_unit.lower()} value must be a non-empty string")
+        text = value.strip()
+        if canonical_unit == "SYMBOL":
+            text = text.upper()
+        return NormalizedValue(
+            field=canonical_field,
+            value=text,
+            unit=canonical_unit,
+            currency=None,
+        )
+
+    if canonical_unit == "BOOLEAN":
+        if not isinstance(value, bool):
+            raise NormalizationError("boolean value must be true or false")
+        return NormalizedValue(
+            field=canonical_field,
+            value=value,
+            unit="BOOLEAN",
             currency=None,
         )
 
