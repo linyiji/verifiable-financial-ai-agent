@@ -28,8 +28,7 @@ def _event_sequence(events: list[dict[str, Any]], event_type: str, task_suffix: 
     return next(
         int(event["sequence"])
         for event in events
-        if event["type"] == event_type
-        and str(event.get("task_id") or "").endswith(task_suffix)
+        if event["type"] == event_type and str(event.get("task_id") or "").endswith(task_suffix)
     )
 
 
@@ -47,16 +46,8 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
         if item["evidence_category"] == "FINANCIAL_STATEMENT"
     )
     peer_id = next(
-        (
-            item["producer_task_id"]
-            for item in evidence
-            if item["evidence_category"] == "PEER"
-        ),
-        next(
-            task_id
-            for task_id, task in tasks.items()
-            if task["task_type"] == "peer_analysis"
-        ),
+        (item["producer_task_id"] for item in evidence if item["evidence_category"] == "PEER"),
+        next(task_id for task_id, task in tasks.items() if task["task_type"] == "peer_analysis"),
     )
     news_id = next(
         task_id
@@ -64,9 +55,7 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
         if task["evidence_acquisition_status"] == "ENTITLEMENT_BLOCKED"
     )
     news_analysis_id = next(
-        task_id
-        for task_id, task in tasks.items()
-        if task["task_type"] == "research_news_analysis"
+        task_id for task_id, task in tasks.items() if task["task_type"] == "research_news_analysis"
     )
     synthesis_id = next(
         task_id for task_id, task in tasks.items() if task["task_type"] == "report_synthesis"
@@ -127,8 +116,7 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
         ),
         "P2.1-004": (
             follow_up_id in tasks[synthesis_id]["dependencies"]
-            and tasks[follow_up_id]["parent_task_id"]
-            not in tasks[synthesis_id]["dependencies"]
+            and tasks[follow_up_id]["parent_task_id"] not in tasks[synthesis_id]["dependencies"]
             and any(
                 event["type"] == RuntimeEventType.GRAPH_EDGE_ADDED.value
                 and event["payload"].get("source_task_id") == risk_id
@@ -164,8 +152,7 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
             and any(
                 event["type"] == RuntimeEventType.GRAPH_VERSION_CHANGED.value
                 and event["payload"].get("version_before") == 1
-                and event["payload"].get("version_after")
-                == summary["actual_graph_version"]
+                and event["payload"].get("version_after") == summary["actual_graph_version"]
                 for event in events
             ),
             "Exact graph edge mutation and version transition are auditable.",
@@ -205,17 +192,10 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
         ),
         "P2.1-012": (
             bool(peer_output["candidates"])
-            and len(peer_output["candidates"])
-            == len(peer_output["selection_decisions"])
-            and {
-                item["candidate_symbol"] for item in peer_output["candidates"]
-            }
-            == {
-                item["candidate_symbol"] for item in peer_output["selection_decisions"]
-            }
-            and {
-                item["candidate_symbol"] for item in peer_output["selected_comparables"]
-            }
+            and len(peer_output["candidates"]) == len(peer_output["selection_decisions"])
+            and {item["candidate_symbol"] for item in peer_output["candidates"]}
+            == {item["candidate_symbol"] for item in peer_output["selection_decisions"]}
+            and {item["candidate_symbol"] for item in peer_output["selected_comparables"]}
             == {
                 item["candidate_symbol"]
                 for item in peer_output["selection_decisions"]
@@ -234,8 +214,7 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
         ),
         "P2.1-013": (
             any(item["normalized_field"] == "full_time_employees" for item in evidence)
-            and
-            all(
+            and all(
                 item["unit"] == "COUNT"
                 for item in evidence
                 if item["normalized_field"] == "full_time_employees"
