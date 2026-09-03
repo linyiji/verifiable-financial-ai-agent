@@ -11,7 +11,7 @@ Frontend: `DEFERRED_PENDING_FINAL_UX_BASELINE`
 | I Live FMP Integration | Franklin | `ws/live-fmp` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/live-fmp` | MERGED | 16 WS; 92 full; Ruff/secret PASS; 44 live evidence | news/transcript entitlement; analyst corrected, live re-probe deferred |
 | J PostgreSQL Durable Persistence | McClintock | `ws/postgresql` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/postgresql` | RUNNING | pending | local PostgreSQL service unavailable; conditional integration planned |
 | K TeamoRouter LLM Integration | Harvey | `ws/teamorouter-llm` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/teamorouter-llm` | MERGED | 10 WS; 87 full; Ruff/secret PASS; real Planner PASS | real Scheme used bounded deterministic fallback |
-| L Langfuse Integration | Harvey | `ws/langfuse` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/langfuse` | RUNNING | pending | credentials not set; Noop/fake-SDK gate |
+| L Langfuse Integration | Harvey | `ws/langfuse` | `/Users/mac/Verifiable_Financial_Agent_System_worktrees/langfuse` | MERGED | 9 focused; 84 branch full; Ruff/secret PASS | real connectivity deferred: credentials not configured |
 
 Status values: `QUEUED`, `RUNNING`, `BLOCKED`, `TESTING`, `PASS`, `FAIL`, `MERGED`.
 
