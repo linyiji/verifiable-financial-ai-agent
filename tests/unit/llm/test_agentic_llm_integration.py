@@ -97,9 +97,25 @@ def valid_graph() -> dict:
     return {
         "tasks": [
             {
-                "key": "evidence",
+                "key": "collect-company-evidence",
                 "task_type": "evidence_collection",
-                "goal": "Collect and validate required evidence",
+                "goal": "Collect and validate company evidence",
+                "assigned_agent": "research_news_analyst",
+                "skill_id": "evidence_collection_v1",
+                "dependency_keys": [],
+            },
+            {
+                "key": "collect-peer-evidence",
+                "task_type": "evidence_collection",
+                "goal": "Collect peer candidate evidence",
+                "assigned_agent": "peer_analyst",
+                "skill_id": "evidence_collection_v1",
+                "dependency_keys": [],
+            },
+            {
+                "key": "collect-research-news-evidence",
+                "task_type": "evidence_collection",
+                "goal": "Collect research news and transcript evidence",
                 "assigned_agent": "research_news_analyst",
                 "skill_id": "evidence_collection_v1",
                 "dependency_keys": [],
@@ -110,7 +126,7 @@ def valid_graph() -> dict:
                 "goal": "Interpret deterministic fundamental calculations",
                 "assigned_agent": "fundamental_analyst",
                 "skill_id": "fundamental_analysis_v1",
-                "dependency_keys": ["evidence"],
+                "dependency_keys": ["collect-company-evidence"],
             },
             {
                 "key": "peers",
@@ -118,7 +134,7 @@ def valid_graph() -> dict:
                 "goal": "Analyze peers from accepted evidence",
                 "assigned_agent": "peer_analyst",
                 "skill_id": "peer_analysis_v1",
-                "dependency_keys": ["evidence"],
+                "dependency_keys": ["collect-company-evidence", "collect-peer-evidence"],
             },
             {
                 "key": "research-news",
@@ -126,7 +142,7 @@ def valid_graph() -> dict:
                 "goal": "Analyze research and news evidence",
                 "assigned_agent": "research_news_analyst",
                 "skill_id": "research_news_analysis_v1",
-                "dependency_keys": ["evidence"],
+                "dependency_keys": ["collect-research-news-evidence"],
             },
             {
                 "key": "valuation",
@@ -142,7 +158,7 @@ def valid_graph() -> dict:
                 "goal": "Assess risks from accepted evidence",
                 "assigned_agent": "risk_analyst",
                 "skill_id": "risk_analysis_v1",
-                "dependency_keys": ["fundamentals", "research-news"],
+                "dependency_keys": ["fundamentals", "peers", "research-news"],
             },
             {
                 "key": "synthesis",
@@ -150,7 +166,13 @@ def valid_graph() -> dict:
                 "goal": "Synthesize review-ready outputs",
                 "assigned_agent": "research_lead",
                 "skill_id": "report_synthesis_v1",
-                "dependency_keys": ["valuation", "risk"],
+                "dependency_keys": [
+                    "fundamentals",
+                    "peers",
+                    "research-news",
+                    "valuation",
+                    "risk",
+                ],
             },
         ]
     }
@@ -169,6 +191,11 @@ def test_scheme_schema_encodes_assurance_and_calculation_semantics() -> None:
     ]
     with pytest.raises(ValueError):
         SchemeProposal.model_validate(invalid_calculation)
+
+    invalid_skill = valid_scheme()
+    invalid_skill["skill_requirements"][-1] = "unregistered_generated_skill"
+    with pytest.raises(ValueError):
+        SchemeProposal.model_validate(invalid_skill)
 
 
 @pytest.mark.asyncio
@@ -279,12 +306,34 @@ async def test_llm_planner_builds_valid_acyclic_graph_and_audit_decision() -> No
     )
 
     assert isinstance(provider.calls[0][0].model_validate(valid_graph()), PlannedGraphProposal)
-    assert len(result.output.tasks) == 7
+    assert len(result.output.tasks) == 9
     assert result.output.graph_id == "RUN-1:planned:llm:v1"
     assert result.audit.structured_validation == "PASS"
     assert result.decision.reason_code == "STRUCTURED_GRAPH_VALIDATED"
     known = {task.task_id for task in result.output.tasks}
     assert all(set(task.dependencies) <= known for task in result.output.tasks)
+
+
+@pytest.mark.asyncio
+async def test_planner_retries_semantically_incomplete_dependency_graph() -> None:
+    research_object, goal = research_inputs()
+    scheme = await DeterministicSchemeGenerator().generate(
+        research_object=research_object, goal=goal
+    )
+    scheme.confirmed_at = datetime.now(UTC)
+    incomplete = valid_graph()
+    peer_task = next(task for task in incomplete["tasks"] if task["key"] == "peers")
+    peer_task["dependency_keys"] = ["collect-company-evidence"]
+    provider = FakeProvider([incomplete, valid_graph()])
+
+    result = await TeamoRouterResearchLeadPlanner(provider).plan_with_decision(
+        run_id="RUN-SEMANTIC-RETRY", goal=goal, scheme=scheme
+    )
+
+    assert len(provider.calls) == 2
+    assert result.audit.deterministic_fallback is False
+    assert result.audit.attempted_models == ["gpt-5.6-sol", "gpt-5.6-sol"]
+    assert "missing required upstream dependencies" in provider.calls[1][1][-1].content
 
 
 @pytest.mark.asyncio

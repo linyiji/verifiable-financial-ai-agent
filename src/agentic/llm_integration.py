@@ -36,11 +36,22 @@ class SchemeAssuranceProposal(_StrictModel):
     review_required: Literal[True]
 
 
+SchemeSkillRequirement = Literal[
+    "evidence_collection_v1",
+    "fundamental_analysis_v1",
+    "peer_analysis_v1",
+    "research_news_analysis_v1",
+    "valuation_analysis_v1",
+    "risk_analysis_v1",
+    "report_synthesis_v1",
+]
+
+
 class SchemeProposal(_StrictModel):
     research_scope: list[str] = Field(min_length=1)
     data_requirements: list[str] = Field(min_length=1)
     agent_requirements: list[str] = Field(min_length=1)
-    skill_requirements: list[str] = Field(min_length=1)
+    skill_requirements: list[SchemeSkillRequirement] = Field(min_length=7, max_length=7)
     calculation_requirements: list[
         Literal[
             "deterministic_financial_calculations_only",
@@ -54,10 +65,19 @@ class SchemeProposal(_StrictModel):
 
 class PlannedTaskProposal(_StrictModel):
     key: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
-    task_type: str = Field(min_length=1)
+    task_type: Literal[
+        "evidence_collection",
+        "fundamental_analysis",
+        "peer_analysis",
+        "research_news_analysis",
+        "valuation_analysis",
+        "risk_analysis",
+        "report_synthesis",
+        "quality_review",
+    ]
     goal: str = Field(min_length=1)
     assigned_agent: str = Field(min_length=1)
-    skill_id: str = Field(min_length=1)
+    skill_id: SchemeSkillRequirement
     dependency_keys: list[str] = Field(default_factory=list)
 
 
@@ -158,7 +178,9 @@ class TeamoRouterSchemeGenerator:
                 messages = _with_validation_retry(messages, type(exc).__name__)
             except ValueError as exc:
                 last_error = exc
-                messages = _with_validation_retry(messages, type(exc).__name__)
+                messages = _with_validation_retry(
+                    messages, type(exc).__name__, detail=str(exc)
+                )
             except LLMProviderError as exc:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
@@ -291,7 +313,9 @@ class TeamoRouterResearchLeadPlanner:
                 messages = _with_validation_retry(messages, type(exc).__name__)
             except ValueError as exc:
                 last_error = exc
-                messages = _with_validation_retry(messages, type(exc).__name__)
+                messages = _with_validation_retry(
+                    messages, type(exc).__name__, detail=str(exc)
+                )
             except LLMProviderError as exc:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
@@ -351,7 +375,12 @@ def _planner_messages(
     system = (
         "Build the complete initial task graph before execution. Return strict JSON only. "
         "Dependencies must use task keys, be acyclic, and reference declared tasks. Include every "
-        "required skill. Do not generate financial values, calculations, or chain-of-thought."
+        "required skill with its matching task type. Create three independent evidence_collection "
+        "tasks whose keys/goals unambiguously identify company, peer/comparable, and "
+        "research-news/transcript scopes. Fundamental, peer, and research-news analysis must "
+        "depend on their scoped evidence; valuation and risk must depend on the relevant analyses; "
+        "report_synthesis must depend on all five analysis outputs. Do not generate financial "
+        "values, calculations, or chain-of-thought."
     )
     user = json.dumps(
         {
@@ -364,13 +393,20 @@ def _planner_messages(
     return [LLMMessage(role="system", content=system), LLMMessage(role="user", content=user)]
 
 
-def _with_validation_retry(messages: list[LLMMessage], error_type: str) -> list[LLMMessage]:
+def _with_validation_retry(
+    messages: list[LLMMessage],
+    error_type: str,
+    *,
+    detail: str | None = None,
+) -> list[LLMMessage]:
+    correction = f" The failed invariant was: {detail[:500]}." if detail else ""
     return messages + [
         LLMMessage(
             role="user",
             content=(
                 f"The previous structured response failed validation ({error_type}). "
-                "Return a corrected object matching the exact schema; do not add explanation."
+                f"{correction} Return a corrected object matching the exact schema and all "
+                "dependency invariants; do not add explanation."
             ),
         )
     ]
@@ -383,6 +419,17 @@ def _validate_scheme_proposal(proposal: SchemeProposal) -> None:
     }
     if not required_calculations.issubset(proposal.calculation_requirements):
         raise ValueError("scheme must preserve deterministic calculation requirements")
+    required_skills = {
+        "evidence_collection_v1",
+        "fundamental_analysis_v1",
+        "peer_analysis_v1",
+        "research_news_analysis_v1",
+        "valuation_analysis_v1",
+        "risk_analysis_v1",
+        "report_synthesis_v1",
+    }
+    if set(proposal.skill_requirements) != required_skills:
+        raise ValueError("scheme must contain every supported skill identifier exactly once")
     if proposal.assurance_requirements.accepted_evidence_only is not True:
         raise ValueError("scheme must require accepted evidence")
     if proposal.assurance_requirements.deterministic_financial_values is not True:
@@ -439,6 +486,7 @@ def _build_validated_graph(
     missing_skills = set(scheme.skill_requirements) - supplied_skills
     if missing_skills:
         raise ValueError(f"planned graph omits required skills: {sorted(missing_skills)}")
+    _validate_runtime_graph_semantics(proposal)
     ids = {key: f"{run_id}:{key}" for key in keys}
     tasks = [
         Task(
@@ -459,6 +507,108 @@ def _build_validated_graph(
         run_id=run_id,
         tasks=tasks,
     )
+
+
+def _validate_runtime_graph_semantics(proposal: PlannedGraphProposal) -> None:
+    expected_skill_types = {
+        "evidence_collection_v1": {"evidence_collection"},
+        "fundamental_analysis_v1": {"fundamental_analysis"},
+        "peer_analysis_v1": {"peer_analysis"},
+        "research_news_analysis_v1": {"research_news_analysis"},
+        "valuation_analysis_v1": {"valuation_analysis"},
+        "risk_analysis_v1": {"risk_analysis"},
+        "report_synthesis_v1": {"report_synthesis", "quality_review"},
+    }
+    for task in proposal.tasks:
+        if task.task_type not in expected_skill_types[task.skill_id]:
+            raise ValueError(
+                f"task {task.key} mismatches skill {task.skill_id} and type {task.task_type}"
+            )
+
+    by_type: dict[str, list[PlannedTaskProposal]] = {}
+    for task in proposal.tasks:
+        by_type.setdefault(task.task_type, []).append(task)
+    for task_type in {
+        "fundamental_analysis",
+        "peer_analysis",
+        "research_news_analysis",
+        "valuation_analysis",
+        "risk_analysis",
+        "report_synthesis",
+    }:
+        if len(by_type.get(task_type, [])) != 1:
+            raise ValueError(f"planned graph requires exactly one {task_type} task")
+
+    collections = by_type.get("evidence_collection", [])
+    if any(task.dependency_keys for task in collections):
+        raise ValueError("evidence acquisition tasks must be initial graph roots")
+    collection_by_scope: dict[str, PlannedTaskProposal] = {}
+    for task in collections:
+        hint = f"{task.key} {task.goal}".lower().replace("_", "-")
+        scope = (
+            "peer"
+            if "peer" in hint or "comparable" in hint
+            else (
+                "research_news"
+                if "news" in hint or "transcript" in hint
+                else "company"
+            )
+        )
+        if scope in collection_by_scope:
+            raise ValueError(f"duplicate evidence acquisition scope: {scope}")
+        collection_by_scope[scope] = task
+    if set(collection_by_scope) != {"company", "peer", "research_news"}:
+        raise ValueError("planned graph requires company, peer, and research-news acquisition")
+
+    dependencies = {task.key: set(task.dependency_keys) for task in proposal.tasks}
+
+    def ancestors(key: str) -> set[str]:
+        found: set[str] = set()
+        pending = list(dependencies[key])
+        while pending:
+            dependency = pending.pop()
+            if dependency in found:
+                continue
+            found.add(dependency)
+            pending.extend(dependencies[dependency])
+        return found
+
+    single = {task_type: tasks[0] for task_type, tasks in by_type.items() if len(tasks) == 1}
+    required_ancestors = {
+        "fundamental_analysis": {collection_by_scope["company"].key},
+        "peer_analysis": {
+            collection_by_scope["company"].key,
+            collection_by_scope["peer"].key,
+        },
+        "research_news_analysis": {collection_by_scope["research_news"].key},
+        "valuation_analysis": {
+            single["fundamental_analysis"].key,
+            single["peer_analysis"].key,
+        },
+        "risk_analysis": {
+            single["fundamental_analysis"].key,
+            single["peer_analysis"].key,
+            single["research_news_analysis"].key,
+        },
+        "report_synthesis": {
+            single["fundamental_analysis"].key,
+            single["peer_analysis"].key,
+            single["research_news_analysis"].key,
+            single["valuation_analysis"].key,
+            single["risk_analysis"].key,
+        },
+    }
+    for task_type, required in required_ancestors.items():
+        task = single[task_type]
+        missing = required - ancestors(task.key)
+        if missing:
+            raise ValueError(
+                f"task {task.key} is missing required upstream dependencies: {sorted(missing)}"
+            )
+    synthesis_key = single["report_synthesis"].key
+    for review in by_type.get("quality_review", []):
+        if synthesis_key not in ancestors(review.key):
+            raise ValueError("quality review must depend on report synthesis")
 
 
 def _ensure_acyclic(proposal: PlannedGraphProposal) -> None:

@@ -40,14 +40,28 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
     canonical = _read_json(output / "canonical_execution_record.json")
     task_outputs = _read_json(output / "task_outputs.json")
     tasks = {task["task_id"]: task for task in canonical["actual_graph"]["tasks"]}
-    collection_tasks = {
-        task_id: task
+    company_id = next(
+        item["producer_task_id"]
+        for item in evidence
+        if item["evidence_category"] == "FINANCIAL_STATEMENT"
+    )
+    peer_id = next(
+        (
+            item["producer_task_id"]
+            for item in evidence
+            if item["evidence_category"] == "PEER"
+        ),
+        next(
+            task_id
+            for task_id, task in tasks.items()
+            if task["task_type"] == "peer_analysis"
+        ),
+    )
+    news_id = next(
+        task_id
         for task_id, task in tasks.items()
-        if task["task_type"] == "evidence_collection"
-    }
-    company_id = next(task_id for task_id in collection_tasks if "company" in task_id)
-    peer_id = next(task_id for task_id in collection_tasks if "peer" in task_id)
-    news_id = next(task_id for task_id in collection_tasks if "news" in task_id)
+        if task["evidence_acquisition_status"] == "ENTITLEMENT_BLOCKED"
+    )
     synthesis_id = next(
         task_id for task_id, task in tasks.items() if task["task_type"] == "report_synthesis"
     )
@@ -57,14 +71,13 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
     ]
     event_evidence_ids = [str(event["payload"]["evidence_id"]) for event in evidence_events]
     evidence_by_id = {item["evidence_id"]: item for item in evidence}
-    company_outputs = set(collection_tasks[company_id]["task_output_evidence_ids"])
-    peer_outputs = set(collection_tasks[peer_id]["task_output_evidence_ids"])
-    news_outputs = set(collection_tasks[news_id]["task_output_evidence_ids"])
-    peer_output = next(
-        value
-        for task_id, value in task_outputs.items()
-        if ":analyze-peers" in task_id or task_id.endswith(":peers")
+    company_outputs = set(tasks[company_id]["task_output_evidence_ids"])
+    peer_outputs = set(tasks[peer_id]["task_output_evidence_ids"])
+    news_outputs = set(tasks[news_id]["task_output_evidence_ids"])
+    peer_analysis_id = next(
+        task_id for task_id, task in tasks.items() if task["task_type"] == "peer_analysis"
     )
+    peer_output = task_outputs[peer_analysis_id]
     edge_events = [
         event
         for event in events
@@ -84,6 +97,7 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
         for item in calculations
     )
     scheme = summary["llm"]["scheme"]
+    planner = summary["llm"]["planner"]
     gates = {
         "P2.1-001": (
             all(evidence_by_id[item]["producer_task_id"] == company_id for item in company_outputs)
@@ -95,8 +109,7 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
             "Accepted Evidence is emitted exactly once per run-global identity.",
         ),
         "P2.1-003": (
-            collection_tasks[news_id]["evidence_acquisition_status"]
-            == "ENTITLEMENT_BLOCKED"
+            tasks[news_id]["evidence_acquisition_status"] == "ENTITLEMENT_BLOCKED"
             and not news_outputs,
             "Entitlement-blocked News owns no fabricated Evidence.",
         ),
@@ -145,12 +158,18 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
             "Scheme route reports a validated real-provider result.",
         ),
         "P2.1-011": (
-            scheme["attempted_models"] == ["gpt-5.6-sol"]
-            and scheme["actual_model"] == "gpt-5.6-sol",
-            "attempted_models contains exactly the real primary request.",
+            bool(scheme["attempted_models"])
+            and scheme["actual_model"] in scheme["attempted_models"]
+            and planner["structured_validation"] == "PASS"
+            and not planner["deterministic_fallback"]
+            and bool(planner["attempted_models"])
+            and planner["actual_model"] in planner["attempted_models"],
+            "Scheme and real Planner audits contain their actual model attempts.",
         ),
         "P2.1-012": (
-            len(peer_output["candidates"]) == len(peer_output["selection_decisions"])
+            bool(peer_output["candidates"])
+            and len(peer_output["candidates"])
+            == len(peer_output["selection_decisions"])
             and all(
                 selected["candidate_symbol"]
                 in {

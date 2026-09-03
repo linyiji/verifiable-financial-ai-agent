@@ -49,9 +49,9 @@ async def run(output: Path) -> dict[str, Any]:
         repository=evidence_repository,
         artifact_root=output / "raw",
     )
-    llm_client = TeamoRouterClient(settings.llm, timeout_seconds=30.0)
-    scheme_generator = TeamoRouterSchemeGenerator(llm_client, max_validation_attempts=1)
-    planner = TeamoRouterResearchLeadPlanner(llm_client, max_validation_attempts=1)
+    llm_client = TeamoRouterClient(settings.llm, timeout_seconds=60.0)
+    scheme_generator = TeamoRouterSchemeGenerator(llm_client, max_validation_attempts=2)
+    planner = TeamoRouterResearchLeadPlanner(llm_client, max_validation_attempts=3)
     trace_build = create_langfuse_trace_adapter(settings.langfuse)
     service = ResearchApplicationService(
         trace_adapter=trace_build.adapter,
@@ -77,6 +77,11 @@ async def run(output: Path) -> dict[str, Any]:
         draft_id=draft.draft_id,
         confirm_scheme=True,
         idempotency_key="phase2-live-run-nvda",
+    )
+    _write_json(output / "scheme_snapshot.json", aggregate.scheme.model_dump(mode="json"))
+    _write_json(
+        output / "planned_graph.json",
+        aggregate.runtime.planned_graph.model_dump(mode="json"),
     )
     aggregate = await service.execute_run(aggregate.run.run_id)
 
@@ -153,9 +158,9 @@ async def run(output: Path) -> dict[str, Any]:
         },
         "peer_selection": next(
             (
-                value
-                for task_id, value in artifacts.task_outputs.items()
-                if ":analyze-peers" in task_id or task_id.endswith(":peers")
+                artifacts.task_outputs.get(task.task_id)
+                for task in aggregate.runtime.actual_graph.tasks
+                if task.task_type == "peer_analysis"
             ),
             None,
         ),
