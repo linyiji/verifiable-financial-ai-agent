@@ -423,8 +423,7 @@ class ResearchApplicationService:
             (
                 output
                 for task_id, output in aggregate.artifacts.task_outputs.items()
-                if ":analyze-research-news" in task_id
-                or task_id.endswith(":research-news")
+                if ":analyze-research-news" in task_id or task_id.endswith(":research-news")
             ),
             {"status": "not_available", "limitation": True},
         )
@@ -521,24 +520,36 @@ class ResearchApplicationService:
                 ),
             ],
         )
-        aggregate.artifacts.canonical_record = record
-        aggregate.artifacts.released_result = result
-        aggregate.artifacts.projections = projections
-        aggregate.artifacts.report = report
-        aggregate.artifacts.writeback = writeback
-        aggregate.run.status = RunStatus.RELEASED
-        aggregate.runtime.run_status = RunStatus.RELEASED
-        aggregate.run.completed_at = datetime.now(UTC)
-        await self.event_store.emit(
+        async with self.instrumentation.release(
             run_id=run_id,
-            event_type=RuntimeEventType.RELEASE_COMPLETED,
-            payload={"canonical_record_id": record.record_id, "result_id": result.result_id},
-        )
-        await self.event_store.emit(
-            run_id=run_id,
-            event_type=RuntimeEventType.RUN_COMPLETED,
-            payload={"status": RunStatus.RELEASED.value},
-        )
+            attributes={
+                "review_id": review.review_id,
+                "canonical_record_id": record.record_id,
+                "released_result_id": result.result_id,
+                "runtime_status": RunStatus.RELEASED.value,
+            },
+        ):
+            aggregate.artifacts.canonical_record = record
+            aggregate.artifacts.released_result = result
+            aggregate.artifacts.projections = projections
+            aggregate.artifacts.report = report
+            aggregate.artifacts.writeback = writeback
+            aggregate.run.status = RunStatus.RELEASED
+            aggregate.runtime.run_status = RunStatus.RELEASED
+            aggregate.run.completed_at = datetime.now(UTC)
+            await self.event_store.emit(
+                run_id=run_id,
+                event_type=RuntimeEventType.RELEASE_COMPLETED,
+                payload={
+                    "canonical_record_id": record.record_id,
+                    "result_id": result.result_id,
+                },
+            )
+            await self.event_store.emit(
+                run_id=run_id,
+                event_type=RuntimeEventType.RUN_COMPLETED,
+                payload={"status": RunStatus.RELEASED.value},
+            )
 
     async def _object(self, object_id: str) -> ResearchObject:
         entity = await self.repository.get_object(object_id)

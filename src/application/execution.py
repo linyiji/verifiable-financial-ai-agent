@@ -19,6 +19,7 @@ from src.domain.enums import (
 )
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import ReplanRequest, Task
+from src.observability.instrumentation import ObservationStage
 from src.runtime.graph import (
     GraphMutationActor,
     GraphMutationRole,
@@ -33,10 +34,13 @@ class IntegratedTaskExecutor:
     def __init__(self, service: object, aggregate: object) -> None:
         self._service = service
         self._aggregate = aggregate
-        self._has_specialized_collection_tasks = sum(
-            task.task_type == "evidence_collection"
-            for task in aggregate.runtime.actual_graph.tasks
-        ) > 1
+        self._has_specialized_collection_tasks = (
+            sum(
+                task.task_type == "evidence_collection"
+                for task in aggregate.runtime.actual_graph.tasks
+            )
+            > 1
+        )
         self._active = 0
         self.parallel_peak = 0
 
@@ -51,32 +55,84 @@ class IntegratedTaskExecutor:
         try:
             # Yield once so independent READY tasks demonstrably overlap in the runtime.
             await asyncio.sleep(0)
-            await self._service.event_store.emit(
+            async with self._service.instrumentation.task(
                 run_id=task.run_id,
                 task_id=task.task_id,
-                event_type=RuntimeEventType.TASK_PROGRESS,
-                payload={
-                    "progress": 0.1,
-                    "stage": "dispatched",
-                    "message": "Task dispatched to its application execution adapter.",
-                },
-            )
+                attributes={"task_type": task.task_type},
+            ):
+                async with self._service.instrumentation.agent(
+                    run_id=task.run_id,
+                    task_id=task.task_id,
+                    attributes={"agent": task.assigned_agent},
+                ):
+                    async with self._service.instrumentation.skill(
+                        run_id=task.run_id,
+                        task_id=task.task_id,
+                        attributes={"skill": task.skill_id},
+                    ):
+                        return await self._execute_instrumented_task(task)
+        finally:
+            self._active -= 1
+
+    async def _execute_instrumented_task(self, task: Task) -> TaskExecutionResult:
+        await self._service.event_store.emit(
+            run_id=task.run_id,
+            task_id=task.task_id,
+            event_type=RuntimeEventType.TASK_PROGRESS,
+            payload={
+                "progress": 0.1,
+                "stage": "dispatched",
+                "message": "Task dispatched to its application execution adapter.",
+            },
+        )
+        acquire = self._should_acquire_evidence(task)
+        async with self._service.instrumentation.tool(
+            run_id=task.run_id,
+            task_id=task.task_id,
+            attributes={
+                "tool_name": "evidence_router",
+                "capability": "live_or_fixture_evidence_collection" if acquire else "evidence_link",
+            },
+        ):
             routing = await self._service.route_task_evidence(
                 self._aggregate,
                 task,
-                acquire=self._should_acquire_evidence(task),
+                acquire=acquire,
             )
-            for intent in routing.event_intents:
-                await self._service.event_store.emit(
-                    run_id=intent.run_id,
-                    task_id=intent.task_id,
-                    event_type=intent.type,
-                    payload=intent.payload,
-                )
-            handler = self._handler_for(task)
-            return await handler(task)
-        finally:
-            self._active -= 1
+        if routing.acquisition_status is not None:
+            produced = set(routing.output_evidence_ids)
+            records = [
+                record
+                for record in self._aggregate.artifacts.evidence
+                if record.evidence_id in produced
+            ]
+            status_counts: dict[str, int] = {}
+            for record in records:
+                status_counts[record.status.value] = status_counts.get(record.status.value, 0) + 1
+            if not records:
+                status_counts[routing.acquisition_status.value] = 1
+            async with self._service.instrumentation.observe(
+                ObservationStage.EVIDENCE,
+                run_id=task.run_id,
+                task_id=task.task_id,
+                attributes={
+                    "evidence_count": len(records),
+                    "providers": sorted({record.provider for record in records}),
+                    "periods": sorted({record.period for record in records}),
+                    "normalized_fields": sorted({record.normalized_field for record in records}),
+                    "status_counts": status_counts,
+                },
+            ):
+                pass
+        for intent in routing.event_intents:
+            await self._service.event_store.emit(
+                run_id=intent.run_id,
+                task_id=intent.task_id,
+                event_type=intent.type,
+                payload=intent.payload,
+            )
+        handler = self._handler_for(task)
+        return await handler(task)
 
     async def _execute_evidence_collection(self, task: Task) -> TaskExecutionResult:
         routed = self._aggregate.runtime.task(task.task_id)
@@ -106,10 +162,15 @@ class IntegratedTaskExecutor:
             event_type=RuntimeEventType.CALCULATION_STARTED,
             payload={"capability_id": "revenue_growth"},
         )
-        growth = await self._service.tool_runtime.execute(
-            "revenue_growth",
-            {"prior": prior, "current": current, "calculation_id": f"CALC-{task.run_id}-GROWTH"},
-            context,
+        growth = await self._execute_calculation(
+            task=task,
+            capability_id="revenue_growth",
+            inputs={
+                "prior": prior,
+                "current": current,
+                "calculation_id": f"CALC-{task.run_id}-GROWTH",
+            },
+            context=context,
         )
         await self._service.event_store.emit(
             run_id=task.run_id,
@@ -121,51 +182,63 @@ class IntegratedTaskExecutor:
         # The fixture intentionally presents a quarterly revenue candidate first.
         # The real capability rejects its period mismatch and the same task corrects it.
         try:
-            await self._service.tool_runtime.execute(
-                "ebitda_margin",
-                {
+            await self._execute_calculation(
+                task=task,
+                capability_id="ebitda_margin",
+                inputs={
                     "ebitda": ebitda,
                     "revenue": mismatch,
                     "calculation_id": f"CALC-{task.run_id}-MARGIN-BAD",
                 },
-                context,
+                context=context,
             )
         except ValueError as exc:
-            await self._service.event_store.emit(
+            correction_id = f"CORR-{task.run_id}-PERIOD"
+            async with self._service.instrumentation.self_correction(
                 run_id=task.run_id,
                 task_id=task.task_id,
-                event_type=RuntimeEventType.TASK_SELF_CORRECTING,
-                payload={"problem_code": "PERIOD_MISMATCH", "error": type(exc).__name__},
-            )
-            correction = CorrectionRecord(
-                correction_id=f"CORR-{task.run_id}-PERIOD",
-                run_id=task.run_id,
-                task_id=task.task_id,
-                problem_code="PERIOD_MISMATCH",
-                detected_by="ebitda_margin",
-                attempt=1,
-                action="SELECT_PERIOD_ALIGNED_REVENUE",
-                input_refs=[ebitda.evidence_id, mismatch.evidence_id],
-                output_refs=[current.evidence_id],
-                status=CorrectionStatus.RESOLVED,
-                resolved_at=datetime.now(UTC),
-            )
-            self._aggregate.artifacts.corrections.append(correction)
-            await self._service.event_store.emit(
-                run_id=task.run_id,
-                task_id=task.task_id,
-                event_type=RuntimeEventType.TASK_CORRECTION_RESOLVED,
-                payload={"correction_id": correction.correction_id},
-            )
+                attributes={
+                    "correction_id": correction_id,
+                    "problem_code": "PERIOD_MISMATCH",
+                    "error_type": type(exc).__name__,
+                },
+            ):
+                await self._service.event_store.emit(
+                    run_id=task.run_id,
+                    task_id=task.task_id,
+                    event_type=RuntimeEventType.TASK_SELF_CORRECTING,
+                    payload={"problem_code": "PERIOD_MISMATCH", "error": type(exc).__name__},
+                )
+                correction = CorrectionRecord(
+                    correction_id=correction_id,
+                    run_id=task.run_id,
+                    task_id=task.task_id,
+                    problem_code="PERIOD_MISMATCH",
+                    detected_by="ebitda_margin",
+                    attempt=1,
+                    action="SELECT_PERIOD_ALIGNED_REVENUE",
+                    input_refs=[ebitda.evidence_id, mismatch.evidence_id],
+                    output_refs=[current.evidence_id],
+                    status=CorrectionStatus.RESOLVED,
+                    resolved_at=datetime.now(UTC),
+                )
+                self._aggregate.artifacts.corrections.append(correction)
+                await self._service.event_store.emit(
+                    run_id=task.run_id,
+                    task_id=task.task_id,
+                    event_type=RuntimeEventType.TASK_CORRECTION_RESOLVED,
+                    payload={"correction_id": correction.correction_id},
+                )
 
-        margin = await self._service.tool_runtime.execute(
-            "ebitda_margin",
-            {
+        margin = await self._execute_calculation(
+            task=task,
+            capability_id="ebitda_margin",
+            inputs={
                 "ebitda": ebitda,
                 "revenue": current,
                 "calculation_id": f"CALC-{task.run_id}-MARGIN",
             },
-            context,
+            context=context,
         )
         self._aggregate.artifacts.calculations.extend([growth, margin])
         await self._service.event_store.emit(
@@ -182,6 +255,34 @@ class IntegratedTaskExecutor:
             result_ref=f"analysis://{task.task_id}",
             output_refs=(growth.calculation_id, margin.calculation_id),
         )
+
+    async def _execute_calculation(
+        self,
+        *,
+        task: Task,
+        capability_id: str,
+        inputs: dict[str, object],
+        context: CapabilityContext,
+    ):
+        calculation_id = str(inputs.get("calculation_id", ""))
+        async with self._service.instrumentation.calculation(
+            run_id=task.run_id,
+            task_id=task.task_id,
+            attributes={
+                "calculation_id": calculation_id,
+                "capability": capability_id,
+            },
+        ):
+            async with self._service.instrumentation.tool(
+                run_id=task.run_id,
+                task_id=task.task_id,
+                attributes={"tool_name": "native_financial_code", "capability": capability_id},
+            ):
+                return await self._service.tool_runtime.execute(
+                    capability_id,
+                    inputs,
+                    context,
+                )
 
     async def _execute_risk_analysis(self, task: Task) -> TaskExecutionResult:
         synthesis = next(
@@ -224,48 +325,56 @@ class IntegratedTaskExecutor:
         )
         pending = specialist_result.replan_request
         assert pending is not None and pending.decision is ReplanDecision.PENDING
-        await self._service.event_store.emit(
+        async with self._service.instrumentation.replan(
             run_id=task.run_id,
             task_id=task.task_id,
-            event_type=RuntimeEventType.REPLAN_REQUESTED,
-            payload={"replan_id": pending.replan_id, "decision": pending.decision.value},
-        )
-        decision = ResearchLeadReplanDecider().decide(
-            pending,
-            outcome=ReplanDecision.APPROVED,
-            decision_id=f"DEC-{task.run_id}-REPLAN-APPROVED",
-            reason_code="LEAD_APPROVED_FOCUSED_FOLLOW_UP",
-            summary="Research Lead approved the bounded child task.",
-        )
-        await self._service.event_store.emit(
-            run_id=task.run_id,
-            task_id=task.task_id,
-            event_type=RuntimeEventType.REPLAN_APPROVED,
-            payload={"replan_id": pending.replan_id, "decided_by": decision.request.decided_by},
-        )
-        child = Task(
-            task_id=f"{task.run_id}:risk-follow-up",
-            run_id=task.run_id,
-            parent_task_id=task.task_id,
-            task_type="risk_follow_up",
-            goal="Validate the material risk signal as a bounded child task",
-            assigned_agent="risk_analyst",
-            skill_id="risk_analysis_v1",
-            dependencies=[],
-            origin=TaskOrigin.REPLAN,
-            reason_code=pending.reason_code,
-        )
-        await GraphMutationService(self._service.event_store).insert_node_between(
-            state=self._aggregate.runtime,
-            request=decision.request,
-            task=child,
-            predecessor_task_id=task.task_id,
-            successor_task_id=synthesis.task_id,
-            actor=GraphMutationActor("research_lead", GraphMutationRole.RESEARCH_LEAD),
-        )
-        self._aggregate.artifacts.replans.append(
-            decision.request.model_copy(update={"created_task_ids": [child.task_id]})
-        )
+            attributes={"replan_id": pending.replan_id, "reason_code": pending.reason_code},
+        ):
+            await self._service.event_store.emit(
+                run_id=task.run_id,
+                task_id=task.task_id,
+                event_type=RuntimeEventType.REPLAN_REQUESTED,
+                payload={"replan_id": pending.replan_id, "decision": pending.decision.value},
+            )
+            decision = ResearchLeadReplanDecider().decide(
+                pending,
+                outcome=ReplanDecision.APPROVED,
+                decision_id=f"DEC-{task.run_id}-REPLAN-APPROVED",
+                reason_code="LEAD_APPROVED_FOCUSED_FOLLOW_UP",
+                summary="Research Lead approved the bounded child task.",
+            )
+            await self._service.event_store.emit(
+                run_id=task.run_id,
+                task_id=task.task_id,
+                event_type=RuntimeEventType.REPLAN_APPROVED,
+                payload={
+                    "replan_id": pending.replan_id,
+                    "decided_by": decision.request.decided_by,
+                },
+            )
+            child = Task(
+                task_id=f"{task.run_id}:risk-follow-up",
+                run_id=task.run_id,
+                parent_task_id=task.task_id,
+                task_type="risk_follow_up",
+                goal="Validate the material risk signal as a bounded child task",
+                assigned_agent="risk_analyst",
+                skill_id="risk_analysis_v1",
+                dependencies=[],
+                origin=TaskOrigin.REPLAN,
+                reason_code=pending.reason_code,
+            )
+            await GraphMutationService(self._service.event_store).insert_node_between(
+                state=self._aggregate.runtime,
+                request=decision.request,
+                task=child,
+                predecessor_task_id=task.task_id,
+                successor_task_id=synthesis.task_id,
+                actor=GraphMutationActor("research_lead", GraphMutationRole.RESEARCH_LEAD),
+            )
+            self._aggregate.artifacts.replans.append(
+                decision.request.model_copy(update={"created_task_ids": [child.task_id]})
+            )
         self._aggregate.artifacts.task_outputs[task.task_id] = specialist_result.output
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
@@ -300,9 +409,7 @@ class IntegratedTaskExecutor:
         self._aggregate.artifacts.task_outputs[task.task_id] = {
             "candidate_source": "fmp.stock_peers",
             "candidates": [item.model_dump(mode="json") for item in selection.candidates],
-            "selection_decisions": [
-                item.model_dump(mode="json") for item in selection.decisions
-            ],
+            "selection_decisions": [item.model_dump(mode="json") for item in selection.decisions],
             "selected_comparables": [
                 item.model_dump(mode="json") for item in selection.selected_comparables
             ],
@@ -317,8 +424,7 @@ class IntegratedTaskExecutor:
     async def _execute_risk_follow_up(self, task: Task) -> TaskExecutionResult:
         self._aggregate.artifacts.task_outputs[task.task_id] = {
             "finding": (
-                "No additional quantified risk can be supported by the available "
-                "accepted evidence."
+                "No additional quantified risk can be supported by the available accepted evidence."
             ),
             "limitation": True,
         }
@@ -332,8 +438,7 @@ class IntegratedTaskExecutor:
             for record in self._aggregate.artifacts.evidence
             if record.evidence_id
             in self._aggregate.runtime.task(task.task_id).task_input_evidence_ids
-            and record.evidence_category
-            in {EvidenceCategory.NEWS, EvidenceCategory.TRANSCRIPT}
+            and record.evidence_category in {EvidenceCategory.NEWS, EvidenceCategory.TRANSCRIPT}
         ]
         dependency_statuses = {
             self._aggregate.runtime.task(dependency).evidence_acquisition_status
@@ -432,11 +537,7 @@ def decimal_as_float(value: object) -> float:
 
 def _evidence_value(records: list, field: str, default: object = None) -> object:
     return next(
-        (
-            record.normalized_value
-            for record in records
-            if record.normalized_field == field
-        ),
+        (record.normalized_value for record in records if record.normalized_field == field),
         default,
     )
 
