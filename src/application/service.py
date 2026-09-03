@@ -399,7 +399,14 @@ class ResearchApplicationService:
                 "ebitda_margin": decimal_as_float(calculations["ebitda_margin"].output_value),
             },
             "fundamental_result": {"calculation_refs": record.calculation_refs},
-            "peer_result": {"status": "limited_by_offline_fixture"},
+            "peer_result": next(
+                (
+                    output
+                    for task_id, output in aggregate.artifacts.task_outputs.items()
+                    if ":analyze-peers" in task_id or task_id.endswith(":peers")
+                ),
+                {"status": "limited_by_offline_fixture"},
+            ),
             "valuation_result": {"status": "not_quantified_in_phase_1_fixture"},
             "investment_thesis": {"status": "reviewed_fixture_demonstration"},
         }

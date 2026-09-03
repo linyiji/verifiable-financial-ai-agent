@@ -413,6 +413,12 @@ async def test_runtime_scopes_specialized_collection_tasks_and_links_lineage() -
     assert news.task_output_evidence_ids == []
     assert fundamentals.task_input_evidence_ids
     assert not set(company.task_output_evidence_ids) & set(peer.task_output_evidence_ids)
+    peer_output = aggregate.artifacts.task_outputs[
+        f"{aggregate.run.run_id}:analyze-peers"
+    ]
+    assert len(peer_output["candidates"]) == 9
+    assert len(peer_output["selection_decisions"]) == 9
+    assert peer_output["selected_comparables"] == []
 
     starts = {
         event.task_id: event.sequence

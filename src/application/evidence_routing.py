@@ -219,13 +219,19 @@ class EvidenceTaskRouter:
             }
         ),
         "peer_analysis": frozenset(
-            {EvidenceCategory.COMPANY_PROFILE, EvidenceCategory.MARKET}
+            {
+                EvidenceCategory.COMPANY_PROFILE,
+                EvidenceCategory.MARKET,
+                EvidenceCategory.PEER,
+            }
         ),
         "research_news_analysis": frozenset(
             {
                 EvidenceCategory.COMPANY_PROFILE,
                 EvidenceCategory.MARKET,
                 EvidenceCategory.ANALYST,
+                EvidenceCategory.NEWS,
+                EvidenceCategory.TRANSCRIPT,
             }
         ),
         "valuation_analysis": frozenset(
@@ -271,6 +277,9 @@ class EvidenceTaskRouter:
 
         categories = self._INPUT_CATEGORIES.get(task.task_type)
         selected = self._store.select_ids(categories=categories) if categories else ()
+        if acquisition_result is not None:
+            produced = set(acquisition_result.output_evidence_ids)
+            selected = tuple(evidence_id for evidence_id in selected if evidence_id not in produced)
         inputs = self._store.link_inputs(task.task_id, list(selected))
         if acquisition_result is None:
             return TaskEvidenceRoutingResult(

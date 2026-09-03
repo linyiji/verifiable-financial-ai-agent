@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from src.agentic.decisions import ResearchLeadReplanDecider
 from src.agentic.specialist import SpecialistResult
+from src.data.peers import PeerCompanyFacts, PeerSelectionService
 from src.domain.capability import CapabilityContext
 from src.domain.correction import CorrectionRecord
 from src.domain.decision import StructuredAgentDecision
@@ -262,6 +263,51 @@ class IntegratedTaskExecutor:
         self._aggregate.artifacts.task_outputs[task.task_id] = specialist_result.output
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
+    async def _execute_peer_analysis(self, task: Task) -> TaskExecutionResult:
+        input_ids = set(self._aggregate.runtime.task(task.task_id).task_input_evidence_ids)
+        evidence = [
+            record
+            for record in self._aggregate.artifacts.evidence
+            if record.evidence_id in input_ids
+        ]
+        subject = PeerCompanyFacts(
+            symbol=str(_evidence_value(evidence, "symbol", "UNKNOWN")),
+            industry=_optional_string(_evidence_value(evidence, "industry")),
+            sector=_optional_string(_evidence_value(evidence, "sector")),
+            market_cap=_optional_decimal(
+                _evidence_value(evidence, "provider_reference_market_cap")
+            ),
+            source_evidence_ids=tuple(
+                record.evidence_id
+                for record in evidence
+                if record.normalized_field
+                in {"symbol", "industry", "sector", "provider_reference_market_cap"}
+            ),
+        )
+        selection = PeerSelectionService().select(
+            subject=subject,
+            stock_peer_evidence=evidence,
+            facts_by_symbol={},
+            business_relevance={},
+            required_metrics=frozenset({"revenue", "ebitda", "provider_reference_pe"}),
+        )
+        self._aggregate.artifacts.task_outputs[task.task_id] = {
+            "candidate_source": "fmp.stock_peers",
+            "candidates": [item.model_dump(mode="json") for item in selection.candidates],
+            "selection_decisions": [
+                item.model_dump(mode="json") for item in selection.decisions
+            ],
+            "selected_comparables": [
+                item.model_dump(mode="json") for item in selection.selected_comparables
+            ],
+            "status": (
+                "selected"
+                if selection.selected_comparables
+                else "no_selected_comparables_due_missing_enrichment"
+            ),
+        }
+        return TaskExecutionResult(result_ref=f"peer-selection://{task.task_id}")
+
     async def _execute_risk_follow_up(self, task: Task) -> TaskExecutionResult:
         self._aggregate.artifacts.task_outputs[task.task_id] = {
             "finding": "No additional quantified risk can be supported by the offline fixture.",
@@ -281,6 +327,7 @@ class IntegratedTaskExecutor:
         by_skill = {
             "evidence_collection_v1": self._execute_evidence_collection,
             "fundamental_analysis_v1": self._execute_fundamental_analysis,
+            "peer_analysis_v1": self._execute_peer_analysis,
             "risk_analysis_v1": self._execute_risk_analysis,
         }
         if task.origin is TaskOrigin.PLAN and task.skill_id in by_skill:
@@ -331,3 +378,27 @@ def _select_financial_inputs(records: list):
 
 def decimal_as_float(value: object) -> float:
     return float(Decimal(str(value)))
+
+
+def _evidence_value(records: list, field: str, default: object = None) -> object:
+    return next(
+        (
+            record.normalized_value
+            for record in records
+            if record.normalized_field == field
+        ),
+        default,
+    )
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _optional_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return None
