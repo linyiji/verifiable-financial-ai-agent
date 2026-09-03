@@ -72,6 +72,7 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
         task_id for task_id, task in tasks.items() if task["task_type"] == "report_synthesis"
     )
     follow_up_id = next(task_id for task_id in tasks if task_id.endswith(":risk-follow-up"))
+    risk_id = tasks[follow_up_id]["parent_task_id"]
     evidence_events = [
         event for event in events if event["type"] == RuntimeEventType.EVIDENCE_ACCEPTED.value
     ]
@@ -111,8 +112,9 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
             "Evidence producer ownership matches scoped acquisition tasks.",
         ),
         "P2.1-002": (
-            len(event_evidence_ids) == len(set(event_evidence_ids)) == len(evidence),
-            "Accepted Evidence is emitted exactly once per run-global identity.",
+            len(event_evidence_ids) == len(set(event_evidence_ids))
+            and set(event_evidence_ids) == set(evidence_by_id),
+            "Accepted Evidence and exactly-once event identities are the same set.",
         ),
         "P2.1-003": (
             tasks[news_id]["evidence_acquisition_status"] == "ENTITLEMENT_BLOCKED"
@@ -127,11 +129,10 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
             follow_up_id in tasks[synthesis_id]["dependencies"]
             and tasks[follow_up_id]["parent_task_id"]
             not in tasks[synthesis_id]["dependencies"]
-            and not any(
+            and any(
                 event["type"] == RuntimeEventType.GRAPH_EDGE_ADDED.value
-                and event["payload"].get("predecessor_task_id")
-                == tasks[follow_up_id]["parent_task_id"]
-                and event["payload"].get("successor_task_id") == synthesis_id
+                and event["payload"].get("source_task_id") == risk_id
+                and event["payload"].get("target_task_id") == follow_up_id
                 for event in edge_events
             ),
             "Mandatory follow-up replaces the direct Risk-to-Synthesis dependency.",
@@ -146,8 +147,28 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
             "Synthesis starts only after the mandatory follow-up completes.",
         ),
         "P2.1-006": (
-            summary["actual_graph_version"] > 1 and len(edge_events) >= 3,
-            "Graph version and edge add/remove events are auditable.",
+            summary["actual_graph_version"] > 1
+            and {
+                (
+                    event["type"],
+                    event["payload"].get("source_task_id"),
+                    event["payload"].get("target_task_id"),
+                )
+                for event in edge_events
+            }
+            == {
+                (RuntimeEventType.GRAPH_EDGE_ADDED.value, risk_id, follow_up_id),
+                (RuntimeEventType.GRAPH_EDGE_REMOVED.value, risk_id, synthesis_id),
+                (RuntimeEventType.GRAPH_EDGE_ADDED.value, follow_up_id, synthesis_id),
+            }
+            and any(
+                event["type"] == RuntimeEventType.GRAPH_VERSION_CHANGED.value
+                and event["payload"].get("version_before") == 1
+                and event["payload"].get("version_after")
+                == summary["actual_graph_version"]
+                for event in events
+            ),
+            "Exact graph edge mutation and version transition are auditable.",
         ),
         "P2.1-007": (
             all(item["code_hash"] for item in calculations),
@@ -158,8 +179,14 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
             "Recorded hashes reproduce from the checked-in capability source bytes.",
         ),
         "P2.1-009": (
-            all(item["review_record_id"] and item["canonical_record_id"] for item in calculations),
-            "Calculation lineage reaches Review and Canonical records.",
+            all(
+                item["review_record_id"]
+                and item["canonical_record_id"] == canonical["record_id"]
+                and item["calculation_id"] in canonical["calculation_refs"]
+                and set(item["input_evidence_ids"]).issubset(canonical["evidence_refs"])
+                for item in calculations
+            ),
+            "Calculation inputs and IDs close through Review and the actual Canonical record.",
         ),
         "P2.1-010": (
             scheme["structured_validation"] == "PASS"
@@ -180,6 +207,20 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
             bool(peer_output["candidates"])
             and len(peer_output["candidates"])
             == len(peer_output["selection_decisions"])
+            and {
+                item["candidate_symbol"] for item in peer_output["candidates"]
+            }
+            == {
+                item["candidate_symbol"] for item in peer_output["selection_decisions"]
+            }
+            and {
+                item["candidate_symbol"] for item in peer_output["selected_comparables"]
+            }
+            == {
+                item["candidate_symbol"]
+                for item in peer_output["selection_decisions"]
+                if item["selected"]
+            }
             and all(
                 selected["candidate_symbol"]
                 in {
@@ -192,6 +233,8 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
             "Peer candidates, decisions, and selected comparables remain separate.",
         ),
         "P2.1-013": (
+            any(item["normalized_field"] == "full_time_employees" for item in evidence)
+            and
             all(
                 item["unit"] == "COUNT"
                 for item in evidence
