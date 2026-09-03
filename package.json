@@ -1,0 +1,12 @@
+{
+  "name": "verifiable-financial-agent-system",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "check:runtime": "node --version && npm --version"
+  }
+}
+

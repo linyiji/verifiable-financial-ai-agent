@@ -1,0 +1,41 @@
+{
+  "provider": "fixture",
+  "object": {
+    "symbol": "NVDA",
+    "company_name": "NVIDIA Corporation",
+    "exchange": "NASDAQ",
+    "currency": "USD"
+  },
+  "records": [
+    {
+      "field": "revenue",
+      "period": "FY2025",
+      "as_of": "2025-01-26",
+      "value": 130.5,
+      "unit": "USD_BILLION"
+    },
+    {
+      "field": "revenue",
+      "period": "FY2026",
+      "as_of": "2026-01-25",
+      "value": 215.9,
+      "unit": "USD_BILLION"
+    },
+    {
+      "field": "revenue",
+      "period": "Q1FY2026",
+      "as_of": "2025-04-27",
+      "value": 44.1,
+      "unit": "USD_BILLION",
+      "fixture_role": "period_mismatch_for_self_correction"
+    },
+    {
+      "field": "ebitda",
+      "period": "FY2026",
+      "as_of": "2026-01-25",
+      "value": 142.5,
+      "unit": "USD_BILLION"
+    }
+  ]
+}
+

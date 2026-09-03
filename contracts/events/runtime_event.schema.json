@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verifiable-financial.local/contracts/runtime-event-v1.json",
+  "title": "RuntimeEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "run_id", "type", "timestamp", "sequence", "payload"],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "task_id": {"type": ["string", "null"]},
+    "type": {
+      "type": "string",
+      "enum": [
+        "run.created", "run.started", "run.status_changed", "run.completed", "run.failed",
+        "scheme.generation_started", "scheme.generated", "scheme.confirmed", "plan.generated",
+        "task.created", "task.ready", "task.started", "task.progress",
+        "task.self_correcting", "task.correction_resolved", "task.completed", "task.failed",
+        "replan.requested", "replan.approved", "replan.rejected",
+        "graph.task_added", "graph.version_changed", "evidence.accepted", "evidence.conflict",
+        "calculation.started", "calculation.completed", "capability.gap_detected",
+        "workspace.created", "capability.generation_started", "capability.tested",
+        "capability.validated", "review.started", "review.required",
+        "review.resolved", "proof.started", "proof.verified", "release.completed"
+      ]
+    },
+    "timestamp": {"type": "string", "format": "date-time"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "payload": {"type": "object"}
+  }
+}
