@@ -38,6 +38,7 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
     calculations = _read_json(output / "calculation_records.json")
     events = _read_json(output / "runtime_events.json")
     canonical = _read_json(output / "canonical_execution_record.json")
+    released = _read_json(output / "released_research_result.json")
     task_outputs = _read_json(output / "task_outputs.json")
     tasks = {task["task_id"]: task for task in canonical["actual_graph"]["tasks"]}
     company_id = next(
@@ -61,6 +62,11 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
         task_id
         for task_id, task in tasks.items()
         if task["evidence_acquisition_status"] == "ENTITLEMENT_BLOCKED"
+    )
+    news_analysis_id = next(
+        task_id
+        for task_id, task in tasks.items()
+        if task["task_type"] == "research_news_analysis"
     )
     synthesis_id = next(
         task_id for task_id, task in tasks.items() if task["task_type"] == "report_synthesis"
@@ -110,8 +116,12 @@ def _evaluate(output: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]
         ),
         "P2.1-003": (
             tasks[news_id]["evidence_acquisition_status"] == "ENTITLEMENT_BLOCKED"
-            and not news_outputs,
-            "Entitlement-blocked News owns no fabricated Evidence.",
+            and not news_outputs
+            and task_outputs[news_analysis_id]["status"] == "entitlement_blocked"
+            and not task_outputs[news_analysis_id]["accepted_evidence_ids"]
+            and task_outputs[news_analysis_id]["limitation"] is True
+            and "offline fixture" not in json.dumps(released).lower(),
+            "Entitlement-blocked News propagates as an explicit analysis/release limitation.",
         ),
         "P2.1-004": (
             follow_up_id in tasks[synthesis_id]["dependencies"]
