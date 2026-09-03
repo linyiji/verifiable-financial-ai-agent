@@ -5,10 +5,22 @@ from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from apps.api.main import create_app
-from src.application.persistence import SQLAlchemyApplicationRepository
+from src.application.persistence import (
+    CalculationRecordRow,
+    CanonicalExecutionRecordRow,
+    ReleasedResearchResultRow,
+    ResearchGoalRow,
+    ResearchSchemeSnapshotRow,
+    ReviewRecordRow,
+    RuntimeEventRow,
+    SessionFactoryEvidenceRepository,
+    SQLAlchemyApplicationRepository,
+    TaskRow,
+)
 from src.application.service import ResearchApplicationService
 from src.domain.enums import EvidenceStatus, ProofStatus, ReplanDecision, RunStatus, TaskOrigin
 from src.domain.runtime_event import RuntimeEventType
@@ -77,6 +89,41 @@ async def test_offline_vertical_slice_uses_every_frozen_boundary() -> None:
     events = await service.event_store.replay(run_id)
     assert [event.sequence for event in events] == list(range(1, len(events) + 1))
     event_types = [event.type for event in events]
+    fundamentals_task_id = f"{run_id}:fundamentals"
+    critical_positions = [
+        event_types.index(RuntimeEventType.RUN_CREATED),
+        event_types.index(RuntimeEventType.SCHEME_GENERATED),
+        event_types.index(RuntimeEventType.PLAN_GENERATED),
+        next(
+            index
+            for index, event in enumerate(events)
+            if event.type is RuntimeEventType.TASK_STARTED and event.task_id == fundamentals_task_id
+        ),
+        next(
+            index
+            for index, event in enumerate(events)
+            if event.type is RuntimeEventType.TASK_PROGRESS
+            and event.task_id == fundamentals_task_id
+        ),
+        event_types.index(RuntimeEventType.TASK_SELF_CORRECTING),
+        next(
+            index
+            for index, event in enumerate(events)
+            if event.type is RuntimeEventType.TASK_COMPLETED
+            and event.task_id == fundamentals_task_id
+        ),
+        event_types.index(RuntimeEventType.REVIEW_STARTED),
+        event_types.index(RuntimeEventType.RELEASE_COMPLETED),
+        event_types.index(RuntimeEventType.RUN_COMPLETED),
+    ]
+    assert critical_positions == sorted(critical_positions)
+    generated = next(event for event in events if event.type is RuntimeEventType.SCHEME_GENERATED)
+    assert generated.payload["generation_stage"] == "prepare"
+    assert generated.payload["retrospective"] is True
+    assert generated.payload["scheme_id"] == aggregate.scheme.scheme_id
+    progress = [event for event in events if event.type is RuntimeEventType.TASK_PROGRESS]
+    assert progress
+    assert all(event.payload["stage"] == "dispatched" for event in progress)
     assert event_types.index(RuntimeEventType.REPLAN_REQUESTED) < event_types.index(
         RuntimeEventType.REPLAN_APPROVED
     )
@@ -171,7 +218,11 @@ async def test_sql_repository_restores_released_aggregate(tmp_path) -> None:
         await connection.run_sync(Base.metadata.create_all)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     repository = SQLAlchemyApplicationRepository(sessions)
-    service = ResearchApplicationService(repository=repository)
+    evidence_repository = SessionFactoryEvidenceRepository(sessions)
+    service = ResearchApplicationService(
+        repository=repository,
+        evidence_repository=evidence_repository,
+    )
     research_object = await service.create_object(
         symbol="NVDA", company_name="NVIDIA", exchange="NASDAQ"
     )
@@ -192,4 +243,24 @@ async def test_sql_repository_restores_released_aggregate(tmp_path) -> None:
     assert restored.artifacts.projections.canonical_record_id == (
         restored.artifacts.canonical_record.record_id
     )
+    restored_evidence = await SessionFactoryEvidenceRepository(sessions).list_by_run(
+        aggregate.run.run_id
+    )
+    assert len(restored_evidence) == 4
+
+    expected_counts = {
+        ResearchGoalRow: 1,
+        ResearchSchemeSnapshotRow: 1,
+        TaskRow: 8,
+        CalculationRecordRow: 2,
+        ReviewRecordRow: 1,
+        CanonicalExecutionRecordRow: 1,
+        ReleasedResearchResultRow: 1,
+    }
+    async with sessions() as session:
+        for row_type, expected in expected_counts.items():
+            count = await session.scalar(select(func.count()).select_from(row_type))
+            assert count == expected
+        event_count = await session.scalar(select(func.count()).select_from(RuntimeEventRow))
+        assert event_count is not None and event_count >= 10
     await engine.dispose()

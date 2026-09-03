@@ -19,7 +19,7 @@ from src.data.fixtures import FixtureProvider
 from src.data.freshness import FreshnessPolicy
 from src.data.ingestion import EvidenceIngestionResult, EvidenceIngestionService
 from src.data.provider import ProviderRequest
-from src.data.repository import InMemoryEvidenceRepository
+from src.data.repository import EvidenceRepository, InMemoryEvidenceRepository
 from src.domain.enums import CapabilityBackend, ProofStatus, RunStatus
 from src.domain.proof import ProofRequest
 from src.domain.research_goal import ResearchGoal
@@ -57,11 +57,12 @@ class ResearchApplicationService:
         repository: ApplicationRepository | None = None,
         fixture_path: Path | None = None,
         trace_adapter: object | None = None,
+        evidence_repository: EvidenceRepository | None = None,
     ) -> None:
         self.repository = repository or InMemoryApplicationRepository()
         self.event_store = InMemoryRuntimeEventStore()
         self.checkpoint_store = InMemoryCheckpointStore()
-        self.evidence_repository = InMemoryEvidenceRepository()
+        self.evidence_repository = evidence_repository or InMemoryEvidenceRepository()
         self.fixture_path = fixture_path or (
             Path(__file__).resolve().parents[2] / "tests/fixtures/nvda_financials.json"
         )
@@ -187,6 +188,17 @@ class ResearchApplicationService:
         )
         await self.event_store.emit(
             run_id=run_id,
+            event_type=RuntimeEventType.SCHEME_GENERATED,
+            payload={
+                "scheme_id": scheme.scheme_id,
+                "generated_by": scheme.generated_by,
+                "generated_at": scheme.created_at.isoformat(),
+                "generation_stage": "prepare",
+                "retrospective": True,
+            },
+        )
+        await self.event_store.emit(
+            run_id=run_id,
             event_type=RuntimeEventType.SCHEME_CONFIRMED,
             payload={"scheme_id": scheme.scheme_id},
         )
@@ -225,8 +237,10 @@ class ResearchApplicationService:
             aggregate.run.status = RunStatus.FAILED
             aggregate.run.completed_at = datetime.now(UTC)
             await self.repository.save_run(aggregate)
+            await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
             raise
         await self.repository.save_run(aggregate)
+        await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
         return aggregate
 
     async def get_object(self, object_id: str) -> ResearchObject:

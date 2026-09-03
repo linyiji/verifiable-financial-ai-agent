@@ -11,7 +11,10 @@ from sqlalchemy.pool import StaticPool
 
 from apps.api.routes import router
 from src.application.errors import ApplicationError
-from src.application.persistence import SQLAlchemyApplicationRepository
+from src.application.persistence import (
+    SessionFactoryEvidenceRepository,
+    SQLAlchemyApplicationRepository,
+)
 from src.application.service import ResearchApplicationService
 from src.infrastructure.database.base import Base
 
@@ -32,7 +35,8 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
             await connection.run_sync(Base.metadata.create_all)
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         app.state.research_service = ResearchApplicationService(
-            repository=SQLAlchemyApplicationRepository(sessions)
+            repository=SQLAlchemyApplicationRepository(sessions),
+            evidence_repository=SessionFactoryEvidenceRepository(sessions),
         )
         yield
         await engine.dispose()

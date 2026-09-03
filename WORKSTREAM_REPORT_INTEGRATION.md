@@ -47,15 +47,25 @@ the Homebrew Node 25 runtime was not used as the project baseline.
 
 ### Persistence additions
 
-Integration owns three new SQLAlchemy tables defined at the application persistence boundary:
+Integration owns SQLAlchemy tables defined at the application persistence boundary:
 
 - `research_objects`
 - `research_run_drafts`
 - `research_runs`
+- `research_goals`
+- `research_scheme_snapshots`
+- `tasks`
+- `runtime_events`
+- `calculation_records`
+- `review_records`
+- `canonical_execution_records`
+- `released_research_results`
 
-`research_runs.payload` is the Phase-1 durable aggregate/checkpoint view, including both planned
-and actual graph snapshots and all released artifacts. Existing normalized evidence persistence in
-`src/data/persistence.py` remains unchanged. PostgreSQL remains the target; tests use SQLite.
+`research_runs.payload` remains the Phase-1 durable aggregate/checkpoint view, while the child
+tables provide typed identity and `run_id` lookup boundaries over the same existing domain
+payloads. Existing `SQLAlchemyEvidenceRepository` is reused through a session-factory adapter and
+persists every accepted fixture record to `evidence_records`. PostgreSQL remains the target; tests
+use SQLite and verify exact child-table/evidence counts plus aggregate restoration.
 
 ### Controlled historical fixture policy
 
@@ -100,7 +110,7 @@ claimed.
 | `src/adapters/risc0/pending.py` | ADAPTER_REUSE | proof boundary | Python 3.11 PASS | preserve NOT_IMPLEMENTED |
 | `src/adapters/fmp/**` | ADAPTER_REUSE | provider boundary | Python 3.11 PASS (unit) | live use later |
 | FinRobot implementation | PORT_REQUIRED | adapter protocol only | source absent | exact-module audit later |
-| frontend prototype | PORT_REQUIRED | API/Event contract only | source absent | no framework rewrite |
+| `frontend_reference/financial_agent_workspace_v3.html` | ADAPTER_REUSE | structure/style/interaction mapping for later Web | not exercised beyond Node 24 baseline | preserve; no framework rewrite |
 
 No existing business-equivalent implementation was rewritten for directory-layout reasons.
 
@@ -137,6 +147,12 @@ No existing business-equivalent implementation was rewritten for directory-layou
 
 Phase-1 minimum acceptance in `docs/14_ACCEPTANCE_TEST_PLAN_V1.md` is fully PASS.
 
+The ordered critical event-family assertion covers `run.created`, `scheme.generated`,
+`plan.generated`, `task.started`, `task.progress`, `task.self_correcting`, `task.completed`,
+`review.started`, `release.completed`, and `run.completed`. `scheme.generated` truthfully records
+that generation happened during prepare before the Run identity existed; `task.progress` is emitted
+after actual runtime dispatch, before task-specific work begins.
+
 ## Verification
 
 All commands ran from the isolated `ws/integration` checkout with
@@ -144,7 +160,7 @@ All commands ran from the isolated `ws/integration` checkout with
 
 ```text
 $ python -m pytest -q
-75 passed, 2 warnings in 0.64s
+75 passed, 2 warnings in 0.72s
 
 $ python -m ruff check .
 All checks passed!
@@ -163,9 +179,10 @@ dependency surface; there are no application warnings or test failures.
 
 - The default API composition uses in-memory SQLite and in-process background execution. A later
   deployment can supply PostgreSQL and a durable job worker without changing API routes.
-- Runtime events/checkpoints remain the existing in-memory protocol implementations; the released
-  aggregate persists their resulting graph/artifact state. SQL event/checkpoint stores remain a
-  later infrastructure adapter.
+- Live Runtime event fanout/checkpoints remain the existing in-memory protocol implementations;
+  every completed event is additionally persisted to the Integration-owned `runtime_events` table,
+  and the released aggregate persists graph/artifact state. Hydrating an in-memory live stream from
+  SQL after a process restart remains a later event-store adapter.
 - Live FMP, FinRobot modules, LLM scheme generation, generated capabilities, semantic/human review,
   real RISC Zero proofs, frontend implementation, and comparison are intentionally deferred.
 - The API manual review and capability-gap routes return the documented error envelope with

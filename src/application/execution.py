@@ -40,6 +40,16 @@ class IntegratedTaskExecutor:
         try:
             # Yield once so independent READY tasks demonstrably overlap in the runtime.
             await asyncio.sleep(0)
+            await self._service.event_store.emit(
+                run_id=task.run_id,
+                task_id=task.task_id,
+                event_type=RuntimeEventType.TASK_PROGRESS,
+                payload={
+                    "progress": 0.1,
+                    "stage": "dispatched",
+                    "message": "Task dispatched to its application execution adapter.",
+                },
+            )
             handler = getattr(self, f"_execute_{task.task_type}", self._execute_generic)
             return await handler(task)
         finally:

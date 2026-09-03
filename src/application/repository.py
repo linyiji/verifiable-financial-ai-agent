@@ -5,6 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from src.application.models import ResearchRunDraft, RunAggregate
 from src.domain.research_object import ResearchObject
+from src.domain.runtime_event import RuntimeEvent
 
 
 @runtime_checkable
@@ -22,6 +23,8 @@ class ApplicationRepository(Protocol):
     async def add_run(self, aggregate: RunAggregate) -> None: ...
 
     async def save_run(self, aggregate: RunAggregate) -> None: ...
+
+    async def save_runtime_events(self, events: list[RuntimeEvent]) -> None: ...
 
     async def get_run(self, run_id: str) -> RunAggregate | None: ...
 
@@ -72,6 +75,9 @@ class InMemoryApplicationRepository:
             if aggregate.run.run_id not in self._runs:
                 raise KeyError(aggregate.run.run_id)
             self._runs[aggregate.run.run_id] = aggregate
+
+    async def save_runtime_events(self, events: list[RuntimeEvent]) -> None:
+        del events
 
     async def list_runs_for_object(self, object_id: str) -> list[RunAggregate]:
         return [

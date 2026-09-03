@@ -140,9 +140,10 @@ financial formulas, review, proof policy, canonical projection, or report logic.
 | `src/adapters/risc0/pending.py` | ADAPTER_REUSE | explicit pending proof boundary | Python 3.11 PASS | preserve `NOT_IMPLEMENTED` semantics |
 | `src/adapters/fmp/**` | ADAPTER_REUSE | provider boundary | Python 3.11 PASS in unit tests | live credentials deferred |
 | `src/adapters/finrobot/**` | PORT_REQUIRED | narrow adapter protocol | implementation absent | audit exact modules when source is added |
-| prior frontend prototype | PORT_REQUIRED | contract reference only | source absent from checkout | do not select/rewrite a framework |
+| `frontend_reference/financial_agent_workspace_v3.html` | ADAPTER_REUSE | prototype structure/style/interaction mapping for later Web | not exercised beyond Node 24 baseline | preserve; do not select/rewrite a framework |
 
-Integration-owned persistence adds only `research_objects`, `research_run_drafts`, and
-`research_runs` aggregate tables in `src/application/persistence.py`. Normalized evidence continues
-to use the existing `evidence_records` mapping. This is a Phase-1 SQLite/PostgreSQL-compatible
-repository boundary, not a competing business implementation.
+Integration-owned persistence adds identity/run-indexed JSON mappings for objects, drafts, runs,
+goals, confirmed schemes, tasks, runtime events, calculations, reviews, canonical records, and
+released results in `src/application/persistence.py`. Normalized evidence continues to use the
+existing `SQLAlchemyEvidenceRepository` through a session-factory adapter. These tables persist
+existing domain payloads; they do not contain competing business logic.
