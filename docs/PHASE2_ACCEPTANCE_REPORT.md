@@ -176,7 +176,7 @@ external-environment classifications.
 - WS-I commit `deb654f`; merge `dfc3254`
 - WS-L commit `73121fa`; merge `f748669`
 - WS-J commit `759ee30`; merge `67bcd05`
-- Integration / Acceptance: final commit recorded after final gate
+- Integration / Acceptance implementation: `113a0a5`
 
 ## L. Next Recommended Step
 
