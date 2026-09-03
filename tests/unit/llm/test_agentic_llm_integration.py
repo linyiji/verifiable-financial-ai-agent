@@ -5,8 +5,10 @@ from datetime import UTC, date, datetime
 import pytest
 
 from src.adapters.llm import (
+    LLMFailureClassification,
     LLMMessage,
     LLMProviderUnavailableError,
+    LLMRequestError,
     LLMStructuredResponse,
 )
 from src.agentic.llm_integration import (
@@ -154,6 +156,21 @@ def valid_graph() -> dict:
     }
 
 
+def test_scheme_schema_encodes_assurance_and_calculation_semantics() -> None:
+    invalid_assurance = valid_scheme()
+    invalid_assurance["assurance_requirements"]["accepted_evidence_only"] = False
+    with pytest.raises(ValueError):
+        SchemeProposal.model_validate(invalid_assurance)
+
+    invalid_calculation = valid_scheme()
+    invalid_calculation["calculation_requirements"] = [
+        "deterministic_financial_calculations_only",
+        "let_the_llm_calculate",
+    ]
+    with pytest.raises(ValueError):
+        SchemeProposal.model_validate(invalid_calculation)
+
+
 @pytest.mark.asyncio
 async def test_llm_scheme_validates_and_records_decision_without_financial_numbers() -> None:
     research_object, goal = research_inputs()
@@ -179,7 +196,10 @@ async def test_llm_scheme_validates_and_records_decision_without_financial_numbe
 async def test_scheme_semantic_validation_retries_same_route_then_passes() -> None:
     research_object, goal = research_inputs()
     invalid = valid_scheme()
-    invalid["calculation_requirements"] = ["let_the_llm_calculate"]
+    invalid["calculation_requirements"] = [
+        "deterministic_financial_calculations_only",
+        "deterministic_financial_calculations_only",
+    ]
     provider = FakeProvider([invalid, valid_scheme()])
 
     result = await TeamoRouterSchemeGenerator(provider).generate_with_decision(
@@ -190,6 +210,7 @@ async def test_scheme_semantic_validation_retries_same_route_then_passes() -> No
     assert len(provider.calls) == 2
     assert result.audit.validation_attempts == 2
     assert result.audit.actual_model == "gpt-5.6-sol"
+    assert result.audit.attempted_models == ["gpt-5.6-sol", "gpt-5.6-sol"]
 
 
 @pytest.mark.asyncio
@@ -215,6 +236,33 @@ async def test_provider_outage_preserves_deterministic_scheme_fallback() -> None
     assert result.audit.attempted_models == ["gpt-5.6-sol", "gpt-5.6-luna"]
     assert result.output.generated_by == "deterministic-scheme-generator-v1"
     assert result.decision.decision_type == "SCHEME_GENERATOR_FALLBACK"
+
+
+@pytest.mark.asyncio
+async def test_scheme_preflight_failure_is_not_masqueraded_as_provider_unavailable() -> None:
+    research_object, goal = research_inputs()
+    provider = FakeProvider(
+        [
+            LLMRequestError(
+                "request schema preflight failed",
+                requested_model="gpt-5.6-sol",
+                attempted_models=(),
+                failure_classification=LLMFailureClassification.PREFLIGHT_FAILURE,
+            )
+        ]
+    )
+
+    result = await TeamoRouterSchemeGenerator(provider).generate_with_decision(
+        research_object=research_object,
+        goal=goal,
+    )
+
+    assert result.audit.attempted_models == []
+    assert result.audit.preflight_failure is True
+    assert result.audit.failure_classification == "preflight_failure"
+    assert result.audit.structured_validation == "PREFLIGHT_FAILURE"
+    assert result.decision.reason_code == "PREFLIGHT_FAILURE"
+    assert result.audit.deterministic_fallback is True
 
 
 @pytest.mark.asyncio
