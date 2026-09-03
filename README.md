@@ -16,6 +16,7 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 PYTHONPATH=. pytest -q
 PYTHONPATH=. ruff check .
+PYTHONPATH=. python scripts/run_acceptance.py
 PYTHONPATH=. uvicorn apps.api.main:app --reload
 ```
 
