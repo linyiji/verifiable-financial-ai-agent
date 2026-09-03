@@ -7,7 +7,9 @@ import pytest
 from pydantic import BaseModel
 
 from src.adapters.llm import (
+    LLMFailureClassification,
     LLMMessage,
+    LLMProviderUnavailableError,
     LLMRequestError,
     StructuredOutputError,
     TeamoRouterClient,
@@ -17,6 +19,13 @@ from src.infrastructure.config.settings import LLMSettings
 
 class Answer(BaseModel):
     value: str
+
+
+class BrokenSchema(BaseModel):
+    @classmethod
+    def model_json_schema(cls, *args, **kwargs):
+        del cls, args, kwargs
+        raise ValueError("schema cannot be generated")
 
 
 def settings() -> LLMSettings:
@@ -91,6 +100,30 @@ async def test_rate_limit_routes_to_configured_fallback_only() -> None:
 
 
 @pytest.mark.asyncio
+async def test_exhausted_retryable_route_records_every_actual_attempt() -> None:
+    models: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        models.append(json.loads(request.content)["model"])
+        return httpx.Response(503, json={"error": {"message": "unavailable"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(LLMProviderUnavailableError) as caught:
+            await TeamoRouterClient(settings(), client=http).complete_structured(
+                messages=[LLMMessage(role="user", content="answer")],
+                response_model=Answer,
+                schema_name="answer_v1",
+            )
+
+    assert models == ["gpt-5.6-sol", "gpt-5.6-luna"]
+    assert caught.value.attempted_models == tuple(models)
+    assert (
+        caught.value.failure_classification
+        is LLMFailureClassification.RETRYABLE_HTTP_FAILURE
+    )
+
+
+@pytest.mark.asyncio
 async def test_timeout_routes_to_configured_fallback_only() -> None:
     models: list[str] = []
 
@@ -122,13 +155,18 @@ async def test_nonretryable_request_and_invalid_structure_do_not_switch_model() 
         return httpx.Response(statuses[0], json={"error": {"message": "invalid"}})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(bad_request)) as http:
-        with pytest.raises(LLMRequestError, match="HTTP 400"):
+        with pytest.raises(LLMRequestError, match="HTTP 400") as request_error:
             await TeamoRouterClient(settings(), client=http).complete_structured(
                 messages=[LLMMessage(role="user", content="answer")],
                 response_model=Answer,
                 schema_name="answer_v1",
             )
     assert calls == ["gpt-5.6-sol"]
+    assert request_error.value.attempted_models == ("gpt-5.6-sol",)
+    assert (
+        request_error.value.failure_classification
+        is LLMFailureClassification.REQUEST_REJECTED
+    )
 
     calls.clear()
 
@@ -137,17 +175,48 @@ async def test_nonretryable_request_and_invalid_structure_do_not_switch_model() 
         return response("gpt-5.6-sol", {"wrong": "shape"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(malformed)) as http:
-        with pytest.raises(StructuredOutputError, match="validation"):
+        with pytest.raises(StructuredOutputError, match="validation") as structured_error:
             await TeamoRouterClient(settings(), client=http).complete_structured(
                 messages=[LLMMessage(role="user", content="answer")],
                 response_model=Answer,
                 schema_name="answer_v1",
             )
     assert calls == ["gpt-5.6-sol"]
+    assert structured_error.value.attempted_models == ("gpt-5.6-sol",)
+    assert (
+        structured_error.value.failure_classification
+        is LLMFailureClassification.STRUCTURED_OUTPUT_INVALID
+    )
 
 
 @pytest.mark.asyncio
-async def test_explicit_policy_can_route_directly_to_fallback() -> None:
+async def test_preflight_failure_is_explicit_and_records_no_http_attempt() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return response("gpt-5.6-sol", {"value": "should-not-run"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(LLMRequestError, match="preflight") as caught:
+            await TeamoRouterClient(settings(), client=http).complete_structured(
+                messages=[LLMMessage(role="user", content="answer")],
+                response_model=BrokenSchema,
+                schema_name="broken_v1",
+            )
+
+    assert calls == 0
+    assert caught.value.attempted_models == ()
+    assert (
+        caught.value.failure_classification
+        is LLMFailureClassification.PREFLIGHT_FAILURE
+    )
+    assert "redaction-sentinel" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_direct_fallback_without_primary_failure_is_rejected_at_preflight() -> None:
     models: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -156,13 +225,14 @@ async def test_explicit_policy_can_route_directly_to_fallback() -> None:
         return response(model, {"value": "policy"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-        result = await TeamoRouterClient(settings(), client=http).complete_structured(
-            messages=[LLMMessage(role="user", content="answer")],
-            response_model=Answer,
-            schema_name="answer_v1",
-            force_fallback=True,
-        )
+        with pytest.raises(LLMRequestError) as caught:
+            await TeamoRouterClient(settings(), client=http).complete_structured(
+                messages=[LLMMessage(role="user", content="answer")],
+                response_model=Answer,
+                schema_name="answer_v1",
+                force_fallback=True,
+            )
 
-    assert models == ["gpt-5.6-luna"]
-    assert result.requested_model == "gpt-5.6-sol"
-    assert result.actual_model == "gpt-5.6-luna"
+    assert models == []
+    assert caught.value.attempted_models == ()
+    assert caught.value.failure_classification is LLMFailureClassification.PREFLIGHT_FAILURE

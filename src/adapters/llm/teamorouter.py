@@ -7,6 +7,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from src.adapters.llm.provider import (
+    LLMFailureClassification,
     LLMMessage,
     LLMProviderUnavailableError,
     LLMRequestError,
@@ -19,7 +20,9 @@ StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
 
 class _RetryableProviderFailure(RuntimeError):
-    pass
+    def __init__(self, message: str, classification: LLMFailureClassification) -> None:
+        super().__init__(message)
+        self.classification = classification
 
 
 class TeamoRouterClient:
@@ -65,11 +68,28 @@ class TeamoRouterClient:
         force_fallback: bool = False,
     ) -> LLMStructuredResponse[StructuredModel]:
         requested_model = self._settings.primary_model
-        route = (
-            [self._settings.fallback_model]
-            if force_fallback
-            else [requested_model, self._settings.fallback_model]
-        )
+        try:
+            _validate_completion_url(self._completion_url)
+            request_template = _structured_request_template(
+                messages=messages,
+                response_model=response_model,
+                schema_name=schema_name,
+            )
+        except Exception:
+            raise LLMRequestError(
+                f"TeamoRouter {schema_name} request failed preflight",
+                requested_model=requested_model,
+                attempted_models=(),
+                failure_classification=LLMFailureClassification.PREFLIGHT_FAILURE,
+            ) from None
+        if force_fallback:
+            raise LLMRequestError(
+                "TeamoRouter direct fallback routing is disabled",
+                requested_model=requested_model,
+                attempted_models=(),
+                failure_classification=LLMFailureClassification.PREFLIGHT_FAILURE,
+            )
+        route = [requested_model, self._settings.fallback_model]
         attempted: list[str] = []
         last_retryable: _RetryableProviderFailure | None = None
         for model in route:
@@ -81,7 +101,7 @@ class TeamoRouterClient:
                     model=model,
                     requested_model=requested_model,
                     attempted_models=tuple(attempted),
-                    messages=messages,
+                    request_template=request_template,
                     response_model=response_model,
                     schema_name=schema_name,
                 )
@@ -93,6 +113,9 @@ class TeamoRouterClient:
             f"TeamoRouter models unavailable after {len(attempted)} attempt(s): {detail}",
             requested_model=requested_model,
             attempted_models=tuple(attempted),
+            failure_classification=(
+                last_retryable.classification if last_retryable is not None else None
+            ),
         )
 
     async def _send(
@@ -101,22 +124,11 @@ class TeamoRouterClient:
         model: str,
         requested_model: str,
         attempted_models: tuple[str, ...],
-        messages: list[LLMMessage],
+        request_template: dict[str, Any],
         response_model: type[StructuredModel],
         schema_name: str,
     ) -> LLMStructuredResponse[StructuredModel]:
-        payload = {
-            "model": model,
-            "messages": [message.model_dump(mode="json") for message in messages],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": schema_name,
-                    "strict": True,
-                    "schema": response_model.model_json_schema(),
-                },
-            },
-        }
+        payload = {"model": model, **request_template}
         headers = {
             "Authorization": f"Bearer {self._settings.api_key.get_secret_value()}",
             "Content-Type": "application/json",
@@ -135,13 +147,21 @@ class TeamoRouterClient:
                     timeout=self._timeout_seconds,
                 )
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            raise _RetryableProviderFailure(type(exc).__name__) from None
+            raise _RetryableProviderFailure(
+                type(exc).__name__, LLMFailureClassification.RETRYABLE_TRANSPORT_FAILURE
+            ) from None
 
         if response.status_code in {408, 429} or response.status_code >= 500:
-            raise _RetryableProviderFailure(f"HTTP {response.status_code}")
+            raise _RetryableProviderFailure(
+                f"HTTP {response.status_code}",
+                LLMFailureClassification.RETRYABLE_HTTP_FAILURE,
+            )
         if response.is_error:
             raise LLMRequestError(
-                f"TeamoRouter rejected structured request: HTTP {response.status_code}"
+                f"TeamoRouter rejected structured request: HTTP {response.status_code}",
+                requested_model=requested_model,
+                attempted_models=attempted_models,
+                failure_classification=LLMFailureClassification.REQUEST_REJECTED,
             )
 
         try:
@@ -151,7 +171,10 @@ class TeamoRouterClient:
             output = response_model.model_validate(decoded)
         except (ValueError, TypeError, KeyError, IndexError, ValidationError) as exc:
             raise StructuredOutputError(
-                f"TeamoRouter response failed {schema_name} validation: {type(exc).__name__}"
+                f"TeamoRouter response failed {schema_name} validation: {type(exc).__name__}",
+                requested_model=requested_model,
+                attempted_models=attempted_models,
+                failure_classification=LLMFailureClassification.STRUCTURED_OUTPUT_INVALID,
             ) from None
 
         usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
@@ -188,6 +211,37 @@ def _extract_content(body: dict[str, Any]) -> str | dict[str, Any]:
         if text:
             return text
     raise TypeError("unsupported structured content shape")
+
+
+def _structured_request_template(
+    *,
+    messages: list[LLMMessage],
+    response_model: type[StructuredModel],
+    schema_name: str,
+) -> dict[str, Any]:
+    if not messages:
+        raise ValueError("at least one LLM message is required")
+    if not schema_name.strip():
+        raise ValueError("schema_name must not be empty")
+    template = {
+        "messages": [message.model_dump(mode="json") for message in messages],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_name,
+                "strict": True,
+                "schema": response_model.model_json_schema(),
+            },
+        },
+    }
+    json.dumps(template, separators=(",", ":"))
+    return template
+
+
+def _validate_completion_url(value: str) -> None:
+    url = httpx.URL(value)
+    if url.scheme not in {"http", "https"} or not url.host:
+        raise ValueError("completion URL must be absolute HTTP(S)")
 
 
 def _optional_int(value: object) -> int | None:

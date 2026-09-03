@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import ConfigDict, Field
 
 from src.adapters.llm import (
+    LLMFailureClassification,
     LLMMessage,
     LLMProvider,
     LLMProviderError,
@@ -29,15 +30,26 @@ class _StrictModel(DomainModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SchemeAssuranceProposal(_StrictModel):
+    accepted_evidence_only: Literal[True]
+    deterministic_financial_values: Literal[True]
+    review_required: Literal[True]
+
+
 class SchemeProposal(_StrictModel):
     research_scope: list[str] = Field(min_length=1)
     data_requirements: list[str] = Field(min_length=1)
     agent_requirements: list[str] = Field(min_length=1)
     skill_requirements: list[str] = Field(min_length=1)
-    calculation_requirements: list[str] = Field(min_length=1)
-    assurance_requirements: dict[str, bool]
+    calculation_requirements: list[
+        Literal[
+            "deterministic_financial_calculations_only",
+            "calculation_records_for_reported_values",
+        ]
+    ] = Field(min_length=2, max_length=2)
+    assurance_requirements: SchemeAssuranceProposal
     report_requirements: list[str] = Field(min_length=1)
-    limitations: list[str] = Field(default_factory=list)
+    limitations: list[str]
 
 
 class PlannedTaskProposal(_StrictModel):
@@ -61,6 +73,8 @@ class LLMExecutionAudit(_StrictModel):
     structured_validation: str
     validation_attempts: int = Field(ge=0)
     deterministic_fallback: bool
+    failure_classification: str | None = None
+    preflight_failure: bool = False
 
 
 OutputModel = TypeVar("OutputModel")
@@ -110,13 +124,17 @@ class TeamoRouterSchemeGenerator:
             raise ValueError("goal and research object must reference the same object")
         messages = _scheme_messages(research_object, goal)
         last_error: LLMProviderError | ValueError | None = None
+        attempted_models: list[str] = []
+        validation_attempts = 0
         for attempt in range(1, self._max_validation_attempts + 1):
+            validation_attempts = attempt
             try:
                 response = await self._provider.complete_structured(
                     messages=messages,
                     response_model=SchemeProposal,
-                    schema_name="research_scheme_proposal_v1",
+                    schema_name="research_scheme_proposal_v2",
                 )
+                attempted_models.extend(response.attempted_models)
                 _validate_scheme_proposal(response.output)
                 scheme_key = f"{research_object.object_id}:{goal.goal_id}:{goal.as_of}:llm"
                 scheme = ResearchSchemeSnapshot(
@@ -132,20 +150,26 @@ class TeamoRouterSchemeGenerator:
                     goal=goal,
                     response=response,
                     attempt=attempt,
+                    attempted_models=attempted_models,
                 )
-            except (StructuredOutputError, ValueError) as exc:
+            except StructuredOutputError as exc:
+                attempted_models.extend(exc.attempted_models)
+                last_error = exc
+                messages = _with_validation_retry(messages, type(exc).__name__)
+            except ValueError as exc:
                 last_error = exc
                 messages = _with_validation_retry(messages, type(exc).__name__)
             except LLMProviderError as exc:
+                attempted_models.extend(exc.attempted_models)
                 last_error = exc
                 break
         fallback = await self._fallback.generate(research_object=research_object, goal=goal)
-        reason = type(last_error).__name__ if last_error else "UNKNOWN"
+        classification = _failure_classification(last_error)
         decision = StructuredAgentDecision(
             decision_id=_decision_id(goal.goal_id, "scheme", "deterministic"),
             run_id=f"DRAFT:{goal.goal_id}",
             decision_type="SCHEME_GENERATOR_FALLBACK",
-            reason_code=reason,
+            reason_code=classification.upper(),
             summary="LLM scheme was unavailable or invalid; deterministic scheme fallback used.",
             requires_review=False,
         )
@@ -153,10 +177,16 @@ class TeamoRouterSchemeGenerator:
             provider="teamorouter",
             requested_model=_fallback_requested_model(last_error, self._provider),
             actual_model=None,
-            attempted_models=_fallback_attempted_models(last_error),
-            structured_validation="FALLBACK",
-            validation_attempts=self._max_validation_attempts,
+            attempted_models=attempted_models,
+            structured_validation=(
+                "PREFLIGHT_FAILURE"
+                if classification == LLMFailureClassification.PREFLIGHT_FAILURE
+                else "FALLBACK"
+            ),
+            validation_attempts=validation_attempts,
             deterministic_fallback=True,
+            failure_classification=classification,
+            preflight_failure=(classification == LLMFailureClassification.PREFLIGHT_FAILURE),
         )
         self.decisions.append(decision)
         self.last_audit = audit
@@ -169,6 +199,7 @@ class TeamoRouterSchemeGenerator:
         goal: ResearchGoal,
         response: LLMStructuredResponse[SchemeProposal],
         attempt: int,
+        attempted_models: list[str],
     ) -> AgenticLLMResult[ResearchSchemeSnapshot]:
         decision = StructuredAgentDecision(
             decision_id=_decision_id(goal.goal_id, "scheme", response.actual_model),
@@ -182,7 +213,7 @@ class TeamoRouterSchemeGenerator:
             confidence=1.0,
             requires_review=False,
         )
-        audit = _audit(response, attempt)
+        audit = _audit(response, attempt, attempted_models=attempted_models)
         self.decisions.append(decision)
         self.last_audit = audit
         return AgenticLLMResult(output=scheme, decision=decision, audit=audit)
@@ -226,13 +257,17 @@ class TeamoRouterResearchLeadPlanner:
         _validate_planner_inputs(run_id=run_id, goal=goal, scheme=scheme)
         messages = _planner_messages(run_id, goal, scheme)
         last_error: LLMProviderError | ValueError | None = None
+        attempted_models: list[str] = []
+        validation_attempts = 0
         for attempt in range(1, self._max_validation_attempts + 1):
+            validation_attempts = attempt
             try:
                 response = await self._provider.complete_structured(
                     messages=messages,
                     response_model=PlannedGraphProposal,
                     schema_name="planned_task_graph_v1",
                 )
+                attempted_models.extend(response.attempted_models)
                 graph = _build_validated_graph(run_id, scheme, response.output)
                 decision = StructuredAgentDecision(
                     decision_id=_decision_id(run_id, "plan", response.actual_model),
@@ -246,23 +281,28 @@ class TeamoRouterResearchLeadPlanner:
                     confidence=1.0,
                     requires_review=False,
                 )
-                audit = _audit(response, attempt)
+                audit = _audit(response, attempt, attempted_models=attempted_models)
                 self.decisions.append(decision)
                 self.last_audit = audit
                 return AgenticLLMResult(output=graph, decision=decision, audit=audit)
-            except (StructuredOutputError, ValueError) as exc:
+            except StructuredOutputError as exc:
+                attempted_models.extend(exc.attempted_models)
+                last_error = exc
+                messages = _with_validation_retry(messages, type(exc).__name__)
+            except ValueError as exc:
                 last_error = exc
                 messages = _with_validation_retry(messages, type(exc).__name__)
             except LLMProviderError as exc:
+                attempted_models.extend(exc.attempted_models)
                 last_error = exc
                 break
         graph = self._fallback.plan(run_id=run_id, goal=goal, scheme=scheme)
-        reason = type(last_error).__name__ if last_error else "UNKNOWN"
+        classification = _failure_classification(last_error)
         decision = StructuredAgentDecision(
             decision_id=_decision_id(run_id, "plan", "deterministic"),
             run_id=run_id,
             decision_type="INITIAL_PLAN_FALLBACK",
-            reason_code=reason,
+            reason_code=classification.upper(),
             summary="LLM graph was unavailable or invalid; deterministic Lead plan used.",
             requires_review=False,
         )
@@ -270,10 +310,16 @@ class TeamoRouterResearchLeadPlanner:
             provider="teamorouter",
             requested_model=_fallback_requested_model(last_error, self._provider),
             actual_model=None,
-            attempted_models=_fallback_attempted_models(last_error),
-            structured_validation="FALLBACK",
-            validation_attempts=self._max_validation_attempts,
+            attempted_models=attempted_models,
+            structured_validation=(
+                "PREFLIGHT_FAILURE"
+                if classification == LLMFailureClassification.PREFLIGHT_FAILURE
+                else "FALLBACK"
+            ),
+            validation_attempts=validation_attempts,
             deterministic_fallback=True,
+            failure_classification=classification,
+            preflight_failure=(classification == LLMFailureClassification.PREFLIGHT_FAILURE),
         )
         self.decisions.append(decision)
         self.last_audit = audit
@@ -284,7 +330,8 @@ def _scheme_messages(research_object: ResearchObject, goal: ResearchGoal) -> lis
     system = (
         "Create a research method only. Return the strict JSON schema. Never generate financial "
         "numbers, estimates, CalculationRecords, or hidden reasoning. Require accepted evidence "
-        "and deterministic code for every calculable financial value."
+        "and deterministic code for every calculable financial value. Preserve the exact "
+        "calculation requirement identifiers constrained by the response schema."
     )
     user = json.dumps(
         {
@@ -336,9 +383,9 @@ def _validate_scheme_proposal(proposal: SchemeProposal) -> None:
     }
     if not required_calculations.issubset(proposal.calculation_requirements):
         raise ValueError("scheme must preserve deterministic calculation requirements")
-    if proposal.assurance_requirements.get("accepted_evidence_only") is not True:
+    if proposal.assurance_requirements.accepted_evidence_only is not True:
         raise ValueError("scheme must require accepted evidence")
-    if proposal.assurance_requirements.get("deterministic_financial_values") is not True:
+    if proposal.assurance_requirements.deterministic_financial_values is not True:
         raise ValueError("scheme must require deterministic financial values")
     _reject_numeric_values(proposal.model_dump())
 
@@ -424,12 +471,17 @@ def _ensure_acyclic(proposal: PlannedGraphProposal) -> None:
         remaining -= ready
 
 
-def _audit(response: LLMStructuredResponse[DomainModel], attempt: int) -> LLMExecutionAudit:
+def _audit(
+    response: LLMStructuredResponse[DomainModel],
+    attempt: int,
+    *,
+    attempted_models: list[str],
+) -> LLMExecutionAudit:
     return LLMExecutionAudit(
         provider=response.provider,
         requested_model=response.requested_model,
         actual_model=response.actual_model,
-        attempted_models=list(response.attempted_models),
+        attempted_models=list(attempted_models),
         structured_validation="PASS",
         validation_attempts=attempt,
         deterministic_fallback=False,
@@ -454,6 +506,12 @@ def _fallback_requested_model(
     return value if isinstance(value, str) and value else _requested_model(provider)
 
 
-def _fallback_attempted_models(error: LLMProviderError | ValueError | None) -> list[str]:
-    values = getattr(error, "attempted_models", ())
-    return [value for value in values if isinstance(value, str)]
+def _failure_classification(error: LLMProviderError | ValueError | None) -> str:
+    classification = getattr(error, "failure_classification", None)
+    if isinstance(classification, LLMFailureClassification):
+        return classification.value
+    if isinstance(classification, str) and classification:
+        return classification
+    if isinstance(error, ValueError):
+        return LLMFailureClassification.SEMANTIC_VALIDATION_FAILED.value
+    return "unknown_failure"
