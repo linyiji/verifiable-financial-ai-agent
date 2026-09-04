@@ -113,6 +113,12 @@ Minimum useful set:
 - EV / EBITDA
 - SMA / RSI / MACD
 
+### 8.1 Revenue Growth v1 reviewed semantics
+
+`revenue_growth_v1` is exactly `(current_revenue - prior_revenue) / prior_revenue` with the
+semantic precondition `prior_revenue > 0`. A zero or negative prior value fails closed with
+`REVENUE_GROWTH_PRIOR_REVENUE_MUST_BE_POSITIVE`; it must never emit a growth percentage.
+
 ## 9. Forecasts
 
 Forecast values must not be confused with actual values.

@@ -3,8 +3,12 @@
 This workspace proves `revenue_growth_v1` as an exact reduced rational:
 
 ```text
-(current_revenue_minor - prior_revenue_minor) / abs(prior_revenue_minor)
+(current_revenue_minor - prior_revenue_minor) / prior_revenue_minor
 ```
+
+The reviewed semantic precondition is `prior_revenue_minor > 0`. Zero or negative prior revenue
+fails closed with the stable financial-validation reason
+`REVENUE_GROWTH_PRIOR_REVENUE_MUST_BE_POSITIVE`; no growth percentage or proof is produced.
 
 The guest commits only the formula id, compiled image id, input commitment, expected output
 commitment, and canonical rational result. The input commitment binds the run, calculation,

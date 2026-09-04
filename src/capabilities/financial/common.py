@@ -25,6 +25,12 @@ class ZeroDenominatorError(FinancialCapabilityError):
     pass
 
 
+class NonPositivePriorRevenueError(ZeroDenominatorError):
+    """Revenue-growth input violates its reviewed strictly-positive prior policy."""
+
+    pass
+
+
 def require_accepted(record: EvidenceRecord) -> EvidenceRecord:
     if record.status is not EvidenceStatus.ACCEPTED:
         raise UnacceptedEvidenceError(

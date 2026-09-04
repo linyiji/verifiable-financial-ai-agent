@@ -34,7 +34,9 @@ from src.adapters.finrobot.professional_reporting import (
 )
 from src.domain.enums import FinancialActuality, FinancialPeriodBasis, FinancialUnit
 from src.domain.financial_semantics import ReleasedFinancialMetric
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.report import CanonicalReportDTO
+from src.domain.review import ReviewCheck
 from src.infrastructure.config import Settings
 
 
@@ -216,7 +218,16 @@ def test_financial_review_evidence_negatives_never_replace_calculation_with_none
             calculations = kwargs["calculations"]
             assert isinstance(calculations, list)
             assert calculations and all(item is not None for item in calculations)
-            return SimpleNamespace(status=acceptance_runner.ReviewStatus.BLOCK)
+            return SimpleNamespace(
+                status=acceptance_runner.ReviewStatus.BLOCK,
+                checks=[
+                    ReviewCheck(
+                        code="FIN_CALCULATION_RECOMPUTATION",
+                        status=acceptance_runner.ReviewStatus.BLOCK,
+                        detail=REVENUE_GROWTH_VALIDATION_REASON,
+                    )
+                ],
+            )
 
     monkeypatch.setattr(acceptance_runner, "IndependentFinancialReviewer", Reviewer)
     checks = _financial_review_negative_checks(
@@ -229,6 +240,10 @@ def test_financial_review_evidence_negatives_never_replace_calculation_with_none
         "currency_mismatch_blocked": True,
         "cohort_mismatch_blocked": True,
         "calculation_tamper_blocked": True,
+        "zero_prior_blocked": True,
+        "zero_prior_reason_stable": True,
+        "negative_prior_blocked": True,
+        "negative_prior_reason_stable": True,
     }
 
 

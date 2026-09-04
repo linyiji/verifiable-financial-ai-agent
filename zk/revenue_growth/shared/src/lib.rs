@@ -6,6 +6,7 @@ pub const INPUT_SCHEMA_VERSION: &str = "risc0_revenue_growth_input_v1";
 pub const JOURNAL_SCHEMA_VERSION: &str = "risc0_revenue_growth_journal_v1";
 pub const FORMULA_ID: &str = "revenue_growth_v1";
 pub const CAPABILITY_ID: &str = "revenue_growth";
+pub const FINANCIAL_VALIDATION_REASON: &str = "REVENUE_GROWTH_PRIOR_REVENUE_MUST_BE_POSITIVE";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -178,8 +179,8 @@ fn gcd(mut left: i128, mut right: i128) -> i128 {
 }
 
 pub fn calculate(inputs: &CanonicalInputs) -> Result<CanonicalResult, String> {
-    if inputs.prior_revenue_minor == 0 {
-        return Err("prior revenue must not be zero".to_owned());
+    if inputs.prior_revenue_minor <= 0 {
+        return Err(FINANCIAL_VALIDATION_REASON.to_owned());
     }
     if inputs.scale > 18 {
         return Err("scale must be at most 18".to_owned());
@@ -197,7 +198,7 @@ pub fn calculate(inputs: &CanonicalInputs) -> Result<CanonicalResult, String> {
     let prior = i128::from(inputs.prior_revenue_minor);
     let current = i128::from(inputs.current_revenue_minor);
     let numerator = current - prior;
-    let denominator = prior.abs();
+    let denominator = prior;
     let divisor = gcd(numerator, denominator);
 
     Ok(CanonicalResult {
@@ -288,6 +289,30 @@ mod tests {
     }
 
     #[test]
+    fn zero_prior_fails_closed_with_stable_reason() {
+        let error = calculate(&CanonicalInputs {
+            prior_revenue_minor: 0,
+            current_revenue_minor: 125,
+            currency: "USD".to_owned(),
+            scale: 0,
+        })
+        .unwrap_err();
+        assert_eq!(error, FINANCIAL_VALIDATION_REASON);
+    }
+
+    #[test]
+    fn negative_prior_fails_closed_with_stable_reason() {
+        let error = calculate(&CanonicalInputs {
+            prior_revenue_minor: -100,
+            current_revenue_minor: -80,
+            currency: "USD".to_owned(),
+            scale: 0,
+        })
+        .unwrap_err();
+        assert_eq!(error, FINANCIAL_VALIDATION_REASON);
+    }
+
+    #[test]
     fn commitments_match_the_cross_language_fixture() {
         let mut input = ProofInput {
             schema_version: INPUT_SCHEMA_VERSION.to_owned(),
@@ -296,7 +321,7 @@ mod tests {
             formula_id: FORMULA_ID.to_owned(),
             capability_id: CAPABILITY_ID.to_owned(),
             implementation_hash:
-                "sha256:f583ff894c388b8677bde486760ea14fc702278cfaa2229cb007221f1ba20765".to_owned(),
+                "sha256:f1ae5053b71f79b3efce66284c3354a5aca23ce44f55ea1f7432b71510b729ac".to_owned(),
             input_evidence_refs: vec![
                 "EVD-NVDA-REVENUE-FY2024".to_owned(),
                 "EVD-NVDA-REVENUE-FY2025".to_owned(),
@@ -320,7 +345,7 @@ mod tests {
         );
         assert_eq!(
             input.input_commitment,
-            "sha256:515bde26968e1b25e621866342adf4f9438b0a45c6ce3e01126509ebc127d640"
+            "sha256:536355157b5d7bedc76fc30cd585c0a475a4f021883de1ed6b4417ae8edc2f49"
         );
         assert_eq!(validate_and_calculate(&input).unwrap(), result);
     }

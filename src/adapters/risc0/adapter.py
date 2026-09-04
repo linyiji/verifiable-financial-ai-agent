@@ -17,10 +17,10 @@ from src.domain.enums import ProofStatus
 from src.domain.proof import ProofRequest, ProofResult
 
 EXPECTED_REVENUE_GROWTH_IMAGE_ID = (
-    "cc73814ead1e753a520eff271b75b0f8056813ee34d4414b0e508d5c42ef326c"
+    "491e8fb2335a465b112dda11b16b6dcec703e11b1bfa3d21ebaec177c3847e36"
 )
 EXPECTED_REVENUE_GROWTH_HOST_SHA256 = (
-    "sha256:a8711c3b2dae513bd74b3b0bbc477dd751374eb25f29461d7d3c04fd31771f67"
+    "sha256:ad29b18f648661f8cfb144677baeaa9ad931210ed08aab4c4216af444b8fe3df"
 )
 
 

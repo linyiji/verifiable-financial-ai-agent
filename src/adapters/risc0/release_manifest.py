@@ -12,6 +12,15 @@ RELEASE_MANIFEST_SCHEMA = "vfas.risc0.release-manifest.v1"
 SOURCE_SET_ALGORITHM = "vfas-risc0-source-set-sha256-v1"
 SOURCE_SET_DOMAIN = b"VFAS_RISC0_RELEASE_SOURCE_SET_V1\0"
 RELEASE_MANIFEST_RELATIVE_PATH = Path("zk/revenue_growth/RISC_ZERO_RELEASE_MANIFEST.json")
+REVENUE_GROWTH_RELEASE_PROGRAM = {
+    "capability_id": "revenue_growth",
+    "input_schema_version": "risc0_revenue_growth_input_v1",
+    "journal_schema_version": "risc0_revenue_growth_journal_v1",
+    "program_id": "revenue_growth_v1",
+    "formula_expression": ("(current_revenue_minor - prior_revenue_minor) / prior_revenue_minor"),
+    "semantic_precondition": "prior_revenue_minor > 0",
+    "financial_validation_reason": ("REVENUE_GROWTH_PRIOR_REVENUE_MUST_BE_POSITIVE"),
+}
 
 
 def _sha256(value: bytes) -> str:
@@ -125,6 +134,8 @@ def load_and_verify_release_manifest(
         raise RuntimeError("invalid RISC Zero release manifest") from exc
     if not isinstance(payload, dict) or payload.get("schema_version") != RELEASE_MANIFEST_SCHEMA:
         raise RuntimeError("unsupported RISC Zero release manifest schema")
+    if payload.get("program") != REVENUE_GROWTH_RELEASE_PROGRAM:
+        raise RuntimeError("RISC Zero release program semantics mismatch")
     source_closure = payload.get("source_closure")
     if not isinstance(source_closure, dict):
         raise RuntimeError("RISC Zero release source closure is missing")

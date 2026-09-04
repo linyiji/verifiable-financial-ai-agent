@@ -8,6 +8,8 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
+
 INPUT_SCHEMA_VERSION = "risc0_revenue_growth_input_v1"
 JOURNAL_SCHEMA_VERSION = "risc0_revenue_growth_journal_v1"
 FORMULA_ID = "revenue_growth_v1"
@@ -36,8 +38,8 @@ class CanonicalRevenueInputs(BaseModel):
             raise ValueError("prior_revenue_minor must fit signed 64-bit integer")
         if not minimum <= self.current_revenue_minor <= maximum:
             raise ValueError("current_revenue_minor must fit signed 64-bit integer")
-        if self.prior_revenue_minor == 0:
-            raise ValueError("prior revenue must not be zero")
+        if self.prior_revenue_minor <= 0:
+            raise ValueError(REVENUE_GROWTH_VALIDATION_REASON)
         return self
 
 
@@ -95,8 +97,10 @@ def _finish_hash(hasher: _Hasher) -> str:
 def calculate_revenue_growth(
     inputs: CanonicalRevenueInputs,
 ) -> CanonicalRevenueGrowthResult:
+    if inputs.prior_revenue_minor <= 0:
+        raise ValueError(REVENUE_GROWTH_VALIDATION_REASON)
     numerator = inputs.current_revenue_minor - inputs.prior_revenue_minor
-    denominator = abs(inputs.prior_revenue_minor)
+    denominator = inputs.prior_revenue_minor
     divisor = _greatest_common_divisor(numerator, denominator)
     return CanonicalRevenueGrowthResult(
         growth_numerator=numerator // divisor,

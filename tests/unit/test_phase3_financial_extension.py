@@ -52,6 +52,7 @@ from src.domain.enums import (
     TechnicalPriceBasis,
 )
 from src.domain.evidence import EvidenceRecord
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.task import PlannedTaskGraph, Task
 from src.output.financial_metrics import build_material_financial_release
 from src.runtime.events import InMemoryRuntimeEventStore
@@ -553,6 +554,42 @@ async def test_extension_executes_generated_gap_and_finrobot_technical_runtime()
     assert "FIN_CALCULATION_RECOMPUTATION" in {
         item.code for item in blocked.checks if item.status is ReviewStatus.BLOCK
     }
+
+    for invalid_prior in ("0", "-1"):
+        invalid_evidence = [
+            (
+                item.model_copy(update={"normalized_value": invalid_prior})
+                if item.evidence_id == "E-REV-PRIOR"
+                else item
+            )
+            for item in evidence
+        ]
+        invalid_calculations = calculations.copy()
+        invalid_calculations[0] = growth.model_copy(
+            update={
+                "input_values_snapshot": {
+                    **growth.input_values_snapshot,
+                    "prior_revenue": invalid_prior,
+                }
+            }
+        )
+        nonpositive = reviewer.review(
+            review_id=f"REVIEW-RUN-1-NONPOSITIVE-{invalid_prior}",
+            run_id="RUN-1",
+            run_as_of=date(2026, 9, 4),
+            evidence=invalid_evidence,
+            calculations=invalid_calculations,
+            metrics=metrics,
+            claims=claims,
+            judgments=result.judgments,
+            proof_requirements=requirements,
+        )
+        assert nonpositive.status is ReviewStatus.BLOCK
+        assert any(
+            item.code == "FIN_CALCULATION_RECOMPUTATION"
+            and item.detail == REVENUE_GROWTH_VALIDATION_REASON
+            for item in nonpositive.checks
+        )
 
 
 @pytest.mark.asyncio

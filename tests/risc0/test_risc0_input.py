@@ -16,10 +16,16 @@ from src.adapters.risc0 import (
     load_proof_input,
     write_proof_input,
 )
+from src.adapters.risc0.release_manifest import (
+    REVENUE_GROWTH_RELEASE_PROGRAM,
+    load_and_verify_release_manifest,
+)
 from src.domain.enums import ProofStatus
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.proof import ProofAdapter, ProofRequest
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "risc0_revenue_growth_input.json"
+ROOT = Path(__file__).parents[2]
 PYTHON_HOST = Path(sys.executable).resolve()
 PYTHON_HOST_DIGEST = f"sha256:{hashlib.sha256(PYTHON_HOST.read_bytes()).hexdigest()}"
 
@@ -36,6 +42,11 @@ def test_fixture_binds_complete_proof_context() -> None:
     assert proof_input.expected_output_commitment.startswith("sha256:")
 
 
+def test_release_manifest_binds_reviewed_formula_and_precondition() -> None:
+    manifest = load_and_verify_release_manifest(ROOT)
+    assert manifest["program"] == REVENUE_GROWTH_RELEASE_PROGRAM
+
+
 def test_revenue_growth_uses_exact_reduced_rational_arithmetic() -> None:
     result = calculate_revenue_growth(
         CanonicalRevenueInputs(
@@ -49,11 +60,40 @@ def test_revenue_growth_uses_exact_reduced_rational_arithmetic() -> None:
     assert result.growth_denominator == 60_922
 
 
-def test_tampered_revenue_invalidates_commitment() -> None:
+@pytest.mark.parametrize("prior", [0, -60_922])
+def test_revenue_growth_rejects_nonpositive_prior_with_stable_reason(prior: int) -> None:
+    with pytest.raises(ValidationError, match=REVENUE_GROWTH_VALIDATION_REASON):
+        CanonicalRevenueInputs(
+            prior_revenue_minor=prior,
+            current_revenue_minor=130_497,
+            currency="USD",
+            scale=0,
+        )
+
+    bypassed = CanonicalRevenueInputs.model_construct(
+        prior_revenue_minor=prior,
+        current_revenue_minor=130_497,
+        currency="USD",
+        scale=0,
+    )
+    with pytest.raises(ValueError, match=REVENUE_GROWTH_VALIDATION_REASON):
+        calculate_revenue_growth(bypassed)
+
+
+@pytest.mark.parametrize("field", ["prior_revenue_minor", "current_revenue_minor"])
+def test_tampered_revenue_invalidates_commitment(field: str) -> None:
     original = load_proof_input(FIXTURE)
     tampered = original.model_dump(mode="json")
-    tampered["canonical_inputs"]["current_revenue_minor"] += 1
+    tampered["canonical_inputs"][field] += 1
     with pytest.raises(ValidationError, match="commitment mismatch"):
+        original.__class__.model_validate(tampered)
+
+
+def test_tampered_expected_result_invalidates_commitment() -> None:
+    original = load_proof_input(FIXTURE)
+    tampered = original.model_dump(mode="json")
+    tampered["expected_output_commitment"] = "sha256:" + "0" * 64
+    with pytest.raises(ValidationError, match="expected output commitment mismatch"):
         original.__class__.model_validate(tampered)
 
 

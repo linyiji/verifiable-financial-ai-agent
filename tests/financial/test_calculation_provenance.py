@@ -72,12 +72,12 @@ async def test_native_calculations_capture_reproducible_source_provenance() -> N
     variant = await RevenueGrowthCapability().execute(
         {
             "calculation_id": "CALC-GROWTH-VARIANT",
-            "prior": _evidence(
-                "EVD-PRIOR-VARIANT", "revenue", "FY2024", "100"
-            ).model_copy(update={"run_id": "RUN-OTHER"}),
-            "current": _evidence(
-                "EVD-CURRENT-VARIANT", "revenue", "FY2025", "120"
-            ).model_copy(update={"run_id": "RUN-OTHER"}),
+            "prior": _evidence("EVD-PRIOR-VARIANT", "revenue", "FY2024", "100").model_copy(
+                update={"run_id": "RUN-OTHER"}
+            ),
+            "current": _evidence("EVD-CURRENT-VARIANT", "revenue", "FY2025", "120").model_copy(
+                update={"run_id": "RUN-OTHER"}
+            ),
         },
         CapabilityContext(run_id="RUN-OTHER", task_id="TASK-OTHER"),
     )
@@ -88,7 +88,8 @@ async def test_native_calculations_capture_reproducible_source_provenance() -> N
     ):
         assert record.code_hash == source_hash
         assert record.source_ref == capability.definition.implementation_ref
-        assert record.capability_version == "1.0.0"
+        expected_version = "1.1.0" if capability is RevenueGrowthCapability else "1.0.0"
+        assert record.capability_version == expected_version
         assert record.runtime_version is not None
         assert record.runtime_version.startswith("Python 3.11.")
         assert record.proof_ref is None
@@ -157,9 +158,7 @@ async def test_linker_copies_calculation_to_evidence_review_and_canonical_lineag
 
 @pytest.mark.asyncio
 async def test_linker_rejects_lineage_replacement() -> None:
-    calculation = (await _calculations())[0].model_copy(
-        update={"review_record_id": "REVIEW-OTHER"}
-    )
+    calculation = (await _calculations())[0].model_copy(update={"review_record_id": "REVIEW-OTHER"})
     review = ReviewRecord(
         review_id="REVIEW-PROVENANCE",
         run_id="RUN-PROVENANCE",

@@ -22,6 +22,7 @@ from src.domain.calculation import CalculationRecord
 from src.domain.enums import ProofStatus, ReviewStatus
 from src.domain.evidence import EvidenceRecord
 from src.domain.financial_semantics import MaterialFinancialClaim, ReleasedFinancialMetric
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.proof import (
     ProofArtifactReference,
     ProofInputCommitment,
@@ -139,6 +140,17 @@ class ReleaseGate:
             reasons.append("RISC0_DEV_MODE_FORBIDDEN")
         if strict_lineage and set(review.required_proof_calculation_refs) != required_ids:
             reasons.append("REVIEW_PROOF_REQUIREMENT_MISMATCH")
+        if calculations is not None:
+            for calculation in calculations.values():
+                if calculation.formula_id != "revenue_growth_v1":
+                    continue
+                try:
+                    prior_revenue = Decimal(str(calculation.input_values_snapshot["prior_revenue"]))
+                    prior_is_positive = prior_revenue.is_finite() and prior_revenue > 0
+                except (DecimalException, KeyError, TypeError, ValueError):
+                    prior_is_positive = False
+                if not prior_is_positive:
+                    reasons.append(REVENUE_GROWTH_VALIDATION_REASON)
         if strict_lineage:
             for label, records in (
                 ("PROOF", proofs),

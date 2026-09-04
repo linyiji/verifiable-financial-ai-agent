@@ -16,6 +16,7 @@ from src.domain.enums import (
 )
 from src.domain.evidence import EvidenceRecord
 from src.domain.financial_semantics import MaterialFinancialClaim, ReleasedFinancialMetric
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.proof import ProofRecord, ProofResult
 from src.domain.review import ReviewCheck, ReviewRecord
 
@@ -174,6 +175,28 @@ def test_must_prove_rejects_missing_and_invalid_real_proof() -> None:
 
     assert missing.reason_codes == ("PROOF_MISSING:CALC-1",)
     assert invalid.reason_codes == ("PROOF_INVALID:CALC-1",)
+
+
+def test_release_gate_reports_stable_nonpositive_prior_reason() -> None:
+    calc = calculation().model_copy(update={"input_values_snapshot": {"prior_revenue": "0"}})
+    review = DeterministicReviewer().review(
+        review_id="REV-NONPOSITIVE",
+        run_id="RUN-1",
+        evidence=[
+            evidence("E-1", "FY2025", EvidenceStatus.ACCEPTED),
+            evidence("E-2", "FY2026", EvidenceStatus.ACCEPTED),
+        ],
+        calculations=[calc],
+    )
+    decision = ReleaseGate().evaluate(
+        review=review,
+        proof_requirements={calc.calculation_id: ProofRequirement.NOT_REQUIRED},
+        proofs={},
+        calculations={calc.calculation_id: calc},
+    )
+
+    assert decision.allowed is False
+    assert REVENUE_GROWTH_VALIDATION_REASON in decision.reason_codes
 
 
 def test_must_prove_rejects_unverified_result_and_mismatched_record() -> None:

@@ -18,6 +18,7 @@ from src.adapters.risc0.models import FORMULA_ID
 from src.application.extensions import ProofWorkflowOutcome
 from src.domain.calculation import CalculationRecord
 from src.domain.enums import ProofRequirement, ProofStatus
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.proof import (
     ProofArtifactReference,
     ProofInputCommitment,
@@ -285,6 +286,8 @@ def _build_input(calculation: CalculationRecord):
         raise ValueError("revenue growth calculation snapshot is incomplete") from exc
     if not prior.is_finite() or not current.is_finite():
         raise ValueError("revenue proof inputs must be finite")
+    if prior <= 0:
+        raise ValueError(REVENUE_GROWTH_VALIDATION_REASON)
     scale = max(0, -prior.as_tuple().exponent, -current.as_tuple().exponent)
     factor = Decimal(10) ** scale
     prior_minor = int(prior * factor)

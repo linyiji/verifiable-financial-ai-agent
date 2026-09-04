@@ -32,6 +32,7 @@ from src.domain.financial_semantics import (
     canonical_decimal,
     evidence_unit_class,
 )
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.macd_policy import MACD_DECIMAL_CONTEXT_POLICY
 from src.domain.review import ReviewCheck, ReviewRecord
 from src.output.financial_metrics import MATERIAL_FORMULAS
@@ -910,6 +911,8 @@ def _validate_formula_semantics(
         if len(inputs) != 2 or any(item.normalized_field != "revenue" for item in inputs):
             raise ValueError("revenue growth requires two revenue inputs")
         prior, current = inputs
+        if _decimal(prior.normalized_value) <= 0:
+            raise ValueError(REVENUE_GROWTH_VALIDATION_REASON)
         if (
             any(
                 item.evidence_category is not EvidenceCategory.FINANCIAL_STATEMENT
@@ -1077,9 +1080,9 @@ def _recompute(formula_id: str, inputs: Sequence[EvidenceRecord]) -> Decimal:
         with localcontext() as context:
             context.prec = 28
             prior, current = (_decimal(item.normalized_value) for item in inputs)
-            if prior == 0:
-                raise ValueError("prior revenue is zero")
-            return (current - prior) / abs(prior)
+            if prior <= 0:
+                raise ValueError(REVENUE_GROWTH_VALIDATION_REASON)
+            return (current - prior) / prior
     if formula_id == "ebitda_margin_v1":
         with localcontext() as context:
             context.prec = 28

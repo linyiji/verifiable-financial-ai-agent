@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from src.application.phase3_proof import RevenueGrowthRiscZeroProofWorkflow
+from src.application.phase3_proof import RevenueGrowthRiscZeroProofWorkflow, _build_input
 from src.domain.calculation import CalculationRecord
 from src.domain.enums import CalculationStatus, ProofRequirement, ProofStatus
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.proof import (
     ProofArtifactReference,
     ProofInputCommitment,
@@ -98,6 +99,21 @@ def _growth() -> CalculationRecord:
         source_ref="src.capabilities.financial.growth:RevenueGrowthCapability",
         runtime_version="Python 3.11.test",
     )
+
+
+@pytest.mark.parametrize("prior", ["0", "-1"])
+def test_proof_input_rejects_nonpositive_prior_with_stable_reason(prior: str) -> None:
+    invalid = _growth().model_copy(
+        update={
+            "input_values_snapshot": {
+                "prior_revenue": prior,
+                "current_revenue": "1",
+                "currency": "USD",
+            }
+        }
+    )
+    with pytest.raises(ValueError, match=REVENUE_GROWTH_VALIDATION_REASON):
+        _build_input(invalid)
 
 
 @pytest.mark.asyncio

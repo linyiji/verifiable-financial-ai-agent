@@ -2,15 +2,15 @@
   "artifacts": {
     "guest": {
       "combined_binary_path": "zk/revenue_growth/target/riscv-guest/revenue-growth-methods/revenue-growth-guest/riscv32im-risc0-zkvm-elf/docker/revenue-growth-guest.bin",
-      "combined_binary_sha256": "sha256:60b82da746aa22ec5b317e05e4ce6337cbe6b80f65c4499e771eb64388a4f946",
+      "combined_binary_sha256": "sha256:afbcd20dbe0cbbcfb91a031e0fcc75961ad854d56d9fe832c8c5420e95905f60",
       "elf_path": "zk/revenue_growth/target/riscv-guest/revenue-growth-methods/revenue-growth-guest/riscv32im-risc0-zkvm-elf/docker/revenue-growth-guest",
-      "elf_sha256": "sha256:f946e6ce2f42dbfdb8b49ff58d61077e87d87e5d7c0a73150419d50c52d57654",
-      "image_id": "cc73814ead1e753a520eff271b75b0f8056813ee34d4414b0e508d5c42ef326c"
+      "elf_sha256": "sha256:454aa141740723afbb5beeeb9f8100947bf05b04853a4c39d4230a4b9d4e76cb",
+      "image_id": "491e8fb2335a465b112dda11b16b6dcec703e11b1bfa3d21ebaec177c3847e36"
     },
     "host": {
       "format": "Mach-O 64-bit arm64",
       "path": "zk/revenue_growth/target/release/revenue-growth-proof-host",
-      "sha256": "sha256:a8711c3b2dae513bd74b3b0bbc477dd751374eb25f29461d7d3c04fd31771f67",
+      "sha256": "sha256:ad29b18f648661f8cfb144677baeaa9ad931210ed08aab4c4216af444b8fe3df",
       "size_bytes": 6278160
     }
   },
@@ -63,9 +63,12 @@
   ],
   "program": {
     "capability_id": "revenue_growth",
+    "financial_validation_reason": "REVENUE_GROWTH_PRIOR_REVENUE_MUST_BE_POSITIVE",
+    "formula_expression": "(current_revenue_minor - prior_revenue_minor) / prior_revenue_minor",
     "input_schema_version": "risc0_revenue_growth_input_v1",
     "journal_schema_version": "risc0_revenue_growth_journal_v1",
-    "program_id": "revenue_growth_v1"
+    "program_id": "revenue_growth_v1",
+    "semantic_precondition": "prior_revenue_minor > 0"
   },
   "reproducibility": {
     "build_count": 2,
@@ -93,13 +96,13 @@
       {"path": "zk/revenue_growth/normalize_macos_host.py", "sha256": "sha256:104e445274caa7ec0549f5bd9be3a019d41ededd575ba79366a3d8b95e39b925", "size_bytes": 2291},
       {"path": "zk/revenue_growth/rust-toolchain.toml", "sha256": "sha256:e410f51aeaded9f67289b8fea92378bc22fe02e7e4046c2ac0b64c5b9a7f64c4", "size_bytes": 88},
       {"path": "zk/revenue_growth/shared/Cargo.toml", "sha256": "sha256:c56f14767902bb0b2ef0f9f4c0fde1079258477b1de920468fb8970b1724dca1", "size_bytes": 155},
-      {"path": "zk/revenue_growth/shared/src/lib.rs", "sha256": "sha256:037f36a98cb30b63fb39babca5915a925dc0ec697fcf33413bd7017d139764cf", "size_bytes": 10399}
+      {"path": "zk/revenue_growth/shared/src/lib.rs", "sha256": "sha256:a3c09c78a9dea75eb996cbbc3748fcdd6b495a3c0ed951df7d28145aaa7e87fa", "size_bytes": 11190}
     ],
     "root": ".",
-    "source_set_sha256": "sha256:eaefcd2ee890cbdbd9ecd79a76b2d07b7c4835730055c08af5c4e48c6949d5fc"
+    "source_set_sha256": "sha256:f9298b08b95126e4ed225af59463f9368724d9dc2de938a80abb06982fe033cc"
   },
   "supersedes": {
-    "guest_image_id": "f49335e68f2f12c7f9f144bc587c9bb735e8c6be1edaab2b52a67828c989a354",
-    "host_sha256": "sha256:8f622fd58f3e7493ed35d6fdf048cbbfa84e912dcd4e7ae60bed6e5fe0c206c4"
+    "guest_image_id": "cc73814ead1e753a520eff271b75b0f8056813ee34d4414b0e508d5c42ef326c",
+    "host_sha256": "sha256:a8711c3b2dae513bd74b3b0bbc477dd751374eb25f29461d7d3c04fd31771f67"
   }
 }

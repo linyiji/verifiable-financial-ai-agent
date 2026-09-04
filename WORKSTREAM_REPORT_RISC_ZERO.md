@@ -1,5 +1,64 @@
 # WS-V — Real RISC Zero Revenue Growth Proof
 
+## Phase 3 F2 financial-audit remediation (authoritative current release)
+
+The historical WS-V record below is retained as provenance for the original proof work. It is
+superseded for the Phase 3 remediation candidate by the release built from immutable failed
+candidate `e02314c552d88fb736473bc587c650539615224a` on
+`codex/phase3-remediation-revenue-risc`.
+
+The reviewed formula is now exactly:
+
+```text
+(current_revenue - prior_revenue) / prior_revenue
+```
+
+It has the explicit precondition `prior_revenue > 0`. Zero and negative prior revenue fail closed
+at the native capability, independent reviewer/oracle, proof-input validator, host, and guest
+boundaries with `REVENUE_GROWTH_PRIOR_REVENUE_MUST_BE_POSITIVE`. No percentage or proof is
+produced for those inputs. Capability version `1.1.0` records the corrected production semantics.
+
+The same release manifest now binds the formula expression, precondition, and validation reason.
+Its existing Phase 3 gates were strengthened without expanding the 52-gate namespace: FS-005
+checks exact native/reviewer semantics and formula metadata, while P3-ZK-008 checks zero/negative
+rejection plus separate prior/current tamper resistance.
+
+### Rebuilt release identity
+
+| Evidence | Remediation value |
+| --- | --- |
+| Image id | `491e8fb2335a465b112dda11b16b6dcec703e11b1bfa3d21ebaec177c3847e36` |
+| Guest ELF SHA-256 | `sha256:454aa141740723afbb5beeeb9f8100947bf05b04853a4c39d4230a4b9d4e76cb` |
+| Guest combined binary SHA-256 | `sha256:afbcd20dbe0cbbcfb91a031e0fcc75961ad854d56d9fe832c8c5420e95905f60` |
+| Normalized host SHA-256 | `sha256:ad29b18f648661f8cfb144677baeaa9ad931210ed08aab4c4216af444b8fe3df` |
+| Source-set SHA-256 | `sha256:f9298b08b95126e4ed225af59463f9368724d9dc2de938a80abb06982fe033cc` |
+| Release-manifest SHA-256 | `sha256:be89ab2127d229a77e6fa8acb3e3eaa0592ecd7153d6dc189cca83cd640b3724` |
+
+Two formal builds from different absolute directories produced byte-identical guest ELF, combined
+guest binary, normalized host binary, and image id. The new fixed-fixture formal receipt verified
+against that image with receipt hash
+`sha256:c6685bbfcc6a3ebe8ff99f0c216bdfdacaea2da662cf2d28ebd0d315c1c00d27`
+and journal hash
+`sha256:eb83a8d00a644980e2be01b3bac411268edbf5d6ce416b6be9519573dd892e2b`.
+The local ignored evidence is
+`artifacts/risc0/phase3-remediation-f2/revenue-growth.receipt` (256610 bytes, mode `0600`).
+
+Required negative coverage includes zero prior, negative prior, tampered prior, tampered current,
+tampered expected result, wrong image, and corrupted receipt. This remediation does not start
+Phase 4.
+
+Verification for the remediation release:
+
+- targeted Python financial/RISC/acceptance tests: **57 passed**;
+- Rust workspace tests: **5 passed**;
+- full Python suite, including real RISC proving and all receipt negatives: **339 passed,
+  3 PostgreSQL-only skips**;
+- two-build cross-absolute-path reproducibility: **PASS**;
+- Ruff, focused Ruff format, Cargo format, compileall, diff whitespace, and strict release/source
+  manifest closure: **PASS**.
+
+---
+
 Baseline: `21b797683120b015a400312cd857dc3c118547a3`
 
 Branch: `ws/risc-zero-proof`

@@ -77,6 +77,10 @@ from src.application.phase3_financial import (
 from src.application.phase3_proof import RevenueGrowthRiscZeroProofWorkflow
 from src.application.service import ResearchApplicationService
 from src.assurance import IndependentFinancialReviewer, ReleaseGate
+from src.capabilities.financial.common import NonPositivePriorRevenueError
+from src.capabilities.financial.growth import (
+    calculate_revenue_growth as calculate_native_revenue_growth,
+)
 from src.capabilities.generated import (
     GeneratedCapabilityArtifactStore,
     GeneratedCapabilityOrchestrator,
@@ -104,6 +108,11 @@ from src.domain.enums import (
     SourceCoverageStatus,
 )
 from src.domain.financial_semantics import canonical_decimal, metric_semantics_hash
+from src.domain.financial_validation import (
+    REVENUE_GROWTH_FORMULA_EXPRESSION,
+    REVENUE_GROWTH_PRECONDITION,
+    REVENUE_GROWTH_VALIDATION_REASON,
+)
 from src.domain.macd_policy import MACD_DECIMAL_CONTEXT_POLICY
 from src.domain.proof import (
     ProofArtifactReference,
@@ -826,8 +835,23 @@ async def _negative_proof_checks(
         dev_mode_presence_fail = True
     else:
         dev_mode_presence_fail = False
+
+    def nonpositive_prior_fails(prior: int) -> bool:
+        try:
+            CanonicalRevenueInputs(
+                prior_revenue_minor=prior,
+                current_revenue_minor=original.canonical_inputs.current_revenue_minor,
+                currency=original.canonical_inputs.currency,
+                scale=original.canonical_inputs.scale,
+            )
+        except ValueError as exc:
+            return REVENUE_GROWTH_VALIDATION_REASON in str(exc)
+        return False
+
     return {
         "original_input_pass": original_pass,
+        "zero_prior_fail": nonpositive_prior_fails(0),
+        "negative_prior_fail": nonpositive_prior_fails(-1),
         "tampered_previous_revenue_fail": not await adapter.verify(tampered_previous_result),
         "tampered_current_revenue_fail": not await adapter.verify(tampered_current_result),
         "tampered_expected_result_fail": not await adapter.verify(tampered_expected_result),
@@ -855,6 +879,10 @@ def _financial_review_negative_checks(
             "currency_mismatch_blocked": False,
             "cohort_mismatch_blocked": False,
             "calculation_tamper_blocked": False,
+            "zero_prior_blocked": False,
+            "zero_prior_reason_stable": False,
+            "negative_prior_blocked": False,
+            "negative_prior_reason_stable": False,
         }
     growth = next(item for item in calculations if item.formula_id == "revenue_growth_v1")
     evidence_by_id = {item.evidence_id: item for item in evidence}
@@ -865,7 +893,7 @@ def _financial_review_negative_checks(
         *,
         evidence_update: Any | None = None,
         calculation_update: Any | None = None,
-    ) -> ReviewStatus:
+    ) -> Any:
         changed_evidence = [
             evidence_update
             if evidence_update is not None and item.evidence_id == evidence_update.evidence_id
@@ -880,20 +908,16 @@ def _financial_review_negative_checks(
             )
             for item in calculations
         ]
-        return (
-            IndependentFinancialReviewer()
-            .review(
-                review_id=f"NEGATIVE-{uuid4()}",
-                run_id=aggregate.run.run_id,
-                run_as_of=aggregate.run.as_of,
-                evidence=changed_evidence,
-                calculations=changed_calculations,
-                metrics=released.released_metrics,
-                claims=released.material_claims,
-                judgments=aggregate.artifacts.judgments,
-                proof_requirements=proof_requirements,
-            )
-            .status
+        return IndependentFinancialReviewer().review(
+            review_id=f"NEGATIVE-{uuid4()}",
+            run_id=aggregate.run.run_id,
+            run_as_of=aggregate.run.as_of,
+            evidence=changed_evidence,
+            calculations=changed_calculations,
+            metrics=released.released_metrics,
+            claims=released.material_claims,
+            judgments=aggregate.artifacts.judgments,
+            proof_requirements=proof_requirements,
         )
 
     period_mismatch = current.model_copy(
@@ -914,16 +938,33 @@ def _financial_review_negative_checks(
     calculation_tamper = growth.model_copy(
         update={"output_value": Decimal(str(growth.output_value)) + Decimal(1)}
     )
+    zero_prior = prior.model_copy(update={"normalized_value": "0"})
+    negative_prior = prior.model_copy(update={"normalized_value": "-1"})
+    zero_review = review_with(evidence_update=zero_prior)
+    negative_review = review_with(evidence_update=negative_prior)
+
+    def has_stable_reason(review_record: Any) -> bool:
+        return any(
+            getattr(check, "code", None) == "FIN_CALCULATION_RECOMPUTATION"
+            and getattr(check, "detail", None) == REVENUE_GROWTH_VALIDATION_REASON
+            for check in getattr(review_record, "checks", ())
+        )
+
     return {
-        "period_mismatch_blocked": review_with(evidence_update=period_mismatch)
+        "period_mismatch_blocked": review_with(evidence_update=period_mismatch).status
         is ReviewStatus.BLOCK,
-        "unit_mismatch_blocked": review_with(evidence_update=unit_mismatch) is ReviewStatus.BLOCK,
-        "currency_mismatch_blocked": review_with(evidence_update=currency_mismatch)
+        "unit_mismatch_blocked": review_with(evidence_update=unit_mismatch).status
         is ReviewStatus.BLOCK,
-        "cohort_mismatch_blocked": review_with(evidence_update=cohort_mismatch)
+        "currency_mismatch_blocked": review_with(evidence_update=currency_mismatch).status
         is ReviewStatus.BLOCK,
-        "calculation_tamper_blocked": review_with(calculation_update=calculation_tamper)
+        "cohort_mismatch_blocked": review_with(evidence_update=cohort_mismatch).status
         is ReviewStatus.BLOCK,
+        "calculation_tamper_blocked": review_with(calculation_update=calculation_tamper).status
+        is ReviewStatus.BLOCK,
+        "zero_prior_blocked": zero_review.status is ReviewStatus.BLOCK,
+        "zero_prior_reason_stable": has_stable_reason(zero_review),
+        "negative_prior_blocked": negative_review.status is ReviewStatus.BLOCK,
+        "negative_prior_reason_stable": has_stable_reason(negative_review),
     }
 
 
@@ -1070,6 +1111,37 @@ def _financial_semantic_matrix(
         == proof.implementation_hash
         and growth.proof_ref == proof.proof_id
     )
+    try:
+        revenue_positive_exact = calculate_native_revenue_growth(
+            Decimal("100"), Decimal("125")
+        ) == Decimal("0.25")
+        for invalid_prior in (Decimal("0"), Decimal("-100")):
+            try:
+                calculate_native_revenue_growth(invalid_prior, Decimal("125"))
+            except NonPositivePriorRevenueError as exc:
+                if str(exc) != REVENUE_GROWTH_VALIDATION_REASON:
+                    raise AssertionError("unstable revenue validation reason") from exc
+            else:
+                raise AssertionError("nonpositive prior revenue was accepted")
+        revenue_nonpositive_rejected = True
+    except (ArithmeticError, AssertionError, ValueError):
+        revenue_positive_exact = False
+        revenue_nonpositive_rejected = False
+    revenue_formula_metadata = (
+        growth is not None
+        and growth.parameters.get("formula_expression") == REVENUE_GROWTH_FORMULA_EXPRESSION
+        and growth.parameters.get("semantic_precondition") == REVENUE_GROWTH_PRECONDITION
+        and growth.parameters.get("financial_validation_reason") == REVENUE_GROWTH_VALIDATION_REASON
+    )
+    revenue_semantics_passed = (
+        revenue_positive_exact
+        and revenue_nonpositive_rejected
+        and revenue_formula_metadata
+        and review_negative["zero_prior_blocked"]
+        and review_negative["zero_prior_reason_stable"]
+        and review_negative["negative_prior_blocked"]
+        and review_negative["negative_prior_reason_stable"]
+    )
     coverage = released.research_source_coverage
     first_partial = build_research_source_coverage(
         {
@@ -1110,7 +1182,15 @@ def _financial_semantic_matrix(
         "FS-002": _gate(decimal_preserved, {"decimal_boundary": "string"}),
         "FS-003": _gate(material_closure, {"material_calculation_count": len(calculations)}),
         "FS-004": _gate(claim_closure, {"typed_claim_count": len(claims)}),
-        "FS-005": _gate(reviewer_passed, {"recomputation_check_count": len(recomputations)}),
+        "FS-005": _gate(
+            reviewer_passed and revenue_semantics_passed,
+            {
+                "recomputation_check_count": len(recomputations),
+                "revenue_formula": REVENUE_GROWTH_FORMULA_EXPRESSION,
+                "revenue_precondition": REVENUE_GROWTH_PRECONDITION,
+                "nonpositive_reason": REVENUE_GROWTH_VALIDATION_REASON,
+            },
+        ),
         "FS-006": _gate(
             review_negative["period_mismatch_blocked"], {"negative": "period_mismatch"}
         ),
@@ -1636,9 +1716,11 @@ def _acceptance_matrix(
             "independent verifier passed",
         ),
         "P3-ZK-008": _gate(
-            negative["tampered_previous_revenue_fail"]
+            negative["zero_prior_fail"]
+            and negative["negative_prior_fail"]
+            and negative["tampered_previous_revenue_fail"]
             and negative["tampered_current_revenue_fail"],
-            "previous and current revenue tampering rejected independently",
+            "nonpositive prior and independent previous/current tampering rejected",
         ),
         "P3-ZK-009": _gate(
             negative["tampered_expected_result_fail"], "tampered expected result rejected"

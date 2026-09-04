@@ -9,8 +9,8 @@
   "capability_id": "revenue_growth",
   "expected_output_commitment": "sha256:a701eaf10065178b019ff90f3ea20a82f43500afe36f6bfb7a71bff117506d20",
   "formula_id": "revenue_growth_v1",
-  "implementation_hash": "sha256:f583ff894c388b8677bde486760ea14fc702278cfaa2229cb007221f1ba20765",
-  "input_commitment": "sha256:515bde26968e1b25e621866342adf4f9438b0a45c6ce3e01126509ebc127d640",
+  "implementation_hash": "sha256:f1ae5053b71f79b3efce66284c3354a5aca23ce44f55ea1f7432b71510b729ac",
+  "input_commitment": "sha256:536355157b5d7bedc76fc30cd585c0a475a4f021883de1ed6b4417ae8edc2f49",
   "input_evidence_refs": [
     "EVD-NVDA-REVENUE-FY2024",
     "EVD-NVDA-REVENUE-FY2025"

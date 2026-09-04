@@ -1,8 +1,8 @@
 from decimal import Decimal, localcontext
 
 from src.capabilities.financial.common import (
+    NonPositivePriorRevenueError,
     PeriodMismatchError,
-    ZeroDenominatorError,
     decimal_value,
     require_accepted,
 )
@@ -18,20 +18,26 @@ from src.domain.enums import (
 )
 from src.domain.evidence import EvidenceRecord
 from src.domain.financial_semantics import adjacent_financial_periods, evidence_unit_class
+from src.domain.financial_validation import (
+    REVENUE_GROWTH_FORMULA_EXPRESSION,
+    REVENUE_GROWTH_FORMULA_ID,
+    REVENUE_GROWTH_PRECONDITION,
+    REVENUE_GROWTH_VALIDATION_REASON,
+)
 
 
 def calculate_revenue_growth(prior_revenue: Decimal, current_revenue: Decimal) -> Decimal:
-    if prior_revenue == 0:
-        raise ZeroDenominatorError("prior revenue must not be zero")
+    if prior_revenue <= 0:
+        raise NonPositivePriorRevenueError(REVENUE_GROWTH_VALIDATION_REASON)
     with localcontext() as context:
         context.prec = 28
-        return (current_revenue - prior_revenue) / abs(prior_revenue)
+        return (current_revenue - prior_revenue) / prior_revenue
 
 
 class RevenueGrowthCapability:
     definition = CapabilityDefinition(
         capability_id="revenue_growth",
-        version="1.0.0",
+        version="1.1.0",
         name="Revenue Growth",
         category="financial_calculation",
         backend=CapabilityBackend.NATIVE,
@@ -81,7 +87,7 @@ class RevenueGrowthCapability:
             task_id=context.task_id,
             capability_id=self.definition.capability_id,
             capability_version=self.definition.version,
-            formula_id="revenue_growth_v1",
+            formula_id=REVENUE_GROWTH_FORMULA_ID,
             input_evidence_ids=[prior.evidence_id, current.evidence_id],
             input_values_snapshot={
                 "prior_revenue": str(prior.normalized_value),
@@ -92,6 +98,11 @@ class RevenueGrowthCapability:
                 "period_basis": current.period_basis.value,
                 "actuality": current.actuality.value,
                 "statement_series": current.statement_series,
+            },
+            parameters={
+                "formula_expression": REVENUE_GROWTH_FORMULA_EXPRESSION,
+                "semantic_precondition": REVENUE_GROWTH_PRECONDITION,
+                "financial_validation_reason": REVENUE_GROWTH_VALIDATION_REASON,
             },
             output_value=value,
             output_unit="ratio",

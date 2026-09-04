@@ -19,6 +19,7 @@ from src.adapters.risc0 import (
 )
 from src.adapters.risc0.models import input_commitment, output_commitment
 from src.domain.enums import ProofStatus
+from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.proof import ProofRequest, ProofResult
 
 ROOT = Path(__file__).parents[2]
@@ -110,6 +111,62 @@ def test_tampered_revenue_is_rejected(real_proof: RealProof) -> None:
         }
     )
     assert asyncio.run(real_proof.adapter.verify(forged_context)) is False
+
+
+def test_tampered_prior_revenue_is_rejected(real_proof: RealProof) -> None:
+    original = load_proof_input(real_proof.input_path)
+    tampered_path = real_proof.input_path.parent / "tampered-prior-revenue.json"
+    tampered = build_proof_input(
+        run_id=original.run_id,
+        calculation_id=original.calculation_id,
+        implementation_hash=original.implementation_hash,
+        input_evidence_refs=original.input_evidence_refs,
+        canonical_inputs=CanonicalRevenueInputs(
+            prior_revenue_minor=original.canonical_inputs.prior_revenue_minor + 1,
+            current_revenue_minor=original.canonical_inputs.current_revenue_minor,
+            currency=original.canonical_inputs.currency,
+            scale=original.canonical_inputs.scale,
+        ),
+    )
+    write_proof_input(tampered_path, tampered)
+    forged_context = real_proof.result.model_copy(
+        update={
+            "verifier_result": {
+                **real_proof.result.verifier_result,
+                "proof_input_ref": str(tampered_path),
+            }
+        }
+    )
+    assert asyncio.run(real_proof.adapter.verify(forged_context)) is False
+
+
+@pytest.mark.parametrize("prior", [0, -1])
+def test_real_host_rejects_nonpositive_prior_with_stable_reason(
+    real_proof: RealProof, prior: int
+) -> None:
+    payload = json.loads(real_proof.input_path.read_text(encoding="utf-8"))
+    payload["canonical_inputs"]["prior_revenue_minor"] = prior
+    invalid_path = real_proof.input_path.parent / f"nonpositive-{prior}.json"
+    invalid_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    receipt_path = real_proof.input_path.parent / f"nonpositive-{prior}.receipt"
+
+    completed = subprocess.run(
+        [
+            str(real_proof.host_binary),
+            "prove",
+            "--input",
+            str(invalid_path),
+            "--receipt",
+            str(receipt_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert REVENUE_GROWTH_VALIDATION_REASON in completed.stderr
+    assert not receipt_path.exists()
 
 
 def test_tampered_expected_result_is_rejected(real_proof: RealProof) -> None:
