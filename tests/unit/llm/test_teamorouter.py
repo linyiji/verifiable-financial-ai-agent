@@ -143,6 +143,32 @@ async def test_timeout_routes_to_configured_fallback_only() -> None:
 
 
 @pytest.mark.asyncio
+async def test_remote_protocol_error_routes_to_configured_fallback_only() -> None:
+    models: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        models.append(model)
+        if model == "gpt-5.6-sol":
+            raise httpx.RemoteProtocolError(
+                "upstream disconnected before response",
+                request=request,
+            )
+        return response("gpt-5.6-luna", {"value": "fallback"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await TeamoRouterClient(settings(), client=http).complete_structured(
+            messages=[LLMMessage(role="user", content="answer")],
+            response_model=Answer,
+            schema_name="answer_v1",
+        )
+
+    assert models == ["gpt-5.6-sol", "gpt-5.6-luna"]
+    assert result.actual_model == "gpt-5.6-luna"
+    assert result.used_model_fallback is True
+
+
+@pytest.mark.asyncio
 async def test_nonretryable_request_and_invalid_structure_do_not_switch_model() -> None:
     statuses = [400, 200]
     calls: list[str] = []

@@ -146,7 +146,7 @@ class TeamoRouterClient:
                     headers=headers,
                     timeout=self._timeout_seconds,
                 )
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+        except httpx.TransportError as exc:
             raise _RetryableProviderFailure(
                 type(exc).__name__, LLMFailureClassification.RETRYABLE_TRANSPORT_FAILURE
             ) from None
