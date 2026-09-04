@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, cast
 
 from src.adapters.finrobot.technical import (
@@ -14,10 +15,15 @@ from src.adapters.finrobot.technical import (
 from src.application.extensions import TaskCalculationExtensionResult
 from src.capabilities.generated.models import (
     CapabilityOrchestrationResult,
+    GeneratedCapabilityCandidate,
     ResearchLeadCapabilityApproval,
     SpecialistCapabilityRequest,
 )
 from src.capabilities.generated.orchestration import GeneratedCapabilityOrchestrator
+from src.capabilities.generated.validation import (
+    CallableFinancialValidationPolicy,
+    CapabilityValidationPlan,
+)
 from src.capabilities.registry import CapabilityRegistry
 from src.domain.base import JsonObject
 from src.domain.calculation import CalculationRecord
@@ -88,6 +94,40 @@ class Phase3ResearchLeadCapabilityAuthority:
                 if approved
                 else "REJECTED_VALIDATION_OR_IDENTITY_MISMATCH"
             ),
+        )
+
+
+class FreeCashFlowMarginValidationPlanProvider:
+    """Owned test fixtures and financial oracle; generated code cannot alter them."""
+
+    def plan_for(self, candidate: GeneratedCapabilityCandidate) -> CapabilityValidationPlan:
+        if (
+            candidate.output.capability_id != FCF_MARGIN_CAPABILITY_ID
+            or candidate.output.formula_id != FCF_MARGIN_FORMULA_ID
+        ):
+            raise ValueError("no approved validation plan for generated capability")
+        return CapabilityValidationPlan(
+            primary_fixture={
+                "operating_cash_flow": "120",
+                "capital_expenditure": "-20",
+                "revenue": "200",
+            },
+            edge_case_fixtures=(
+                {
+                    "operating_cash_flow": "0",
+                    "capital_expenditure": "0",
+                    "revenue": "100",
+                },
+                {
+                    "operating_cash_flow": "10",
+                    "capital_expenditure": "-20",
+                    "revenue": "100",
+                },
+            ),
+            financial_policy=CallableFinancialValidationPolicy(
+                callback=_validate_free_cash_flow_margin_output
+            ),
+            schema_version="free-cash-flow-margin-input/v1",
         )
 
 
@@ -415,6 +455,36 @@ def _is_approved_fcf_margin_requirement(requirement: CapabilityRequirement) -> b
             "result_between_minus_one_and_one",
         }
     )
+
+
+def _validate_free_cash_flow_margin_output(
+    candidate: GeneratedCapabilityCandidate,
+    inputs: JsonObject,
+    output: Any,
+) -> None:
+    if (
+        candidate.output.capability_id != FCF_MARGIN_CAPABILITY_ID
+        or candidate.output.formula_id != FCF_MARGIN_FORMULA_ID
+    ):
+        raise ValueError("generated capability identity is not approved")
+    if not isinstance(output, dict) or output.get("unit") != "RATIO":
+        raise ValueError("free cash flow margin output must have RATIO unit")
+    try:
+        operating_cash_flow = Decimal(str(inputs["operating_cash_flow"]))
+        capital_expenditure = Decimal(str(inputs["capital_expenditure"]))
+        revenue = Decimal(str(inputs["revenue"]))
+        actual = Decimal(str(output["value"]))
+    except (KeyError, InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("free cash flow margin inputs/output must be decimal-compatible") from exc
+    if not all(
+        value.is_finite() for value in (operating_cash_flow, capital_expenditure, revenue, actual)
+    ):
+        raise ValueError("free cash flow margin inputs/output must be finite")
+    if revenue == 0:
+        raise ValueError("revenue must not be zero")
+    expected = (operating_cash_flow + capital_expenditure) / revenue
+    if actual != expected:
+        raise ValueError("output does not equal the owned free cash flow margin oracle")
 
 
 def _approval(

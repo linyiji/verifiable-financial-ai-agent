@@ -8,12 +8,15 @@ import pytest
 from src.application.phase3_financial import (
     FCF_MARGIN_CAPABILITY_ID,
     FCF_MARGIN_FORMULA_ID,
+    FreeCashFlowMarginValidationPlanProvider,
     Phase3FinancialCapabilityExtension,
     Phase3ResearchLeadCapabilityAuthority,
     free_cash_flow_margin_requirement,
 )
 from src.capabilities.generated.models import (
     CapabilityOrchestrationResult,
+    CodeBuilderOutput,
+    GeneratedCapabilityCandidate,
     SpecialistCapabilityRequest,
 )
 from src.domain.calculation import CalculationRecord
@@ -402,3 +405,51 @@ async def test_extension_rejects_evidence_outside_task_context_before_build() ->
         )
 
     assert generated.requests == []
+
+
+def test_owned_validation_plan_checks_exact_financial_formula() -> None:
+    candidate = GeneratedCapabilityCandidate(
+        build_id="BUILD-1",
+        output=CodeBuilderOutput(
+            capability_id=FCF_MARGIN_CAPABILITY_ID,
+            version="1.0.0-generated",
+            purpose="FCF margin",
+            input_schema={
+                "operating_cash_flow": "decimal",
+                "capital_expenditure": "decimal",
+                "revenue": "decimal",
+            },
+            output_schema={"value": "decimal", "unit": "RATIO"},
+            formula_id=FCF_MARGIN_FORMULA_ID,
+            formula_description="(operating cash flow + signed capex) / revenue",
+            source_code="def execute(inputs): return {'value': '0.5', 'unit': 'RATIO'}",
+            unit_tests="def run_tests(execute, inputs): return None",
+            financial_invariants=[
+                "revenue_non_zero",
+                "result_is_finite",
+                "result_between_minus_one_and_one",
+            ],
+            allowed_imports=[],
+        ),
+        implementation_hash="sha256:source",
+        provider="teamorouter",
+        requested_model="model-a",
+        actual_model="model-a",
+        attempted_models=("model-a",),
+        input_tokens=1,
+        output_tokens=1,
+        latency_ms=1,
+    )
+    plan = FreeCashFlowMarginValidationPlanProvider().plan_for(candidate)
+
+    plan.financial_policy.validate(
+        candidate,
+        plan.primary_fixture,
+        {"value": "0.5", "unit": "RATIO"},
+    )
+    with pytest.raises(ValueError, match="owned free cash flow margin oracle"):
+        plan.financial_policy.validate(
+            candidate,
+            plan.primary_fixture,
+            {"value": "0.6", "unit": "RATIO"},
+        )
