@@ -231,7 +231,7 @@ async def _planner_provider_preflight(provider: LLMProvider) -> PlannerProviderH
     scheme.confirmed_at = datetime.now(UTC)
     actual_models: list[str] = []
     for probe in range(1, 3):
-        planner = PlannerProviderResearchLeadPlanner(provider, max_validation_attempts=1)
+        planner = PlannerProviderResearchLeadPlanner(provider, max_validation_attempts=3)
         result = await planner.plan_with_decision(
             run_id=f"PREFLIGHT:{provider_name}:{probe}",
             goal=goal,

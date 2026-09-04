@@ -110,6 +110,39 @@ def test_exact_formal_phase3_gate_identity() -> None:
     assert {item for item in gate_ids if item.startswith("P3-INT-")} == {
         f"P3-INT-{index:03d}" for index in range(1, 11)
     }
+
+
+@pytest.mark.asyncio
+async def test_planner_preflight_requires_two_owned_results_with_governed_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = SimpleNamespace(provider_name="mimo", model_name="mimo-v2.5")
+    probes: list[str] = []
+
+    class Planner:
+        def __init__(self, selected: object, *, max_validation_attempts: int) -> None:
+            assert selected is provider
+            assert max_validation_attempts == 3
+
+        async def plan_with_decision(self, *, run_id: str, **kwargs: object) -> object:
+            del kwargs
+            probes.append(run_id)
+            return SimpleNamespace(
+                audit=SimpleNamespace(
+                    provider="mimo",
+                    actual_model="mimo-v2.5",
+                    deterministic_fallback=False,
+                    failure_classification=None,
+                )
+            )
+
+    monkeypatch.setattr(acceptance_runner, "PlannerProviderResearchLeadPlanner", Planner)
+    health = await acceptance_runner._planner_provider_preflight(provider)
+
+    assert health.passed is True
+    assert health.provider == "mimo"
+    assert health.model == "mimo-v2.5"
+    assert probes == ["PREFLIGHT:mimo:1", "PREFLIGHT:mimo:2"]
     assert _expected_financial_semantic_gate_ids() == {f"FS-{index:03d}" for index in range(1, 14)}
 
 
