@@ -16,7 +16,11 @@ from src.application.evidence_routing import (
     TaskEvidenceRoutingResult,
 )
 from src.application.execution import IntegratedTaskExecutor, decimal_as_float
-from src.application.extensions import TaskCalculationExtension
+from src.application.extensions import (
+    ProofWorkflow,
+    ProofWorkflowOutcome,
+    TaskCalculationExtension,
+)
 from src.application.models import ResearchRunDraft, RunAggregate
 from src.application.repository import ApplicationRepository, InMemoryApplicationRepository
 from src.assurance import DeterministicReviewer, ReleaseGate
@@ -79,6 +83,7 @@ class ResearchApplicationService:
         trace_reference_repository: TraceReferenceRepository | None = None,
         run_id_factory: Callable[[], str] | None = None,
         calculation_extensions: Sequence[TaskCalculationExtension] = (),
+        proof_workflow: ProofWorkflow | None = None,
     ) -> None:
         self.repository = repository or InMemoryApplicationRepository()
         self.event_store = event_store or InMemoryRuntimeEventStore()
@@ -103,6 +108,7 @@ class ResearchApplicationService:
         self._evidence_stores: dict[str, RunEvidenceStore] = {}
         self._idempotency: dict[tuple[str, str], object] = {}
         self.calculation_extensions = list(calculation_extensions)
+        self.proof_workflow = proof_workflow
 
         registry = CapabilityRegistry()
         registry.register(RevenueGrowthCapability())
@@ -340,6 +346,9 @@ class ResearchApplicationService:
 
     async def _assure_and_release(self, aggregate: RunAggregate) -> None:
         run_id = aggregate.run.run_id
+        proof_outcome = await self._execute_proof_workflow(aggregate)
+        aggregate.artifacts.proofs = list(proof_outcome.proofs.values())
+        aggregate.runtime.proof_state = proof_outcome.runtime_state
         async with self.instrumentation.review(
             run_id=run_id,
             attributes={"review_id": f"REVIEW-{run_id}"},
@@ -362,31 +371,10 @@ class ResearchApplicationService:
                 payload={"review_id": review.review_id, "status": review.status.value},
             )
 
-        proof_policy = ProofPolicy(require_material_calculations=False)
-        proof_requirements = {
-            calculation.calculation_id: proof_policy.requirement_for(calculation)
-            for calculation in aggregate.artifacts.calculations
-        }
-        first = aggregate.artifacts.calculations[0]
-        proof = await PendingProofAdapter().prove(
-            ProofRequest(
-                proof_id=f"PROOF-{run_id}-PHASE1",
-                run_id=run_id,
-                calculation_id=first.calculation_id,
-                program_id="risc0-financial-v1-not-implemented",
-                input_commitments=first.input_evidence_ids,
-            )
-        )
-        assert proof.status is ProofStatus.NOT_IMPLEMENTED
-        aggregate.artifacts.proofs = [proof]
-        aggregate.runtime.proof_state = {
-            "status": proof.status.value,
-            "semantics": "No ZK proof is claimed; Phase 1 policy is NOT_REQUIRED.",
-        }
         release_decision = ReleaseGate().evaluate(
             review=review,
-            proof_requirements=proof_requirements,
-            proofs={first.calculation_id: proof},
+            proof_requirements=proof_outcome.requirements,
+            proofs=proof_outcome.proofs,
         )
         if not release_decision.allowed:
             raise ApplicationError(
@@ -417,7 +405,7 @@ class ResearchApplicationService:
             correction_refs=[item.correction_id for item in aggregate.artifacts.corrections],
             replan_refs=[item.replan_id for item in aggregate.artifacts.replans],
             review_refs=[review.review_id],
-            proof_refs=[proof.proof_id],
+            proof_refs=[proof.proof_id for proof in proof_outcome.proofs.values()],
             trace_refs=[reference.reference_id for reference in trace_references],
             runtime_outcome=RunStatus.RELEASED.value,
         )
@@ -463,9 +451,7 @@ class ResearchApplicationService:
             "valuation_result": {"status": "not_quantified_in_current_scope"},
             "investment_thesis": {"status": "reviewed_execution"},
         }
-        limitations = [
-            "RISC Zero proof is NOT_IMPLEMENTED and no proof claim is made.",
-        ]
+        limitations = list(proof_outcome.limitations)
         if not live_evidence:
             limitations.insert(0, "Offline controlled fixture only.")
         if research_news_result.get("limitation"):
@@ -560,6 +546,42 @@ class ResearchApplicationService:
                 event_type=RuntimeEventType.RUN_COMPLETED,
                 payload={"status": RunStatus.RELEASED.value},
             )
+
+    async def _execute_proof_workflow(
+        self,
+        aggregate: RunAggregate,
+    ) -> ProofWorkflowOutcome:
+        run_id = aggregate.run.run_id
+        if self.proof_workflow is not None:
+            return await self.proof_workflow.execute(
+                run_id=run_id,
+                calculations=aggregate.artifacts.calculations,
+            )
+        proof_policy = ProofPolicy(require_material_calculations=False)
+        requirements = {
+            calculation.calculation_id: proof_policy.requirement_for(calculation)
+            for calculation in aggregate.artifacts.calculations
+        }
+        first = aggregate.artifacts.calculations[0]
+        proof = await PendingProofAdapter().prove(
+            ProofRequest(
+                proof_id=f"PROOF-{run_id}-PHASE1",
+                run_id=run_id,
+                calculation_id=first.calculation_id,
+                program_id="risc0-financial-v1-not-implemented",
+                input_commitments=first.input_evidence_ids,
+            )
+        )
+        assert proof.status is ProofStatus.NOT_IMPLEMENTED
+        return ProofWorkflowOutcome(
+            requirements=requirements,
+            proofs={first.calculation_id: proof},
+            runtime_state={
+                "status": proof.status.value,
+                "semantics": "No ZK proof is claimed; Phase 1 policy is NOT_REQUIRED.",
+            },
+            limitations=("RISC Zero proof is NOT_IMPLEMENTED and no proof claim is made.",),
+        )
 
     async def _object(self, object_id: str) -> ResearchObject:
         entity = await self.repository.get_object(object_id)

@@ -211,6 +211,19 @@ class DependencyScheduler:
             except Exception as error:
                 task = state.task(task_id)
                 last_error = error
+                if task.status is TaskStatus.CAPABILITY_BUILD_FAILED:
+                    await self._event_store.emit(
+                        run_id=state.run_id,
+                        task_id=task.task_id,
+                        event_type=RuntimeEventType.TASK_FAILED,
+                        payload={
+                            "attempt": attempt,
+                            "error_type": type(error).__name__,
+                            "status": TaskStatus.CAPABILITY_BUILD_FAILED.value,
+                            "retry_suppressed": True,
+                        },
+                    )
+                    raise
                 if attempt < self._retry_policy.max_attempts:
                     transition_task(task, TaskStatus.READY)
                     await self._event_store.emit(

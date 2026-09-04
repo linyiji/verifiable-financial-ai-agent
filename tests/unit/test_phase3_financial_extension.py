@@ -50,7 +50,11 @@ class GeneratedFCFMarginCapability:
         name="Generated free cash flow margin",
         category="financial_calculation",
         backend=CapabilityBackend.GENERATED,
-        input_schema={"free_cash_flow": "decimal", "revenue": "decimal"},
+        input_schema={
+            "operating_cash_flow": "decimal",
+            "capital_expenditure": "decimal",
+            "revenue": "decimal",
+        },
         output_schema={"value": "decimal", "unit": "RATIO"},
         deterministic=True,
         implementation_ref="generated://BUILD-1/source.py",
@@ -61,7 +65,10 @@ class GeneratedFCFMarginCapability:
 
     async def execute(self, inputs, context):
         self.calls.append((inputs, context))
-        value = Decimal(str(inputs["free_cash_flow"])) / Decimal(str(inputs["revenue"]))
+        value = (
+            Decimal(str(inputs["operating_cash_flow"]))
+            + Decimal(str(inputs["capital_expenditure"]))
+        ) / Decimal(str(inputs["revenue"]))
         return CalculationRecord(
             calculation_id=str(inputs["calculation_id"]),
             run_id=context.run_id,
@@ -71,7 +78,8 @@ class GeneratedFCFMarginCapability:
             formula_id=FCF_MARGIN_FORMULA_ID,
             input_evidence_ids=list(context.accepted_evidence_ids),
             input_values_snapshot={
-                "free_cash_flow": str(inputs["free_cash_flow"]),
+                "operating_cash_flow": str(inputs["operating_cash_flow"]),
+                "capital_expenditure": str(inputs["capital_expenditure"]),
                 "revenue": str(inputs["revenue"]),
             },
             output_value=value,
@@ -150,9 +158,20 @@ def _record(
 def _evidence() -> list[EvidenceRecord]:
     records = [
         _record(
-            evidence_id="E-FCF",
-            field="provider_reference_free_cash_flow",
-            value="40",
+            evidence_id="E-OCF",
+            field="operating_cash_flow",
+            value="50",
+            period="FY2026",
+            as_of=date(2026, 1, 25),
+            category=EvidenceCategory.FINANCIAL_STATEMENT,
+            purpose="cash_flow_statement",
+            unit="USD",
+            currency="USD",
+        ),
+        _record(
+            evidence_id="E-CAPEX",
+            field="capital_expenditure",
+            value="-10",
             period="FY2026",
             as_of=date(2026, 1, 25),
             category=EvidenceCategory.FINANCIAL_STATEMENT,
@@ -214,9 +233,13 @@ def _orchestration_result(capability) -> CapabilityOrchestrationResult:
         capability_version="1.0.0-generated",
         formula_id=FCF_MARGIN_FORMULA_ID,
         purpose="FCF margin",
-        input_schema={"free_cash_flow": "decimal", "revenue": "decimal"},
+        input_schema={
+            "operating_cash_flow": "decimal",
+            "capital_expenditure": "decimal",
+            "revenue": "decimal",
+        },
         output_schema={"value": "decimal", "unit": "RATIO"},
-        formula_description="free_cash_flow / revenue",
+        formula_description="(operating_cash_flow + capital_expenditure) / revenue",
         implementation_hash="sha256:generated",
         source_ref="generated://BUILD-1/source.py",
         unit_test_ref="generated://BUILD-1/tests.py",
@@ -304,17 +327,22 @@ async def test_extension_executes_generated_gap_and_finrobot_technical_runtime()
         event_store=events,
     )
 
+    evidence = _evidence()
     result = await extension.execute(
         task=state.task(task.task_id),
         state=state,
-        evidence=_evidence(),
-        context=CapabilityContext(run_id="RUN-1", task_id=task.task_id),
+        evidence=evidence,
+        context=CapabilityContext(
+            run_id="RUN-1",
+            task_id=task.task_id,
+            accepted_evidence_ids=[record.evidence_id for record in evidence],
+        ),
     )
 
     assert len(result.calculations) == 8
     assert result.generated_capability_refs == ["GEN-1"]
     assert result.calculations[0].output_value == Decimal("0.4")
-    assert result.calculations[0].input_evidence_ids == ["E-FCF", "E-REV"]
+    assert result.calculations[0].input_evidence_ids == ["E-OCF", "E-CAPEX", "E-REV"]
     assert {item.capability_id for item in result.calculations[1:]} == {
         "technical_sma_50",
         "technical_sma_200",
@@ -348,3 +376,29 @@ async def test_research_lead_authority_rejects_mutated_spec() -> None:
 
     assert decision.approved is False
     assert decision.authority_role == "RESEARCH_LEAD"
+
+
+@pytest.mark.asyncio
+async def test_extension_rejects_evidence_outside_task_context_before_build() -> None:
+    task = _task()
+    state = _state(task)
+    generated = FakeGeneratedOrchestrator(_orchestration_result(GeneratedFCFMarginCapability()))
+    evidence = _evidence()
+    extension = Phase3FinancialCapabilityExtension(
+        generated=generated,  # type: ignore[arg-type]
+        event_store=InMemoryRuntimeEventStore(),
+    )
+
+    with pytest.raises(ValueError, match="allowlist"):
+        await extension.execute(
+            task=state.task(task.task_id),
+            state=state,
+            evidence=evidence,
+            context=CapabilityContext(
+                run_id="RUN-1",
+                task_id=task.task_id,
+                accepted_evidence_ids=[record.evidence_id for record in evidence[:-1]],
+            ),
+        )
+
+    assert generated.requests == []

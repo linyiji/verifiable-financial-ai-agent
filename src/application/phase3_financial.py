@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Literal, cast
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Any, Literal, cast
 
 from src.adapters.finrobot.technical import (
     MACD12269Capability,
@@ -37,14 +37,14 @@ from src.domain.enums import (
 from src.domain.evidence import EvidenceRecord
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
+from src.observability.instrumentation import RuntimeInstrumentation
 from src.runtime.events import RuntimeEventStore
 from src.runtime.state import RuntimeState
 from src.tooling.native import NativeToolBackend
 from src.tooling.runtime import ToolRuntime
 
 FCF_MARGIN_CAPABILITY_ID = "free_cash_flow_margin"
-FCF_MARGIN_FORMULA_ID = "free_cash_flow_divided_by_revenue_v1"
-TECHNICAL_SKILL_VERSION = "finrobot-technical-owned-port@1.0.0"
+FCF_MARGIN_FORMULA_ID = "operating_cash_flow_plus_signed_capex_divided_by_revenue_v1"
 
 
 class Phase3ResearchLeadCapabilityAuthority:
@@ -104,10 +104,12 @@ class Phase3FinancialCapabilityExtension:
         generated: GeneratedCapabilityOrchestrator,
         event_store: RuntimeEventStore,
         technical_runtime: ToolRuntime | None = None,
+        instrumentation: RuntimeInstrumentation | None = None,
     ) -> None:
         self._generated = generated
         self._event_store = event_store
         self._technical_runtime = technical_runtime or _technical_runtime()
+        self._instrumentation = instrumentation
         self._judgments = TechnicalIndicatorJudgmentService()
 
     async def execute(
@@ -118,8 +120,8 @@ class Phase3FinancialCapabilityExtension:
         evidence: list[EvidenceRecord],
         context: CapabilityContext,
     ) -> TaskCalculationExtensionResult:
-        del context
-        free_cash_flow, revenue = _select_fcf_margin_inputs(evidence)
+        _validate_extension_evidence(task, evidence, context)
+        operating_cash_flow, capital_expenditure, revenue = _select_fcf_margin_inputs(evidence)
         requirement = free_cash_flow_margin_requirement(task)
         request = SpecialistCapabilityRequest(
             run_id=task.run_id,
@@ -140,16 +142,28 @@ class Phase3FinancialCapabilityExtension:
         generated_context = CapabilityContext(
             run_id=task.run_id,
             task_id=task.task_id,
-            accepted_evidence_ids=[free_cash_flow.evidence_id, revenue.evidence_id],
+            accepted_evidence_ids=[
+                operating_cash_flow.evidence_id,
+                capital_expenditure.evidence_id,
+                revenue.evidence_id,
+            ],
         )
         await self._calculation_started(task, FCF_MARGIN_CAPABILITY_ID)
-        generated_calculation = await generated_capability.execute(
-            {
-                "free_cash_flow": str(free_cash_flow.normalized_value),
-                "revenue": str(revenue.normalized_value),
-                "calculation_id": f"CALC-{task.run_id}-FCF-MARGIN-GENERATED",
-            },
-            generated_context,
+        generated_inputs = {
+            "operating_cash_flow": str(operating_cash_flow.normalized_value),
+            "capital_expenditure": str(capital_expenditure.normalized_value),
+            "revenue": str(revenue.normalized_value),
+            "calculation_id": f"CALC-{task.run_id}-FCF-MARGIN-GENERATED",
+        }
+        generated_calculation = await self._execute_capability(
+            task=task,
+            capability_id=FCF_MARGIN_CAPABILITY_ID,
+            backend="generated_docker_sandbox",
+            calculation_id=str(generated_inputs["calculation_id"]),
+            execute=lambda: generated_capability.execute(
+                generated_inputs,
+                generated_context,
+            ),
         )
         if not isinstance(generated_calculation, CalculationRecord):
             raise TypeError("generated financial capability must return CalculationRecord")
@@ -170,13 +184,22 @@ class Phase3FinancialCapabilityExtension:
             "technical_volume_ratio_20",
         ):
             await self._calculation_started(task, capability_id)
-            value = await self._technical_runtime.execute(
-                capability_id,
-                {
-                    "history": history,
-                    "calculation_id": f"CALC-{task.run_id}-{capability_id.upper()}",
-                },
-                technical_context,
+            calculation_id = f"CALC-{task.run_id}-{capability_id.upper()}"
+            value = await self._execute_capability(
+                task=task,
+                capability_id=capability_id,
+                backend="finrobot_owned_native_port",
+                calculation_id=calculation_id,
+                execute=lambda capability_id=capability_id, calculation_id=calculation_id: (
+                    self._technical_runtime.execute(
+                        capability_id,
+                        {
+                            "history": history,
+                            "calculation_id": calculation_id,
+                        },
+                        technical_context,
+                    )
+                ),
             )
             records = list(value) if isinstance(value, tuple) else [value]
             if not all(isinstance(item, CalculationRecord) for item in records):
@@ -188,10 +211,10 @@ class Phase3FinancialCapabilityExtension:
         rsi = by_capability["technical_rsi_14"][0]
         macd = by_capability["technical_macd_12_26_9"]
         judgments: list[JsonObject] = [
-            self._judgments.rsi(rsi, skill_version=TECHNICAL_SKILL_VERSION).model_dump(mode="json"),
-            self._judgments.macd(
-                macd[0], macd[1], skill_version=TECHNICAL_SKILL_VERSION
-            ).model_dump(mode="json"),
+            self._judgments.rsi(rsi, skill_version=task.skill_id).model_dump(mode="json"),
+            self._judgments.macd(macd[0], macd[1], skill_version=task.skill_id).model_dump(
+                mode="json"
+            ),
         ]
         calculations = [generated_calculation, *technical]
         return TaskCalculationExtensionResult(
@@ -215,16 +238,48 @@ class Phase3FinancialCapabilityExtension:
             payload={"capability_id": capability_id},
         )
 
+    async def _execute_capability(
+        self,
+        *,
+        task: Task,
+        capability_id: str,
+        backend: str,
+        calculation_id: str,
+        execute: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        if self._instrumentation is None:
+            return await execute()
+        async with self._instrumentation.calculation(
+            run_id=task.run_id,
+            task_id=task.task_id,
+            attributes={
+                "calculation_id": calculation_id,
+                "capability": capability_id,
+                "phase": "phase3",
+            },
+        ):
+            async with self._instrumentation.tool(
+                run_id=task.run_id,
+                task_id=task.task_id,
+                attributes={"tool_name": backend, "capability": capability_id},
+            ):
+                return await execute()
+
 
 def free_cash_flow_margin_requirement(task: Task) -> CapabilityRequirement:
     return CapabilityRequirement(
         requirement_id=f"REQ-{task.run_id}-FCF-MARGIN",
         capability_id=FCF_MARGIN_CAPABILITY_ID,
         purpose=(
-            "Calculate free cash flow margin as accepted annual free cash flow divided "
-            "by accepted period-aligned annual revenue. Return a ratio, not a percentage."
+            "Calculate free cash flow margin from accepted annual operating cash flow plus "
+            "signed capital expenditure, divided by accepted period-aligned annual revenue. "
+            "Return a ratio, not a percentage."
         ),
-        input_schema={"free_cash_flow": "decimal", "revenue": "decimal"},
+        input_schema={
+            "operating_cash_flow": "decimal",
+            "capital_expenditure": "decimal",
+            "revenue": "decimal",
+        },
         output_schema={"value": "decimal", "unit": "RATIO"},
         formula_id=FCF_MARGIN_FORMULA_ID,
         deterministic=True,
@@ -255,33 +310,63 @@ def _technical_runtime() -> ToolRuntime:
 
 def _select_fcf_margin_inputs(
     evidence: Sequence[EvidenceRecord],
-) -> tuple[EvidenceRecord, EvidenceRecord]:
+) -> tuple[EvidenceRecord, EvidenceRecord, EvidenceRecord]:
     accepted = [record for record in evidence if record.status is EvidenceStatus.ACCEPTED]
-    cash_flows = sorted(
+    operating_cash_flows = sorted(
         (
             record
             for record in accepted
-            if record.normalized_field == "provider_reference_free_cash_flow"
-            and record.period.startswith("FY")
+            if record.normalized_field == "operating_cash_flow" and record.period.startswith("FY")
         ),
         key=lambda record: (record.as_of, record.period, record.evidence_id),
         reverse=True,
     )
-    for free_cash_flow in cash_flows:
+    for operating_cash_flow in operating_cash_flows:
+        capital_expenditures = sorted(
+            (
+                record
+                for record in accepted
+                if record.normalized_field == "capital_expenditure"
+                and record.period == operating_cash_flow.period
+                and record.currency == operating_cash_flow.currency
+            ),
+            key=lambda record: (record.as_of, record.evidence_id),
+            reverse=True,
+        )
         revenues = sorted(
             (
                 record
                 for record in accepted
                 if record.normalized_field == "revenue"
-                and record.period == free_cash_flow.period
-                and record.currency == free_cash_flow.currency
+                and record.period == operating_cash_flow.period
+                and record.currency == operating_cash_flow.currency
             ),
             key=lambda record: (record.as_of, record.evidence_id),
             reverse=True,
         )
-        if revenues:
-            return free_cash_flow, revenues[0]
-    raise LookupError("accepted period-aligned annual free cash flow and revenue are required")
+        if capital_expenditures and revenues:
+            return operating_cash_flow, capital_expenditures[0], revenues[0]
+    raise LookupError(
+        "accepted period-aligned annual operating cash flow, capital expenditure, "
+        "and revenue are required"
+    )
+
+
+def _validate_extension_evidence(
+    task: Task,
+    evidence: Sequence[EvidenceRecord],
+    context: CapabilityContext,
+) -> None:
+    if context.run_id != task.run_id or context.task_id != task.task_id:
+        raise ValueError("CapabilityContext does not belong to the executing task")
+    if not evidence:
+        raise LookupError("Phase 3 financial extension requires routed evidence")
+    object_ids = {record.object_id for record in evidence}
+    if any(record.run_id != task.run_id for record in evidence) or len(object_ids) != 1:
+        raise ValueError("extension evidence must belong to one run and research object")
+    allowed = set(context.accepted_evidence_ids)
+    if any(record.evidence_id not in allowed for record in evidence):
+        raise ValueError("extension evidence is outside CapabilityContext allowlist")
 
 
 def _ordered_historical_evidence(
@@ -315,7 +400,12 @@ def _is_approved_fcf_margin_requirement(requirement: CapabilityRequirement) -> b
         requirement.capability_id == FCF_MARGIN_CAPABILITY_ID
         and requirement.formula_id == FCF_MARGIN_FORMULA_ID
         and requirement.deterministic
-        and requirement.input_schema == {"free_cash_flow": "decimal", "revenue": "decimal"}
+        and requirement.input_schema
+        == {
+            "operating_cash_flow": "decimal",
+            "capital_expenditure": "decimal",
+            "revenue": "decimal",
+        }
         and requirement.output_schema == {"value": "decimal", "unit": "RATIO"}
         and set(requirement.allowed_imports).issubset({"decimal"})
         and set(requirement.financial_invariants)

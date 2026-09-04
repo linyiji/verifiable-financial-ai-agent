@@ -223,6 +223,7 @@ async def test_scheduler_handles_capability_build_failure_as_explicit_task_failu
     scheduler = DependencyScheduler(
         event_store=InMemoryRuntimeEventStore(),
         checkpoint_store=InMemoryCheckpointStore(),
+        retry_policy=RetryPolicy(max_attempts=2),
     )
 
     with pytest.raises(ExceptionGroup, match="runtime tasks failed"):
@@ -232,7 +233,8 @@ async def test_scheduler_handles_capability_build_failure_as_explicit_task_failu
         )
 
     assert state.run_status is RunStatus.FAILED
-    assert state.task("BUILD").status is TaskStatus.FAILED
+    assert state.task("BUILD").status is TaskStatus.CAPABILITY_BUILD_FAILED
+    assert state.task("BUILD").attempt_count == 1
 
 
 @pytest.mark.asyncio
