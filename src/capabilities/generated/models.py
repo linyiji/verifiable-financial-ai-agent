@@ -111,6 +111,58 @@ class CodeBuilderOutput(DomainModel):
         return values
 
 
+class CodeBuilderSchemaField(DomainModel):
+    """Strict provider-wire representation for one approved schema field."""
+
+    name: str = Field(min_length=1)
+    type: str = Field(min_length=1)
+
+    @field_validator("name", "type")
+    @classmethod
+    def reject_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("schema field values must not be blank")
+        return value
+
+
+class CodeBuilderProviderOutput(CodeBuilderOutput):
+    """Strict JSON-schema wire model adapted back to the owned domain contract.
+
+    OpenAI-compatible strict structured-output routes reject free-form object
+    schemas.  The approved input/output mappings therefore cross the provider
+    boundary as deterministic name/type arrays and are restored before any
+    validation, hashing, persistence, or execution.
+    """
+
+    input_schema: list[CodeBuilderSchemaField]
+    output_schema: list[CodeBuilderSchemaField]
+
+    @field_validator("input_schema", "output_schema")
+    @classmethod
+    def reject_duplicate_schema_fields(
+        cls, values: list[CodeBuilderSchemaField]
+    ) -> list[CodeBuilderSchemaField]:
+        names = [item.name for item in values]
+        if len(names) != len(set(names)):
+            raise ValueError("schema field names must be unique")
+        return values
+
+    def to_domain(self) -> CodeBuilderOutput:
+        return CodeBuilderOutput(
+            capability_id=self.capability_id,
+            version=self.version,
+            purpose=self.purpose,
+            input_schema={item.name: item.type for item in self.input_schema},
+            output_schema={item.name: item.type for item in self.output_schema},
+            formula_id=self.formula_id,
+            formula_description=self.formula_description,
+            source_code=self.source_code,
+            unit_tests=self.unit_tests,
+            financial_invariants=self.financial_invariants,
+            allowed_imports=self.allowed_imports,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class GeneratedCapabilityCandidate:
     build_id: str

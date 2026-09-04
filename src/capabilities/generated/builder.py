@@ -8,6 +8,7 @@ from src.adapters.llm.provider import LLMMessage, LLMProvider
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
     CodeBuilderOutput,
+    CodeBuilderProviderOutput,
     GeneratedCapabilityCandidate,
 )
 from src.capabilities.generated.telemetry import GeneratedCapabilityTrace
@@ -51,11 +52,12 @@ class TeamoRouterCodeBuilder:
             try:
                 response = await self._provider.complete_structured(
                     messages=_messages(request),
-                    response_model=CodeBuilderOutput,
+                    response_model=CodeBuilderProviderOutput,
                     schema_name=self.schema_name,
                 )
-                _validate_output_against_requirement(response.output, request)
-                implementation_hash = _source_hash(response.output.source_code)
+                output = response.output.to_domain()
+                _validate_output_against_requirement(output, request)
+                implementation_hash = _source_hash(output.source_code)
             except Exception as exc:
                 await self._trace.complete_generation(
                     generation,
@@ -85,7 +87,7 @@ class TeamoRouterCodeBuilder:
             )
             return GeneratedCapabilityCandidate(
                 build_id=request.build_id,
-                output=response.output,
+                output=output,
                 implementation_hash=implementation_hash,
                 provider=response.provider,
                 requested_model=response.requested_model,
@@ -115,6 +117,10 @@ def _messages(request: CapabilityBuildRequest) -> list[LLMMessage]:
             role="system",
             content=(
                 "Return only the requested structured generated-capability candidate. "
+                "Encode input_schema and output_schema as arrays of objects with exactly "
+                "name and type fields, preserving every approved schema entry. "
+                "Copy capability_id, purpose, formula_id, input_schema, output_schema, "
+                "allowed_imports, and financial_invariants from the approved spec exactly. "
                 "Implement deterministic pure Python for the approved formula. Do not use "
                 "network, filesystem, process, environment, dynamic-import, eval, exec, or "
                 "secret access. Source must expose execute(inputs). Unit tests must expose "
@@ -137,6 +143,8 @@ def _validate_output_against_requirement(
     mismatches: list[str] = []
     if output.capability_id != requirement.capability_id:
         mismatches.append("capability_id")
+    if output.purpose != requirement.purpose:
+        mismatches.append("purpose")
     if output.formula_id != requirement.formula_id:
         mismatches.append("formula_id")
     if output.input_schema != requirement.input_schema:

@@ -11,7 +11,7 @@ from src.capabilities.generated.builder import (
 )
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
-    CodeBuilderOutput,
+    CodeBuilderProviderOutput,
     ResearchLeadCapabilityApproval,
 )
 from src.capabilities.generated.telemetry import GeneratedCapabilityTrace
@@ -65,7 +65,7 @@ def builder_output(**updates: object) -> dict[str, object]:
     output: dict[str, object] = {
         "capability_id": "gross_margin",
         "version": "1.0.0-generated",
-        "purpose": "Calculate gross margin.",
+        "purpose": "Calculate gross margin from accepted evidence.",
         "input_schema": {"gross_profit": "decimal", "revenue": "decimal"},
         "output_schema": {"value": "decimal", "unit": "ratio"},
         "formula_id": "gross_margin_v1",
@@ -96,9 +96,14 @@ class FakeTeamoRouterProvider:
     async def complete_structured(self, **kwargs: object) -> LLMStructuredResponse:
         self.calls.append(kwargs)
         model = kwargs["response_model"]
-        assert model is CodeBuilderOutput
+        assert model is CodeBuilderProviderOutput
+        wire_output = dict(self.output)
+        for field in ("input_schema", "output_schema"):
+            mapping = wire_output[field]
+            assert isinstance(mapping, dict)
+            wire_output[field] = [{"name": name, "type": value} for name, value in mapping.items()]
         return LLMStructuredResponse(
-            output=model.model_validate(self.output),
+            output=model.model_validate(wire_output),
             provider="teamorouter",
             requested_model="gpt-5.6-sol",
             actual_model="gpt-5.6-luna",
@@ -147,6 +152,8 @@ async def test_builder_uses_owned_provider_schema_and_records_only_metadata() ->
     assert candidate.requested_model == "gpt-5.6-sol"
     assert candidate.actual_model == "gpt-5.6-luna"
     assert candidate.implementation_hash.startswith("sha256:")
+    assert candidate.output.input_schema == requirement().input_schema
+    assert candidate.output.output_schema == requirement().output_schema
     assert provider.calls[0]["schema_name"] == "generated_capability_candidate_v1"
     assert "Do not include reasoning" in provider.calls[0]["messages"][0].content
 
@@ -157,6 +164,23 @@ async def test_builder_uses_owned_provider_schema_and_records_only_metadata() ->
     assert "chain-of-thought" not in trace_dump.lower()
     assert candidate.implementation_hash in trace_dump
     assert trace_spy.updates[0]["usage_details"] == {"input": 101, "output": 53, "total": 154}
+
+
+def test_provider_wire_schema_contains_no_free_form_objects() -> None:
+    def object_schemas(value: object):
+        if isinstance(value, dict):
+            if value.get("type") == "object":
+                yield value
+            for child in value.values():
+                yield from object_schemas(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from object_schemas(child)
+
+    schema = CodeBuilderProviderOutput.model_json_schema()
+    objects = list(object_schemas(schema))
+    assert objects
+    assert all(item.get("additionalProperties") is False for item in objects)
 
 
 @pytest.mark.asyncio
@@ -173,6 +197,15 @@ async def test_builder_rejects_structured_output_that_expands_approved_imports()
 
     assert trace_spy.updates[0]["attributes"]["result_status"] == "error"
     assert trace_spy.updates[0]["attributes"]["error_type"] == "CodeBuilderOutputMismatch"
+
+
+@pytest.mark.asyncio
+async def test_builder_rejects_provider_purpose_drift() -> None:
+    provider = FakeTeamoRouterProvider(builder_output(purpose="Different unapproved purpose."))
+    builder = TeamoRouterCodeBuilder(provider)
+
+    with pytest.raises(CodeBuilderOutputMismatch, match="purpose"):
+        await builder.generate(build_request())
 
 
 def test_builder_rejects_a_new_direct_provider_route() -> None:
