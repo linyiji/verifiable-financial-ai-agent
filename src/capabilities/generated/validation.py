@@ -14,6 +14,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol, runtime_checkable
 from uuid import uuid4
 
+from src.capabilities.generated.artifacts import generated_text_sha256
 from src.capabilities.generated.models import GeneratedCapabilityCandidate, ValidationHandoff
 from src.capabilities.generated.ports import CapabilityValidationProgressPort
 from src.domain.base import JsonObject
@@ -499,8 +500,9 @@ class SandboxValidatedGeneratedCapability:
 
 
 def source_sha256(source: str) -> str:
-    normalized = source.replace("\r\n", "\n").replace("\r", "\n").rstrip() + "\n"
-    return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
+    """Hash the exact UTF-8 bytes supplied to the sandbox."""
+
+    return generated_text_sha256(source)
 
 
 def _source_imports(source: str) -> set[str]:
@@ -778,6 +780,12 @@ def _runtime_version(result: SandboxResult, sandbox: SandboxBackend) -> str:
     return f"Python {python} ({image})"
 
 
+def _runtime_image_identity(sandbox: SandboxBackend) -> str:
+    if isinstance(sandbox, DockerSandboxBackend):
+        return sandbox.image
+    return f"in-process:{type(sandbox).__module__}.{type(sandbox).__qualname__}"
+
+
 def _sandbox_record(
     candidate: GeneratedCapabilityCandidate,
     fixture: JsonObject,
@@ -796,6 +804,7 @@ def _sandbox_record(
         backend="docker" if isinstance(backend, DockerSandboxBackend) else type(backend).__name__,
         implementation_hash=candidate.implementation_hash,
         runtime_version=runtime_version,
+        runtime_image_identity=_runtime_image_identity(backend),
         input_fixture_hash=_json_hash(fixture),
         network_disabled=profile.get("network") == "none",
         read_only_root=profile.get("read_only_root") is True,

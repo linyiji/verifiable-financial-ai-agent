@@ -77,6 +77,7 @@ from src.application.phase3_proof import RevenueGrowthRiscZeroProofWorkflow
 from src.application.service import ResearchApplicationService
 from src.assurance import IndependentFinancialReviewer, ReleaseGate
 from src.capabilities.generated import (
+    GeneratedCapabilityArtifactStore,
     GeneratedCapabilityOrchestrator,
     GeneratedCapabilityTrace,
     GeneratedCapabilityValidator,
@@ -87,6 +88,7 @@ from src.domain.capability import (
     CapabilityBuildRecord,
     CapabilityGapRecord,
     CapabilityValidationRecord,
+    GeneratedCapabilityArtifactRecord,
     GeneratedCapabilityRecord,
     SandboxExecutionRecord,
     ScopedCapabilityRegistration,
@@ -485,7 +487,11 @@ def _candidate_preflight(repository_root: Path, expected_head: str) -> dict[str,
     required_paths = (
         "alembic/versions/20260904_0004_phase3_capability_proof_artifacts.py",
         "alembic/versions/20260904_0005_financial_evidence_semantics.py",
+        "alembic/versions/20260904_0006_generated_capability_artifact_retention.py",
         "scripts/run_phase3_acceptance.py",
+        "src/capabilities/generated/artifacts.py",
+        "src/infrastructure/database/generated_workflow.py",
+        "tests/unit/generated/test_artifact_retention.py",
         "src/adapters/risc0/release_manifest.py",
         "tests/test_phase3_acceptance_runner.py",
         "zk/revenue_growth/RISC_ZERO_RELEASE_MANIFEST.json",
@@ -537,7 +543,7 @@ def _candidate_preflight(repository_root: Path, expected_head: str) -> dict[str,
         "candidate_tree": tree,
         "worktree_clean": True,
         "required_release_sources_tracked": True,
-        "migration_chain": ["20260904_0004", "20260904_0005"],
+        "migration_chain": ["20260904_0004", "20260904_0005", "20260904_0006"],
         "risc0_release_manifest_sha256": release_manifest_sha256(manifest_path),
         "risc0_source_set_sha256": release_manifest["source_closure"]["source_set_sha256"],
         "risc0_manifest_host_sha256": manifest_host_sha256,
@@ -1139,6 +1145,86 @@ def _gate(passed: bool, evidence: Any) -> dict[str, Any]:
     return {"status": "PASS" if passed else "FAIL", "evidence": evidence}
 
 
+def _audit_generated_artifact_retention(
+    *,
+    store: GeneratedCapabilityArtifactStore,
+    records: list[GeneratedCapabilityArtifactRecord],
+    builds: list[CapabilityBuildRecord],
+    generated: list[GeneratedCapabilityRecord],
+    validations: list[CapabilityValidationRecord],
+    sandboxes: list[SandboxExecutionRecord],
+) -> dict[str, Any]:
+    active = [item for item in generated if item.lifecycle is CapabilityLifecycle.ACTIVE_FOR_SCOPE]
+    if not (len(records) == len(active) == len(validations) == len(sandboxes) == 1):
+        return {
+            "passed": False,
+            "binding_count": len(records),
+            "active_generated_count": len(active),
+        }
+    record = records[0]
+    generated_record = active[0]
+    validation = validations[0]
+    sandbox = sandboxes[0]
+    retained_builds = [item for item in builds if item.build_id == record.build_id]
+    try:
+        reconstructed = store.reconstruct(record)
+        sandbox_input = reconstructed.sandbox_request({"audit_reconstruction": "1"})
+    except (OSError, UnicodeError, ValueError):
+        return {
+            "passed": False,
+            "binding_count": 1,
+            "build_id": record.build_id,
+            "retrieval_verified": False,
+            "build_provider_verified": False,
+            "source_retrieved": False,
+            "tests_retrieved": False,
+            "source_hash_verified": False,
+            "test_hash_verified": False,
+            "sandbox_input_reconstructed": False,
+        }
+    passed = (
+        len(retained_builds) == 1
+        and retained_builds[0].provider == "teamorouter"
+        and bool(retained_builds[0].actual_model)
+        and record.generated_capability_id == generated_record.generated_capability_id
+        and record.capability_id == generated_record.capability_id
+        and record.capability_version == generated_record.capability_version
+        and record.build_id == validation.build_id == sandbox.build_id
+        and record.implementation_hash
+        == record.source_sha256
+        == generated_record.implementation_hash
+        == validation.source_hash
+        == validation.implementation_hash
+        == sandbox.implementation_hash
+        and record.test_sha256 == validation.tests_hash
+        and record.runtime_image_identity == sandbox.runtime_image_identity
+        and sandbox_input.source.encode("utf-8") == reconstructed.source_bytes
+        and sandbox_input.test_source.encode("utf-8") == reconstructed.test_bytes
+    )
+    return {
+        "passed": passed,
+        "binding_count": 1,
+        "build_id": record.build_id,
+        "source_artifact_id": record.source_artifact_id,
+        "source_sha256": record.source_sha256,
+        "source_size_bytes": record.source_size_bytes,
+        "test_artifact_id": record.test_artifact_id,
+        "test_sha256": record.test_sha256,
+        "test_size_bytes": record.test_size_bytes,
+        "implementation_hash": record.implementation_hash,
+        "runtime_image_identity": record.runtime_image_identity,
+        "build_provider_verified": len(retained_builds) == 1
+        and retained_builds[0].provider == "teamorouter"
+        and bool(retained_builds[0].actual_model),
+        "retrieval_verified": True,
+        "source_retrieved": True,
+        "tests_retrieved": True,
+        "source_hash_verified": True,
+        "test_hash_verified": True,
+        "sandbox_input_reconstructed": True,
+    }
+
+
 def _acceptance_matrix(
     *,
     aggregate: Any,
@@ -1146,6 +1232,7 @@ def _acceptance_matrix(
     gaps: list[CapabilityGapRecord],
     builds: list[CapabilityBuildRecord],
     generated: list[GeneratedCapabilityRecord],
+    generated_artifacts: list[GeneratedCapabilityArtifactRecord],
     validations: list[CapabilityValidationRecord],
     sandboxes: list[SandboxExecutionRecord],
     registrations: list[ScopedCapabilityRegistration],
@@ -1169,6 +1256,7 @@ def _acceptance_matrix(
     proof_fail_closed_passed: bool,
     candidate: Mapping[str, Any],
     runtime: Mapping[str, Any],
+    generated_retention_audit: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
     event_types = [event.type.value for event in events]
     generated_calculations = [
@@ -1233,12 +1321,16 @@ def _acceptance_matrix(
             "Research Lead signed every build attempt",
         ),
         "P3-CAP-003": _gate(
-            any(item.provider == "teamorouter" and item.actual_model for item in builds),
-            "generated source came from configured TeamoRouter",
+            generated_retention_audit.get("build_provider_verified") is True
+            and generated_retention_audit.get("source_retrieved") is True,
+            dict(generated_retention_audit),
         ),
         "P3-CAP-004": _gate(
-            len(validations) == 1 and validations[0].static_validation_passed,
-            "AST static validation persisted",
+            len(validations) == 1
+            and validations[0].static_validation_passed
+            and generated_retention_audit.get("source_retrieved") is True
+            and generated_retention_audit.get("source_hash_verified") is True,
+            dict(generated_retention_audit),
         ),
         "P3-CAP-005": _gate(
             len(sandboxes) == 1
@@ -1276,8 +1368,12 @@ def _acceptance_matrix(
             "memory/CPU/PID/wall limits persisted",
         ),
         "P3-CAP-008": _gate(
-            len(validations) == 1 and validations[0].unit_tests_passed,
-            "generated unit tests passed in Docker",
+            len(validations) == 1
+            and validations[0].unit_tests_passed
+            and generated_retention_audit.get("tests_retrieved") is True
+            and generated_retention_audit.get("test_hash_verified") is True
+            and generated_retention_audit.get("sandbox_input_reconstructed") is True,
+            dict(generated_retention_audit),
         ),
         "P3-CAP-009": _gate(
             len(validations) == 1
@@ -1292,10 +1388,12 @@ def _acceptance_matrix(
         "P3-CAP-011": _gate(
             generated_attempts_classified
             and len(validations) == len(sandboxes) == 1
+            and len(generated_artifacts) == 1
+            and generated_retention_audit.get("passed") is True
             and active_generated[0].implementation_hash
             == validations[0].implementation_hash
             == sandboxes[0].implementation_hash,
-            "one active implementation hash is stable and rejected attempts are retained",
+            dict(generated_retention_audit),
         ),
         "P3-CAP-012": _gate(
             all(
@@ -1719,6 +1817,10 @@ async def _run_authoritative(
         TeamoRouterClient(settings.llm, client=llm_http_client, timeout_seconds=60.0)
     )
     sandbox = DockerSandboxBackend()
+    generated_artifact_store = GeneratedCapabilityArtifactStore(
+        output / "generated",
+        forbidden_values=_credential_needles(settings),
+    )
     proof_root = output / "proof"
     adapter = RiscZeroProofAdapter(
         host_binary=host_binary,
@@ -1788,7 +1890,10 @@ async def _run_authoritative(
                     plans=FreeCashFlowMarginValidationPlanProvider(),
                 ),
                 event_store=persistence.event_store,
-                recorder=PostgreSQLCapabilityWorkflowRecorder(persistence.phase3_record_repository),
+                recorder=PostgreSQLCapabilityWorkflowRecorder(
+                    persistence.phase3_record_repository,
+                    artifact_store=generated_artifact_store,
+                ),
                 trace=generated_trace,
                 max_attempts=2,
             )
@@ -2088,6 +2193,7 @@ async def _run_authoritative(
         gaps = await repository.list(CapabilityGapRecord, run_id)
         builds = await repository.list(CapabilityBuildRecord, run_id)
         generated = await repository.list(GeneratedCapabilityRecord, run_id)
+        generated_artifacts = await repository.list(GeneratedCapabilityArtifactRecord, run_id)
         validations = await repository.list(CapabilityValidationRecord, run_id)
         sandboxes = await repository.list(SandboxExecutionRecord, run_id)
         registrations = await repository.list(ScopedCapabilityRegistration, run_id)
@@ -2097,6 +2203,14 @@ async def _run_authoritative(
         verifications = await repository.list(ProofVerificationRecord, run_id)
         proof_artifacts = await repository.list(ProofArtifactReference, run_id)
         report_artifacts = await repository.list(ReportArtifactRecord, run_id)
+        generated_retention_audit = _audit_generated_artifact_retention(
+            store=generated_artifact_store,
+            records=generated_artifacts,
+            builds=builds,
+            generated=generated,
+            validations=validations,
+            sandboxes=sandboxes,
+        )
         proof_requirements_by_id = {
             item.calculation_id: item.requirement for item in proof_policies
         }
@@ -2111,6 +2225,7 @@ async def _run_authoritative(
             gaps=gaps,
             builds=builds,
             generated=generated,
+            generated_artifacts=generated_artifacts,
             validations=validations,
             sandboxes=sandboxes,
             registrations=registrations,
@@ -2134,6 +2249,7 @@ async def _run_authoritative(
             proof_fail_closed_passed=proof_fail_closed_passed,
             candidate=candidate,
             runtime=runtime,
+            generated_retention_audit=generated_retention_audit,
         )
         financial_semantics = _financial_semantic_matrix(
             aggregate=aggregate,
@@ -2319,6 +2435,7 @@ async def _run_authoritative(
                 "generated_ids": [item.generated_capability_id for item in generated],
                 "registration_ids": [item.registration_id for item in registrations],
                 "sandbox_image": sandbox.image,
+                "artifact_retention": generated_retention_audit,
             },
             "proof": {
                 "policy_decision_count": len(proof_policies),
@@ -2384,6 +2501,10 @@ async def _run_authoritative(
         ]
         _write_json(output / "calculation_records.json", calculation_payload)
         _write_json(
+            output / "generated_capability_artifact_records.json",
+            [item.model_dump(mode="json") for item in generated_artifacts],
+        )
+        _write_json(
             output / "runtime_events.json",
             [item.model_dump(mode="json") for item in events],
         )
@@ -2441,6 +2562,7 @@ async def _run_authoritative(
             CapabilityGapRecord,
             CapabilityBuildRecord,
             GeneratedCapabilityRecord,
+            GeneratedCapabilityArtifactRecord,
             CapabilityValidationRecord,
             SandboxExecutionRecord,
             ScopedCapabilityRegistration,
@@ -2597,7 +2719,7 @@ async def _run_authoritative(
         postgresql_evidence = {
             "passed": (
                 migration_current == migration_head
-                and migration_head == "20260904_0005"
+                and migration_head == "20260904_0006"
                 and restore["passed"]
             ),
             "migration_before": migration_before,

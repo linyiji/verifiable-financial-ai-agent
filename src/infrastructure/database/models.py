@@ -2,7 +2,15 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.database.base import Base
@@ -91,6 +99,57 @@ class GeneratedCapabilityRecordRow(Base):
     generated_capability_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     run_id: Mapped[str] = mapped_column(String(128), index=True)
     payload: Mapped[dict] = mapped_column(JSON)
+
+
+class GeneratedCapabilityArtifactRecordRow(Base):
+    __tablename__ = "generated_capability_artifact_records"
+    __table_args__ = (
+        UniqueConstraint("generated_capability_id"),
+        CheckConstraint("source_size_bytes > 0", name="ck_generated_source_size_positive"),
+        CheckConstraint("test_size_bytes > 0", name="ck_generated_test_size_positive"),
+        CheckConstraint(
+            "source_artifact_id = source_sha256",
+            name="ck_generated_source_content_addressed",
+        ),
+        CheckConstraint(
+            "test_artifact_id = test_sha256",
+            name="ck_generated_test_content_addressed",
+        ),
+        CheckConstraint(
+            "implementation_hash = source_sha256",
+            name="ck_generated_implementation_binding",
+        ),
+    )
+
+    build_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("capability_build_records.build_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    run_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("research_runs.run_id", ondelete="RESTRICT"),
+        index=True,
+    )
+    generated_capability_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("generated_capability_records.generated_capability_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    capability_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    capability_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_artifact_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_artifact_ref: Mapped[str] = mapped_column(String(2048), nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    test_artifact_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    test_artifact_ref: Mapped[str] = mapped_column(String(2048), nullable=False)
+    test_sha256: Mapped[str] = mapped_column(String(80), nullable=False)
+    test_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    implementation_hash: Mapped[str] = mapped_column(String(80), nullable=False)
+    runtime_image_identity: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
 
 
 class SandboxExecutionRecordRow(Base):

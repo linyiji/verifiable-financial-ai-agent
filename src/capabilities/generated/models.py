@@ -12,6 +12,7 @@ from src.domain.capability import (
     CapabilityGapRecord,
     CapabilityRequirement,
     CapabilityValidationRecord,
+    GeneratedCapabilityArtifactRecord,
     GeneratedCapabilityRecord,
     SandboxExecutionRecord,
     ScopedCapabilityRegistration,
@@ -224,6 +225,7 @@ class CapabilityOrchestrationResult:
     gap: CapabilityGapRecord
     build_records: tuple[CapabilityBuildRecord, ...]
     generated: GeneratedCapabilityRecord
+    artifact_retention: GeneratedCapabilityArtifactRecord
     validation: CapabilityValidationRecord
     sandbox_execution: SandboxExecutionRecord
     registration: ScopedCapabilityRegistration

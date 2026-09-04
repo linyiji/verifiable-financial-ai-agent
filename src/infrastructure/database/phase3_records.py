@@ -12,6 +12,7 @@ from src.domain.capability import (
     CapabilityBuildRecord,
     CapabilityGapRecord,
     CapabilityValidationRecord,
+    GeneratedCapabilityArtifactRecord,
     GeneratedCapabilityRecord,
     SandboxExecutionRecord,
     ScopedCapabilityRegistration,
@@ -28,6 +29,7 @@ from src.infrastructure.database.models import (
     CapabilityBuildRecordRow,
     CapabilityGapRecordRow,
     CapabilityValidationRecordRow,
+    GeneratedCapabilityArtifactRecordRow,
     GeneratedCapabilityRecordRow,
     ProofArtifactReferenceRow,
     ProofInputCommitmentRow,
@@ -43,6 +45,7 @@ Phase3Record = (
     CapabilityGapRecord
     | CapabilityBuildRecord
     | GeneratedCapabilityRecord
+    | GeneratedCapabilityArtifactRecord
     | SandboxExecutionRecord
     | CapabilityValidationRecord
     | ScopedCapabilityRegistration
@@ -67,6 +70,9 @@ _MAPPINGS: dict[type[BaseModel], _RecordMapping] = {
     CapabilityBuildRecord: _RecordMapping(CapabilityBuildRecordRow, "build_id"),
     GeneratedCapabilityRecord: _RecordMapping(
         GeneratedCapabilityRecordRow, "generated_capability_id"
+    ),
+    GeneratedCapabilityArtifactRecord: _RecordMapping(
+        GeneratedCapabilityArtifactRecordRow, "build_id"
     ),
     SandboxExecutionRecord: _RecordMapping(SandboxExecutionRecordRow, "execution_id"),
     CapabilityValidationRecord: _RecordMapping(CapabilityValidationRecordRow, "validation_id"),
@@ -153,16 +159,36 @@ class SQLAlchemyPhase3RecordRepository:
         row = await session.get(mapping.row_type, entity_id)
         payload = entity.model_dump(mode="json")
         if row is None:
-            session.add(
-                mapping.row_type(
-                    **{
-                        mapping.id_field: entity_id,
-                        "run_id": resolved_run_id,
-                        "payload": payload,
+            values = {
+                mapping.id_field: entity_id,
+                "run_id": resolved_run_id,
+                "payload": payload,
+            }
+            if isinstance(entity, GeneratedCapabilityArtifactRecord):
+                values.update(
+                    {
+                        "generated_capability_id": entity.generated_capability_id,
+                        "capability_id": entity.capability_id,
+                        "capability_version": entity.capability_version,
+                        "source_artifact_id": entity.source_artifact_id,
+                        "source_artifact_ref": entity.source_artifact_ref,
+                        "source_sha256": entity.source_sha256,
+                        "source_size_bytes": entity.source_size_bytes,
+                        "test_artifact_id": entity.test_artifact_id,
+                        "test_artifact_ref": entity.test_artifact_ref,
+                        "test_sha256": entity.test_sha256,
+                        "test_size_bytes": entity.test_size_bytes,
+                        "implementation_hash": entity.implementation_hash,
+                        "runtime_image_identity": entity.runtime_image_identity,
+                        "created_at": entity.created_at,
                     }
                 )
-            )
+            session.add(mapping.row_type(**values))
             return
         if row.run_id != resolved_run_id:
             raise ValueError(f"record {entity_id} cannot move between runs")
+        if isinstance(entity, GeneratedCapabilityArtifactRecord):
+            if row.payload != payload:
+                raise ValueError("generated capability artifact bindings are immutable")
+            return
         row.payload = payload

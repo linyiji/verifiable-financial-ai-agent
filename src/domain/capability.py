@@ -76,6 +76,49 @@ class GeneratedCapabilityRecord(TimestampedModel):
     lifecycle: CapabilityLifecycle = CapabilityLifecycle.GENERATED
 
 
+class GeneratedCapabilityArtifactRecord(TimestampedModel):
+    """Immutable binding from an accepted build to its exact sandbox inputs."""
+
+    run_id: str
+    build_id: str
+    generated_capability_id: str
+    capability_id: str
+    capability_version: str
+    source_artifact_id: str
+    source_artifact_ref: str
+    source_sha256: str
+    source_size_bytes: int = Field(gt=0)
+    test_artifact_id: str
+    test_artifact_ref: str
+    test_sha256: str
+    test_size_bytes: int = Field(gt=0)
+    implementation_hash: str
+    runtime_image_identity: str
+
+    @model_validator(mode="after")
+    def require_content_addressed_identity(self) -> "GeneratedCapabilityArtifactRecord":
+        if self.source_artifact_id != self.source_sha256:
+            raise ValueError("source artifact id must equal its content hash")
+        if self.test_artifact_id != self.test_sha256:
+            raise ValueError("test artifact id must equal its content hash")
+        if self.implementation_hash != self.source_sha256:
+            raise ValueError("implementation hash must equal the exact source content hash")
+        for value in (
+            self.source_sha256,
+            self.test_sha256,
+            self.implementation_hash,
+        ):
+            if len(value) != 71 or not value.startswith("sha256:"):
+                raise ValueError("generated artifact hashes must be sha256 identities")
+            try:
+                int(value.removeprefix("sha256:"), 16)
+            except ValueError as exc:
+                raise ValueError("generated artifact hashes must be hexadecimal") from exc
+        if not self.runtime_image_identity.strip():
+            raise ValueError("runtime image identity must not be blank")
+        return self
+
+
 class CapabilityBuildRecord(TimestampedModel):
     build_id: str
     gap_id: str
@@ -100,6 +143,7 @@ class SandboxExecutionRecord(TimestampedModel):
     backend: str
     implementation_hash: str
     runtime_version: str
+    runtime_image_identity: str = "UNRECORDED_LEGACY_RUNTIME"
     input_fixture_hash: str
     network_disabled: bool
     read_only_root: bool

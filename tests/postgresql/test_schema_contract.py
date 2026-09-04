@@ -33,6 +33,7 @@ def test_durable_metadata_contains_every_required_record_table() -> None:
         "capability_gap_records",
         "capability_build_records",
         "generated_capability_records",
+        "generated_capability_artifact_records",
         "sandbox_execution_records",
         "capability_validation_records",
         "scoped_capability_registrations",
@@ -93,3 +94,33 @@ def test_task_dependency_metadata_separates_planned_and_actual_edges() -> None:
     assert "graph_kind IN ('PLANNED', 'ACTUAL')" in checks
     assert "task_id <> dependency_task_id" in checks
     assert ("run_id", "graph_kind", "task_id", "position") in unique_columns
+
+
+def test_generated_artifact_metadata_enforces_required_content_bindings() -> None:
+    table = Base.metadata.tables["generated_capability_artifact_records"]
+    assert {
+        "build_id",
+        "run_id",
+        "generated_capability_id",
+        "capability_id",
+        "capability_version",
+        "source_artifact_id",
+        "source_artifact_ref",
+        "source_sha256",
+        "source_size_bytes",
+        "test_artifact_id",
+        "test_artifact_ref",
+        "test_sha256",
+        "test_size_bytes",
+        "implementation_hash",
+        "runtime_image_identity",
+        "created_at",
+    } <= set(table.columns.keys())
+    checks = {
+        str(constraint.sqltext)
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    assert "source_artifact_id = source_sha256" in checks
+    assert "test_artifact_id = test_sha256" in checks
+    assert "implementation_hash = source_sha256" in checks

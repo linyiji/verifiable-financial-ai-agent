@@ -29,6 +29,7 @@ from src.domain.capability import (
     CapabilityDefinition,
     CapabilityGapRecord,
     CapabilityValidationRecord,
+    GeneratedCapabilityArtifactRecord,
     GeneratedCapabilityRecord,
     SandboxExecutionRecord,
     ScopedCapabilityRegistration,
@@ -55,6 +56,9 @@ from src.domain.task import PlannedTaskGraph, Task
 from src.output.financial_metrics import build_material_financial_release
 from src.runtime.events import InMemoryRuntimeEventStore
 from src.runtime.state import RuntimeState
+
+GENERATED_HASH = "sha256:" + "a" * 64
+TEST_HASH = "sha256:" + "b" * 64
 
 
 class GeneratedFCFMarginCapability:
@@ -97,15 +101,15 @@ class GeneratedFCFMarginCapability:
                 "revenue": str(inputs["revenue"]),
             },
             parameters={
-                "generated_source_hash": "sha256:generated",
-                "generated_tests_hash": "sha256:tests",
+                "generated_source_hash": GENERATED_HASH,
+                "generated_tests_hash": TEST_HASH,
                 "live_input_commitment": "sha256:live-input",
             },
             output_value=value,
             output_unit="RATIO",
             status=CalculationStatus.PASS,
-            implementation_hash="sha256:generated",
-            code_hash="sha256:generated",
+            implementation_hash=GENERATED_HASH,
+            code_hash=GENERATED_HASH,
             source_ref="generated://BUILD-1/source.py",
             runtime_version="Python 3.11.test",
         )
@@ -301,7 +305,7 @@ def _orchestration_result(capability) -> CapabilityOrchestrationResult:
         },
         output_schema={"value": "decimal", "unit": "RATIO"},
         formula_description="(operating_cash_flow + capital_expenditure) / revenue",
-        implementation_hash="sha256:generated",
+        implementation_hash=GENERATED_HASH,
         source_ref="generated://BUILD-1/source.py",
         unit_test_ref="generated://BUILD-1/tests.py",
         allowed_imports=["decimal"],
@@ -327,7 +331,7 @@ def _orchestration_result(capability) -> CapabilityOrchestrationResult:
     validation = CapabilityValidationRecord(
         validation_id="VAL-1",
         build_id=build.build_id,
-        implementation_hash="sha256:generated",
+        implementation_hash=GENERATED_HASH,
         static_validation_passed=True,
         syntax_compile_passed=True,
         unit_tests_passed=True,
@@ -343,8 +347,9 @@ def _orchestration_result(capability) -> CapabilityOrchestrationResult:
         execution_id="SBX-1",
         build_id=build.build_id,
         backend="docker",
-        implementation_hash="sha256:generated",
+        implementation_hash=GENERATED_HASH,
         runtime_version="Python 3.11.test",
+        runtime_image_identity="python:3.11-test@sha256:test",
         input_fixture_hash="sha256:fixture",
         network_disabled=True,
         read_only_root=True,
@@ -365,10 +370,28 @@ def _orchestration_result(capability) -> CapabilityOrchestrationResult:
         approved_by="research_lead",
         lifecycle=CapabilityLifecycle.ACTIVE_FOR_SCOPE,
     )
+    artifact_retention = GeneratedCapabilityArtifactRecord(
+        run_id=generated.run_id,
+        build_id=build.build_id,
+        generated_capability_id=generated.generated_capability_id,
+        capability_id=generated.capability_id,
+        capability_version=generated.capability_version,
+        source_artifact_id=GENERATED_HASH,
+        source_artifact_ref=f"generated-artifact://sha256/{GENERATED_HASH[7:]}",
+        source_sha256=GENERATED_HASH,
+        source_size_bytes=100,
+        test_artifact_id=TEST_HASH,
+        test_artifact_ref=f"generated-artifact://sha256/{TEST_HASH[7:]}",
+        test_sha256=TEST_HASH,
+        test_size_bytes=100,
+        implementation_hash=GENERATED_HASH,
+        runtime_image_identity=sandbox.runtime_image_identity,
+    )
     return CapabilityOrchestrationResult(
         gap=gap,
         build_records=(build,),
         generated=generated,
+        artifact_retention=artifact_retention,
         validation=validation,
         sandbox_execution=sandbox,
         registration=registration,

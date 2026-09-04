@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from time import perf_counter
 
 from src.adapters.llm.provider import LLMMessage, LLMProvider
+from src.capabilities.generated.artifacts import generated_text_sha256
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
     CodeBuilderOutput,
@@ -176,8 +176,7 @@ def _validate_output_against_requirement(
 
 
 def _source_hash(source: str) -> str:
-    normalized = source.replace("\r\n", "\n").replace("\r", "\n").rstrip() + "\n"
-    return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
+    return generated_text_sha256(source)
 
 
 def _optional_text(value: object) -> str | None:

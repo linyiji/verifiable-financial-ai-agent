@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pytest
 from pydantic import ValidationError
 
+from src.capabilities.generated.artifacts import generated_text_sha256
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
     GeneratedCapabilityCandidate,
@@ -24,6 +25,7 @@ from src.domain.capability import (
     CapabilityGapRecord,
     CapabilityRequirement,
     CapabilityValidationRecord,
+    GeneratedCapabilityArtifactRecord,
     GeneratedCapabilityRecord,
     SandboxExecutionRecord,
     ScopedCapabilityRegistration,
@@ -165,10 +167,11 @@ class FakeBuilder:
         self.calls.append(request)
         if len(self.calls) <= self.failures:
             raise RuntimeError("generation unavailable")
+        output = _candidate_output()
         return GeneratedCapabilityCandidate(
             build_id=request.build_id,
-            output=_candidate_output(),
-            implementation_hash="sha256:generated-source",
+            output=output,
+            implementation_hash=generated_text_sha256(output.source_code),
             provider="teamorouter",
             requested_model="gpt-5.6-sol",
             actual_model="gpt-5.6-luna",
@@ -224,6 +227,7 @@ class FakeValidator:
             backend="docker",
             implementation_hash=candidate.implementation_hash,
             runtime_version="Python 3.11",
+            runtime_image_identity="python:3.11-test@sha256:test",
             input_fixture_hash="sha256:fixture",
             network_disabled=True,
             read_only_root=True,
@@ -259,6 +263,7 @@ class MemoryRecorder:
     generated: list[GeneratedCapabilityRecord]
     validations: list[CapabilityValidationRecord]
     registrations: list[ScopedCapabilityRegistration]
+    artifact_records: list[GeneratedCapabilityArtifactRecord]
 
     def __init__(self) -> None:
         self.gaps = []
@@ -266,6 +271,7 @@ class MemoryRecorder:
         self.generated = []
         self.validations = []
         self.registrations = []
+        self.artifact_records = []
 
     async def record_gap(self, gap):
         self.gaps.append(gap)
@@ -275,6 +281,29 @@ class MemoryRecorder:
 
     async def record_generated(self, generated):
         self.generated.append(generated)
+
+    async def retain_generated_artifacts(self, *, generated, candidate, sandbox_execution):
+        source_hash = generated_text_sha256(candidate.output.source_code)
+        test_hash = generated_text_sha256(candidate.output.unit_tests)
+        record = GeneratedCapabilityArtifactRecord(
+            run_id=generated.run_id,
+            build_id=candidate.build_id,
+            generated_capability_id=generated.generated_capability_id,
+            capability_id=generated.capability_id,
+            capability_version=generated.capability_version,
+            source_artifact_id=source_hash,
+            source_artifact_ref=f"generated-artifact://sha256/{source_hash[7:]}",
+            source_sha256=source_hash,
+            source_size_bytes=len(candidate.output.source_code.encode("utf-8")),
+            test_artifact_id=test_hash,
+            test_artifact_ref=f"generated-artifact://sha256/{test_hash[7:]}",
+            test_sha256=test_hash,
+            test_size_bytes=len(candidate.output.unit_tests.encode("utf-8")),
+            implementation_hash=source_hash,
+            runtime_image_identity=sandbox_execution.runtime_image_identity,
+        )
+        self.artifact_records.append(record)
+        return record
 
     async def record_validation(self, validation, sandbox_execution):
         del sandbox_execution
@@ -320,6 +349,7 @@ async def test_full_governed_path_scopes_and_resumes_same_task_without_graph_mut
     assert state.actual_graph.version == initial_graph_version
     assert len(state.actual_graph.tasks) == 1  # Capability Build is not a Research Task.
     assert recorder.gaps and recorder.generated and recorder.validations and recorder.registrations
+    assert result.artifact_retention == recorder.artifact_records[0]
     assert result.generated.runtime_version == result.sandbox_execution.runtime_version
     assert recorder.generated[-1].runtime_version == result.sandbox_execution.runtime_version
 

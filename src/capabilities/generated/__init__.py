@@ -6,6 +6,11 @@ ports so generated source never becomes executable merely because an LLM
 returned it.
 """
 
+from src.capabilities.generated.artifacts import (
+    GeneratedArtifactRetentionError,
+    GeneratedCapabilityArtifactStore,
+    ReconstructedGeneratedBuildInput,
+)
 from src.capabilities.generated.builder import TeamoRouterCodeBuilder
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
@@ -53,6 +58,8 @@ __all__ = [
     "CodeBuilderProviderOutput",
     "CodeBuilderSchemaField",
     "GeneratedCapabilityCandidate",
+    "GeneratedCapabilityArtifactStore",
+    "GeneratedArtifactRetentionError",
     "GeneratedCapabilityExecutionError",
     "GeneratedCapabilityOrchestrator",
     "GeneratedCapabilityTrace",
@@ -62,6 +69,7 @@ __all__ = [
     "ResearchLeadCapabilityApproval",
     "ResearchLeadCapabilityAuthority",
     "SandboxValidatedGeneratedCapability",
+    "ReconstructedGeneratedBuildInput",
     "ScopedCapabilityRegistry",
     "ScopedCapabilityRegistryPort",
     "SpecialistCapabilityRequest",

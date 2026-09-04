@@ -291,7 +291,11 @@ def test_candidate_preflight_binds_clean_full_commit(
     required = (
         "alembic/versions/20260904_0004_phase3_capability_proof_artifacts.py",
         "alembic/versions/20260904_0005_financial_evidence_semantics.py",
+        "alembic/versions/20260904_0006_generated_capability_artifact_retention.py",
         "scripts/run_phase3_acceptance.py",
+        "src/capabilities/generated/artifacts.py",
+        "src/infrastructure/database/generated_workflow.py",
+        "tests/unit/generated/test_artifact_retention.py",
         "src/adapters/risc0/release_manifest.py",
         "tests/test_phase3_acceptance_runner.py",
         "zk/revenue_growth/RISC_ZERO_RELEASE_MANIFEST.json",
@@ -347,6 +351,11 @@ def test_candidate_preflight_binds_clean_full_commit(
     candidate = _candidate_preflight(tmp_path, head)
     assert candidate["candidate_head"] == head
     assert candidate["worktree_clean"] is True
+    assert candidate["migration_chain"] == [
+        "20260904_0004",
+        "20260904_0005",
+        "20260904_0006",
+    ]
 
     (tmp_path / "untracked.txt").write_text("dirty\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="not clean"):

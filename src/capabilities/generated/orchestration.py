@@ -141,6 +141,7 @@ class GeneratedCapabilityOrchestrator:
         last_error: Exception | None = None
         for attempt in range(1, self._max_attempts + 1):
             generated: GeneratedCapabilityRecord | None = None
+            artifact_retention = None
             build = CapabilityBuildRecord(
                 build_id=f"BUILD-{uuid4()}",
                 gap_id=gap.gap_id,
@@ -228,6 +229,12 @@ class GeneratedCapabilityOrchestrator:
                     update={"lifecycle": CapabilityLifecycle.FINANCIAL_VALIDATED}
                 )
                 builds[-1] = build
+                failure_stage = "artifact_retention"
+                artifact_retention = await self._recorder.retain_generated_artifacts(
+                    generated=generated,
+                    candidate=candidate,
+                    sandbox_execution=handoff.sandbox_execution,
+                )
                 await self._recorder.record_build(build)
                 await self._recorder.record_generated(generated)
                 await self._recorder.record_validation(
@@ -315,6 +322,7 @@ class GeneratedCapabilityOrchestrator:
                     gap=gap,
                     build_records=tuple(builds),
                     generated=generated,
+                    artifact_retention=artifact_retention,
                     validation=handoff.validation,
                     sandbox_execution=handoff.sandbox_execution,
                     registration=active,

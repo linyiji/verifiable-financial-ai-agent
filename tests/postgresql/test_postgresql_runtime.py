@@ -188,7 +188,7 @@ async def test_real_postgresql_version_and_alembic_head() -> None:
         assert row[0].startswith("PostgreSQL 16.15")
         assert row[1] == "verifiable_financial_agent"
         assert row[2] == "vfa"
-        assert revision == "20260904_0005"
+        assert revision == "20260904_0006"
 
 
 @pytest.mark.asyncio

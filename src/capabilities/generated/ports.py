@@ -13,6 +13,7 @@ from src.domain.capability import (
     CapabilityBuildRecord,
     CapabilityGapRecord,
     CapabilityValidationRecord,
+    GeneratedCapabilityArtifactRecord,
     GeneratedCapabilityRecord,
     SandboxExecutionRecord,
     ScopedCapabilityRegistration,
@@ -87,6 +88,14 @@ class CapabilityWorkflowRecorder(Protocol):
 
     async def record_generated(self, generated: GeneratedCapabilityRecord) -> None: ...
 
+    async def retain_generated_artifacts(
+        self,
+        *,
+        generated: GeneratedCapabilityRecord,
+        candidate: GeneratedCapabilityCandidate,
+        sandbox_execution: SandboxExecutionRecord,
+    ) -> GeneratedCapabilityArtifactRecord: ...
+
     async def record_validation(
         self,
         validation: CapabilityValidationRecord,
@@ -105,6 +114,16 @@ class NoopCapabilityWorkflowRecorder:
 
     async def record_generated(self, generated: GeneratedCapabilityRecord) -> None:
         del generated
+
+    async def retain_generated_artifacts(
+        self,
+        *,
+        generated: GeneratedCapabilityRecord,
+        candidate: GeneratedCapabilityCandidate,
+        sandbox_execution: SandboxExecutionRecord,
+    ) -> GeneratedCapabilityArtifactRecord:
+        del generated, candidate, sandbox_execution
+        raise RuntimeError("generated capability activation requires durable artifact retention")
 
     async def record_validation(
         self,
