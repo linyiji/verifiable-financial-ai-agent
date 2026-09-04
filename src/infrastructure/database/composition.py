@@ -17,6 +17,7 @@ from src.application.persistence import (
 from src.infrastructure.config.settings import DatabaseSettings
 from src.infrastructure.database.artifacts import SQLAlchemyRunRecordRepository
 from src.infrastructure.database.checkpoints import SQLAlchemyCheckpointStore
+from src.infrastructure.database.phase3_records import SQLAlchemyPhase3RecordRepository
 from src.infrastructure.database.postgresql_events import PostgresRuntimeEventStore
 
 
@@ -31,6 +32,7 @@ class PostgreSQLPersistence:
     event_store: PostgresRuntimeEventStore
     checkpoint_store: SQLAlchemyCheckpointStore
     run_record_repository: SQLAlchemyRunRecordRepository
+    phase3_record_repository: SQLAlchemyPhase3RecordRepository
 
     async def close(self) -> None:
         await self.engine.dispose()
@@ -64,4 +66,5 @@ def create_postgresql_persistence(
         ),
         checkpoint_store=SQLAlchemyCheckpointStore(sessions),
         run_record_repository=SQLAlchemyRunRecordRepository(sessions),
+        phase3_record_repository=SQLAlchemyPhase3RecordRepository(sessions),
     )

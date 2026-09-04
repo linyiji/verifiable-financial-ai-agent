@@ -30,6 +30,18 @@ def test_durable_metadata_contains_every_required_record_table() -> None:
         "released_research_results",
         "runtime_checkpoints",
         "runtime_event_counters",
+        "capability_gap_records",
+        "capability_build_records",
+        "generated_capability_records",
+        "sandbox_execution_records",
+        "capability_validation_records",
+        "scoped_capability_registrations",
+        "proof_policy_decisions",
+        "proof_input_commitments",
+        "proof_records",
+        "proof_artifact_references",
+        "proof_verification_records",
+        "report_artifact_records",
     } <= set(Base.metadata.tables)
 
 

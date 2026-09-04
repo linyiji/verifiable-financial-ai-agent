@@ -67,3 +67,99 @@ class TaskDependencyRow(Base):
     task_id: Mapped[str] = mapped_column(String(256), primary_key=True)
     dependency_task_id: Mapped[str] = mapped_column(String(256), primary_key=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class CapabilityGapRecordRow(Base):
+    __tablename__ = "capability_gap_records"
+
+    gap_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class CapabilityBuildRecordRow(Base):
+    __tablename__ = "capability_build_records"
+
+    build_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class GeneratedCapabilityRecordRow(Base):
+    __tablename__ = "generated_capability_records"
+
+    generated_capability_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class SandboxExecutionRecordRow(Base):
+    __tablename__ = "sandbox_execution_records"
+
+    execution_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class CapabilityValidationRecordRow(Base):
+    __tablename__ = "capability_validation_records"
+
+    validation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class ScopedCapabilityRegistrationRow(Base):
+    __tablename__ = "scoped_capability_registrations"
+
+    registration_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class ProofPolicyDecisionRow(Base):
+    __tablename__ = "proof_policy_decisions"
+
+    decision_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class ProofInputCommitmentRow(Base):
+    __tablename__ = "proof_input_commitments"
+
+    commitment_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class ProofRecordRow(Base):
+    __tablename__ = "proof_records"
+
+    proof_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class ProofArtifactReferenceRow(Base):
+    __tablename__ = "proof_artifact_references"
+
+    artifact_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class ProofVerificationRecordRow(Base):
+    __tablename__ = "proof_verification_records"
+
+    verification_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class ReportArtifactRecordRow(Base):
+    __tablename__ = "report_artifact_records"
+
+    artifact_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
