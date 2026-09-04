@@ -667,6 +667,7 @@ def main():
         "result": normalize(result),
         "tests": normalize(test_result),
         "captured_output": captured.getvalue()[-4096:],
+        "runtime": {"implementation": "CPython", "python": sys.version.split()[0]},
         "security_probe": security_probe(),
     }
 
@@ -681,6 +682,7 @@ except BaseException as exc:
             "type": type(exc).__name__,
             "detail": str(exc),
         },
+        "runtime": {"implementation": "CPython", "python": sys.version.split()[0]},
         "security_probe": security_probe(),
     }, sort_keys=True, separators=(",", ":")))
     raise SystemExit(1)

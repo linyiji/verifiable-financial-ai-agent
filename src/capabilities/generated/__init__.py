@@ -27,23 +27,41 @@ from src.capabilities.generated.ports import (
     ResearchLeadCapabilityAuthority,
     ScopedCapabilityRegistryPort,
 )
+from src.capabilities.generated.scoped_registry import ScopedCapabilityRegistry
 from src.capabilities.generated.telemetry import GeneratedCapabilityTrace
+from src.capabilities.generated.validation import (
+    CallableFinancialValidationPolicy,
+    CapabilityValidationPlan,
+    GeneratedCapabilityExecutionError,
+    GeneratedCapabilityValidationError,
+    GeneratedCapabilityValidator,
+    SandboxValidatedGeneratedCapability,
+    StaticCapabilityValidationPlanProvider,
+)
 
 __all__ = [
     "CapabilityBuildFailedError",
     "CapabilityBuildRequest",
     "CapabilityOrchestrationResult",
     "CapabilityWorkflowRecorder",
+    "CapabilityValidationPlan",
+    "CallableFinancialValidationPolicy",
     "CodeBuilder",
     "CodeBuilderOutput",
     "GeneratedCapabilityCandidate",
+    "GeneratedCapabilityExecutionError",
     "GeneratedCapabilityOrchestrator",
     "GeneratedCapabilityTrace",
+    "GeneratedCapabilityValidationError",
+    "GeneratedCapabilityValidator",
     "GeneratedCapabilityValidationPort",
     "ResearchLeadCapabilityApproval",
     "ResearchLeadCapabilityAuthority",
+    "SandboxValidatedGeneratedCapability",
+    "ScopedCapabilityRegistry",
     "ScopedCapabilityRegistryPort",
     "SpecialistCapabilityRequest",
+    "StaticCapabilityValidationPlanProvider",
     "TeamoRouterCodeBuilder",
     "ValidationHandoff",
 ]

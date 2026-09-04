@@ -117,7 +117,8 @@ def _messages(request: CapabilityBuildRequest) -> list[LLMMessage]:
                 "Return only the requested structured generated-capability candidate. "
                 "Implement deterministic pure Python for the approved formula. Do not use "
                 "network, filesystem, process, environment, dynamic-import, eval, exec, or "
-                "secret access. Provide standalone unit tests and explicit financial invariants. "
+                "secret access. Source must expose execute(inputs). Unit tests must expose "
+                "run_tests(execute, fixture). Provide explicit financial invariants. "
                 "Do not include reasoning or hidden chain-of-thought."
             ),
         ),
