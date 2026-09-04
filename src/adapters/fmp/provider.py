@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
@@ -223,8 +224,17 @@ class FMPProvider:
 
     name = "fmp"
 
-    def __init__(self, transport: FMPTransport | LegacyFMPTransport) -> None:
+    def __init__(
+        self,
+        transport: FMPTransport | LegacyFMPTransport,
+        *,
+        transient_retry_delays: tuple[float, ...] = (0.25, 0.75),
+    ) -> None:
+        if any(delay < 0 for delay in transient_retry_delays):
+            raise ValueError("FMP retry delays must be non-negative")
         self._transport = transport
+        self._transient_retry_delays = transient_retry_delays
+        self._request_lock = asyncio.Lock()
 
     async def fetch(self, request: ProviderRequest) -> RawProviderSnapshot:
         result = await self.probe(request)
@@ -238,7 +248,7 @@ class FMPProvider:
         if spec.endpoint is FMPEndpoint.HISTORICAL and request.limit >= 200:
             envelope = await self._request_long_history(spec, request, params)
         else:
-            envelope = await self._request(spec, params)
+            envelope = await self._request_with_transient_retry(spec, params)
         if envelope.status not in {FMPAccessStatus.AVAILABLE, FMPAccessStatus.NO_DATA}:
             return FMPFetchResult(
                 endpoint=spec.endpoint,
@@ -343,6 +353,25 @@ class FMPProvider:
             return envelope
         return await self._request(spec, params)
 
+    async def _request_with_transient_retry(
+        self,
+        spec: FMPEndpointSpec,
+        params: dict[str, str | int],
+    ) -> FMPResponseEnvelope:
+        """Retry bounded transient GET failures without masking terminal access results."""
+
+        envelope = await self._request(spec, params)
+        for delay in self._transient_retry_delays:
+            if envelope.status not in {
+                FMPAccessStatus.PROVIDER_ERROR,
+                FMPAccessStatus.RATE_LIMITED,
+            }:
+                break
+            if delay:
+                await asyncio.sleep(delay)
+            envelope = await self._request(spec, params)
+        return envelope
+
     async def _request(
         self,
         spec: FMPEndpointSpec,
@@ -350,13 +379,17 @@ class FMPProvider:
     ) -> FMPResponseEnvelope:
         request_method = getattr(self._transport, "request", None)
         if request_method is not None:
-            return await request_method(endpoint=spec.endpoint, path=spec.path, params=params)
+            async with self._request_lock:
+                return await request_method(endpoint=spec.endpoint, path=spec.path, params=params)
 
         # Phase-1 test doubles used get_json; preserve that contract during migration.
         legacy_params = dict(params)
         if legacy_params.get("period") == "annual":
             legacy_params.pop("period")
-        payload = await self._transport.get_json(spec.path.removeprefix("/stable/"), legacy_params)
+        async with self._request_lock:
+            payload = await self._transport.get_json(
+                spec.path.removeprefix("/stable/"), legacy_params
+            )
         status = FMPAccessStatus.NO_DATA if _is_empty(payload) else FMPAccessStatus.AVAILABLE
         return FMPResponseEnvelope(
             endpoint=spec.endpoint,

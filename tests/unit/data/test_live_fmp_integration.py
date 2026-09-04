@@ -281,6 +281,85 @@ async def test_long_history_keeps_completed_pages_after_late_transient_failure()
     assert transport.calls == 4
 
 
+@pytest.mark.asyncio
+async def test_income_retries_transient_access_failure_then_maps_two_annual_periods() -> None:
+    payload = _payloads()[FMPEndpoint.INCOME]
+    assert isinstance(payload, list)
+    payload = [
+        *payload,
+        {
+            "symbol": "NVDA",
+            "date": "2025-01-26",
+            "reportedCurrency": "USD",
+            "fiscalYear": "2025",
+            "period": "FY",
+            "revenue": 130500000000,
+            "ebitda": 85000000000,
+        },
+    ]
+
+    class TransientIncomeTransport:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def request(self, *, endpoint, path, params) -> FMPResponseEnvelope:
+            del path, params
+            self.calls += 1
+            if self.calls == 1:
+                return FMPResponseEnvelope(
+                    endpoint=endpoint,
+                    status=FMPAccessStatus.RATE_LIMITED,
+                    http_status=429,
+                    retrieved_at=RETRIEVED_AT,
+                    payload=None,
+                    error_code="HTTP_RATE_LIMIT",
+                )
+            return FMPResponseEnvelope(
+                endpoint=endpoint,
+                status=FMPAccessStatus.AVAILABLE,
+                http_status=200,
+                retrieved_at=RETRIEVED_AT,
+                payload=payload,
+            )
+
+    transport = TransientIncomeTransport()
+    result = await FMPProvider(transport, transient_retry_delays=(0,)).probe(
+        _request("annual_financials", fields=("revenue", "ebitda"))
+    )
+
+    assert transport.calls == 2
+    assert result.status is FMPAccessStatus.AVAILABLE
+    assert result.mapped_record_count == 4
+    assert result.snapshot is not None
+    assert {record["period"] for record in result.snapshot.records} == {"FY2025", "FY2026"}
+
+
+@pytest.mark.asyncio
+async def test_income_does_not_retry_terminal_access_denial() -> None:
+    transport = EndpointTransport({}, status=FMPAccessStatus.ENTITLEMENT_DENIED)
+
+    result = await FMPProvider(transport, transient_retry_delays=(0, 0)).probe(
+        _request("annual_financials", fields=("revenue", "ebitda"))
+    )
+
+    assert result.status is FMPAccessStatus.ENTITLEMENT_DENIED
+    assert result.snapshot is None
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_income_transient_retry_exhaustion_remains_fail_closed() -> None:
+    transport = EndpointTransport({}, status=FMPAccessStatus.PROVIDER_ERROR)
+
+    result = await FMPProvider(transport, transient_retry_delays=(0, 0)).probe(
+        _request("annual_financials", fields=("revenue", "ebitda"))
+    )
+
+    assert result.status is FMPAccessStatus.PROVIDER_ERROR
+    assert result.snapshot is None
+    assert len(transport.calls) == 3
+
+
 @pytest.mark.parametrize(
     ("http_status", "payload", "expected"),
     [

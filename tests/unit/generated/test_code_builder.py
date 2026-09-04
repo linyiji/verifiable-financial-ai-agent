@@ -72,12 +72,19 @@ def builder_output(**updates: object) -> dict[str, object]:
         "formula_description": "gross_profit / revenue",
         "source_code": (
             "from decimal import Decimal\n\n"
-            "def calculate(gross_profit: Decimal, revenue: Decimal) -> Decimal:\n"
-            "    return gross_profit / revenue\n"
+            "def execute(inputs):\n"
+            "    gross_profit = Decimal(str(inputs['gross_profit']))\n"
+            "    revenue = Decimal(str(inputs['revenue']))\n"
+            "    return {'value': str(gross_profit / revenue), 'unit': 'ratio'}\n"
         ),
         "unit_tests": (
-            "def test_margin():\n"
-            "    assert calculate(Decimal('4'), Decimal('8')) == Decimal('0.5')\n"
+            "def run_tests(execute, fixture):\n"
+            "    result = execute(fixture)\n"
+            "    expected = Decimal(str(fixture['gross_profit'])) / "
+            "Decimal(str(fixture['revenue']))\n"
+            "    assert Decimal(str(result['value'])) == expected\n"
+            "    assert result['unit'] == 'ratio'\n"
+            "    return True\n"
         ),
         "financial_invariants": ["revenue_non_zero", "result_is_finite"],
         "allowed_imports": ["decimal"],
@@ -156,6 +163,10 @@ async def test_builder_uses_owned_provider_schema_and_records_only_metadata() ->
     assert candidate.output.output_schema == requirement().output_schema
     assert provider.calls[0]["schema_name"] == "generated_capability_candidate_v1"
     assert "Do not include reasoning" in provider.calls[0]["messages"][0].content
+    assert "invokes run_tests repeatedly" in provider.calls[0]["messages"][0].content
+    assert "never hard-code one fixture-specific result" in provider.calls[0]["messages"][0].content
+    assert "including zero and negative results" in provider.calls[0]["messages"][0].content
+    assert "do not use pytest, unittest" in provider.calls[0]["messages"][0].content
 
     trace_dump = str([trace_spy.generations, trace_spy.updates, trace_spy.events])
     assert "gross_profit / revenue" not in trace_dump
