@@ -21,7 +21,10 @@ class ReleaseGateSnapshot(DomainModel):
         return (
             self.review_status is ReviewStatus.PASS
             and not self.has_hard_block
-            and all(status is ProofStatus.VERIFIED for status in self.must_prove_statuses)
+            and all(
+                status in {ProofStatus.VALID, ProofStatus.VERIFIED}
+                for status in self.must_prove_statuses
+            )
         )
 
 

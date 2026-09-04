@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from src.assurance.proof_policy import ProofRequirement
 from src.domain.enums import ProofStatus, ReviewStatus
-from src.domain.proof import ProofResult
+from src.domain.proof import ProofRecord, ProofResult
 from src.domain.review import ReviewRecord
 
 
@@ -18,7 +18,7 @@ class ReleaseGate:
         *,
         review: ReviewRecord,
         proof_requirements: dict[str, ProofRequirement],
-        proofs: dict[str, ProofResult],
+        proofs: dict[str, ProofRecord | ProofResult],
     ) -> ReleaseDecision:
         reasons: list[str] = []
         if review.status is not ReviewStatus.PASS:
@@ -30,8 +30,7 @@ class ReleaseGate:
             proof = proofs.get(calculation_id)
             if proof is None:
                 reasons.append(f"PROOF_MISSING:{calculation_id}")
-            elif proof.status is not ProofStatus.VERIFIED:
+            elif proof.status not in {ProofStatus.VALID, ProofStatus.VERIFIED}:
                 reasons.append(f"PROOF_{proof.status.value}:{calculation_id}")
 
         return ReleaseDecision(allowed=not reasons, reason_codes=tuple(reasons))
-

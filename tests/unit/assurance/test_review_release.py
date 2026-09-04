@@ -11,7 +11,7 @@ from src.domain.enums import (
     ReviewStatus,
 )
 from src.domain.evidence import EvidenceRecord
-from src.domain.proof import ProofResult
+from src.domain.proof import ProofRecord, ProofResult
 
 
 def evidence(evidence_id: str, period: str, status: EvidenceStatus) -> EvidenceRecord:
@@ -121,3 +121,54 @@ def test_proof_policy_and_release_gate_control_plane() -> None:
         proofs={},
     )
     assert allowed.allowed is True
+
+    real_proof = ProofRecord(
+        proof_id="PROOF-REAL-1",
+        run_id=calc.run_id,
+        calculation_id=calc.calculation_id,
+        backend="risc0",
+        program_id=calc.formula_id,
+        image_id="IMAGE-1",
+        implementation_hash="sha256:implementation",
+        input_commitment="sha256:input",
+        receipt_artifact_ref="artifact://proofs/receipt.bin",
+        receipt_hash="sha256:receipt",
+        journal_hash="sha256:journal",
+        status=ProofStatus.VALID,
+    )
+    proven = ReleaseGate().evaluate(
+        review=review,
+        proof_requirements={calc.calculation_id: ProofRequirement.MUST_PROVE},
+        proofs={calc.calculation_id: real_proof},
+    )
+    assert proven.allowed is True
+
+
+def test_must_prove_rejects_missing_and_invalid_real_proof() -> None:
+    calc = calculation()
+    review = DeterministicReviewer().review(
+        review_id="REV-1",
+        run_id="RUN-1",
+        evidence=[
+            evidence("E-1", "FY2025", EvidenceStatus.ACCEPTED),
+            evidence("E-2", "FY2026", EvidenceStatus.ACCEPTED),
+        ],
+        calculations=[calc],
+    )
+    missing = ReleaseGate().evaluate(
+        review=review,
+        proof_requirements={calc.calculation_id: ProofRequirement.MUST_PROVE},
+        proofs={},
+    )
+    invalid = ReleaseGate().evaluate(
+        review=review,
+        proof_requirements={calc.calculation_id: ProofRequirement.MUST_PROVE},
+        proofs={
+            calc.calculation_id: ProofResult(
+                proof_id="PROOF-INVALID", status=ProofStatus.INVALID
+            )
+        },
+    )
+
+    assert missing.reason_codes == ("PROOF_MISSING:CALC-1",)
+    assert invalid.reason_codes == ("PROOF_INVALID:CALC-1",)

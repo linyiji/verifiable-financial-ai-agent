@@ -131,6 +131,7 @@ class DependencyScheduler:
                 if task.status not in {
                     TaskStatus.COMPLETED,
                     TaskStatus.FAILED,
+                    TaskStatus.CAPABILITY_BUILD_FAILED,
                     TaskStatus.CANCELLED,
                 }:
                     task.status = TaskStatus.CANCELLED
@@ -159,7 +160,13 @@ class DependencyScheduler:
         failed = {
             task.task_id
             for task in state.actual_graph.tasks
-            if task.status in {TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.BLOCKED}
+            if task.status
+            in {
+                TaskStatus.FAILED,
+                TaskStatus.CAPABILITY_BUILD_FAILED,
+                TaskStatus.CANCELLED,
+                TaskStatus.BLOCKED,
+            }
         }
         changed = True
         while changed:

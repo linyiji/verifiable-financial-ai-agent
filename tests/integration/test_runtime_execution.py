@@ -16,6 +16,7 @@ from src.runtime.graph import (
     GraphMutationRole,
     GraphMutationService,
 )
+from src.runtime.lifecycle import transition_task
 from src.runtime.scheduler import (
     DependencyScheduler,
     RetryPolicy,
@@ -49,6 +50,17 @@ def make_state() -> RuntimeState:
         ],
     )
     return RuntimeState.create(run_id="RUN-1", planned_graph=plan)
+
+
+def test_capability_wait_and_resume_are_valid_runtime_transitions() -> None:
+    task = make_task("CAPABILITY")
+    task.status = TaskStatus.RUNNING
+
+    transition_task(task, TaskStatus.WAITING_FOR_CAPABILITY)
+    transition_task(task, TaskStatus.READY)
+    transition_task(task, TaskStatus.RUNNING)
+
+    assert task.status is TaskStatus.RUNNING
 
 
 class ParallelProbeExecutor:
@@ -180,6 +192,47 @@ class FailingExecutor:
     ) -> TaskExecutionResult:
         del task, context
         raise RuntimeError("terminal failure")
+
+
+class CapabilityBuildFailingExecutor:
+    def __init__(self, state: RuntimeState) -> None:
+        self._state = state
+
+    async def execute(
+        self,
+        task: Task,
+        context: TaskExecutionContext,
+    ) -> TaskExecutionResult:
+        del context
+        managed = self._state.task(task.task_id)
+        transition_task(managed, TaskStatus.WAITING_FOR_CAPABILITY)
+        transition_task(managed, TaskStatus.CAPABILITY_BUILD_FAILED)
+        raise RuntimeError("generated capability build failed")
+
+
+@pytest.mark.asyncio
+async def test_scheduler_handles_capability_build_failure_as_explicit_task_failure() -> None:
+    state = RuntimeState.create(
+        run_id="RUN-1",
+        planned_graph=PlannedTaskGraph(
+            graph_id="PLAN-CAPABILITY-FAIL",
+            run_id="RUN-1",
+            tasks=[make_task("BUILD")],
+        ),
+    )
+    scheduler = DependencyScheduler(
+        event_store=InMemoryRuntimeEventStore(),
+        checkpoint_store=InMemoryCheckpointStore(),
+    )
+
+    with pytest.raises(ExceptionGroup, match="runtime tasks failed"):
+        await scheduler.execute(
+            state=state,
+            executor=CapabilityBuildFailingExecutor(state),
+        )
+
+    assert state.run_status is RunStatus.FAILED
+    assert state.task("BUILD").status is TaskStatus.FAILED
 
 
 @pytest.mark.asyncio
