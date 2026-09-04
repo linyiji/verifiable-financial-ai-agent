@@ -25,14 +25,14 @@ class _RetryableProviderFailure(RuntimeError):
         self.classification = classification
 
 
-class TeamoRouterClient:
-    """OpenAI-compatible structured-output client for TeamoRouter.
+class OpenAICompatiblePlannerClient:
+    """Owned structured-output client for a registered OpenAI-compatible provider.
 
     The injected settings retain the API key as ``SecretStr``. Public results and
     exceptions expose only routing metadata and never authorization values.
     """
 
-    provider_name = "teamorouter"
+    provider_name = ""
 
     def __init__(
         self,
@@ -41,10 +41,14 @@ class TeamoRouterClient:
         client: httpx.AsyncClient | None = None,
         timeout_seconds: float = 60.0,
     ) -> None:
+        if not self.provider_name:
+            raise TypeError("OpenAICompatiblePlannerClient must be specialized")
         if settings.provider.lower() != self.provider_name:
-            raise ValueError(f"unsupported LLM provider: {settings.provider}")
+            raise ValueError(
+                f"{self.provider_name} client received settings for an unsupported provider"
+            )
         if not settings.enabled:
-            raise ValueError("TeamoRouter API key is not configured")
+            raise ValueError(f"{self.provider_name} API key is not configured")
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         self._settings = settings
@@ -53,10 +57,29 @@ class TeamoRouterClient:
 
     def __repr__(self) -> str:
         return (
-            "TeamoRouterClient(provider='teamorouter', "
+            f"{type(self).__name__}(provider={self.provider_name!r}, "
             f"base_url={self._settings.base_url!r}, "
             f"primary_model={self._settings.primary_model!r}, "
             f"fallback_model={self._settings.fallback_model!r}, credential_set=True)"
+        )
+
+    @property
+    def model_name(self) -> str:
+        return self._settings.primary_model
+
+    def lock_to_model(self, model_name: str) -> OpenAICompatiblePlannerClient:
+        if model_name not in {
+            self._settings.primary_model,
+            self._settings.fallback_model,
+        }:
+            raise ValueError("cannot lock to a model outside the governed provider route")
+        locked_settings = self._settings.model_copy(
+            update={"primary_model": model_name, "fallback_model": model_name}
+        )
+        return type(self)(
+            locked_settings,
+            client=self._client,
+            timeout_seconds=self._timeout_seconds,
         )
 
     async def complete_structured(
@@ -77,14 +100,14 @@ class TeamoRouterClient:
             )
         except Exception:
             raise LLMRequestError(
-                f"TeamoRouter {schema_name} request failed preflight",
+                f"{self.provider_name} {schema_name} request failed preflight",
                 requested_model=requested_model,
                 attempted_models=(),
                 failure_classification=LLMFailureClassification.PREFLIGHT_FAILURE,
             ) from None
         if force_fallback:
             raise LLMRequestError(
-                "TeamoRouter direct fallback routing is disabled",
+                f"{self.provider_name} direct fallback routing is disabled",
                 requested_model=requested_model,
                 attempted_models=(),
                 failure_classification=LLMFailureClassification.PREFLIGHT_FAILURE,
@@ -110,7 +133,7 @@ class TeamoRouterClient:
                 continue
         detail = str(last_retryable) if last_retryable else "provider route unavailable"
         raise LLMProviderUnavailableError(
-            f"TeamoRouter models unavailable after {len(attempted)} attempt(s): {detail}",
+            f"{self.provider_name} models unavailable after {len(attempted)} attempt(s): {detail}",
             requested_model=requested_model,
             attempted_models=tuple(attempted),
             failure_classification=(
@@ -158,7 +181,7 @@ class TeamoRouterClient:
             )
         if response.is_error:
             raise LLMRequestError(
-                f"TeamoRouter rejected structured request: HTTP {response.status_code}",
+                f"{self.provider_name} rejected structured request: HTTP {response.status_code}",
                 requested_model=requested_model,
                 attempted_models=attempted_models,
                 failure_classification=LLMFailureClassification.REQUEST_REJECTED,
@@ -171,7 +194,8 @@ class TeamoRouterClient:
             output = response_model.model_validate(decoded)
         except (ValueError, TypeError, KeyError, IndexError, ValidationError) as exc:
             raise StructuredOutputError(
-                f"TeamoRouter response failed {schema_name} validation: {type(exc).__name__}",
+                f"{self.provider_name} response failed {schema_name} validation: "
+                f"{type(exc).__name__}",
                 requested_model=requested_model,
                 attempted_models=attempted_models,
                 failure_classification=LLMFailureClassification.STRUCTURED_OUTPUT_INVALID,
@@ -196,6 +220,12 @@ class TeamoRouterClient:
     @property
     def _completion_url(self) -> str:
         return f"{self._settings.base_url.rstrip('/')}/chat/completions"
+
+
+class TeamoRouterClient(OpenAICompatiblePlannerClient):
+    """TeamoRouter specialization of the owned OpenAI-compatible boundary."""
+
+    provider_name = "teamorouter"
 
 
 def _extract_content(body: dict[str, Any]) -> str | dict[str, Any]:

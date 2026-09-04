@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     teamorouter_base_url: str = "https://api.teamorouter.com/v1"
     teamorouter_model: str = "gpt-5.6-sol"
     teamorouter_fallback_model: str = "gpt-5.6-luna"
+    mimo_api_key: SecretStr | None = None
+    mimo_base_url: str = "https://api.xiaomimimo.com/v1"
+    mimo_data_model: str = "mimo-v2.5"
+    mimo_chat_model: str = "mimo-v2.5"
+    planner_preferred_provider: str = "mimo"
+    planner_fallback_providers: str = "teamorouter"
     langfuse_public_key: SecretStr | None = None
     langfuse_secret_key: SecretStr | None = None
     langfuse_base_url: str | None = None
@@ -90,6 +96,29 @@ class Settings(BaseSettings):
             primary_model=self.teamorouter_model,
             fallback_model=self.teamorouter_fallback_model,
         )
+
+    @property
+    def mimo(self) -> LLMSettings:
+        return LLMSettings(
+            provider="mimo",
+            api_key=self.mimo_api_key,
+            base_url=self.mimo_base_url,
+            primary_model=self.mimo_chat_model,
+            fallback_model=self.mimo_chat_model,
+        )
+
+    @property
+    def planner_provider_order(self) -> tuple[str, ...]:
+        values = (
+            self.planner_preferred_provider,
+            *self.planner_fallback_providers.split(","),
+        )
+        normalized = tuple(
+            dict.fromkeys(value.strip().lower() for value in values if value.strip())
+        )
+        if not normalized or not set(normalized).issubset({"mimo", "teamorouter"}):
+            raise ValueError("planner provider policy contains an unsupported provider")
+        return normalized
 
     @property
     def langfuse(self) -> LangfuseSettings:
@@ -116,6 +145,11 @@ class Settings(BaseSettings):
             "teamorouter_base_url": self.llm.base_url,
             "teamorouter_model": self.llm.primary_model,
             "teamorouter_fallback_model": self.llm.fallback_model,
+            "mimo_api_key_is_set": self.mimo.enabled,
+            "mimo_base_url": self.mimo.base_url,
+            "mimo_chat_model": self.mimo.primary_model,
+            "mimo_data_model": self.mimo_data_model,
+            "planner_provider_order": self.planner_provider_order,
             "langfuse_credentials_are_set": self.langfuse.enabled,
         }
 

@@ -107,9 +107,7 @@ class AgenticLLMResult(Generic[OutputModel]):
     audit: LLMExecutionAudit
 
 
-class TeamoRouterSchemeGenerator:
-    generator_id = "teamorouter-scheme-generator-v1"
-
+class PlannerProviderSchemeGenerator:
     def __init__(
         self,
         provider: LLMProvider,
@@ -120,6 +118,7 @@ class TeamoRouterSchemeGenerator:
         if max_validation_attempts < 1:
             raise ValueError("max_validation_attempts must be positive")
         self._provider = provider
+        self.generator_id = f"{_provider_name(provider)}-scheme-generator-v1"
         self._max_validation_attempts = max_validation_attempts
         self._fallback = fallback or DeterministicSchemeGenerator()
         self.decisions: list[StructuredAgentDecision] = []
@@ -194,7 +193,7 @@ class TeamoRouterSchemeGenerator:
             requires_review=False,
         )
         audit = LLMExecutionAudit(
-            provider="teamorouter",
+            provider=_provider_name(self._provider),
             requested_model=_fallback_requested_model(last_error, self._provider),
             actual_model=None,
             attempted_models=attempted_models,
@@ -239,9 +238,7 @@ class TeamoRouterSchemeGenerator:
         return AgenticLLMResult(output=scheme, decision=decision, audit=audit)
 
 
-class TeamoRouterResearchLeadPlanner:
-    planner_id = "teamorouter-research-lead-planner-v1"
-
+class PlannerProviderResearchLeadPlanner:
     def __init__(
         self,
         provider: LLMProvider,
@@ -252,6 +249,7 @@ class TeamoRouterResearchLeadPlanner:
         if max_validation_attempts < 1:
             raise ValueError("max_validation_attempts must be positive")
         self._provider = provider
+        self.planner_id = f"{_provider_name(provider)}-research-lead-planner-v1"
         self._max_validation_attempts = max_validation_attempts
         self._fallback = fallback or ResearchLeadPlanner()
         self.decisions: list[StructuredAgentDecision] = []
@@ -327,7 +325,7 @@ class TeamoRouterResearchLeadPlanner:
             requires_review=False,
         )
         audit = LLMExecutionAudit(
-            provider="teamorouter",
+            provider=_provider_name(self._provider),
             requested_model=_fallback_requested_model(last_error, self._provider),
             actual_model=None,
             attempted_models=attempted_models,
@@ -344,6 +342,12 @@ class TeamoRouterResearchLeadPlanner:
         self.decisions.append(decision)
         self.last_audit = audit
         return AgenticLLMResult(output=graph, decision=decision, audit=audit)
+
+
+# Phase 2 callers keep their established imports while new composition uses the
+# provider-neutral names above.
+TeamoRouterSchemeGenerator = PlannerProviderSchemeGenerator
+TeamoRouterResearchLeadPlanner = PlannerProviderResearchLeadPlanner
 
 
 def _scheme_messages(research_object: ResearchObject, goal: ResearchGoal) -> list[LLMMessage]:
@@ -646,6 +650,11 @@ def _fallback_requested_model(
 ) -> str:
     value = getattr(error, "requested_model", None)
     return value if isinstance(value, str) and value else _requested_model(provider)
+
+
+def _provider_name(provider: LLMProvider) -> str:
+    value = getattr(provider, "provider_name", None)
+    return value if isinstance(value, str) and value else "teamorouter"
 
 
 def _failure_classification(error: LLMProviderError | ValueError | None) -> str:

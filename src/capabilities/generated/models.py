@@ -73,7 +73,7 @@ class CapabilityBuildRequest(DomainModel):
 
 
 class CodeBuilderOutput(DomainModel):
-    """Strict structured output accepted from the configured TeamoRouter route."""
+    """Strict structured output accepted from the selected governed planner route."""
 
     capability_id: str = Field(min_length=1)
     version: str = Field(min_length=1)

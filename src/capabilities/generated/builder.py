@@ -4,6 +4,7 @@ import json
 from time import perf_counter
 
 from src.adapters.llm.provider import LLMMessage, LLMProvider
+from src.adapters.llm.router import SUPPORTED_PLANNER_PROVIDERS
 from src.capabilities.generated.artifacts import generated_text_sha256
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
@@ -18,14 +19,13 @@ class CodeBuilderOutputMismatch(ValueError):
     """The response is structurally valid but exceeds or changes its approved spec."""
 
 
-class TeamoRouterCodeBuilder:
+class PlannerProviderCodeBuilder:
     """Generate a candidate through the owned structured-output provider boundary.
 
     This client does not execute, import, compile, or persist generated source.
     Validation and materialization belong to the injected U2/U3 ports.
     """
 
-    builder_id = "teamorouter-code-builder-v1"
     schema_name = "generated_capability_candidate_v1"
 
     def __init__(
@@ -34,9 +34,12 @@ class TeamoRouterCodeBuilder:
         *,
         trace: GeneratedCapabilityTrace | None = None,
     ) -> None:
-        if getattr(provider, "provider_name", None) != "teamorouter":
-            raise ValueError("Code Builder requires the configured TeamoRouter provider")
+        provider_name = getattr(provider, "provider_name", None)
+        if provider_name not in SUPPORTED_PLANNER_PROVIDERS:
+            raise ValueError("Code Builder requires a registered planner provider")
         self._provider = provider
+        self._provider_name = provider_name
+        self.builder_id = f"{provider_name}-code-builder-v1"
         self._trace = trace or GeneratedCapabilityTrace()
 
     async def generate(self, request: CapabilityBuildRequest) -> GeneratedCapabilityCandidate:
@@ -63,7 +66,7 @@ class TeamoRouterCodeBuilder:
                     generation,
                     requested_model=_optional_text(getattr(exc, "requested_model", None)),
                     actual_model=None,
-                    provider="teamorouter",
+                    provider=self._provider_name,
                     latency_ms=(perf_counter() - started) * 1000,
                     input_tokens=None,
                     output_tokens=None,
@@ -97,6 +100,10 @@ class TeamoRouterCodeBuilder:
                 output_tokens=response.output_tokens,
                 latency_ms=latency_ms,
             )
+
+
+# Backward-compatible import for Phase 2/early Phase 3 callers.
+TeamoRouterCodeBuilder = PlannerProviderCodeBuilder
 
 
 def _messages(request: CapabilityBuildRequest) -> list[LLMMessage]:

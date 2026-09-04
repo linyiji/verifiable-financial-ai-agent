@@ -14,7 +14,7 @@ import tempfile
 from collections import Counter
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 from pathlib import Path
 from typing import Any
@@ -47,7 +47,15 @@ from src.adapters.fmp import (
     select_financial_provider,
 )
 from src.adapters.fmp.models import FMPEndpoint, FMPResponseEnvelope
-from src.adapters.llm import TeamoRouterClient
+from src.adapters.llm import (
+    LLMProvider,
+    LockedPlannerProvider,
+    MimoClient,
+    PlannerProviderHealth,
+    PlannerProviderRouter,
+    PlannerProviderUnavailableError,
+    TeamoRouterClient,
+)
 from src.adapters.risc0 import (
     EXPECTED_REVENUE_GROWTH_HOST_SHA256,
     EXPECTED_REVENUE_GROWTH_IMAGE_ID,
@@ -64,9 +72,10 @@ from src.adapters.risc0.release_manifest import (
     release_manifest_sha256,
 )
 from src.agentic.llm_integration import (
-    TeamoRouterResearchLeadPlanner,
-    TeamoRouterSchemeGenerator,
+    PlannerProviderResearchLeadPlanner,
+    PlannerProviderSchemeGenerator,
 )
+from src.agentic.scheme import DeterministicSchemeGenerator
 from src.application.evidence_collection import LiveFMPEvidenceCollector
 from src.application.phase3_financial import (
     FCF_MARGIN_CAPABILITY_ID,
@@ -86,8 +95,8 @@ from src.capabilities.generated import (
     GeneratedCapabilityOrchestrator,
     GeneratedCapabilityTrace,
     GeneratedCapabilityValidator,
+    PlannerProviderCodeBuilder,
     ScopedCapabilityRegistry,
-    TeamoRouterCodeBuilder,
 )
 from src.domain.capability import (
     CapabilityBuildRecord,
@@ -129,6 +138,8 @@ from src.domain.report import (
     FrozenJsonSequence,
     ReportArtifactRecord,
 )
+from src.domain.research_goal import ResearchGoal
+from src.domain.research_object import ResearchObject
 from src.infrastructure.config import Settings
 from src.infrastructure.database.artifacts import TaskDependencyGraphKind
 from src.infrastructure.database.composition import create_postgresql_persistence
@@ -181,10 +192,10 @@ class LLMRequestCounter:
 class CountingLLMProvider:
     """Count structured calls and schema names without retaining prompt content."""
 
-    provider_name = "teamorouter"
-
-    def __init__(self, delegate: TeamoRouterClient) -> None:
+    def __init__(self, delegate: LockedPlannerProvider) -> None:
         self._delegate = delegate
+        self.provider_name = delegate.provider_name
+        self.model_name = delegate.model_name
         self.logical_calls = 0
         self.schemas: Counter[str] = Counter()
 
@@ -194,6 +205,64 @@ class CountingLLMProvider:
         if isinstance(schema_name, str):
             self.schemas[schema_name] += 1
         return await self._delegate.complete_structured(**kwargs)
+
+
+async def _planner_provider_preflight(provider: LLMProvider) -> PlannerProviderHealth:
+    """Validate two consecutive owned planner results without creating a Run."""
+
+    provider_name = str(getattr(provider, "provider_name", ""))
+    model_name = str(getattr(provider, "model_name", "")) or None
+    research_object = ResearchObject(
+        object_id="OBJ-NVDA-PREFLIGHT",
+        symbol="NVDA",
+        company_name="NVIDIA Corporation",
+        exchange="NASDAQ",
+    )
+    goal = ResearchGoal(
+        goal_id="GOAL-NVDA-PLANNER-PREFLIGHT",
+        research_object_id=research_object.object_id,
+        goal_text="Validate the governed NVDA research planner capability.",
+        as_of=date(2026, 9, 4),
+    )
+    scheme = await DeterministicSchemeGenerator().generate(
+        research_object=research_object,
+        goal=goal,
+    )
+    scheme.confirmed_at = datetime.now(UTC)
+    actual_models: list[str] = []
+    for probe in range(1, 3):
+        planner = PlannerProviderResearchLeadPlanner(provider, max_validation_attempts=1)
+        result = await planner.plan_with_decision(
+            run_id=f"PREFLIGHT:{provider_name}:{probe}",
+            goal=goal,
+            scheme=scheme,
+        )
+        audit = result.audit
+        if (
+            audit.deterministic_fallback
+            or audit.provider != provider_name
+            or not audit.actual_model
+        ):
+            return PlannerProviderHealth(
+                provider=provider_name,
+                model=model_name,
+                passed=False,
+                failure_classification=audit.failure_classification
+                or "owned_planner_preflight_failed",
+            )
+        actual_models.append(audit.actual_model)
+    if len(set(actual_models)) != 1:
+        return PlannerProviderHealth(
+            provider=provider_name,
+            model=None,
+            passed=False,
+            failure_classification="model_identity_drift",
+        )
+    return PlannerProviderHealth(
+        provider=provider_name,
+        model=actual_models[0],
+        passed=True,
+    )
 
 
 class AuditedTraceAdapter:
@@ -374,6 +443,7 @@ def _credential_needles(settings: Settings) -> tuple[bytes, ...]:
     for secret in (
         settings.fmp.api_key,
         settings.llm.api_key,
+        settings.mimo.api_key,
         settings.langfuse.public_key,
         settings.langfuse.secret_key,
     ):
@@ -500,15 +570,19 @@ def _candidate_preflight(repository_root: Path, expected_head: str) -> dict[str,
         "alembic/versions/20260904_0005_financial_evidence_semantics.py",
         "alembic/versions/20260904_0006_generated_capability_artifact_retention.py",
         "scripts/run_phase3_acceptance.py",
+        "src/adapters/llm/mimo.py",
+        "src/adapters/llm/router.py",
         "src/capabilities/generated/artifacts.py",
         "src/domain/financial_validation.py",
         "src/domain/macd_policy.py",
         "src/infrastructure/database/generated_workflow.py",
         "src/observability/langfuse_adapter.py",
         "docs/PHASE3_INDEPENDENT_AUDIT_REMEDIATION.md",
+        "docs/PHASE3_PLANNER_PROVIDER_ROUTER_REMEDIATION.md",
         "tests/unit/generated/test_artifact_retention.py",
         "src/adapters/risc0/release_manifest.py",
         "tests/test_phase3_acceptance_runner.py",
+        "tests/unit/llm/test_planner_provider_router.py",
         "zk/revenue_growth/RISC_ZERO_RELEASE_MANIFEST.json",
         "zk/revenue_growth/build-host.sh",
         "zk/revenue_growth/normalize_macos_host.py",
@@ -1333,6 +1407,8 @@ def _gate(passed: bool, evidence: Any) -> dict[str, Any]:
 def _audit_generated_artifact_retention(
     *,
     store: GeneratedCapabilityArtifactStore,
+    expected_provider: str,
+    expected_model: str,
     records: list[GeneratedCapabilityArtifactRecord],
     builds: list[CapabilityBuildRecord],
     generated: list[GeneratedCapabilityRecord],
@@ -1369,8 +1445,8 @@ def _audit_generated_artifact_retention(
         }
     passed = (
         len(retained_builds) == 1
-        and retained_builds[0].provider == "teamorouter"
-        and bool(retained_builds[0].actual_model)
+        and retained_builds[0].provider == expected_provider
+        and retained_builds[0].actual_model == expected_model
         and record.generated_capability_id == generated_record.generated_capability_id
         and record.capability_id == generated_record.capability_id
         and record.capability_version == generated_record.capability_version
@@ -1399,8 +1475,8 @@ def _audit_generated_artifact_retention(
         "implementation_hash": record.implementation_hash,
         "runtime_image_identity": record.runtime_image_identity,
         "build_provider_verified": len(retained_builds) == 1
-        and retained_builds[0].provider == "teamorouter"
-        and bool(retained_builds[0].actual_model),
+        and retained_builds[0].provider == expected_provider
+        and retained_builds[0].actual_model == expected_model,
         "retrieval_verified": True,
         "source_retrieved": True,
         "tests_retrieved": True,
@@ -1476,6 +1552,7 @@ def _acceptance_matrix(
     forbidden_environment_names = {
         "FMP_API_KEY",
         "TEAMOROUTER_API_KEY",
+        "MIMO_API_KEY",
         "LANGFUSE_PUBLIC_KEY",
         "LANGFUSE_SECRET_KEY",
         "DATABASE_URL",
@@ -1930,6 +2007,7 @@ async def _run_authoritative(
     candidate_head: str,
     run_id: str,
     audit_state: dict[str, Any],
+    fmp_credential_alias: str,
     env_file: Path | None = None,
 ) -> dict[str, Any]:
     repository_root = await asyncio.to_thread(_repository_root)
@@ -1964,8 +2042,17 @@ async def _run_authoritative(
     audit_state["runtime"] = runtime
     audit_state["failed_stage"] = "settings_preflight"
     settings = Settings() if env_file is None else Settings(_env_file=env_file)
-    if not settings.fmp.enabled or not settings.llm.enabled or not settings.langfuse.enabled:
-        raise RuntimeError("FMP, TeamoRouter, and Langfuse must be configured")
+    if not fmp_credential_alias or any(
+        not (character.isalnum() or character in {"-", "_"}) for character in fmp_credential_alias
+    ):
+        raise RuntimeError("FMP credential alias must be bound before the Run")
+    if (
+        not settings.fmp.enabled
+        or not (settings.mimo.enabled or settings.llm.enabled)
+        or not settings.langfuse.enabled
+    ):
+        raise RuntimeError("FMP, a governed planner provider, and Langfuse must be configured")
+    audit_state["fmp_credential_alias"] = fmp_credential_alias
 
     audit_state["failed_stage"] = "postgresql_migration"
     alembic_location = await asyncio.to_thread(_alembic_location)
@@ -1987,12 +2074,18 @@ async def _run_authoritative(
     if migration_current != migration_head:
         raise RuntimeError("PostgreSQL migration current revision does not match Alembic head")
     references = InMemoryTraceReferenceRepository()
+    sensitive_values = {
+        name: secret.get_secret_value()
+        for name, secret in {
+            "FMP_API_KEY": settings.fmp.api_key,
+            "TEAMOROUTER_API_KEY": settings.llm.api_key,
+            "MIMO_API_KEY": settings.mimo.api_key,
+        }.items()
+        if secret is not None and secret.get_secret_value()
+    }
     trace_build = create_langfuse_trace_adapter(
         settings.langfuse,
-        additional_sensitive_values={
-            "FMP_API_KEY": settings.fmp.api_key.get_secret_value(),
-            "TEAMOROUTER_API_KEY": settings.llm.api_key.get_secret_value(),
-        },
+        additional_sensitive_values=sensitive_values,
     )
     if not trace_build.enabled:
         raise RuntimeError(f"Langfuse adapter is not enabled: {trace_build.classification.value}")
@@ -2006,9 +2099,43 @@ async def _run_authoritative(
         event_hooks={"request": [llm_http_counter.on_request]}, timeout=60.0
     )
     fmp_transport = CountingFMPTransport(HttpxFMPTransport(settings.fmp))
-    llm = CountingLLMProvider(
-        TeamoRouterClient(settings.llm, client=llm_http_client, timeout_seconds=60.0)
+    planner_providers: list[LLMProvider] = []
+    if settings.mimo.enabled:
+        planner_providers.append(
+            MimoClient(settings.mimo, client=llm_http_client, timeout_seconds=60.0)
+        )
+    if settings.llm.enabled:
+        planner_providers.append(
+            TeamoRouterClient(settings.llm, client=llm_http_client, timeout_seconds=60.0)
+        )
+    planner_router = PlannerProviderRouter(
+        planner_providers,
+        preference_order=settings.planner_provider_order,
     )
+    audit_state["failed_stage"] = "planner_provider_preflight"
+    try:
+        planner_selection = await planner_router.select(_planner_provider_preflight)
+    except PlannerProviderUnavailableError as exc:
+        audit_state["planner_provider_selection"] = {
+            "selected_provider": None,
+            "selected_model": None,
+            "health_checks": [
+                {
+                    "provider": item.provider,
+                    "model": item.model,
+                    "passed": item.passed,
+                    "failure_classification": item.failure_classification,
+                }
+                for item in exc.health_checks
+            ],
+            "provider_model_locked": False,
+            "mid_run_failover_enabled": False,
+        }
+        raise
+    planner_selection_evidence = planner_selection.safe_evidence()
+    audit_state["planner_provider_selection"] = planner_selection_evidence
+    planner_preflight_http_attempts = llm_http_counter.http_attempts
+    llm = CountingLLMProvider(planner_selection.provider)
     sandbox = DockerSandboxBackend()
     generated_artifact_store = GeneratedCapabilityArtifactStore(
         output / "generated",
@@ -2039,9 +2166,16 @@ async def _run_authoritative(
         audit_state["failed_stage"] = "authoritative_nvda_chain"
         async with instrumentation.research_run(
             run_id=run_id,
-            attributes={"object_id": "OBJ-NVDA", "phase": "phase3"},
+            attributes={
+                "object_id": "OBJ-NVDA",
+                "phase": "phase3",
+                "planner_provider": planner_selection.provider_name,
+                "planner_model": planner_selection.model_name,
+                "planner_provider_policy": planner_selection.policy_id,
+                "planner_fallback_used": planner_selection.fallback_used,
+            },
         ) as trace:
-            scheme_generator = TeamoRouterSchemeGenerator(
+            scheme_generator = PlannerProviderSchemeGenerator(
                 InstrumentedLLMProvider(
                     llm,
                     trace=trace,
@@ -2049,7 +2183,7 @@ async def _run_authoritative(
                 ),
                 max_validation_attempts=2,
             )
-            planner = TeamoRouterResearchLeadPlanner(
+            planner = PlannerProviderResearchLeadPlanner(
                 InstrumentedLLMProvider(
                     llm,
                     trace=trace,
@@ -2077,7 +2211,7 @@ async def _run_authoritative(
             generated_orchestrator = GeneratedCapabilityOrchestrator(
                 registry=scoped_registry,
                 research_lead=Phase3ResearchLeadCapabilityAuthority(),
-                code_builder=TeamoRouterCodeBuilder(llm, trace=generated_trace),
+                code_builder=PlannerProviderCodeBuilder(llm, trace=generated_trace),
                 validator=GeneratedCapabilityValidator(
                     sandbox=sandbox,
                     plans=FreeCashFlowMarginValidationPlanProvider(),
@@ -2138,9 +2272,15 @@ async def _run_authoritative(
                 scheme_generator.last_audit is None
                 or scheme_generator.last_audit.deterministic_fallback
             ):
-                raise RuntimeError("real TeamoRouter scheme generation did not pass")
+                raise RuntimeError("real selected-provider scheme generation did not pass")
             if planner.last_audit is None or planner.last_audit.deterministic_fallback:
-                raise RuntimeError("real TeamoRouter planner generation did not pass")
+                raise RuntimeError("real selected-provider planner generation did not pass")
+            for planner_audit in (scheme_generator.last_audit, planner.last_audit):
+                if (
+                    planner_audit.provider != planner_selection.provider_name
+                    or planner_audit.actual_model != planner_selection.model_name
+                ):
+                    raise RuntimeError("authoritative planner provider/model lock was violated")
             canonical = aggregate.artifacts.canonical_record
             released = aggregate.artifacts.released_result
             if canonical is None or released is None:
@@ -2405,6 +2545,8 @@ async def _run_authoritative(
         report_artifacts = await repository.list(ReportArtifactRecord, run_id)
         generated_retention_audit = _audit_generated_artifact_retention(
             store=generated_artifact_store,
+            expected_provider=planner_selection.provider_name,
+            expected_model=planner_selection.model_name,
             records=generated_artifacts,
             builds=builds,
             generated=generated,
@@ -2615,6 +2757,7 @@ async def _run_authoritative(
             },
             "fmp": {
                 "provider": "fmp",
+                "credential_alias": fmp_credential_alias,
                 "request_count": fmp_transport.total,
                 "requests_by_endpoint": dict(fmp_transport.by_endpoint),
                 "endpoint_status": endpoint_status,
@@ -2627,9 +2770,12 @@ async def _run_authoritative(
                 ),
             },
             "llm": {
-                "provider": settings.llm.provider,
+                "provider": planner_selection.provider_name,
+                "model": planner_selection.model_name,
+                "provider_selection": planner_selection_evidence,
                 "logical_calls": llm.logical_calls,
-                "http_attempts": llm_http_counter.http_attempts,
+                "http_attempts": (llm_http_counter.http_attempts - planner_preflight_http_attempts),
+                "preflight_http_attempts": planner_preflight_http_attempts,
                 "schemas": dict(llm.schemas),
                 "scheme": scheme_generator.last_audit.model_dump(mode="json"),
                 "planner": planner.last_audit.model_dump(mode="json"),
@@ -3297,6 +3443,7 @@ async def run(
     *,
     host_binary: Path,
     candidate_head: str,
+    fmp_credential_alias: str = "",
     env_file: Path | None = None,
 ) -> dict[str, Any]:
     """Run one authority chain and always emit a complete fail-closed core matrix."""
@@ -3310,6 +3457,7 @@ async def run(
             candidate_head=candidate_head,
             run_id=run_id,
             audit_state=audit_state,
+            fmp_credential_alias=fmp_credential_alias,
             env_file=env_file,
         )
     except Exception as exc:
@@ -3337,6 +3485,7 @@ def main() -> None:
         default=Path("zk/revenue_growth/target/release/revenue-growth-proof-host"),
     )
     parser.add_argument("--candidate-head", required=True)
+    parser.add_argument("--fmp-credential-alias", required=True)
     parser.add_argument("--env-file", type=Path)
     args = parser.parse_args()
     result = asyncio.run(
@@ -3344,6 +3493,7 @@ def main() -> None:
             args.output_root,
             host_binary=args.risc0_host_binary,
             candidate_head=args.candidate_head,
+            fmp_credential_alias=args.fmp_credential_alias,
             env_file=args.env_file,
         )
     )

@@ -11,7 +11,7 @@ from src.capabilities.generated.artifacts import (
     GeneratedCapabilityArtifactStore,
     ReconstructedGeneratedBuildInput,
 )
-from src.capabilities.generated.builder import TeamoRouterCodeBuilder
+from src.capabilities.generated.builder import PlannerProviderCodeBuilder, TeamoRouterCodeBuilder
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
     CapabilityOrchestrationResult,
@@ -70,6 +70,7 @@ __all__ = [
     "ResearchLeadCapabilityAuthority",
     "SandboxValidatedGeneratedCapability",
     "ReconstructedGeneratedBuildInput",
+    "PlannerProviderCodeBuilder",
     "ScopedCapabilityRegistry",
     "ScopedCapabilityRegistryPort",
     "SpecialistCapabilityRequest",

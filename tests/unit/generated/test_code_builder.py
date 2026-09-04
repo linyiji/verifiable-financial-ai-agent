@@ -120,6 +120,22 @@ class FakeTeamoRouterProvider:
         )
 
 
+class FakeMimoProvider(FakeTeamoRouterProvider):
+    provider_name = "mimo"
+
+    async def complete_structured(self, **kwargs: object) -> LLMStructuredResponse:
+        response = await super().complete_structured(**kwargs)
+        return LLMStructuredResponse(
+            output=response.output,
+            provider="mimo",
+            requested_model="mimo-v2.5",
+            actual_model="mimo-v2.5",
+            attempted_models=("mimo-v2.5",),
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+        )
+
+
 class TraceSpy:
     def __init__(self) -> None:
         self.generations: list[dict[str, object]] = []
@@ -223,5 +239,22 @@ def test_builder_rejects_a_new_direct_provider_route() -> None:
     class DirectProvider(FakeTeamoRouterProvider):
         provider_name = "openai"
 
-    with pytest.raises(ValueError, match="configured TeamoRouter"):
+    with pytest.raises(ValueError, match="registered planner provider"):
         TeamoRouterCodeBuilder(DirectProvider(builder_output()))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "expected_provider"),
+    (
+        (FakeTeamoRouterProvider(builder_output()), "teamorouter"),
+        (FakeMimoProvider(builder_output()), "mimo"),
+    ),
+)
+async def test_builder_accepts_each_registered_provider_truthfully(
+    provider: FakeTeamoRouterProvider,
+    expected_provider: str,
+) -> None:
+    candidate = await TeamoRouterCodeBuilder(provider).generate(build_request())
+
+    assert candidate.provider == expected_provider

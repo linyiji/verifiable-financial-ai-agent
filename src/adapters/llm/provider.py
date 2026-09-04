@@ -86,6 +86,11 @@ class LLMStructuredResponse(Generic[StructuredModel]):
 
 @runtime_checkable
 class LLMProvider(Protocol):
+    provider_name: str
+
+    @property
+    def model_name(self) -> str: ...
+
     async def complete_structured(
         self,
         *,

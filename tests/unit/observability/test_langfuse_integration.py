@@ -358,6 +358,7 @@ async def test_sdk_bridge_redacts_all_configured_credentials_across_keys_and_val
     configured_values = {
         "FMP_API_KEY": "fmp-sensitive-sentinel",
         "TEAMOROUTER_API_KEY": "router-sensitive-sentinel",
+        "MIMO_API_KEY": "mimo-sensitive-sentinel",
     }
     build = create_langfuse_trace_adapter(
         settings(public="public-sensitive-sentinel", secret="secret-sensitive-sentinel"),
@@ -369,6 +370,7 @@ async def test_sdk_bridge_redacts_all_configured_credentials_across_keys_and_val
         "provider": "fmp-sensitive-sentinel",
         "nested": {
             "safe_label": "router-sensitive-sentinel",
+            "selected_model": "mimo-sensitive-sentinel",
             "publicKey": "unknown-public-value",
             "client-password": "unknown-password-value",
             "sessionTokenField": "unknown-token-value",
@@ -395,6 +397,7 @@ async def test_sdk_bridge_redacts_all_configured_credentials_across_keys_and_val
         "secret-sensitive-sentinel",
         "fmp-sensitive-sentinel",
         "router-sensitive-sentinel",
+        "mimo-sensitive-sentinel",
         "unknown-public-value",
         "unknown-password-value",
         "unknown-token-value",
