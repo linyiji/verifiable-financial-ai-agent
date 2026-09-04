@@ -1176,6 +1176,17 @@ def _acceptance_matrix(
         for item in aggregate.artifacts.calculations
         if item.capability_id == FCF_MARGIN_CAPABILITY_ID
     ]
+    active_generated = [
+        item for item in generated if item.lifecycle is CapabilityLifecycle.ACTIVE_FOR_SCOPE
+    ]
+    generated_attempts_classified = len(active_generated) == 1 and all(
+        item.lifecycle
+        in {
+            CapabilityLifecycle.ACTIVE_FOR_SCOPE,
+            CapabilityLifecycle.BUILD_FAILED,
+        }
+        for item in generated
+    )
     technical_ids = {
         "technical_sma_50",
         "technical_sma_200",
@@ -1279,11 +1290,12 @@ def _acceptance_matrix(
             "identical canonical output across deterministic reruns",
         ),
         "P3-CAP-011": _gate(
-            len(generated) == len(validations) == len(sandboxes) == 1
-            and generated[0].implementation_hash
+            generated_attempts_classified
+            and len(validations) == len(sandboxes) == 1
+            and active_generated[0].implementation_hash
             == validations[0].implementation_hash
             == sandboxes[0].implementation_hash,
-            "implementation hash stable across generated/validation/sandbox records",
+            "one active implementation hash is stable and rejected attempts are retained",
         ),
         "P3-CAP-012": _gate(
             all(
@@ -1320,18 +1332,23 @@ def _acceptance_matrix(
         ),
         "P3-CAP-015": _gate(
             len(generated_calculations) == 1
-            and len(generated) == 1
+            and generated_attempts_classified
             and len(registrations) == 1
-            and generated_calculations[0].run_id == generated[0].run_id == aggregate.run.run_id
-            and generated_calculations[0].task_id == generated[0].task_id
-            and generated_calculations[0].capability_id == generated[0].capability_id
+            and registrations[0].generated_capability_ref
+            == active_generated[0].generated_capability_id
+            and generated_calculations[0].run_id
+            == active_generated[0].run_id
+            == aggregate.run.run_id
+            and generated_calculations[0].task_id == active_generated[0].task_id
+            and generated_calculations[0].capability_id == active_generated[0].capability_id
             and generated_calculations[0].capability_version
-            == generated[0].capability_version
+            == active_generated[0].capability_version
             == registrations[0].capability_version
-            and generated_calculations[0].formula_id == generated[0].formula_id
-            and generated_calculations[0].implementation_hash == generated[0].implementation_hash
-            and generated_calculations[0].source_ref == generated[0].source_ref
-            and generated_calculations[0].runtime_version == generated[0].runtime_version
+            and generated_calculations[0].formula_id == active_generated[0].formula_id
+            and generated_calculations[0].implementation_hash
+            == active_generated[0].implementation_hash
+            and generated_calculations[0].source_ref == active_generated[0].source_ref
+            and generated_calculations[0].runtime_version == active_generated[0].runtime_version
             and set(generated_calculations[0].input_evidence_ids).issubset(accepted_ids)
             and generated_calculations[0].output_value is not None
             and bool(generated_calculations[0].output_unit)

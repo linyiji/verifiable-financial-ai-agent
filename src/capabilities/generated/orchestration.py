@@ -140,6 +140,7 @@ class GeneratedCapabilityOrchestrator:
         builds: list[CapabilityBuildRecord] = []
         last_error: Exception | None = None
         for attempt in range(1, self._max_attempts + 1):
+            generated: GeneratedCapabilityRecord | None = None
             build = CapabilityBuildRecord(
                 build_id=f"BUILD-{uuid4()}",
                 gap_id=gap.gap_id,
@@ -321,6 +322,14 @@ class GeneratedCapabilityOrchestrator:
                 )
             except Exception as exc:
                 last_error = exc
+                if (
+                    generated is not None
+                    and generated.lifecycle is not CapabilityLifecycle.ACTIVE_FOR_SCOPE
+                ):
+                    generated = generated.model_copy(
+                        update={"lifecycle": CapabilityLifecycle.BUILD_FAILED}
+                    )
+                    await self._recorder.record_generated(generated)
                 if failure_stage == "validation":
                     await self._emit(
                         RuntimeEventType.CAPABILITY_TEST_FAILED,

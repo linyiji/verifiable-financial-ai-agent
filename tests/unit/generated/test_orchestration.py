@@ -240,6 +240,18 @@ class FakeValidator:
         )
 
 
+class RejectFirstValidator(FakeValidator):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def validate(self, candidate, *, progress) -> ValidationHandoff:
+        self.calls += 1
+        if self.calls == 1:
+            await progress.static_validated(candidate.implementation_hash)
+            raise ValueError("precision fixture rejected generated output")
+        return await super().validate(candidate, progress=progress)
+
+
 @dataclass
 class MemoryRecorder:
     gaps: list[CapabilityGapRecord]
@@ -272,13 +284,15 @@ class MemoryRecorder:
         self.registrations.append(registration)
 
 
-def orchestrator(*, registry=None, lead=None, builder=None, recorder=None, max_attempts=2):
+def orchestrator(
+    *, registry=None, lead=None, builder=None, validator=None, recorder=None, max_attempts=2
+):
     events = InMemoryRuntimeEventStore()
     service = GeneratedCapabilityOrchestrator(
         registry=registry or FakeRegistry(),
         research_lead=lead or FakeResearchLead(),
         code_builder=builder or FakeBuilder(),
-        validator=FakeValidator(),
+        validator=validator or FakeValidator(),
         event_store=events,
         recorder=recorder,
         max_attempts=max_attempts,
@@ -343,6 +357,22 @@ async def test_existing_capability_bypasses_gap_and_builder() -> None:
     assert builder.calls == []
     assert await events.replay("RUN-1") == []
     assert state.task("TASK-1").status is TaskStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_rejected_generated_attempt_is_retained_as_build_failed() -> None:
+    recorder = MemoryRecorder()
+    service, _ = orchestrator(validator=RejectFirstValidator(), recorder=recorder)
+
+    result = await service.lookup_or_build(state=make_state(), request=make_request())
+
+    latest_by_id = {item.generated_capability_id: item for item in recorder.generated}
+    assert len(latest_by_id) == 2
+    assert sorted(item.lifecycle.value for item in latest_by_id.values()) == [
+        "ACTIVE_FOR_SCOPE",
+        "BUILD_FAILED",
+    ]
+    assert result.generated.lifecycle is CapabilityLifecycle.ACTIVE_FOR_SCOPE
 
 
 @pytest.mark.asyncio
