@@ -65,6 +65,16 @@ class TaskEvidenceRoutingResult:
         task.task_input_evidence_ids = list(self.input_evidence_ids)
         task.task_output_evidence_ids = list(self.output_evidence_ids)
         task.evidence_acquisition_status = self.acquisition_status
+        task.evidence_source_coverage = {
+            item.endpoint.value: {
+                "status": _source_coverage_status(item),
+                "http_status": item.http_status,
+                "error_code": item.error_code,
+                "accepted_count": item.accepted_count,
+            }
+            for item in self.endpoint_statuses
+            if item.endpoint.value in {"news", "transcript"}
+        }
         return task
 
 
@@ -87,9 +97,7 @@ class RunEvidenceStore:
         accepted = acquisition.ingestion.accepted.records
         for record in acquisition.ingestion.created_records:
             if record.producer_task_id != acquisition.task_id:
-                raise ValueError(
-                    "new evidence producer_task_id must match the acquisition task"
-                )
+                raise ValueError("new evidence producer_task_id must match the acquisition task")
         for record in acquisition.ingestion.records:
             self._register_record(record)
 
@@ -102,10 +110,7 @@ class RunEvidenceStore:
                 _append_unique(outputs, record.evidence_id)
             else:
                 _append_unique(inputs, record.evidence_id)
-            if (
-                record.evidence_id not in created_ids
-                or record.evidence_id in self._announced_ids
-            ):
+            if record.evidence_id not in created_ids or record.evidence_id in self._announced_ids:
                 continue
             self._announced_ids.add(record.evidence_id)
             intents.append(
@@ -314,3 +319,13 @@ class EvidenceTaskRouter:
 def _append_unique(items: list[str], value: str) -> None:
     if value not in items:
         items.append(value)
+
+
+def _source_coverage_status(item: EndpointCollectionStatus) -> str:
+    if item.accepted_count > 0:
+        return "AVAILABLE"
+    if item.status.value == "ENTITLEMENT_DENIED":
+        return "BLOCKED"
+    if item.status.value in {"AVAILABLE", "NO_DATA"}:
+        return "EMPTY"
+    return "ERROR"

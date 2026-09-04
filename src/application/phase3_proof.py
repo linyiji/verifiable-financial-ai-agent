@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -192,6 +192,9 @@ class RevenueGrowthRiscZeroProofWorkflow:
                     "The RISC Zero proof verifies program execution over bound inputs; it "
                     "does not prove that provider data is objectively true.",
                 ),
+                input_commitments={growth.calculation_id: commitment},
+                verifications={growth.calculation_id: verification},
+                artifacts={growth.calculation_id: artifact},
             )
         except Exception as exc:
             await self._event_store.emit(
@@ -293,7 +296,9 @@ def _build_input(calculation: CalculationRecord):
         scale=scale,
     )
     expected = calculate_revenue_growth(canonical)
-    expected_decimal = Decimal(expected.growth_numerator) / Decimal(expected.growth_denominator)
+    with localcontext() as context:
+        context.prec = 28
+        expected_decimal = Decimal(expected.growth_numerator) / Decimal(expected.growth_denominator)
     if expected_decimal != Decimal(str(calculation.output_value)):
         raise ValueError("CalculationRecord output does not match canonical proof inputs")
     return build_proof_input(

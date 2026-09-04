@@ -6,7 +6,15 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.data.persistence import EvidenceRecordRow, SQLAlchemyEvidenceRepository
-from src.domain.enums import EvidenceCategory, EvidenceStatus
+from src.domain.enums import (
+    CashFlowSignConvention,
+    CorporateActionStatus,
+    EvidenceCategory,
+    EvidenceStatus,
+    FinancialActuality,
+    FinancialPeriodBasis,
+    TechnicalPriceBasis,
+)
 from src.domain.evidence import EvidenceRecord
 from src.infrastructure.database.base import Base
 
@@ -33,6 +41,14 @@ async def test_evidence_ownership_metadata_round_trips_through_sql() -> None:
         observed_at=observed_at,
         provider_timestamp=provider_timestamp,
         period="FY2026",
+        period_basis=FinancialPeriodBasis.FY,
+        actuality=FinancialActuality.ESTIMATE,
+        statement_series="fmp:NVDA:USD:FY:ESTIMATE",
+        statement_cohort="fmp:NVDA:USD:FY:ESTIMATE:FY2026:filing-1",
+        technical_price_basis=TechnicalPriceBasis.RAW_CLOSE,
+        corporate_action_status=CorporateActionStatus.NONE_DETECTED,
+        cash_flow_sign_convention=CashFlowSignConvention.NOT_APPLICABLE,
+        cash_flow_normalization_applied=True,
         as_of=date(2026, 1, 25),
         raw_artifact_ref="artifact://safe-reference",
         normalized_field="revenue",
@@ -59,3 +75,11 @@ async def test_evidence_ownership_metadata_round_trips_through_sql() -> None:
     assert loaded.evidence_category is EvidenceCategory.FINANCIAL_STATEMENT
     assert loaded.observed_at is not None
     assert loaded.provider_timestamp is not None
+    assert loaded.period_basis is FinancialPeriodBasis.FY
+    assert loaded.actuality is FinancialActuality.ESTIMATE
+    assert loaded.statement_series == "fmp:NVDA:USD:FY:ESTIMATE"
+    assert loaded.statement_cohort == "fmp:NVDA:USD:FY:ESTIMATE:FY2026:filing-1"
+    assert loaded.technical_price_basis is TechnicalPriceBasis.RAW_CLOSE
+    assert loaded.corporate_action_status is CorporateActionStatus.NONE_DETECTED
+    assert loaded.cash_flow_sign_convention is CashFlowSignConvention.NOT_APPLICABLE
+    assert loaded.cash_flow_normalization_applied is True

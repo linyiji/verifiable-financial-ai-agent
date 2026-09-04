@@ -13,6 +13,9 @@ from src.application.phase3_financial import (
     Phase3ResearchLeadCapabilityAuthority,
     free_cash_flow_margin_requirement,
 )
+from src.assurance import IndependentFinancialReviewer
+from src.capabilities.financial.growth import RevenueGrowthCapability
+from src.capabilities.financial.profitability import EbitdaMarginCapability
 from src.capabilities.generated.models import (
     CapabilityOrchestrationResult,
     CodeBuilderOutput,
@@ -35,13 +38,21 @@ from src.domain.enums import (
     CapabilityBackend,
     CapabilityLifecycle,
     CapabilityScope,
+    CashFlowSignConvention,
+    CorporateActionStatus,
     EvidenceCategory,
     EvidenceStatus,
+    FinancialActuality,
+    FinancialPeriodBasis,
+    ProofRequirement,
+    ReviewStatus,
     TaskOrigin,
     TaskStatus,
+    TechnicalPriceBasis,
 )
 from src.domain.evidence import EvidenceRecord
 from src.domain.task import PlannedTaskGraph, Task
+from src.output.financial_metrics import build_material_financial_release
 from src.runtime.events import InMemoryRuntimeEventStore
 from src.runtime.state import RuntimeState
 
@@ -85,10 +96,16 @@ class GeneratedFCFMarginCapability:
                 "capital_expenditure": str(inputs["capital_expenditure"]),
                 "revenue": str(inputs["revenue"]),
             },
+            parameters={
+                "generated_source_hash": "sha256:generated",
+                "generated_tests_hash": "sha256:tests",
+                "live_input_commitment": "sha256:live-input",
+            },
             output_value=value,
             output_unit="RATIO",
             status=CalculationStatus.PASS,
             implementation_hash="sha256:generated",
+            code_hash="sha256:generated",
             source_ref="generated://BUILD-1/source.py",
             runtime_version="Python 3.11.test",
         )
@@ -136,6 +153,10 @@ def _record(
     purpose: str,
     unit: str,
     currency: str | None,
+    statement_cohort: str | None = None,
+    cash_flow_sign_convention: CashFlowSignConvention | None = None,
+    technical_price_basis: TechnicalPriceBasis | None = None,
+    corporate_action_status: CorporateActionStatus | None = None,
 ) -> EvidenceRecord:
     return EvidenceRecord(
         evidence_id=evidence_id,
@@ -147,6 +168,13 @@ def _record(
         evidence_category=category,
         retrieved_at=datetime(2026, 9, 4, tzinfo=UTC),
         period=period,
+        period_basis=(FinancialPeriodBasis.DAILY if period == "DAILY" else FinancialPeriodBasis.FY),
+        actuality=FinancialActuality.ACTUAL,
+        statement_series=("fmp:NVDA:USD:FY:ACTUAL" if period != "DAILY" else None),
+        statement_cohort=statement_cohort,
+        cash_flow_sign_convention=cash_flow_sign_convention,
+        technical_price_basis=technical_price_basis,
+        corporate_action_status=corporate_action_status,
         as_of=as_of,
         raw_artifact_ref=f"memory://{evidence_id}",
         normalized_field=field,
@@ -161,6 +189,30 @@ def _record(
 def _evidence() -> list[EvidenceRecord]:
     records = [
         _record(
+            evidence_id="E-REV-PRIOR",
+            field="revenue",
+            value="80",
+            period="FY2025",
+            as_of=date(2025, 1, 25),
+            category=EvidenceCategory.FINANCIAL_STATEMENT,
+            purpose="income_statement",
+            unit="USD",
+            currency="USD",
+            statement_cohort="fmp:NVDA:USD:FY:ACTUAL:FY2025:2025-01-25",
+        ),
+        _record(
+            evidence_id="E-EBITDA",
+            field="ebitda",
+            value="30",
+            period="FY2026",
+            as_of=date(2026, 1, 25),
+            category=EvidenceCategory.FINANCIAL_STATEMENT,
+            purpose="income_statement",
+            unit="USD",
+            currency="USD",
+            statement_cohort="fmp:NVDA:USD:FY:ACTUAL:FY2026:2026-01-25",
+        ),
+        _record(
             evidence_id="E-OCF",
             field="operating_cash_flow",
             value="50",
@@ -170,6 +222,7 @@ def _evidence() -> list[EvidenceRecord]:
             purpose="cash_flow_statement",
             unit="USD",
             currency="USD",
+            statement_cohort="fmp:NVDA:USD:FY:ACTUAL:FY2026:2026-01-25",
         ),
         _record(
             evidence_id="E-CAPEX",
@@ -181,6 +234,8 @@ def _evidence() -> list[EvidenceRecord]:
             purpose="cash_flow_statement",
             unit="USD",
             currency="USD",
+            statement_cohort="fmp:NVDA:USD:FY:ACTUAL:FY2026:2026-01-25",
+            cash_flow_sign_convention=CashFlowSignConvention.OUTFLOW_NEGATIVE,
         ),
         _record(
             evidence_id="E-REV",
@@ -192,6 +247,7 @@ def _evidence() -> list[EvidenceRecord]:
             purpose="income_statement",
             unit="USD",
             currency="USD",
+            statement_cohort="fmp:NVDA:USD:FY:ACTUAL:FY2026:2026-01-25",
         ),
     ]
     first = date(2025, 1, 1)
@@ -209,6 +265,8 @@ def _evidence() -> list[EvidenceRecord]:
                     purpose="historical_market_context",
                     unit="CURRENCY",
                     currency="USD",
+                    technical_price_basis=TechnicalPriceBasis.RAW_CLOSE,
+                    corporate_action_status=CorporateActionStatus.UNASSESSED,
                 ),
                 _record(
                     evidence_id=f"E-VOLUME-{index:03d}",
@@ -361,6 +419,79 @@ async def test_extension_executes_generated_gap_and_finrobot_technical_runtime()
     emitted = await events.replay("RUN-1")
     started = [event for event in emitted if event.type.value == "calculation.started"]
     assert len(started) == 6
+
+    evidence_by_id = {item.evidence_id: item for item in evidence}
+    base_context = CapabilityContext(
+        run_id="RUN-1",
+        task_id=task.task_id,
+        accepted_evidence_ids=[record.evidence_id for record in evidence],
+    )
+    growth = await RevenueGrowthCapability().execute(
+        {
+            "prior": evidence_by_id["E-REV-PRIOR"],
+            "current": evidence_by_id["E-REV"],
+            "calculation_id": "CALC-RUN-1-GROWTH",
+        },
+        base_context,
+    )
+    margin = await EbitdaMarginCapability().execute(
+        {
+            "ebitda": evidence_by_id["E-EBITDA"],
+            "revenue": evidence_by_id["E-REV"],
+            "calculation_id": "CALC-RUN-1-EBITDA",
+        },
+        base_context,
+    )
+    calculations = [growth, margin, *result.calculations]
+    metrics, claims, _ = build_material_financial_release(
+        run_id="RUN-1",
+        evidence=evidence,
+        calculations=calculations,
+        judgments=result.judgments,
+    )
+    requirements = {
+        item.calculation_id: (
+            ProofRequirement.MUST_PROVE
+            if item.formula_id == "revenue_growth_v1"
+            else ProofRequirement.NOT_REQUIRED
+        )
+        for item in calculations
+    }
+    reviewer = IndependentFinancialReviewer()
+    review = reviewer.review(
+        review_id="REVIEW-RUN-1",
+        run_id="RUN-1",
+        run_as_of=date(2026, 9, 4),
+        evidence=evidence,
+        calculations=calculations,
+        metrics=metrics,
+        claims=claims,
+        judgments=result.judgments,
+        proof_requirements=requirements,
+    )
+    assert review.status is ReviewStatus.PASS, [
+        (item.code, item.detail, item.actual)
+        for item in review.checks
+        if item.status is ReviewStatus.BLOCK
+    ]
+    assert len(review.checks) == 54
+    tampered = calculations.copy()
+    tampered[0] = growth.model_copy(update={"output_value": Decimal("0.2501")})
+    blocked = reviewer.review(
+        review_id="REVIEW-RUN-1-TAMPER",
+        run_id="RUN-1",
+        run_as_of=date(2026, 9, 4),
+        evidence=evidence,
+        calculations=tampered,
+        metrics=metrics,
+        claims=claims,
+        judgments=result.judgments,
+        proof_requirements=requirements,
+    )
+    assert blocked.status is ReviewStatus.BLOCK
+    assert "FIN_CALCULATION_RECOMPUTATION" in {
+        item.code for item in blocked.checks if item.status is ReviewStatus.BLOCK
+    }
 
 
 @pytest.mark.asyncio

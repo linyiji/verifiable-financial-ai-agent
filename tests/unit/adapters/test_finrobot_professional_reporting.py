@@ -91,6 +91,9 @@ def test_mapper_uses_only_released_and_canonical_records_and_returns_frozen_dto(
     assert dto.provenance["assumption_refs"] == released.assumption_refs
     released.structured_financial_results["financial_summary"]["revenue"] = "MUTATED"
     assert dto.structured_financial_results["financial_summary"]["revenue"] == "$130.5B"
+    rendered = ProfessionalHTMLRenderer().render(dto).decode("utf-8")
+    assert "FrozenJsonSequence" not in rendered
+    assert "<ul>" in rendered
     with pytest.raises(ValidationError):
         dto.research_object = "AMD"
 
@@ -114,7 +117,7 @@ def test_html_is_self_contained_structured_and_escapes_all_released_content() ->
     assert {"head", "body", "article", "header", "main", "footer", "section", "dl"} <= set(
         parser.tags
     )
-    assert parser.sections == 6
+    assert parser.sections == 9
     assert "default-src 'none'" in rendered
     assert "https://" not in rendered
     assert "<script>alert" not in rendered

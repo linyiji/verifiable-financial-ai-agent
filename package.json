@@ -6,7 +6,6 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "check:runtime": "node --version && npm --version"
+    "check:runtime": "node -e \"const major=Number(process.versions.node.split('.')[0]); if (major !== 24) { console.error('Node.js 24.x is required'); process.exit(1) } console.log(process.version)\" && npm --version"
   }
 }
-

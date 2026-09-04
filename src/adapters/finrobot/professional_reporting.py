@@ -18,13 +18,17 @@ import os
 import re
 import tempfile
 import textwrap
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
+from pydantic import BaseModel
+
 from src.adapters.finrobot.audit import FINROBOT_PINNED_COMMIT
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
+from src.domain.financial_semantics import metric_semantics_hash
 from src.domain.released_research_result import ReleasedResearchResult
 from src.domain.report import CanonicalReportDTO, ReportArtifactRecord
 
@@ -56,6 +60,13 @@ class CanonicalReportMapper:
             raise CanonicalReportMappingError(
                 "ReleasedResearchResult and CanonicalExecutionRecord must share run_id"
             )
+        if (
+            released.canonical_record_id is not None
+            and released.canonical_record_id != canonical.record_id
+        ):
+            raise CanonicalReportMappingError(
+                "ReleasedResearchResult does not reference the supplied canonical record"
+            )
         research_object = released.structured_financial_results.get("research_object")
         if not isinstance(research_object, str) or not research_object.strip():
             raise CanonicalReportMappingError(
@@ -83,6 +94,19 @@ class CanonicalReportMapper:
             research_object=research_object.strip(),
             structured_financial_results=deepcopy(released.structured_financial_results),
             released_claims=deepcopy(released.released_claims),
+            released_metrics=[
+                metric.model_dump(mode="python") for metric in released.released_metrics
+            ],
+            material_claims=[claim.model_dump(mode="python") for claim in released.material_claims],
+            material_calculation_dispositions=[
+                item.model_dump(mode="python")
+                for item in released.material_calculation_dispositions
+            ],
+            research_source_coverage=(
+                released.research_source_coverage.model_dump(mode="python")
+                if released.research_source_coverage is not None
+                else None
+            ),
             judgments=deepcopy(released.judgments),
             risk_output=deepcopy(released.risk_output),
             limitations=deepcopy(released.limitations),
@@ -166,6 +190,9 @@ class ProfessionalHTMLRenderer:
 
     def render(self, report: CanonicalReportDTO) -> bytes:
         sections = (
+            _html_section("Released financial metrics", report.released_metrics),
+            _html_section("Material claims", report.material_claims),
+            _html_section("Research source coverage", report.research_source_coverage),
             _html_section("Financial results", report.structured_financial_results),
             _html_section("Released claims", report.released_claims),
             _html_section("Judgments", report.judgments),
@@ -342,6 +369,7 @@ def _artifact_record(
         released_result_id=report.released_result_id,
         size_bytes=size_bytes,
         semantic_hash=semantic_hash,
+        metric_semantics_hash=metric_semantics_hash(tuple(report.released_metrics)),
     )
 
 
@@ -351,14 +379,16 @@ def _html_section(title: str, value: Any) -> str:
 
 
 def _html_value(value: Any) -> str:
-    if isinstance(value, dict):
+    if isinstance(value, BaseModel):
+        value = value.model_dump(mode="json")
+    if isinstance(value, Mapping):
         if not value:
             return '<p class="empty">No released data.</p>'
         rows = []
         for key in sorted(value, key=str):
             rows.append(f"<dt>{_html_text(_label(key))}</dt><dd>{_html_value(value[key])}</dd>")
         return f"<dl>{''.join(rows)}</dl>"
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         if not value:
             return '<p class="empty">None recorded.</p>'
         return "<ul>" + "".join(f"<li>{_html_value(item)}</li>" for item in value) + "</ul>"
@@ -397,6 +427,9 @@ def _pdf_report_lines(report: CanonicalReportDTO) -> list[_PDFLine]:
         _PDFLine("small", f"Released: {report.released_result_id}"),
     ]
     sections = (
+        ("Released financial metrics", report.released_metrics),
+        ("Material claims", report.material_claims),
+        ("Research source coverage", report.research_source_coverage),
         ("Financial results", report.structured_financial_results),
         ("Released claims", report.released_claims),
         ("Judgments", report.judgments),
@@ -429,14 +462,16 @@ def _pdf_report_lines(report: CanonicalReportDTO) -> list[_PDFLine]:
 def _flatten_for_pdf(value: Any, prefix: str = "", depth: int = 0) -> list[str]:
     if depth > 8:
         return [f"{prefix}: [nested data omitted]" if prefix else "[nested data omitted]"]
-    if isinstance(value, dict):
+    if isinstance(value, BaseModel):
+        value = value.model_dump(mode="json")
+    if isinstance(value, Mapping):
         lines: list[str] = []
         for key in sorted(value, key=str):
             label = _label(key)
             path = f"{prefix} / {label}" if prefix else label
             lines.extend(_flatten_for_pdf(value[key], path, depth + 1))
         return lines
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         if not value:
             return [f"{prefix}: None recorded" if prefix else "None recorded"]
         lines = []

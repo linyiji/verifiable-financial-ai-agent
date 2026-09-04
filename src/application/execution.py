@@ -267,9 +267,7 @@ class IntegratedTaskExecutor:
             extension_refs.extend(result.generated_capability_refs)
             extension_judgments.extend(result.judgments)
             extension_output.update(result.task_output)
-        self._aggregate.artifacts.calculations.extend(
-            [growth, margin, *extension_calculations]
-        )
+        self._aggregate.artifacts.calculations.extend([growth, margin, *extension_calculations])
         self._aggregate.artifacts.generated_capability_refs.extend(extension_refs)
         self._aggregate.artifacts.judgments.extend(extension_judgments)
         await self._service.event_store.emit(
@@ -486,10 +484,43 @@ class IntegratedTaskExecutor:
         dependency_statuses.add(
             self._aggregate.runtime.task(task.task_id).evidence_acquisition_status
         )
-        if accepted:
+        source_coverage: dict[str, object] = {}
+        for dependency in task.dependencies:
+            candidate = self._aggregate.runtime.task(dependency).evidence_source_coverage
+            if candidate:
+                source_coverage.update(candidate)
+        source_coverage.update(self._aggregate.runtime.task(task.task_id).evidence_source_coverage)
+        category_by_source = {
+            "news": EvidenceCategory.NEWS,
+            "transcript": EvidenceCategory.TRANSCRIPT,
+        }
+        for source, category in category_by_source.items():
+            details = source_coverage.setdefault(
+                source,
+                {
+                    "status": "EMPTY",
+                    "http_status": 0,
+                    "error_code": "NO_ENDPOINT_RESULT",
+                    "accepted_count": 0,
+                },
+            )
+            if isinstance(details, dict):
+                details["accepted_evidence_ids"] = [
+                    record.evidence_id
+                    for record in accepted
+                    if record.evidence_category is category
+                ]
+        if accepted and all(
+            isinstance(item, dict) and item.get("status") == "AVAILABLE"
+            for item in source_coverage.values()
+        ):
             status = "completed"
             limitation = False
             reason = None
+        elif accepted:
+            status = "partial"
+            limitation = True
+            reason = "PARTIAL_NEWS_TRANSCRIPT_COVERAGE"
         elif EvidenceAcquisitionStatus.ENTITLEMENT_BLOCKED in dependency_statuses:
             status = "entitlement_blocked"
             limitation = True
@@ -503,6 +534,7 @@ class IntegratedTaskExecutor:
             "status": status,
             "accepted_evidence_ids": [record.evidence_id for record in accepted],
             "limitation": limitation,
+            "source_coverage": source_coverage,
         }
         if reason is not None:
             output["reason_code"] = reason

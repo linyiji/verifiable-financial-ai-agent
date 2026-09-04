@@ -14,6 +14,9 @@ class CanonicalExecutionRecord(TimestampedModel):
     task_refs: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     calculation_refs: list[str] = Field(default_factory=list)
+    metric_refs: list[str] = Field(default_factory=list)
+    claim_refs: list[str] = Field(default_factory=list)
+    judgment_refs: list[str] = Field(default_factory=list)
     decision_refs: list[str] = Field(default_factory=list)
     correction_refs: list[str] = Field(default_factory=list)
     replan_refs: list[str] = Field(default_factory=list)
@@ -25,4 +28,3 @@ class CanonicalExecutionRecord(TimestampedModel):
     cost: float = Field(default=0.0, ge=0.0)
     latency_ms: int = Field(default=0, ge=0)
     runtime_outcome: str
-

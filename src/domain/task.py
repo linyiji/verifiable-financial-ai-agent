@@ -29,6 +29,7 @@ class Task(TimestampedModel):
     task_input_evidence_ids: list[str] = Field(default_factory=list)
     task_output_evidence_ids: list[str] = Field(default_factory=list)
     evidence_acquisition_status: EvidenceAcquisitionStatus | None = None
+    evidence_source_coverage: JsonObject = Field(default_factory=dict)
 
 
 class PlannedTaskGraph(TimestampedModel):

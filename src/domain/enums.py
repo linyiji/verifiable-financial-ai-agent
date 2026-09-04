@@ -61,6 +61,16 @@ class CapabilityScope(StrEnum):
     RUN = "RUN"
 
 
+class CapabilityValidationScope(StrEnum):
+    PRE_ACTIVATION = "PRE_ACTIVATION"
+    LIVE_RUNTIME = "LIVE_RUNTIME"
+
+
+class ValidationResult(StrEnum):
+    PASS = "PASS"
+    FAIL = "FAIL"
+
+
 class EvidenceStatus(StrEnum):
     ACCEPTED = "ACCEPTED"
     CONFLICT = "CONFLICT"
@@ -115,6 +125,68 @@ class ProofRequirement(StrEnum):
 class CalculationStatus(StrEnum):
     PASS = "PASS"
     FAILED = "FAILED"
+
+
+class FinancialPeriodBasis(StrEnum):
+    FY = "FY"
+    QUARTER = "QUARTER"
+    TTM = "TTM"
+    LTM = "LTM"
+    CURRENT = "CURRENT"
+    DAILY = "DAILY"
+
+
+class FinancialActuality(StrEnum):
+    UNKNOWN = "UNKNOWN"
+    ACTUAL = "ACTUAL"
+    ESTIMATE = "ESTIMATE"
+
+
+class FinancialUnit(StrEnum):
+    RATIO = "RATIO"
+    PERCENT = "PERCENT"
+    CURRENCY = "CURRENCY"
+    COUNT = "COUNT"
+    SHARES = "SHARES"
+    INDEX = "INDEX"
+    MULTIPLE = "MULTIPLE"
+
+
+class MaterialCalculationDispositionStatus(StrEnum):
+    REPORTABLE = "REPORTABLE"
+    NON_REPORTABLE = "NON_REPORTABLE"
+
+
+class SourceCoverageStatus(StrEnum):
+    AVAILABLE = "AVAILABLE"
+    BLOCKED = "BLOCKED"
+    EMPTY = "EMPTY"
+    ERROR = "ERROR"
+
+
+class TechnicalPriceBasis(StrEnum):
+    ADJUSTED_CLOSE = "ADJUSTED_CLOSE"
+    RAW_CLOSE = "RAW_CLOSE"
+
+
+class CorporateActionStatus(StrEnum):
+    NONE_DETECTED = "NONE_DETECTED"
+    RESOLVED = "RESOLVED"
+    UNRESOLVED = "UNRESOLVED"
+    UNASSESSED = "UNASSESSED"
+
+
+class CashFlowSignConvention(StrEnum):
+    OUTFLOW_NEGATIVE = "OUTFLOW_NEGATIVE"
+    OUTFLOW_POSITIVE = "OUTFLOW_POSITIVE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    UNKNOWN = "UNKNOWN"
+
+
+class OperatingMode(StrEnum):
+    PUBLIC_NETWORK_MODE = "PUBLIC_NETWORK_MODE"
+    LIMITED_NETWORK_MODE = "LIMITED_NETWORK_MODE"
+    OFFLINE_DEMO_MODE = "OFFLINE_DEMO_MODE"
 
 
 class ReplanDecision(StrEnum):

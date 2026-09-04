@@ -1,0 +1,105 @@
+{
+  "artifacts": {
+    "guest": {
+      "combined_binary_path": "zk/revenue_growth/target/riscv-guest/revenue-growth-methods/revenue-growth-guest/riscv32im-risc0-zkvm-elf/docker/revenue-growth-guest.bin",
+      "combined_binary_sha256": "sha256:60b82da746aa22ec5b317e05e4ce6337cbe6b80f65c4499e771eb64388a4f946",
+      "elf_path": "zk/revenue_growth/target/riscv-guest/revenue-growth-methods/revenue-growth-guest/riscv32im-risc0-zkvm-elf/docker/revenue-growth-guest",
+      "elf_sha256": "sha256:f946e6ce2f42dbfdb8b49ff58d61077e87d87e5d7c0a73150419d50c52d57654",
+      "image_id": "cc73814ead1e753a520eff271b75b0f8056813ee34d4414b0e508d5c42ef326c"
+    },
+    "host": {
+      "format": "Mach-O 64-bit arm64",
+      "path": "zk/revenue_growth/target/release/revenue-growth-proof-host",
+      "sha256": "sha256:a8711c3b2dae513bd74b3b0bbc477dd751374eb25f29461d7d3c04fd31771f67",
+      "size_bytes": 6278160
+    }
+  },
+  "build": {
+    "canonical_environment": {
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+      "cargo_risczero": "cargo-risczero 3.0.6",
+      "docker_client": "29.4.0",
+      "docker_server": "29.2.1",
+      "host_os": "macOS 26.3.1 build 25D771280a",
+      "host_target": "aarch64-apple-darwin",
+      "macos_sdk": "26.2",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "rustc_commit": "48a229ceaefd4985c50990b14116b6d856af0985c",
+      "rustc_llvm": "22.1.8"
+    },
+    "canonical_location": "any regular non-symlink checkout whose tracked source closure matches source_set_sha256",
+    "canonical_process": [
+      "start with the recorded source closure and no target directory",
+      "run ./zk/revenue_growth/build-host.sh from the repository root",
+      "compile the guest with the pinned digest-qualified Docker builder",
+      "normalize Mach-O LC_UUID from the unsigned payload",
+      "ad-hoc sign with fixed identifier org.vfas.revenue-growth-proof-host and no timestamp",
+      "verify host SHA-256 and image-id against this manifest"
+    ],
+    "cargo_locked": true,
+    "command": [
+      "./zk/revenue_growth/build-host.sh"
+    ],
+    "guest_builder_digest": "sha256:3e12f71bacd27527a61dea96fa0e53e468c99aa261d3a1019b593f6dbd943eb3",
+    "guest_builder_image": "r0.1.88.0@sha256:3e12f71bacd27527a61dea96fa0e53e468c99aa261d3a1019b593f6dbd943eb3",
+    "macos_normalization": {
+      "codesign": "adhoc",
+      "identifier": "org.vfas.revenue-growth-proof-host",
+      "lc_uuid": "first 16 bytes of sha256(unsigned payload with zeroed LC_UUID)",
+      "timestamp": false
+    },
+    "profile": {
+      "codegen_units": 1,
+      "debug": 0,
+      "lto": true,
+      "strip": "symbols"
+    },
+    "risc0_build_version": "3.0.6",
+    "risc0_zkvm_version": "3.0.6"
+  },
+  "production_pin_consumers": [
+    "src.adapters.risc0.adapter.EXPECTED_REVENUE_GROWTH_IMAGE_ID",
+    "src.adapters.risc0.adapter.EXPECTED_REVENUE_GROWTH_HOST_SHA256"
+  ],
+  "program": {
+    "capability_id": "revenue_growth",
+    "input_schema_version": "risc0_revenue_growth_input_v1",
+    "journal_schema_version": "risc0_revenue_growth_journal_v1",
+    "program_id": "revenue_growth_v1"
+  },
+  "reproducibility": {
+    "build_count": 2,
+    "cross_absolute_path": true,
+    "guest_combined_binary_equal": true,
+    "guest_elf_equal": true,
+    "host_binary_equal": true,
+    "image_id_equal": true
+  },
+  "schema_version": "vfas.risc0.release-manifest.v1",
+  "source_closure": {
+    "algorithm": "vfas-risc0-source-set-sha256-v1",
+    "files": [
+      {"path": "zk/revenue_growth/Cargo.lock", "sha256": "sha256:a1c5d2cbecab4a786a2eb930c4ff8dd2e21b84c6b23e18964b5c00500e686c5c", "size_bytes": 89603},
+      {"path": "zk/revenue_growth/Cargo.toml", "sha256": "sha256:22047a889b6e8479cc153009032e4164602e7dac977f89660e2cb26821b7df6a", "size_bytes": 172},
+      {"path": "zk/revenue_growth/build-host.sh", "sha256": "sha256:2989085e36eb0b0199b6c9f22e91927dca0065e7c31dfa2a41ad63a29bfbc04f", "size_bytes": 1893},
+      {"path": "zk/revenue_growth/host/Cargo.toml", "sha256": "sha256:6418631b87702b909ff5c4f40de3f2865d4c6d38b71444cf013ffdea9a71b935", "size_bytes": 386},
+      {"path": "zk/revenue_growth/host/src/main.rs", "sha256": "sha256:5e9ba1452d86cb773a1e1f991cb442bbb68bb16ac3b6435500d4949a65656b47", "size_bytes": 8472},
+      {"path": "zk/revenue_growth/methods/Cargo.toml", "sha256": "sha256:45af4ec1e8dc186f94a76c3184f67beb2e659e6d4344985f90aa7c1c3b75ae16", "size_bytes": 182},
+      {"path": "zk/revenue_growth/methods/build.rs", "sha256": "sha256:f00b0656b2d2b607383b8ddad213f0f2417b52270e93198800105b3e5b86e716", "size_bytes": 1331},
+      {"path": "zk/revenue_growth/methods/guest/Cargo.lock", "sha256": "sha256:2dd43d7a0a23ac66f4a4415d369b2ae4c550e129f2f5a0a1d0e6cc4a229b7003", "size_bytes": 36633},
+      {"path": "zk/revenue_growth/methods/guest/Cargo.toml", "sha256": "sha256:c5707e02393bfc13d6b98f63a17c66120be23e78fed155f64010be85527f0961", "size_bytes": 310},
+      {"path": "zk/revenue_growth/methods/guest/src/main.rs", "sha256": "sha256:f2dac63b0e791fb15db28b646d9c380fdf01ddb41fbff049ce91be7a3c95d865", "size_bytes": 334},
+      {"path": "zk/revenue_growth/methods/src/lib.rs", "sha256": "sha256:902d56d952004dd42e65c148a4b537710f869054556528b25ed3e67d050bb255", "size_bytes": 51},
+      {"path": "zk/revenue_growth/normalize_macos_host.py", "sha256": "sha256:104e445274caa7ec0549f5bd9be3a019d41ededd575ba79366a3d8b95e39b925", "size_bytes": 2291},
+      {"path": "zk/revenue_growth/rust-toolchain.toml", "sha256": "sha256:e410f51aeaded9f67289b8fea92378bc22fe02e7e4046c2ac0b64c5b9a7f64c4", "size_bytes": 88},
+      {"path": "zk/revenue_growth/shared/Cargo.toml", "sha256": "sha256:c56f14767902bb0b2ef0f9f4c0fde1079258477b1de920468fb8970b1724dca1", "size_bytes": 155},
+      {"path": "zk/revenue_growth/shared/src/lib.rs", "sha256": "sha256:037f36a98cb30b63fb39babca5915a925dc0ec697fcf33413bd7017d139764cf", "size_bytes": 10399}
+    ],
+    "root": ".",
+    "source_set_sha256": "sha256:eaefcd2ee890cbdbd9ecd79a76b2d07b7c4835730055c08af5c4e48c6949d5fc"
+  },
+  "supersedes": {
+    "guest_image_id": "f49335e68f2f12c7f9f144bc587c9bb735e8c6be1edaab2b52a67828c989a354",
+    "host_sha256": "sha256:8f622fd58f3e7493ed35d6fdf048cbbfa84e912dcd4e7ae60bed6e5fe0c206c4"
+  }
+}

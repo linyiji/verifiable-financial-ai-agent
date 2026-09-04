@@ -450,6 +450,17 @@ def _map_statements(
         period = _period(statement)
         as_of = statement.get("date")
         currency = str(statement.get("reportedCurrency", "USD")).upper()
+        period_basis = "QUARTER" if period.startswith("Q") else "FY"
+        actuality = "ESTIMATE" if statement.get("isEstimate") is True else "ACTUAL"
+        issuer = str(statement.get("cik") or statement.get("symbol") or "UNKNOWN").upper()
+        statement_series = f"fmp:{issuer}:{currency}:{period_basis}:{actuality}"
+        filing_identity = str(
+            statement.get("acceptedDate")
+            or statement.get("filingDate")
+            or statement.get("date")
+            or "UNKNOWN"
+        )
+        statement_cohort = f"{statement_series}:{period}:{as_of}:{filing_identity}"
         for field, value in statement.items():
             if field in _STATEMENT_METADATA or value is None or isinstance(value, bool):
                 continue
@@ -464,14 +475,27 @@ def _map_statements(
                 continue
             output_field = _reference_field(field) if _is_external_calculation(field) else field
             unit = _numeric_unit(field, currency)
+            canonical_value = value
+            cash_flow_sign_convention = None
+            cash_flow_normalization_applied = False
+            if canonical == "capital_expenditure":
+                canonical_value = -abs(value)
+                cash_flow_sign_convention = "OUTFLOW_NEGATIVE"
+                cash_flow_normalization_applied = value > 0
             records.append(
                 {
                     "field": output_field,
                     "period": period,
                     "as_of": as_of,
-                    "value": value,
+                    "value": canonical_value,
                     "unit": unit,
                     "currency": currency if unit == currency else None,
+                    "period_basis": period_basis,
+                    "actuality": actuality,
+                    "statement_series": statement_series,
+                    "statement_cohort": statement_cohort,
+                    "cash_flow_sign_convention": cash_flow_sign_convention,
+                    "cash_flow_normalization_applied": cash_flow_normalization_applied,
                 }
             )
     return records
@@ -532,17 +556,30 @@ def _map_historical(
         for field in fields:
             if field not in item or item[field] is None:
                 continue
-            unit, normalized_currency = _unit_for(field, item[field], currency)
+            output_field = "adjusted_close" if field in {"adjClose", "adjustedClose"} else field
+            unit, normalized_currency = _unit_for(output_field, item[field], currency)
             if unit is None:
                 continue
             records.append(
                 {
-                    "field": field,
+                    "field": output_field,
                     "period": "DAILY",
                     "as_of": as_of,
                     "value": item[field],
                     "unit": unit,
                     "currency": normalized_currency,
+                    "period_basis": "DAILY",
+                    "actuality": "ACTUAL",
+                    "technical_price_basis": (
+                        ("ADJUSTED_CLOSE" if output_field == "adjusted_close" else "RAW_CLOSE")
+                        if output_field in {"close", "adjusted_close"}
+                        else None
+                    ),
+                    "corporate_action_status": (
+                        ("RESOLVED" if output_field == "adjusted_close" else "UNASSESSED")
+                        if output_field in {"close", "adjusted_close"}
+                        else None
+                    ),
                 }
             )
     return records

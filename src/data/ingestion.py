@@ -9,7 +9,15 @@ from src.data.provider import Provider, ProviderRequest
 from src.data.repository import EvidenceRepository
 from src.data.validation import ValidatedRecord, mark_duplicate_conflicts, validate_record
 from src.domain.base import JsonObject
-from src.domain.enums import EvidenceCategory, EvidenceStatus
+from src.domain.enums import (
+    CashFlowSignConvention,
+    CorporateActionStatus,
+    EvidenceCategory,
+    EvidenceStatus,
+    FinancialActuality,
+    FinancialPeriodBasis,
+    TechnicalPriceBasis,
+)
 from src.domain.evidence import AcceptedEvidenceBundle, EvidenceRecord
 
 
@@ -152,6 +160,25 @@ def _to_evidence_record(
         provider_timestamp=_optional_datetime(raw_record.get("provider_timestamp"))
         or provenance.provider_timestamp,
         period=validated.period,
+        period_basis=_optional_enum(raw_record.get("period_basis"), FinancialPeriodBasis),
+        actuality=(
+            _optional_enum(raw_record.get("actuality"), FinancialActuality)
+            or FinancialActuality.ACTUAL
+        ),
+        statement_series=_optional_text(raw_record.get("statement_series")),
+        statement_cohort=_optional_text(raw_record.get("statement_cohort")),
+        technical_price_basis=_optional_enum(
+            raw_record.get("technical_price_basis"), TechnicalPriceBasis
+        ),
+        corporate_action_status=_optional_enum(
+            raw_record.get("corporate_action_status"), CorporateActionStatus
+        ),
+        cash_flow_sign_convention=_optional_enum(
+            raw_record.get("cash_flow_sign_convention"), CashFlowSignConvention
+        ),
+        cash_flow_normalization_applied=_optional_bool(
+            raw_record.get("cash_flow_normalization_applied")
+        ),
         as_of=validated.as_of,
         raw_artifact_ref=raw_artifact_ref,
         normalized_field=validated.normalized.field,
@@ -181,6 +208,14 @@ def _assert_same_evidence_identity(existing: EvidenceRecord, candidate: Evidence
         "observed_at",
         "provider_timestamp",
         "period",
+        "period_basis",
+        "actuality",
+        "statement_series",
+        "statement_cohort",
+        "technical_price_basis",
+        "corporate_action_status",
+        "cash_flow_sign_convention",
+        "cash_flow_normalization_applied",
         "as_of",
         "raw_artifact_ref",
         "normalized_field",
@@ -196,6 +231,23 @@ def _assert_same_evidence_identity(existing: EvidenceRecord, candidate: Evidence
 
 def _optional_text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _optional_enum(value: object, enum_type: type):
+    if value is None:
+        return None
+    try:
+        return enum_type(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid {enum_type.__name__} evidence metadata: {value!r}") from exc
+
+
+def _optional_bool(value: object) -> bool:
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise ValueError(f"invalid boolean evidence metadata: {value!r}")
+    return value
 
 
 def _optional_datetime(value: object) -> datetime | None:

@@ -88,6 +88,7 @@ async def test_svg_is_deterministic_escaped_and_content_addressed(tmp_path: Path
     assert "999" not in text
     assert "777" not in text
     assert FINROBOT_PINNED_COMMIT in text
+    assert "upstream_project=FinRobot" in text
     assert "license=Apache-2.0" in text
     parsed = ElementTree.fromstring(content)
     assert parsed.tag == "{http://www.w3.org/2000/svg}svg"
@@ -155,9 +156,7 @@ def test_chart_backend_imports_no_provider_network_llm_or_database_modules() -> 
     source_path = Path(__file__).parents[3] / "src/adapters/finrobot/charts.py"
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
     imported_modules = {
-        node.module or ""
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
+        node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
     }
     imported_modules.update(
         alias.name

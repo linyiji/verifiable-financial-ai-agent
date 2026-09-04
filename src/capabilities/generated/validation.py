@@ -59,20 +59,20 @@ class FinancialValidationPolicy(Protocol):
         candidate: GeneratedCapabilityCandidate,
         inputs: JsonObject,
         output: Any,
-    ) -> None: ...
+    ) -> JsonObject | None: ...
 
 
 @dataclass(frozen=True, slots=True)
 class CallableFinancialValidationPolicy:
-    callback: Callable[[GeneratedCapabilityCandidate, JsonObject, Any], None]
+    callback: Callable[[GeneratedCapabilityCandidate, JsonObject, Any], JsonObject | None]
 
     def validate(
         self,
         candidate: GeneratedCapabilityCandidate,
         inputs: JsonObject,
         output: Any,
-    ) -> None:
-        self.callback(candidate, inputs, output)
+    ) -> JsonObject | None:
+        return self.callback(candidate, inputs, output)
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,14 +222,27 @@ class GeneratedCapabilityValidator:
         )
         await progress.tests_passed(candidate.implementation_hash)
 
+        oracle_results: list[JsonObject] = []
+        runtime_results: list[JsonObject] = []
         for fixture, result in evaluated:
             try:
-                plan.financial_policy.validate(candidate, fixture, result.output["result"])
+                oracle = plan.financial_policy.validate(candidate, fixture, result.output["result"])
             except Exception as exc:
                 raise GeneratedCapabilityValidationError(
                     "financial_validation", f"trusted financial policy rejected output: {exc}"
                 ) from exc
-        findings.append({"stage": "financial_validation", "passed": True})
+            oracle_results.append(_json_clone(oracle or {}))
+            runtime_results.append(_json_clone(result.output["result"]))
+        findings.append(
+            {
+                "stage": "financial_validation",
+                "passed": True,
+                "source_hash": source_hash,
+                "tests_hash": source_sha256(output.unit_tests),
+                "oracle_results": oracle_results,
+                "runtime_results": runtime_results,
+            }
+        )
         await progress.financial_validated(candidate.implementation_hash)
 
         validation = CapabilityValidationRecord(
@@ -247,6 +260,11 @@ class GeneratedCapabilityValidator:
             financial_validation_passed=True,
             lifecycle=CapabilityLifecycle.FINANCIAL_VALIDATED,
             findings=findings,
+            source_hash=source_hash,
+            tests_hash=source_sha256(output.unit_tests),
+            oracle_result={"cases": oracle_results},
+            runtime_result={"cases": runtime_results},
+            validation_result="PASS",
         )
         sandbox_execution = _sandbox_record(
             candidate,
@@ -261,6 +279,7 @@ class GeneratedCapabilityValidator:
             source_ref=f"generated://{candidate.build_id}/source.py",
             runtime_version=runtime_version,
             schema_version=plan.schema_version,
+            financial_policy=plan.financial_policy,
         )
         return ValidationHandoff(
             validation=validation,
@@ -373,6 +392,7 @@ class SandboxValidatedGeneratedCapability:
         source_ref: str,
         runtime_version: str,
         schema_version: str,
+        financial_policy: FinancialValidationPolicy,
     ) -> None:
         output = candidate.output
         self.definition = CapabilityDefinition(
@@ -391,12 +411,15 @@ class SandboxValidatedGeneratedCapability:
         )
         self.formula_id = output.formula_id
         self.implementation_hash = candidate.implementation_hash
+        self.tests_hash = source_sha256(output.unit_tests)
         self.source_ref = source_ref
         self.runtime_version = runtime_version
         self.schema_version = schema_version
         self._source = output.source_code
         self._tests = output.unit_tests
         self._invariants = tuple(output.financial_invariants)
+        self._candidate = candidate
+        self._financial_policy = financial_policy
         self._sandbox = sandbox
 
     async def execute(self, inputs: JsonObject, context: CapabilityContext) -> CalculationRecord:
@@ -418,6 +441,12 @@ class SandboxValidatedGeneratedCapability:
         _validate_unit(output, unit)
         for invariant in self._invariants:
             _run_invariant(invariant, sandbox_inputs, output)
+        try:
+            oracle_result = self._financial_policy.validate(self._candidate, sandbox_inputs, output)
+        except Exception as exc:
+            raise GeneratedCapabilityExecutionError(
+                f"owned live financial oracle rejected generated output: {exc}"
+            ) from exc
         actual_runtime = _runtime_version(result, self._sandbox)
         if not actual_runtime.startswith("Python 3.11."):
             raise GeneratedCapabilityExecutionError(
@@ -435,7 +464,19 @@ class SandboxValidatedGeneratedCapability:
             formula_id=self.formula_id,
             input_evidence_ids=list(context.accepted_evidence_ids),
             input_values_snapshot=_json_clone(sandbox_inputs),
-            parameters={"validation_schema_version": self.schema_version},
+            parameters={
+                "validation_schema_version": self.schema_version,
+                "validation_scope": "LIVE_RUNTIME",
+                "generated_source_hash": self.implementation_hash,
+                "generated_tests_hash": source_sha256(self._tests),
+                "live_input_commitment": (
+                    "sha256:"
+                    + hashlib.sha256(_canonical_json(sandbox_inputs).encode("utf-8")).hexdigest()
+                ),
+                "owned_oracle_result": _json_clone(oracle_result or {}),
+                "runtime_result": _json_clone(output),
+                "financial_validation_result": "PASS",
+            },
             output_value=output_value,
             output_unit=unit,
             status=CalculationStatus.PASS,
@@ -735,6 +776,9 @@ def _sandbox_record(
     backend: SandboxBackend,
 ) -> SandboxExecutionRecord:
     profile = result.security
+    security_attestation = result.output.get("security_probe", {})
+    if not isinstance(security_attestation, dict):
+        security_attestation = {}
     return SandboxExecutionRecord(
         execution_id=f"SBX-{uuid4()}",
         build_id=candidate.build_id,
@@ -750,6 +794,7 @@ def _sandbox_record(
             for key in ("memory", "cpus", "pids", "wall_timeout_seconds")
             if key in profile
         },
+        security_attestation=_json_clone(security_attestation),
         exit_code=result.exit_code,
         output_hash=_json_hash(result.output["result"]),
         passed=result.passed,

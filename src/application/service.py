@@ -15,7 +15,7 @@ from src.application.evidence_routing import (
     RunEvidenceStore,
     TaskEvidenceRoutingResult,
 )
-from src.application.execution import IntegratedTaskExecutor, decimal_as_float
+from src.application.execution import IntegratedTaskExecutor
 from src.application.extensions import (
     ProofWorkflow,
     ProofWorkflowOutcome,
@@ -23,7 +23,7 @@ from src.application.extensions import (
 )
 from src.application.models import ResearchRunDraft, RunAggregate
 from src.application.repository import ApplicationRepository, InMemoryApplicationRepository
-from src.assurance import DeterministicReviewer, ReleaseGate
+from src.assurance import DeterministicReviewer, IndependentFinancialReviewer, ReleaseGate
 from src.assurance.proof_policy import ProofPolicy
 from src.capabilities.calculation_lineage import link_calculation_lineage
 from src.capabilities.financial.growth import RevenueGrowthCapability
@@ -31,8 +31,8 @@ from src.capabilities.financial.profitability import EbitdaMarginCapability
 from src.capabilities.registry import CapabilityRegistry
 from src.data.ingestion import EvidenceIngestionResult
 from src.data.repository import EvidenceRepository, InMemoryEvidenceRepository
-from src.domain.enums import CapabilityBackend, ProofStatus, RunStatus
-from src.domain.proof import ProofRequest
+from src.domain.enums import CapabilityBackend, ProofRequirement, ProofStatus, RunStatus
+from src.domain.proof import ProofRecord, ProofRequest
 from src.domain.research_goal import ResearchGoal
 from src.domain.research_object import ResearchObject
 from src.domain.research_run import ResearchRun
@@ -51,6 +51,11 @@ from src.output import (
     ValueType,
     WritebackTarget,
     build_canonical_record_projections,
+)
+from src.output.financial_metrics import (
+    MATERIAL_FORMULAS,
+    build_material_financial_release,
+    build_research_source_coverage,
 )
 from src.runtime import (
     CheckpointStore,
@@ -346,9 +351,42 @@ class ResearchApplicationService:
 
     async def _assure_and_release(self, aggregate: RunAggregate) -> None:
         run_id = aggregate.run.run_id
-        proof_outcome = await self._execute_proof_workflow(aggregate)
-        aggregate.artifacts.proofs = list(proof_outcome.proofs.values())
-        aggregate.runtime.proof_state = proof_outcome.runtime_state
+        calculations_before_review = list(aggregate.artifacts.calculations)
+        judgments = list(aggregate.artifacts.judgments)
+        strict_financial_release = any(
+            calculation.formula_id in set(MATERIAL_FORMULAS[2:])
+            for calculation in calculations_before_review
+        )
+        released_metrics = ()
+        material_claims = ()
+        material_dispositions = ()
+        research_news_result = next(
+            (
+                output
+                for task_id, output in aggregate.artifacts.task_outputs.items()
+                if ":analyze-research-news" in task_id or task_id.endswith(":research-news")
+            ),
+            {"status": "not_available", "limitation": True},
+        )
+        source_coverage = None
+        if strict_financial_release:
+            (
+                released_metrics,
+                material_claims,
+                material_dispositions,
+            ) = build_material_financial_release(
+                run_id=run_id,
+                evidence=aggregate.artifacts.evidence,
+                calculations=calculations_before_review,
+                judgments=judgments,
+            )
+            source_coverage = build_research_source_coverage(research_news_result)
+
+        proof_policy = ProofPolicy(require_material_calculations=self.proof_workflow is not None)
+        proof_requirements = {
+            calculation.calculation_id: proof_policy.requirement_for(calculation)
+            for calculation in calculations_before_review
+        }
         async with self.instrumentation.review(
             run_id=run_id,
             attributes={"review_id": f"REVIEW-{run_id}"},
@@ -357,12 +395,25 @@ class ResearchApplicationService:
                 run_id=run_id,
                 event_type=RuntimeEventType.REVIEW_STARTED,
             )
-            review = DeterministicReviewer().review(
-                review_id=f"REVIEW-{run_id}",
-                run_id=run_id,
-                evidence=aggregate.artifacts.evidence,
-                calculations=aggregate.artifacts.calculations,
-            )
+            if strict_financial_release:
+                review = IndependentFinancialReviewer().review(
+                    review_id=f"REVIEW-{run_id}",
+                    run_id=run_id,
+                    run_as_of=aggregate.run.as_of,
+                    evidence=aggregate.artifacts.evidence,
+                    calculations=calculations_before_review,
+                    metrics=released_metrics,
+                    claims=material_claims,
+                    judgments=judgments,
+                    proof_requirements=proof_requirements,
+                )
+            else:
+                review = DeterministicReviewer().review(
+                    review_id=f"REVIEW-{run_id}",
+                    run_id=run_id,
+                    evidence=aggregate.artifacts.evidence,
+                    calculations=calculations_before_review,
+                )
             aggregate.artifacts.review = review
             aggregate.runtime.review_state = review.model_dump(mode="json")
             await self.event_store.emit(
@@ -371,10 +422,47 @@ class ResearchApplicationService:
                 payload={"review_id": review.review_id, "status": review.status.value},
             )
 
+        if review.status.value != "PASS":
+            raise ApplicationError(
+                "REVIEW_BLOCKED",
+                "independent review did not pass",
+                details={"review_id": review.review_id, "status": review.status.value},
+            )
+
+        proof_outcome = await self._execute_proof_workflow(aggregate)
+        if proof_outcome.requirements != proof_requirements:
+            raise ApplicationError(
+                "PROOF_POLICY_CHANGED_AFTER_REVIEW",
+                "proof requirements changed after independent review",
+            )
+        aggregate.artifacts.proofs = list(proof_outcome.proofs.values())
+        aggregate.runtime.proof_state = proof_outcome.runtime_state
+
         release_decision = ReleaseGate().evaluate(
             review=review,
             proof_requirements=proof_outcome.requirements,
             proofs=proof_outcome.proofs,
+            calculations={item.calculation_id: item for item in calculations_before_review},
+            evidence=(aggregate.artifacts.evidence if strict_financial_release else None),
+            metrics=(released_metrics if strict_financial_release else None),
+            claims=(material_claims if strict_financial_release else None),
+            judgments=(judgments if strict_financial_release else None),
+            run_as_of=(aggregate.run.as_of if strict_financial_release else None),
+            input_commitments=(
+                proof_outcome.input_commitments
+                if strict_financial_release
+                else proof_outcome.input_commitments or None
+            ),
+            verifications=(
+                proof_outcome.verifications
+                if strict_financial_release
+                else proof_outcome.verifications or None
+            ),
+            artifacts=(
+                proof_outcome.artifacts
+                if strict_financial_release
+                else proof_outcome.artifacts or None
+            ),
         )
         if not release_decision.allowed:
             raise ApplicationError(
@@ -401,6 +489,13 @@ class ResearchApplicationService:
             calculation_refs=[
                 calculation.calculation_id for calculation in aggregate.artifacts.calculations
             ],
+            metric_refs=[metric.metric_id for metric in released_metrics],
+            claim_refs=[claim.claim_id for claim in material_claims],
+            judgment_refs=[
+                str(judgment["judgment_id"])
+                for judgment in judgments
+                if isinstance(judgment.get("judgment_id"), str)
+            ],
             generated_capability_refs=aggregate.artifacts.generated_capability_refs,
             correction_refs=[item.correction_id for item in aggregate.artifacts.corrections],
             replan_refs=[item.replan_id for item in aggregate.artifacts.replans],
@@ -413,17 +508,12 @@ class ResearchApplicationService:
             aggregate.artifacts.calculations,
             review=review,
             canonical_record=record,
+            proofs=[
+                proof for proof in proof_outcome.proofs.values() if isinstance(proof, ProofRecord)
+            ],
         )
         calculations = {item.capability_id: item for item in aggregate.artifacts.calculations}
         live_evidence = any(item.provider == "fmp" for item in aggregate.artifacts.evidence)
-        research_news_result = next(
-            (
-                output
-                for task_id, output in aggregate.artifacts.task_outputs.items()
-                if ":analyze-research-news" in task_id or task_id.endswith(":research-news")
-            ),
-            {"status": "not_available", "limitation": True},
-        )
         risk_result = next(
             (
                 output
@@ -435,8 +525,8 @@ class ResearchApplicationService:
         structured = {
             "research_object": aggregate.run.research_object_id,
             "financial_summary": {
-                "revenue_growth": decimal_as_float(calculations["revenue_growth"].output_value),
-                "ebitda_margin": decimal_as_float(calculations["ebitda_margin"].output_value),
+                "revenue_growth": str(calculations["revenue_growth"].output_value),
+                "ebitda_margin": str(calculations["ebitda_margin"].output_value),
             },
             "fundamental_result": {"calculation_refs": record.calculation_refs},
             "peer_result": next(
@@ -462,17 +552,25 @@ class ResearchApplicationService:
         result = ReleasedResearchResultBuilder.build(
             result_id=f"RESULT-{run_id}",
             canonical_record=record,
-            release_gate=ReleaseGateSnapshot(review_status=review.status),
+            release_gate=ReleaseGateSnapshot(
+                review_status=review.status,
+                must_prove_statuses=[
+                    proof_outcome.proofs[calculation_id].status
+                    for calculation_id, requirement in proof_outcome.requirements.items()
+                    if requirement is ProofRequirement.MUST_PROVE
+                ],
+            ),
             structured_financial_results=structured,
-            released_claims=[{"type": "CALCULATION", "refs": record.calculation_refs}],
-            judgments=[
-                {
-                    "judgment_ref": f"JUDGMENT-{run_id}-V1",
-                    "version": 1,
-                    "text": "Evidence-backed research execution; not investment advice.",
-                },
-                *aggregate.artifacts.judgments,
-            ],
+            released_claims=(
+                []
+                if strict_financial_release
+                else [{"type": "CALCULATION", "refs": record.calculation_refs}]
+            ),
+            released_metrics=released_metrics,
+            material_claims=material_claims,
+            material_calculation_dispositions=material_dispositions,
+            research_source_coverage=source_coverage,
+            judgments=judgments,
             risk_output=risk_result,
             limitations=limitations,
         )
@@ -480,10 +578,9 @@ class ResearchApplicationService:
         report = FinancialReportRenderer.render(result, research_object=object_id)
         projections = build_canonical_record_projections(record)
         evidence = aggregate.artifacts.evidence
-        current_revenue = next(
-            item
-            for item in evidence
-            if item.normalized_field == "revenue" and item.period == "FY2026"
+        current_revenue = max(
+            (item for item in evidence if item.normalized_field == "revenue"),
+            key=lambda item: (item.as_of, item.period, item.evidence_id),
         )
         growth = calculations["revenue_growth"]
         writeback = ObjectWritebackProposalBuilder.build(
@@ -505,7 +602,7 @@ class ResearchApplicationService:
                 ),
                 ObjectWritebackItem(
                     metric_code="revenue_growth",
-                    period="FY2026",
+                    period=current_revenue.period,
                     as_of=aggregate.run.as_of,
                     definition_version="revenue_growth_v1",
                     value=str(growth.output_value),

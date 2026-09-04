@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from pydantic import Field
@@ -10,7 +10,13 @@ from src.domain.calculation import CalculationRecord
 from src.domain.capability import CapabilityContext
 from src.domain.enums import ProofRequirement
 from src.domain.evidence import EvidenceRecord
-from src.domain.proof import ProofRecord, ProofResult
+from src.domain.proof import (
+    ProofArtifactReference,
+    ProofInputCommitment,
+    ProofRecord,
+    ProofResult,
+    ProofVerificationRecord,
+)
 from src.domain.task import Task
 from src.runtime.state import RuntimeState
 
@@ -40,6 +46,9 @@ class ProofWorkflowOutcome:
     proofs: dict[str, ProofRecord | ProofResult]
     runtime_state: JsonObject
     limitations: tuple[str, ...] = ()
+    input_commitments: dict[str, ProofInputCommitment] = field(default_factory=dict)
+    verifications: dict[str, ProofVerificationRecord] = field(default_factory=dict)
+    artifacts: dict[str, ProofArtifactReference] = field(default_factory=dict)
 
 
 @runtime_checkable

@@ -8,3 +8,9 @@ edition = "2021"
 [dependencies]
 revenue-growth-core = { path = "../../shared" }
 risc0-zkvm = { version = "=3.0.6", default-features = false, features = ["std"] }
+
+[profile.release]
+codegen-units = 1
+debug = 0
+lto = true
+strip = "symbols"

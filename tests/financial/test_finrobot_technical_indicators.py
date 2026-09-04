@@ -94,13 +94,13 @@ def test_pure_math_formulas_are_deterministic_and_version_choices_are_explicit()
         Decimal("1.5"),
         Decimal("2.25"),
     )
-    constant_macd = moving_average_convergence_divergence([Decimal(9)] * 30)
+    constant_macd = moving_average_convergence_divergence([Decimal(9)] * 34)
     assert constant_macd.line == constant_macd.signal == constant_macd.histogram == 0
     with localcontext() as decimal_context:
         decimal_context.prec = 50
-        assert latest_volume_ratio(
-            [Decimal(index) for index in range(1, 21)]
-        ) == Decimal(20) / Decimal("10.5")
+        assert latest_volume_ratio([Decimal(index) for index in range(1, 21)]) == Decimal(
+            20
+        ) / Decimal("10.5")
 
 
 def test_evidence_gate_requires_ordered_accepted_paired_market_history() -> None:

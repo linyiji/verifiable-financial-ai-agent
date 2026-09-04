@@ -406,7 +406,7 @@ def evidence_request_plans(
                 symbol=symbol,
                 dataset="historical_prices",
                 as_of=as_of,
-                fields=("close", "volume"),
+                fields=("adjClose", "adjustedClose", "close", "volume"),
                 # Phase 3 technical indicators require an accepted 200-day window.
                 limit=250,
             ),

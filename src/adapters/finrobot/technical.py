@@ -33,8 +33,10 @@ from src.domain.capability import CapabilityContext, CapabilityDefinition
 from src.domain.enums import (
     CalculationStatus,
     CapabilityBackend,
+    CorporateActionStatus,
     EvidenceCategory,
     EvidenceStatus,
+    TechnicalPriceBasis,
 )
 from src.domain.evidence import EvidenceRecord
 
@@ -68,6 +70,8 @@ class HistoricalPricePoint:
     volume_evidence_id: str
     price_unit: str
     currency: str | None
+    price_basis: TechnicalPriceBasis
+    corporate_action_status: CorporateActionStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,9 +120,7 @@ def ordered_accepted_price_points(
             raise HistoricalPriceEvidenceError("historical evidence ids must be unique")
         seen_ids.add(record.evidence_id)
         if record.status is not EvidenceStatus.ACCEPTED:
-            raise HistoricalPriceEvidenceError(
-                f"evidence {record.evidence_id} is not ACCEPTED"
-            )
+            raise HistoricalPriceEvidenceError(f"evidence {record.evidence_id} is not ACCEPTED")
         if record.evidence_category is not EvidenceCategory.MARKET:
             raise HistoricalPriceEvidenceError(
                 f"evidence {record.evidence_id} is not MARKET evidence"
@@ -131,7 +133,7 @@ def ordered_accepted_price_points(
             raise HistoricalPriceEvidenceError(
                 f"evidence {record.evidence_id} is not DAILY history"
             )
-        if record.normalized_field not in {"close", "volume"}:
+        if record.normalized_field not in {"close", "adjusted_close", "volume"}:
             raise HistoricalPriceEvidenceError(
                 f"unsupported historical field: {record.normalized_field}"
             )
@@ -149,11 +151,20 @@ def ordered_accepted_price_points(
             date_order.append(record.as_of)
         previous_date = record.as_of
         fields = grouped.setdefault(record.as_of, {})
-        if record.normalized_field in fields:
+        grouped_field = (
+            "close" if record.normalized_field == "adjusted_close" else record.normalized_field
+        )
+        existing = fields.get(grouped_field)
+        if existing is not None:
+            if record.normalized_field == "adjusted_close":
+                fields[grouped_field] = record
+                continue
+            if existing.normalized_field == "adjusted_close":
+                continue
             raise HistoricalPriceEvidenceError(
-                f"duplicate {record.normalized_field} evidence for {record.as_of.isoformat()}"
+                f"duplicate {grouped_field} evidence for {record.as_of.isoformat()}"
             )
-        fields[record.normalized_field] = record
+        fields[grouped_field] = record
 
     points: list[HistoricalPricePoint] = []
     expected_currency: str | None = None
@@ -181,6 +192,16 @@ def ordered_accepted_price_points(
             raise HistoricalPriceEvidenceError("close values must be positive")
         if volume_value < 0:
             raise HistoricalPriceEvidenceError("volume values cannot be negative")
+        basis = close.technical_price_basis or (
+            TechnicalPriceBasis.ADJUSTED_CLOSE
+            if close.normalized_field == "adjusted_close"
+            else TechnicalPriceBasis.RAW_CLOSE
+        )
+        action_status = close.corporate_action_status or CorporateActionStatus.UNASSESSED
+        if action_status is CorporateActionStatus.UNRESOLVED:
+            raise HistoricalPriceEvidenceError(
+                "unresolved corporate action blocks technical indicator release"
+            )
         points.append(
             HistoricalPricePoint(
                 as_of=observed_date,
@@ -190,6 +211,8 @@ def ordered_accepted_price_points(
                 volume_evidence_id=volume.evidence_id,
                 price_unit=close.unit,
                 currency=close.currency,
+                price_basis=basis,
+                corporate_action_status=action_status,
             )
         )
     return tuple(points)
@@ -211,13 +234,10 @@ def relative_strength_index(values: Sequence[Decimal], *, period: int = 14) -> D
     if period < 1:
         raise ValueError("period must be positive")
     if len(values) < period + 1:
-        raise InsufficientHistoryError(
-            f"RSI{period} requires at least {period + 1} closing prices"
-        )
+        raise InsufficientHistoryError(f"RSI{period} requires at least {period + 1} closing prices")
     recent = values[-(period + 1) :]
     changes = [
-        current - previous
-        for previous, current in zip(recent[:-1], recent[1:], strict=True)
+        current - previous for previous, current in zip(recent[:-1], recent[1:], strict=True)
     ]
     gains = [max(change, Decimal(0)) for change in changes]
     losses = [max(-change, Decimal(0)) for change in changes]
@@ -260,13 +280,15 @@ def moving_average_convergence_divergence(
         raise ValueError("MACD spans must satisfy 0 < fast < slow")
     if signal < 1:
         raise ValueError("MACD signal span must be positive")
-    if len(values) < slow:
-        raise InsufficientHistoryError(f"MACD requires at least {slow} closing prices")
+    warmup = slow + signal - 1
+    if len(values) < warmup:
+        raise InsufficientHistoryError(
+            f"MACD requires at least {warmup} closing prices for signal warm-up"
+        )
     fast_ema = exponential_moving_average(values, span=fast)
     slow_ema = exponential_moving_average(values, span=slow)
     lines = tuple(
-        fast_value - slow_value
-        for fast_value, slow_value in zip(fast_ema, slow_ema, strict=True)
+        fast_value - slow_value for fast_value, slow_value in zip(fast_ema, slow_ema, strict=True)
     )
     signal_values = exponential_moving_average(lines, span=signal)
     line = lines[-1]
@@ -318,6 +340,7 @@ class SMA50Capability:
                 "observation_count": window,
                 "first_as_of": points[-window].as_of.isoformat(),
                 "last_as_of": points[-1].as_of.isoformat(),
+                **_technical_input_metadata(points),
             },
             output=value,
             unit=_price_output_unit(points),
@@ -353,6 +376,7 @@ class SMA200Capability:
                 "observation_count": window,
                 "first_as_of": points[-window].as_of.isoformat(),
                 "last_as_of": points[-1].as_of.isoformat(),
+                **_technical_input_metadata(points),
             },
             output=value,
             unit=_price_output_unit(points),
@@ -390,6 +414,8 @@ class RSI14Capability:
                 "zero_gain_and_loss_policy": "50_index_points",
                 "first_as_of": relevant[0].as_of.isoformat(),
                 "last_as_of": relevant[-1].as_of.isoformat(),
+                "rsi_method": "simple_average_not_wilder",
+                **_technical_input_metadata(relevant),
             },
             output=value,
             unit="INDEX_POINTS",
@@ -431,6 +457,9 @@ class MACD12269Capability:
                 "observation_count": len(points),
                 "first_as_of": points[0].as_of.isoformat(),
                 "last_as_of": points[-1].as_of.isoformat(),
+                "warmup_required": 34,
+                "warmup_satisfied": len(points) >= 34,
+                **_technical_input_metadata(points),
             },
             "unit": _price_output_unit(points),
         }
@@ -485,6 +514,7 @@ class VolumeRatio20Capability:
                 "average_includes_latest_observation": True,
                 "first_as_of": points[-window].as_of.isoformat(),
                 "last_as_of": points[-1].as_of.isoformat(),
+                **_technical_input_metadata(points[-window:]),
             },
             output=value,
             unit="RATIO",
@@ -537,6 +567,8 @@ class TechnicalIndicatorJudgmentService:
             raise ValueError("MACD judgment requires line and signal CalculationRecords")
         if line.run_id != signal.run_id or line.task_id != signal.task_id:
             raise ValueError("MACD calculations must belong to the same task")
+        if line.input_values_snapshot.get("warmup_satisfied") is not True:
+            raise ValueError("MACD judgment requires a completed 12/26/9 warm-up window")
         line_value = _finite_decimal(line.output_value, field="MACD line")
         signal_value = _finite_decimal(signal.output_value, field="MACD signal")
         label: Literal["BULLISH", "BEARISH", "NEUTRAL"]
@@ -558,9 +590,7 @@ class TechnicalIndicatorJudgmentService:
             calculation_ids=[line.calculation_id, signal.calculation_id],
             model=self.policy_version,
             skill_version=skill_version,
-            limitations=[
-                "Crossover label is an interpretation, not a market fact or calculation."
-            ],
+            limitations=["Crossover label is an interpretation, not a market fact or calculation."],
             requires_review=True,
         )
 
@@ -574,9 +604,7 @@ def _points_from_inputs(
         raise HistoricalPriceEvidenceError("history must be an ordered EvidenceRecord sequence")
     points = ordered_accepted_price_points(history)
     if any(
-        record.run_id != context.run_id
-        for record in history
-        if isinstance(record, EvidenceRecord)
+        record.run_id != context.run_id for record in history if isinstance(record, EvidenceRecord)
     ):
         raise HistoricalPriceEvidenceError("history does not belong to CapabilityContext run")
     allowed = set(context.accepted_evidence_ids)
@@ -638,6 +666,19 @@ def _calculation_id(inputs: JsonObject) -> str:
 
 def _price_output_unit(points: Sequence[HistoricalPricePoint]) -> str:
     return points[-1].currency or points[-1].price_unit
+
+
+def _technical_input_metadata(points: Sequence[HistoricalPricePoint]) -> JsonObject:
+    bases = {point.price_basis for point in points}
+    statuses = {point.corporate_action_status for point in points}
+    if len(bases) != 1 or len(statuses) != 1:
+        raise HistoricalPriceEvidenceError(
+            "technical lookback must use one price basis and corporate-action status"
+        )
+    return {
+        "technical_price_basis": next(iter(bases)).value,
+        "corporate_action_status": next(iter(statuses)).value,
+    }
 
 
 def _finite_decimal(value: object, *, field: str) -> Decimal:

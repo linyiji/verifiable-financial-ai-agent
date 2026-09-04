@@ -1,17 +1,23 @@
 from datetime import UTC, date, datetime
 
 from src.assurance.deterministic_review import DeterministicReviewer
+from src.assurance.independent_financial_review import financial_review_input_snapshot_hash
 from src.assurance.proof_policy import ProofPolicy, ProofRequirement
 from src.assurance.release_gate import ReleaseGate
 from src.domain.calculation import CalculationRecord
 from src.domain.enums import (
     CalculationStatus,
     EvidenceStatus,
+    FinancialActuality,
+    FinancialPeriodBasis,
+    FinancialUnit,
     ProofStatus,
     ReviewStatus,
 )
 from src.domain.evidence import EvidenceRecord
+from src.domain.financial_semantics import MaterialFinancialClaim, ReleasedFinancialMetric
 from src.domain.proof import ProofRecord, ProofResult
+from src.domain.review import ReviewCheck, ReviewRecord
 
 
 def evidence(evidence_id: str, period: str, status: EvidenceStatus) -> EvidenceRecord:
@@ -218,3 +224,111 @@ def test_must_prove_rejects_unverified_result_and_mismatched_record() -> None:
     assert unverified.reason_codes == ("PROOF_VALID:CALC-1",)
     assert mismatched.allowed is False
     assert mismatched.reason_codes == ("PROOF_IDENTITY_OR_VERIFICATION_INVALID:CALC-1",)
+
+
+def test_strict_release_gate_binds_every_review_input_snapshot() -> None:
+    run_as_of = date(2026, 9, 4)
+    record = evidence("E-1", "FY2026", EvidenceStatus.ACCEPTED).model_copy(
+        update={
+            "normalized_field": "revenue",
+            "normalized_value": "100",
+            "period_basis": FinancialPeriodBasis.FY,
+            "actuality": FinancialActuality.ACTUAL,
+            "statement_series": "SERIES-1",
+            "statement_cohort": "COHORT-1",
+            "currency": "USD",
+        }
+    )
+    calc = CalculationRecord(
+        calculation_id="CALC-FCF",
+        run_id="RUN-1",
+        task_id="TASK-A",
+        capability_id="free_cash_flow_margin",
+        capability_version="1.0.0-generated",
+        formula_id="operating_cash_flow_plus_signed_capex_divided_by_revenue_v1",
+        input_evidence_ids=[record.evidence_id],
+        output_value="0.5",
+        output_unit="ratio",
+        status=CalculationStatus.PASS,
+        implementation_hash="sha256:implementation",
+        code_hash="sha256:implementation",
+        source_ref="generated://fcf",
+        runtime_version="Python 3.11",
+    )
+    metric = ReleasedFinancialMetric(
+        metric_id="METRIC-FCF",
+        calculation_id=calc.calculation_id,
+        name="Free Cash Flow Margin",
+        canonical_value="0.5",
+        canonical_unit=FinancialUnit.RATIO,
+        display_value="50.00",
+        display_unit="%",
+        period="FY2026",
+        period_basis=FinancialPeriodBasis.FY,
+        actuality=FinancialActuality.ACTUAL,
+        as_of=record.as_of,
+        currency="USD",
+        formula_id=calc.formula_id,
+        capability_id=calc.capability_id,
+        evidence_ids=(record.evidence_id,),
+    )
+    claim = MaterialFinancialClaim(
+        claim_id="CLAIM-FCF",
+        run_id="RUN-1",
+        claim_type="MATERIAL_FINANCIAL_METRIC",
+        statement="FCF margin was 50.00% for FY2026.",
+        metric_id=metric.metric_id,
+        value=metric.canonical_value,
+        unit=metric.canonical_unit,
+        period=metric.period,
+        period_basis=metric.period_basis,
+        actuality=metric.actuality,
+        as_of=metric.as_of,
+        currency=metric.currency,
+        calculation_refs=(calc.calculation_id,),
+        evidence_refs=metric.evidence_ids,
+    )
+    requirements = {calc.calculation_id: ProofRequirement.NOT_REQUIRED}
+    snapshot_hash = financial_review_input_snapshot_hash(
+        run_id="RUN-1",
+        run_as_of=run_as_of,
+        evidence=[record],
+        calculations=[calc],
+        metrics=[metric],
+        claims=[claim],
+        judgments=[],
+        proof_requirements=requirements,
+    )
+    review = ReviewRecord(
+        review_id="REVIEW-STRICT",
+        run_id="RUN-1",
+        status=ReviewStatus.PASS,
+        reviewed_evidence_refs=[record.evidence_id],
+        reviewed_calculation_refs=[calc.calculation_id],
+        reviewed_metric_refs=[metric.metric_id],
+        reviewed_claim_refs=[claim.claim_id],
+        checks=[ReviewCheck(code="FIN_TEST", status=ReviewStatus.PASS)],
+        input_snapshot_hash=snapshot_hash,
+        reviewer="independent-financial-review-v2",
+    )
+
+    def evaluate(calculation: CalculationRecord) -> object:
+        return ReleaseGate().evaluate(
+            review=review,
+            proof_requirements=requirements,
+            proofs={},
+            calculations={calculation.calculation_id: calculation},
+            evidence=[record],
+            metrics=[metric],
+            claims=[claim],
+            judgments=[],
+            run_as_of=run_as_of,
+            input_commitments={},
+            verifications={},
+            artifacts={},
+        )
+
+    assert evaluate(calc).allowed is True
+    tampered = evaluate(calc.model_copy(update={"output_value": "999"}))
+    assert tampered.allowed is False
+    assert "REVIEW_INPUT_SNAPSHOT_MISMATCH" in tampered.reason_codes

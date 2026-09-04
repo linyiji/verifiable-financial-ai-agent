@@ -403,12 +403,16 @@ async def test_runtime_scopes_specialized_collection_tasks_and_links_lineage() -
     news_analysis = aggregate.artifacts.task_outputs[
         f"{aggregate.run.run_id}:analyze-research-news"
     ]
-    assert news_analysis == {
+    assert {
+        key: news_analysis[key]
+        for key in ("status", "accepted_evidence_ids", "limitation", "reason_code")
+    } == {
         "status": "entitlement_blocked",
         "accepted_evidence_ids": [],
         "limitation": True,
         "reason_code": "NEWS_TRANSCRIPT_ENTITLEMENT_BLOCKED",
     }
+    assert set(news_analysis["source_coverage"]) == {"news", "transcript"}
     assert aggregate.artifacts.released_result is not None
     assert "fixture" not in str(aggregate.artifacts.released_result).lower()
     assert fundamentals.task_input_evidence_ids
@@ -464,9 +468,14 @@ async def test_combined_acquisition_tasks_analyze_their_own_outputs() -> None:
     peer_output = aggregate.artifacts.task_outputs[f"{aggregate.run.run_id}:peers"]
     assert len(peer_output["candidates"]) == 9
     assert len(peer_output["selection_decisions"]) == 9
-    assert aggregate.artifacts.task_outputs[f"{aggregate.run.run_id}:research-news"] == {
+    research_news = aggregate.artifacts.task_outputs[f"{aggregate.run.run_id}:research-news"]
+    assert {
+        key: research_news[key]
+        for key in ("status", "accepted_evidence_ids", "limitation", "reason_code")
+    } == {
         "status": "entitlement_blocked",
         "accepted_evidence_ids": [],
         "limitation": True,
         "reason_code": "NEWS_TRANSCRIPT_ENTITLEMENT_BLOCKED",
     }
+    assert set(research_news["source_coverage"]) == {"news", "transcript"}

@@ -91,14 +91,56 @@ def test_proof_contract_binds_program_input_and_expected_output() -> None:
 
 
 def test_canonical_report_dto_is_immutable() -> None:
+    source = {
+        "financial_summary": {"revenue": 130.5},
+        "series": [{"year": 2025}],
+    }
     report = CanonicalReportDTO(
         canonical_record_id="CAN-1",
         released_result_id="REL-1",
         run_id="RUN-1",
         research_object="NVDA",
+        structured_financial_results=source,
+        released_claims=[{"claim": "accepted", "evidence_refs": ["EVD-1"]}],
+        limitations=["historical only"],
     )
     with pytest.raises(ValidationError):
         report.research_object = "AMD"
+    with pytest.raises(TypeError):
+        report.structured_financial_results["financial_summary"]["revenue"] = 1
+    with pytest.raises(AttributeError):
+        report.structured_financial_results["series"].append({"year": 2026})
+    with pytest.raises(AttributeError):
+        report.released_claims.append({"claim": "mutated"})
+    with pytest.raises(TypeError):
+        report.released_claims[0]["evidence_refs"][0] = "EVD-OTHER"
+    source["financial_summary"]["revenue"] = 1
+    assert report.structured_financial_results["financial_summary"]["revenue"] == 130.5
+
+    payload = report.model_dump(mode="json")
+    assert isinstance(payload["structured_financial_results"], dict)
+    assert isinstance(payload["released_claims"], list)
+    assert CanonicalReportDTO.model_validate_json(report.model_dump_json()) == report
+
+    updated = report.model_copy(
+        update={
+            "structured_financial_results": {"nested": {"value": 1}},
+            "limitations": ["updated"],
+        }
+    )
+    with pytest.raises(TypeError):
+        updated.structured_financial_results["nested"]["value"] = 2
+    with pytest.raises(AttributeError):
+        updated.limitations.append("mutable")
+
+    with pytest.raises((TypeError, ValidationError)):
+        CanonicalReportDTO(
+            canonical_record_id="CAN-2",
+            released_result_id="REL-2",
+            run_id="RUN-2",
+            research_object="NVDA",
+            structured_financial_results={"mutable": {"not", "json"}},
+        )
 
 
 def test_phase3_runtime_events_are_available() -> None:

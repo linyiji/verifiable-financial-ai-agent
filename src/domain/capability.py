@@ -3,7 +3,13 @@ from typing import Any, Protocol, runtime_checkable
 from pydantic import Field, model_validator
 
 from src.domain.base import JsonObject, TimestampedModel
-from src.domain.enums import CapabilityBackend, CapabilityLifecycle, CapabilityScope
+from src.domain.enums import (
+    CapabilityBackend,
+    CapabilityLifecycle,
+    CapabilityScope,
+    CapabilityValidationScope,
+    ValidationResult,
+)
 
 
 class CapabilityDefinition(TimestampedModel):
@@ -99,6 +105,7 @@ class SandboxExecutionRecord(TimestampedModel):
     read_only_root: bool
     non_root_user: bool
     resource_limits: JsonObject
+    security_attestation: JsonObject = Field(default_factory=dict)
     exit_code: int | None = None
     output_hash: str | None = None
     passed: bool = False
@@ -120,6 +127,33 @@ class CapabilityValidationRecord(TimestampedModel):
     financial_validation_passed: bool = False
     lifecycle: CapabilityLifecycle
     findings: list[JsonObject] = Field(default_factory=list)
+    source_hash: str | None = None
+    tests_hash: str | None = None
+    validation_scope: CapabilityValidationScope = CapabilityValidationScope.PRE_ACTIVATION
+    oracle_result: JsonObject = Field(default_factory=dict)
+    runtime_result: JsonObject = Field(default_factory=dict)
+    validation_result: ValidationResult | None = None
+
+    @model_validator(mode="after")
+    def completed_pass_requires_full_identity(self) -> "CapabilityValidationRecord":
+        if self.validation_result is not ValidationResult.PASS:
+            return self
+        checks = (
+            self.static_validation_passed,
+            self.syntax_compile_passed,
+            self.unit_tests_passed,
+            self.edge_cases_passed,
+            self.financial_invariants_passed,
+            self.deterministic_double_run_passed,
+            self.output_schema_passed,
+            self.unit_validation_passed,
+            self.financial_validation_passed,
+        )
+        if not all(checks) or not self.source_hash or not self.tests_hash:
+            raise ValueError("PASS validation requires every check and immutable source hashes")
+        if not self.oracle_result or not self.runtime_result:
+            raise ValueError("PASS validation requires oracle and runtime results")
+        return self
 
 
 class ScopedCapabilityRegistration(TimestampedModel):

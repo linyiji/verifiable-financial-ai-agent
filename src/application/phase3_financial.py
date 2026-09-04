@@ -37,10 +37,15 @@ from src.domain.capability import (
 from src.domain.enums import (
     CapabilityBackend,
     CapabilityScope,
+    CashFlowSignConvention,
     EvidenceCategory,
     EvidenceStatus,
+    FinancialActuality,
+    FinancialPeriodBasis,
+    FinancialUnit,
 )
 from src.domain.evidence import EvidenceRecord
+from src.domain.financial_semantics import evidence_unit_class
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
 from src.observability.instrumentation import RuntimeInstrumentation
@@ -175,9 +180,19 @@ class Phase3FinancialCapabilityExtension:
         if isinstance(resolved, CapabilityOrchestrationResult):
             generated_capability = resolved.capability
             generated_refs = [resolved.generated.generated_capability_id]
+            expected_implementation_hash = resolved.generated.implementation_hash
+            expected_source_ref = resolved.generated.source_ref
+            expected_tests_hash = resolved.validation.tests_hash
         else:
             generated_capability = resolved
             generated_refs = []
+            expected_implementation_hash = getattr(
+                generated_capability, "implementation_hash", None
+            )
+            expected_source_ref = getattr(generated_capability, "source_ref", None)
+            expected_tests_hash = getattr(generated_capability, "tests_hash", None)
+        if not expected_implementation_hash or not expected_source_ref:
+            raise ValueError("generated capability lacks immutable source identity")
 
         generated_context = CapabilityContext(
             run_id=task.run_id,
@@ -207,6 +222,17 @@ class Phase3FinancialCapabilityExtension:
         )
         if not isinstance(generated_calculation, CalculationRecord):
             raise TypeError("generated financial capability must return CalculationRecord")
+        generated_calculation = _validate_live_fcf_calculation(
+            generated_calculation,
+            operating_cash_flow=operating_cash_flow,
+            capital_expenditure=capital_expenditure,
+            revenue=revenue,
+            expected_implementation_hash=str(expected_implementation_hash),
+            expected_source_ref=str(expected_source_ref),
+            expected_tests_hash=(
+                str(expected_tests_hash) if expected_tests_hash is not None else None
+            ),
+        )
 
         history = _ordered_historical_evidence(evidence)
         technical_context = CapabilityContext(
@@ -327,7 +353,6 @@ def free_cash_flow_margin_requirement(task: Task) -> CapabilityRequirement:
         financial_invariants=[
             "revenue_non_zero",
             "result_is_finite",
-            "result_between_minus_one_and_one",
         ],
     )
 
@@ -356,7 +381,9 @@ def _select_fcf_margin_inputs(
         (
             record
             for record in accepted
-            if record.normalized_field == "operating_cash_flow" and record.period.startswith("FY")
+            if record.normalized_field == "operating_cash_flow"
+            and record.period_basis is FinancialPeriodBasis.FY
+            and record.actuality in {FinancialActuality.ACTUAL, FinancialActuality.ESTIMATE}
         ),
         key=lambda record: (record.as_of, record.period, record.evidence_id),
         reverse=True,
@@ -369,6 +396,12 @@ def _select_fcf_margin_inputs(
                 if record.normalized_field == "capital_expenditure"
                 and record.period == operating_cash_flow.period
                 and record.currency == operating_cash_flow.currency
+                and record.object_id == operating_cash_flow.object_id
+                and record.as_of == operating_cash_flow.as_of
+                and record.period_basis is operating_cash_flow.period_basis
+                and record.actuality is operating_cash_flow.actuality
+                and record.statement_cohort == operating_cash_flow.statement_cohort
+                and record.cash_flow_sign_convention is CashFlowSignConvention.OUTFLOW_NEGATIVE
             ),
             key=lambda record: (record.as_of, record.evidence_id),
             reverse=True,
@@ -380,11 +413,24 @@ def _select_fcf_margin_inputs(
                 if record.normalized_field == "revenue"
                 and record.period == operating_cash_flow.period
                 and record.currency == operating_cash_flow.currency
+                and record.object_id == operating_cash_flow.object_id
+                and record.as_of == operating_cash_flow.as_of
+                and record.period_basis is operating_cash_flow.period_basis
+                and record.actuality is operating_cash_flow.actuality
+                and record.statement_cohort == operating_cash_flow.statement_cohort
             ),
             key=lambda record: (record.as_of, record.evidence_id),
             reverse=True,
         )
-        if capital_expenditures and revenues:
+        if (
+            capital_expenditures
+            and revenues
+            and all(
+                evidence_unit_class(record.unit, record.currency) is FinancialUnit.CURRENCY
+                for record in (operating_cash_flow, capital_expenditures[0], revenues[0])
+            )
+            and Decimal(str(capital_expenditures[0].normalized_value)) <= 0
+        ):
             return operating_cash_flow, capital_expenditures[0], revenues[0]
     raise LookupError(
         "accepted period-aligned annual operating cash flow, capital expenditure, "
@@ -412,8 +458,8 @@ def _validate_extension_evidence(
 def _ordered_historical_evidence(
     evidence: Sequence[EvidenceRecord],
 ) -> list[EvidenceRecord]:
-    field_order = {"close": 0, "volume": 1}
-    history = sorted(
+    field_order = {"adjusted_close": 0, "close": 1, "volume": 2}
+    candidates = sorted(
         (
             record
             for record in evidence
@@ -429,6 +475,21 @@ def _ordered_historical_evidence(
             record.evidence_id,
         ),
     )
+    grouped: dict[object, dict[str, EvidenceRecord]] = {}
+    for record in candidates:
+        fields = grouped.setdefault(record.as_of, {})
+        if record.normalized_field == "adjusted_close":
+            fields["close"] = record
+        elif record.normalized_field == "close":
+            fields.setdefault("close", record)
+        else:
+            fields["volume"] = record
+    history = [
+        record
+        for observed in sorted(grouped)
+        for key in ("close", "volume")
+        if (record := grouped[observed].get(key)) is not None
+    ]
     days = {record.as_of for record in history}
     if len(days) < 200:
         raise LookupError("at least 200 accepted paired historical observations are required")
@@ -452,7 +513,6 @@ def _is_approved_fcf_margin_requirement(requirement: CapabilityRequirement) -> b
         == {
             "revenue_non_zero",
             "result_is_finite",
-            "result_between_minus_one_and_one",
         }
     )
 
@@ -461,7 +521,7 @@ def _validate_free_cash_flow_margin_output(
     candidate: GeneratedCapabilityCandidate,
     inputs: JsonObject,
     output: Any,
-) -> None:
+) -> JsonObject:
     if (
         candidate.output.capability_id != FCF_MARGIN_CAPABILITY_ID
         or candidate.output.formula_id != FCF_MARGIN_FORMULA_ID
@@ -485,6 +545,66 @@ def _validate_free_cash_flow_margin_output(
     expected = (operating_cash_flow + capital_expenditure) / revenue
     if actual != expected:
         raise ValueError("output does not equal the owned free cash flow margin oracle")
+    return {"value": str(expected), "unit": "RATIO"}
+
+
+def _validate_live_fcf_calculation(
+    calculation: CalculationRecord,
+    *,
+    operating_cash_flow: EvidenceRecord,
+    capital_expenditure: EvidenceRecord,
+    revenue: EvidenceRecord,
+    expected_implementation_hash: str,
+    expected_source_ref: str,
+    expected_tests_hash: str | None,
+) -> CalculationRecord:
+    if (
+        calculation.capability_id != FCF_MARGIN_CAPABILITY_ID
+        or calculation.formula_id != FCF_MARGIN_FORMULA_ID
+        or calculation.output_unit.upper() != "RATIO"
+        or calculation.implementation_hash != expected_implementation_hash
+        or calculation.source_ref != expected_source_ref
+    ):
+        raise ValueError("generated FCF calculation identity is not release eligible")
+    if (
+        expected_tests_hash is not None
+        and calculation.parameters.get("generated_tests_hash") != expected_tests_hash
+    ):
+        raise ValueError("generated FCF tests hash differs from approved validation")
+    expected_evidence_ids = [
+        operating_cash_flow.evidence_id,
+        capital_expenditure.evidence_id,
+        revenue.evidence_id,
+    ]
+    if calculation.input_evidence_ids != expected_evidence_ids:
+        raise ValueError("generated FCF calculation evidence lineage differs from live inputs")
+    try:
+        operating = Decimal(str(operating_cash_flow.normalized_value))
+        capex = Decimal(str(capital_expenditure.normalized_value))
+        denominator = Decimal(str(revenue.normalized_value))
+        actual = Decimal(str(calculation.output_value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("generated FCF live values must be decimal-compatible") from exc
+    if denominator == 0:
+        raise ValueError("generated FCF revenue must not be zero")
+    expected = (operating + capex) / denominator
+    if actual != expected:
+        raise ValueError("generated FCF runtime output failed the owned live oracle")
+    parameters = {
+        **calculation.parameters,
+        "validation_scope": "LIVE_RUNTIME",
+        "owned_oracle_result": {"value": str(expected), "unit": "RATIO"},
+        "runtime_result": {"value": str(actual), "unit": "RATIO"},
+        "financial_validation_result": "PASS",
+        "capital_expenditure_sign_convention": CashFlowSignConvention.OUTFLOW_NEGATIVE.value,
+        "statement_cohort": revenue.statement_cohort,
+        "period": revenue.period,
+        "period_basis": revenue.period_basis.value if revenue.period_basis else None,
+        "actuality": revenue.actuality.value,
+        "as_of": revenue.as_of.isoformat(),
+        "currency": revenue.currency,
+    }
+    return calculation.model_copy(update={"parameters": parameters})
 
 
 def _approval(

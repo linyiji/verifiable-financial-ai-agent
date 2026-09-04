@@ -15,6 +15,7 @@ import hashlib
 import os
 import re
 import tempfile
+from collections.abc import Mapping
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from html import escape
 from pathlib import Path
@@ -29,6 +30,7 @@ from src.adapters.finrobot.audit import (
 from src.adapters.finrobot.pinned import PinnedFinRobotAdapter
 from src.data.hashing import canonical_json
 from src.domain.base import DomainModel, JsonObject
+from src.domain.financial_semantics import metric_semantics_hash
 from src.domain.report import CanonicalReportDTO, ReportArtifactRecord
 
 FINROBOT_CHART_SOURCE = "finrobot_equity/core/src/modules/chart_generator.py"
@@ -60,6 +62,7 @@ class ChartBackendArtifact(DomainModel):
     artifact_ref: str
     content_hash: str
     semantic_hash: str
+    metric_semantics_hash: str
     size_bytes: int
     renderer_version: str
     upstream_repository: str
@@ -102,6 +105,7 @@ class DeterministicSVGChartBackend:
             raise TypeError("chart backend accepts only serialized CanonicalReportDTO input")
         report = CanonicalReportDTO.model_validate(inputs["canonical_report"])
         metrics = _financial_summary_metrics(report)
+        released_metric_hash = metric_semantics_hash(tuple(report.released_metrics))
         semantic_hash = _sha256(
             canonical_json(
                 {
@@ -111,6 +115,7 @@ class DeterministicSVGChartBackend:
                     "released_result_id": report.released_result_id,
                     "research_object": report.research_object,
                     "metrics": [(label, str(value)) for label, value in metrics],
+                    "metric_semantics_hash": released_metric_hash,
                 }
             )
         )
@@ -123,6 +128,7 @@ class DeterministicSVGChartBackend:
             artifact_ref=str(target),
             content_hash=content_hash,
             semantic_hash=semantic_hash,
+            metric_semantics_hash=released_metric_hash,
             size_bytes=len(content),
             renderer_version=SVG_RENDERER_VERSION,
             upstream_repository=FINROBOT_REPOSITORY,
@@ -183,6 +189,7 @@ class CanonicalReportChartAdapter:
             artifact_ref=result.artifact_ref,
             content_hash=result.content_hash,
             semantic_hash=result.semantic_hash,
+            metric_semantics_hash=result.metric_semantics_hash,
             renderer_version=result.renderer_version,
             canonical_record_id=report.canonical_record_id,
             released_result_id=report.released_result_id,
@@ -199,8 +206,19 @@ class CanonicalReportChartAdapter:
 
 
 def _financial_summary_metrics(report: CanonicalReportDTO) -> tuple[tuple[str, Decimal], ...]:
+    if report.released_metrics:
+        return tuple(
+            (
+                (
+                    f"{metric.name} [{metric.period}; {metric.as_of.isoformat()}; "
+                    f"{metric.display_unit}; {metric.metric_id}]"
+                ),
+                Decimal(metric.display_value),
+            )
+            for metric in report.released_metrics[:_MAX_METRICS]
+        )
     summary = report.structured_financial_results.get("financial_summary")
-    if not isinstance(summary, dict):
+    if not isinstance(summary, Mapping):
         raise ChartDataUnavailableError("canonical financial_summary is unavailable")
     metrics = _flatten_numeric(summary)
     if not metrics:
@@ -217,7 +235,7 @@ def _flatten_numeric(
     for key in sorted(value):
         item = value[key]
         path = (*prefix, str(key))
-        if isinstance(item, dict):
+        if isinstance(item, Mapping):
             output.extend(_flatten_numeric(item, prefix=path))
             continue
         number = _optional_decimal(item)
@@ -266,8 +284,7 @@ def _render_svg(
             bar_width = abs(value_x - zero_x)
             rows.extend(
                 (
-                    f'<text class="metric" x="20" y="{_coord(y + 19)}">'
-                    f"{escape(label)}</text>",
+                    f'<text class="metric" x="20" y="{_coord(y + 19)}">{escape(label)}</text>',
                     f'<rect class="bar" x="{_coord(bar_x)}" y="{_coord(y)}" '
                     f'width="{_coord(bar_width)}" height="28" rx="4"/>',
                     f'<text class="value" x="842" y="{_coord(y + 19)}">'
@@ -279,6 +296,7 @@ def _render_svg(
         "; ".join(
             (
                 f"renderer={SVG_RENDERER_VERSION}",
+                "upstream_project=FinRobot",
                 f"upstream_commit={FINROBOT_PINNED_COMMIT}",
                 f"upstream_source={FINROBOT_CHART_SOURCE}",
                 f"canonical_record_id={report.canonical_record_id}",
