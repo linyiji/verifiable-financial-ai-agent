@@ -309,7 +309,11 @@ def test_candidate_preflight_binds_clean_full_commit(
         "alembic/versions/20260904_0006_generated_capability_artifact_retention.py",
         "scripts/run_phase3_acceptance.py",
         "src/capabilities/generated/artifacts.py",
+        "src/domain/financial_validation.py",
+        "src/domain/macd_policy.py",
         "src/infrastructure/database/generated_workflow.py",
+        "src/observability/langfuse_adapter.py",
+        "docs/PHASE3_INDEPENDENT_AUDIT_REMEDIATION.md",
         "tests/unit/generated/test_artifact_retention.py",
         "src/adapters/risc0/release_manifest.py",
         "tests/test_phase3_acceptance_runner.py",
@@ -366,6 +370,8 @@ def test_candidate_preflight_binds_clean_full_commit(
     candidate = _candidate_preflight(tmp_path, head)
     assert candidate["candidate_head"] == head
     assert candidate["worktree_clean"] is True
+    assert candidate["source_fingerprint"].startswith("sha256:")
+    assert len(candidate["source_fingerprint"]) == 71
     assert candidate["migration_chain"] == [
         "20260904_0004",
         "20260904_0005",

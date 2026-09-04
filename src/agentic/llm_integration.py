@@ -178,9 +178,7 @@ class TeamoRouterSchemeGenerator:
                 messages = _with_validation_retry(messages, type(exc).__name__)
             except ValueError as exc:
                 last_error = exc
-                messages = _with_validation_retry(
-                    messages, type(exc).__name__, detail=str(exc)
-                )
+                messages = _with_validation_retry(messages, type(exc).__name__, detail=str(exc))
             except LLMProviderError as exc:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
@@ -313,9 +311,7 @@ class TeamoRouterResearchLeadPlanner:
                 messages = _with_validation_retry(messages, type(exc).__name__)
             except ValueError as exc:
                 last_error = exc
-                messages = _with_validation_retry(
-                    messages, type(exc).__name__, detail=str(exc)
-                )
+                messages = _with_validation_retry(messages, type(exc).__name__, detail=str(exc))
             except LLMProviderError as exc:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
@@ -548,11 +544,7 @@ def _validate_runtime_graph_semantics(proposal: PlannedGraphProposal) -> None:
         scope = (
             "peer"
             if "peer" in hint or "comparable" in hint
-            else (
-                "research_news"
-                if "news" in hint or "transcript" in hint
-                else "company"
-            )
+            else ("research_news" if "news" in hint or "transcript" in hint else "company")
         )
         if scope in collection_by_scope:
             raise ValueError(f"duplicate evidence acquisition scope: {scope}")

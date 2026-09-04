@@ -27,4 +27,3 @@ async def test_langfuse_failure_is_fail_open() -> None:
         marker = "business execution continues"
     await adapter.event("task.completed")
     assert marker == "business execution continues"
-

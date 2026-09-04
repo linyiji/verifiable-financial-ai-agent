@@ -106,9 +106,7 @@ class ResearchLeadPlanner:
         missing_skills = set(scheme.skill_requirements) - planned_skill_ids
         if missing_skills:
             detail = sorted(missing_skills)
-            raise ValueError(
-                f"confirmed scheme contains unsupported skill requirements: {detail}"
-            )
+            raise ValueError(f"confirmed scheme contains unsupported skill requirements: {detail}")
 
         ids = {template.suffix: f"{run_id}:{template.suffix}" for template in _INITIAL_PLAN}
         tasks = [

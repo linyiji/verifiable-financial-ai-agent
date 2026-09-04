@@ -117,10 +117,7 @@ async def test_exhausted_retryable_route_records_every_actual_attempt() -> None:
 
     assert models == ["gpt-5.6-sol", "gpt-5.6-luna"]
     assert caught.value.attempted_models == tuple(models)
-    assert (
-        caught.value.failure_classification
-        is LLMFailureClassification.RETRYABLE_HTTP_FAILURE
-    )
+    assert caught.value.failure_classification is LLMFailureClassification.RETRYABLE_HTTP_FAILURE
 
 
 @pytest.mark.asyncio
@@ -163,10 +160,7 @@ async def test_nonretryable_request_and_invalid_structure_do_not_switch_model() 
             )
     assert calls == ["gpt-5.6-sol"]
     assert request_error.value.attempted_models == ("gpt-5.6-sol",)
-    assert (
-        request_error.value.failure_classification
-        is LLMFailureClassification.REQUEST_REJECTED
-    )
+    assert request_error.value.failure_classification is LLMFailureClassification.REQUEST_REJECTED
 
     calls.clear()
 
@@ -208,10 +202,7 @@ async def test_preflight_failure_is_explicit_and_records_no_http_attempt() -> No
 
     assert calls == 0
     assert caught.value.attempted_models == ()
-    assert (
-        caught.value.failure_classification
-        is LLMFailureClassification.PREFLIGHT_FAILURE
-    )
+    assert caught.value.failure_classification is LLMFailureClassification.PREFLIGHT_FAILURE
     assert "redaction-sentinel" not in str(caught.value)
 
 

@@ -20,4 +20,3 @@ class ResearchSchemeSnapshot(TimestampedModel):
     generated_by: str
     generated_model: str | None = None
     confirmed_at: datetime | None = None
-

@@ -17,4 +17,3 @@ class TimestampedModel(DomainModel):
 
 
 JsonObject = dict[str, Any]
-

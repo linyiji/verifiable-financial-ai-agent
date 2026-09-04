@@ -73,9 +73,7 @@ async def _plain_probe(
                 headers=headers,
                 json={
                     "model": model,
-                    "messages": [
-                        {"role": "user", "content": "Reply with the single word ok."}
-                    ],
+                    "messages": [{"role": "user", "content": "Reply with the single word ok."}],
                 },
             )
         except (httpx.TimeoutException, httpx.NetworkError) as exc:

@@ -501,7 +501,11 @@ def _candidate_preflight(repository_root: Path, expected_head: str) -> dict[str,
         "alembic/versions/20260904_0006_generated_capability_artifact_retention.py",
         "scripts/run_phase3_acceptance.py",
         "src/capabilities/generated/artifacts.py",
+        "src/domain/financial_validation.py",
+        "src/domain/macd_policy.py",
         "src/infrastructure/database/generated_workflow.py",
+        "src/observability/langfuse_adapter.py",
+        "docs/PHASE3_INDEPENDENT_AUDIT_REMEDIATION.md",
         "tests/unit/generated/test_artifact_retention.py",
         "src/adapters/risc0/release_manifest.py",
         "tests/test_phase3_acceptance_runner.py",
@@ -549,9 +553,11 @@ def _candidate_preflight(repository_root: Path, expected_head: str) -> dict[str,
         raise RuntimeError("RISC Zero locked build identity is missing")
     manifest_path = root / RELEASE_MANIFEST_RELATIVE_PATH
     tree = _git(root, "rev-parse", "HEAD^{tree}").stdout.strip()
+    tracked_tree_listing = _git(root, "ls-tree", "-r", "--full-tree", head).stdout.encode("utf-8")
     return {
         "candidate_head": head,
         "candidate_tree": tree,
+        "source_fingerprint": _sha256_bytes(tracked_tree_listing),
         "worktree_clean": True,
         "required_release_sources_tracked": True,
         "migration_chain": ["20260904_0004", "20260904_0005", "20260904_0006"],
@@ -1066,9 +1072,7 @@ def _financial_semantic_matrix(
     )
     policy = MACD_DECIMAL_CONTEXT_POLICY
     macd_metadata = [
-        item.method_metadata
-        for item in technical
-        if item.formula_id.startswith("macd_")
+        item.method_metadata for item in technical if item.formula_id.startswith("macd_")
     ]
     technical_passed = (
         len(technical) == 7
@@ -1226,9 +1230,7 @@ def _same_canonical_decimal(left: Any, right: Any) -> bool:
         return False
 
 
-def _macd_ambient_context_check(
-    *, calculations: list[Any], evidence: list[Any]
-) -> dict[str, Any]:
+def _macd_ambient_context_check(*, calculations: list[Any], evidence: list[Any]) -> dict[str, Any]:
     formula_ids = (
         "macd_line_close_12_26_adjust_false_v1",
         "macd_signal_close_12_26_9_adjust_false_v1",
@@ -2369,6 +2371,7 @@ async def _run_authoritative(
         langfuse_redaction_audit = await asyncio.to_thread(
             trace_build.audit_reader.audit,
             trace_id,
+            expected_observation_count=len(audited_trace.observations),
         )
         events = list(await persistence.event_store.replay(run_id))
         event_sequences = [item.sequence for item in events]
@@ -2584,15 +2587,12 @@ async def _run_authoritative(
                 "passed": langfuse_redaction_audit.passed,
                 "read_succeeded": langfuse_redaction_audit.read_succeeded,
                 "occurrence_count": langfuse_redaction_audit.occurrence_count,
-                "named_occurrence_counts": dict(
-                    langfuse_redaction_audit.named_occurrence_counts
-                ),
+                "named_occurrence_counts": dict(langfuse_redaction_audit.named_occurrence_counts),
                 "serialized_field_count": langfuse_redaction_audit.field_count,
                 "observation_count": langfuse_redaction_audit.observation_count,
+                "expected_observation_count": (langfuse_redaction_audit.expected_observation_count),
                 "attempts": langfuse_redaction_audit.attempts,
-                "inspected_surfaces": list(
-                    langfuse_redaction_audit.inspected_surfaces
-                ),
+                "inspected_surfaces": list(langfuse_redaction_audit.inspected_surfaces),
             },
         }
         audit_state["langfuse"] = langfuse_evidence

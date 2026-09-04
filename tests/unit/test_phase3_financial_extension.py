@@ -499,9 +499,7 @@ async def test_extension_executes_generated_gap_and_finrobot_technical_runtime()
         if item.status is ReviewStatus.BLOCK
     ]
     assert len(review.checks) == 54
-    macd_methods = [
-        item.method_metadata for item in metrics if item.formula_id.startswith("macd_")
-    ]
+    macd_methods = [item.method_metadata for item in metrics if item.formula_id.startswith("macd_")]
     assert len(macd_methods) == 3
     assert all(method is not None for method in macd_methods)
     assert {

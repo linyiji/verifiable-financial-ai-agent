@@ -18,4 +18,3 @@ class CorrectionRecord(TimestampedModel):
     output_refs: list[str] = Field(default_factory=list)
     status: CorrectionStatus
     resolved_at: datetime | None = None
-

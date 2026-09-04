@@ -8,8 +8,8 @@ from src.observability.instrumentation import (
 from src.observability.langfuse_adapter import (
     LANGFUSE_OTLP_REDACTION_POLICY,
     LangfuseSDKClient,
-    LangfuseTraceAuditReader,
     LangfuseTraceAdapter,
+    LangfuseTraceAuditReader,
     LangfuseTraceRedactionAudit,
     TraceAdapterBuild,
     TraceAdapterClassification,

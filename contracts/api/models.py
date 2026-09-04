@@ -36,4 +36,3 @@ class ErrorDetail(ApiModel):
 
 class ErrorResponse(ApiModel):
     error: ErrorDetail
-

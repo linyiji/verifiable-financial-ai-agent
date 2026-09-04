@@ -12,4 +12,3 @@ class ResearchGoal(TimestampedModel):
     goal_text: str = Field(min_length=1)
     as_of: date
     preferences: JsonObject = Field(default_factory=dict)
-

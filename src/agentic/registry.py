@@ -29,9 +29,7 @@ class AgentRegistry:
 
     def for_task_type(self, task_type: str) -> tuple[SpecialistAgent, ...]:
         return tuple(
-            agent
-            for agent in self._agents.values()
-            if task_type in agent.supported_task_types
+            agent for agent in self._agents.values() if task_type in agent.supported_task_types
         )
 
     def registered_ids(self) -> tuple[str, ...]:

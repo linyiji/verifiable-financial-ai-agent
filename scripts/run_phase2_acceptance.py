@@ -170,12 +170,9 @@ async def run(output: Path) -> dict[str, Any]:
             ),
             None,
         ),
-        "evidence_event_count": sum(
-            event.type.value == "evidence.accepted" for event in events
-        ),
+        "evidence_event_count": sum(event.type.value == "evidence.accepted" for event in events),
         "graph_edge_event_count": sum(
-            event.type.value in {"graph.edge_added", "graph.edge_removed"}
-            for event in events
+            event.type.value in {"graph.edge_added", "graph.edge_removed"} for event in events
         ),
         "calculations": [
             {

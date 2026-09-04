@@ -53,8 +53,7 @@ async def test_valid_evidence_only_enters_accepted_bundle() -> None:
     result, repository = await _ingest()
 
     normalized = [
-        (record.normalized_field, record.normalized_value)
-        for record in result.accepted.records
+        (record.normalized_field, record.normalized_value) for record in result.accepted.records
     ]
     assert normalized == [
         ("revenue", "215900000000"),
@@ -74,9 +73,7 @@ async def test_missing_fields_are_rejected_before_materializing_evidence(
             {
                 "provider": "fixture",
                 "object": {"symbol": "NVDA"},
-                "records": [
-                    {"field": "revenue", "period": "FY2026", "as_of": "2026-01-25"}
-                ],
+                "records": [{"field": "revenue", "period": "FY2026", "as_of": "2026-01-25"}],
             }
         )
     )
@@ -96,9 +93,7 @@ async def test_period_mismatch_is_conflict_and_never_accepted() -> None:
 
     mismatch = next(record for record in result.records if record.period == "Q1FY2026")
     assert mismatch.status is EvidenceStatus.CONFLICT
-    assert mismatch.evidence_id not in {
-        record.evidence_id for record in result.accepted.records
-    }
+    assert mismatch.evidence_id not in {record.evidence_id for record in result.accepted.records}
     diagnostic = next(item for item in result.diagnostics if item.period == "Q1FY2026")
     assert ValidationCode.PERIOD_MISMATCH in {issue.code for issue in diagnostic.issues}
 
@@ -108,9 +103,7 @@ async def test_currency_scale_is_normalized_to_canonical_base_units() -> None:
     result, _ = await _ingest()
 
     revenue = next(
-        record
-        for record in result.accepted.records
-        if record.normalized_field == "revenue"
+        record for record in result.accepted.records if record.normalized_field == "revenue"
     )
     assert revenue.normalized_value == "215900000000"
     assert revenue.unit == "CURRENCY"
@@ -119,15 +112,11 @@ async def test_currency_scale_is_normalized_to_canonical_base_units() -> None:
 
 @pytest.mark.asyncio
 async def test_stale_record_is_persisted_as_rejected_but_not_accepted() -> None:
-    result, repository = await _ingest(
-        freshness_policy=FreshnessPolicy(max_age_days=1)
-    )
+    result, repository = await _ingest(freshness_policy=FreshnessPolicy(max_age_days=1))
 
     assert result.accepted.records == []
     assert all(record.status is EvidenceStatus.REJECTED for record in result.records)
-    assert all(
-        record.status is EvidenceStatus.REJECTED for record in await repository.list()
-    )
+    assert all(record.status is EvidenceStatus.REJECTED for record in await repository.list())
     assert all(
         ValidationCode.STALE in {issue.code for issue in diagnostic.issues}
         for diagnostic in result.diagnostics

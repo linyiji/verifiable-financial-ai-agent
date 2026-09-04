@@ -7,12 +7,8 @@ class InvalidTaskTransition(RuntimeError):
 
 
 _ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
-    TaskStatus.CREATED: frozenset(
-        {TaskStatus.WAITING, TaskStatus.READY, TaskStatus.CANCELLED}
-    ),
-    TaskStatus.WAITING: frozenset(
-        {TaskStatus.READY, TaskStatus.BLOCKED, TaskStatus.CANCELLED}
-    ),
+    TaskStatus.CREATED: frozenset({TaskStatus.WAITING, TaskStatus.READY, TaskStatus.CANCELLED}),
+    TaskStatus.WAITING: frozenset({TaskStatus.READY, TaskStatus.BLOCKED, TaskStatus.CANCELLED}),
     TaskStatus.READY: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED}),
     TaskStatus.RUNNING: frozenset(
         {
@@ -37,9 +33,7 @@ _ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
         {TaskStatus.READY, TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED}
     ),
     TaskStatus.BLOCKED: frozenset({TaskStatus.READY, TaskStatus.CANCELLED}),
-    TaskStatus.REVIEW: frozenset(
-        {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
-    ),
+    TaskStatus.REVIEW: frozenset({TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}),
     TaskStatus.COMPLETED: frozenset(),
     TaskStatus.FAILED: frozenset(),
     TaskStatus.CAPABILITY_BUILD_FAILED: frozenset(

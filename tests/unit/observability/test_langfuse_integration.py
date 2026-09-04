@@ -562,15 +562,11 @@ def test_trace_readback_audit_reports_only_named_counts() -> None:
         "TEAMOROUTER_API_KEY": "router-sensitive-sentinel",
     }
     response = {
-        "metadata": {
-            "scope": {"attributes": {"public_key": values["LANGFUSE_PUBLIC_KEY"]}}
-        },
+        "metadata": {"scope": {"attributes": {"public_key": values["LANGFUSE_PUBLIC_KEY"]}}},
         "observations": [
             {
                 "metadata": {
-                    "scope": {
-                        "attributes": {"public_key": values["LANGFUSE_PUBLIC_KEY"]}
-                    }
+                    "scope": {"attributes": {"public_key": values["LANGFUSE_PUBLIC_KEY"]}}
                 },
                 "provider": values["TEAMOROUTER_API_KEY"],
                 "tool": values["FMP_API_KEY"],
@@ -578,9 +574,7 @@ def test_trace_readback_audit_reports_only_named_counts() -> None:
             }
         ],
     }
-    sdk = SimpleNamespace(
-        api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: response))
-    )
+    sdk = SimpleNamespace(api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: response)))
 
     audit = LangfuseTraceAuditReader(
         sdk,
@@ -590,6 +584,7 @@ def test_trace_readback_audit_reports_only_named_counts() -> None:
     assert audit.policy_id == LANGFUSE_OTLP_REDACTION_POLICY
     assert audit.passed is False
     assert audit.occurrence_count == 5
+    assert audit.expected_observation_count is None
     assert dict(audit.named_occurrence_counts) == {
         "FMP_API_KEY": 1,
         "LANGFUSE_PUBLIC_KEY": 2,
@@ -598,6 +593,57 @@ def test_trace_readback_audit_reports_only_named_counts() -> None:
     }
     serialized_audit = repr(audit)
     assert all(value not in serialized_audit for value in values.values())
+
+
+def test_trace_audit_waits_for_the_exact_exported_observation_set() -> None:
+    payloads = iter(
+        (
+            {"observations": [{"name": "root"}]},
+            {"observations": [{"name": "root"}, {"name": "tool"}]},
+        )
+    )
+    sdk = SimpleNamespace(
+        api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: next(payloads)))
+    )
+
+    audit = LangfuseTraceAuditReader(
+        sdk,
+        named_sensitive_values={"LANGFUSE_PUBLIC_KEY": "public-sentinel"},
+    ).audit(
+        "trace-id",
+        attempts=2,
+        retry_delay_seconds=0,
+        expected_observation_count=2,
+    )
+
+    assert audit.passed is True
+    assert audit.read_succeeded is True
+    assert audit.observation_count == 2
+    assert audit.expected_observation_count == 2
+    assert audit.attempts == 2
+
+
+def test_trace_audit_fails_closed_for_an_incomplete_remote_observation_set() -> None:
+    sdk = SimpleNamespace(
+        api=SimpleNamespace(
+            trace=SimpleNamespace(get=lambda trace_id: {"observations": [{"name": "root"}]})
+        )
+    )
+
+    audit = LangfuseTraceAuditReader(
+        sdk,
+        named_sensitive_values={"LANGFUSE_PUBLIC_KEY": "public-sentinel"},
+    ).audit(
+        "trace-id",
+        attempts=1,
+        expected_observation_count=2,
+    )
+
+    assert audit.passed is False
+    assert audit.read_succeeded is True
+    assert audit.occurrence_count == 0
+    assert audit.observation_count == 1
+    assert audit.expected_observation_count == 2
 
 
 class BrokenSDK:

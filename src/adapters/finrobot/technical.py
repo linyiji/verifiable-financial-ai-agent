@@ -265,9 +265,7 @@ def exponential_moving_average(values: Sequence[Decimal], *, span: int) -> tuple
         return _exponential_moving_average(values, span=span)
 
 
-def _exponential_moving_average(
-    values: Sequence[Decimal], *, span: int
-) -> tuple[Decimal, ...]:
+def _exponential_moving_average(values: Sequence[Decimal], *, span: int) -> tuple[Decimal, ...]:
     """Compute an EMA inside the caller's explicit local Decimal context."""
 
     alpha = Decimal(2) / Decimal(span + 1)

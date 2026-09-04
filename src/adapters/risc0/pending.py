@@ -12,4 +12,3 @@ class PendingProofAdapter:
 
     async def verify(self, result: ProofResult) -> bool:
         return result.status is ProofStatus.VERIFIED
-

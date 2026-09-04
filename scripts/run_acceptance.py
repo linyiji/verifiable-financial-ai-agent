@@ -80,9 +80,7 @@ async def run(output: Path) -> dict[str, Any]:
         "review_status": artifacts.review.status.value,
         "proof_statuses": [item.status.value for item in artifacts.proofs],
         "canonical_record_id": artifacts.canonical_record.record_id,
-        "financial_review_record_id": (
-            artifacts.projections.financial_review.canonical_record_id
-        ),
+        "financial_review_record_id": (artifacts.projections.financial_review.canonical_record_id),
         "execution_details_record_id": (
             artifacts.projections.execution_details.canonical_record_id
         ),

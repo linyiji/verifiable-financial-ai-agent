@@ -16,4 +16,3 @@ class ResearchRun(TimestampedModel):
     execution_target: str = "SERVER_SANDBOX"
     started_at: datetime | None = None
     completed_at: datetime | None = None
-

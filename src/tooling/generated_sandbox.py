@@ -19,9 +19,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from src.domain.base import JsonObject
 
-ALLOWED_IMPORTS = frozenset(
-    {"dataclasses", "datetime", "decimal", "math", "statistics", "typing"}
-)
+ALLOWED_IMPORTS = frozenset({"dataclasses", "datetime", "decimal", "math", "statistics", "typing"})
 FORBIDDEN_IMPORTS = frozenset(
     {
         "ctypes",
@@ -199,11 +197,7 @@ class _GeneratedCodeVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Name(self, node: ast.Name) -> None:  # noqa: N802
-        if (
-            node.id in FORBIDDEN_IMPORTS
-            or node.id in FORBIDDEN_CALLS
-            or node.id == "__builtins__"
-        ):
+        if node.id in FORBIDDEN_IMPORTS or node.id in FORBIDDEN_CALLS or node.id == "__builtins__":
             self._reject(node, "NAME_FORBIDDEN", f"name {node.id!r} is not allowed")
 
 
@@ -384,8 +378,7 @@ class DockerSandboxBackend:
         payload_size = len(payload.encode("utf-8"))
         if payload_size > self.limits.max_payload_bytes:
             raise ValueError(
-                f"sandbox payload is {payload_size} bytes; limit is "
-                f"{self.limits.max_payload_bytes}"
+                f"sandbox payload is {payload_size} bytes; limit is {self.limits.max_payload_bytes}"
             )
 
         container_name = f"vfas-generated-{uuid.uuid4().hex}"
@@ -524,7 +517,7 @@ def _looks_sensitive(key: str) -> bool:
     )
 
 
-_CONTAINER_RUNNER = r'''
+_CONTAINER_RUNNER = r"""
 import builtins
 import contextlib
 import dataclasses
@@ -686,4 +679,4 @@ except BaseException as exc:
         "security_probe": security_probe(),
     }, sort_keys=True, separators=(",", ":")))
     raise SystemExit(1)
-'''
+"""

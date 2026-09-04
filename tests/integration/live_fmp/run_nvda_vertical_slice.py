@@ -143,9 +143,7 @@ async def run() -> dict[str, Any]:
                 {
                     "accepted_count": len(result.accepted.records),
                     "non_accepted_count": len(result.records) - len(result.accepted.records),
-                    "artifact_count": len(
-                        {record.raw_artifact_ref for record in result.records}
-                    )
+                    "artifact_count": len({record.raw_artifact_ref for record in result.records})
                     or 1,
                     "accepted_evidence_ids": [
                         record.evidence_id for record in result.accepted.records

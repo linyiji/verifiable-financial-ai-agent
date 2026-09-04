@@ -311,9 +311,7 @@ def create_langfuse_trace_adapter(
         )
     return TraceAdapterBuild(
         adapter=FailOpenTraceAdapter(
-            LangfuseTraceAdapter(
-                LangfuseSDKClient(sdk_client, sensitive_values=sensitive_values)
-            )
+            LangfuseTraceAdapter(LangfuseSDKClient(sdk_client, sensitive_values=sensitive_values))
         ),
         classification=TraceAdapterClassification.ENABLED,
         audit_reader=(
@@ -336,6 +334,7 @@ class LangfuseTraceRedactionAudit:
     named_occurrence_counts: tuple[tuple[str, int], ...]
     field_count: int
     observation_count: int
+    expected_observation_count: int | None
     attempts: int
     inspected_surfaces: tuple[str, ...] = ("trace", "observations")
 
@@ -363,8 +362,10 @@ class LangfuseTraceAuditReader:
         *,
         attempts: int = 6,
         retry_delay_seconds: float = 1.0,
+        expected_observation_count: int | None = None,
     ) -> LangfuseTraceRedactionAudit:
         used_attempts = 0
+        last_read: LangfuseTraceRedactionAudit | None = None
         for attempt in range(1, max(attempts, 1) + 1):
             used_attempts = attempt
             try:
@@ -378,26 +379,37 @@ class LangfuseTraceAuditReader:
                 for name, value in self._named_sensitive_values
             )
             occurrence_count = sum(count for _, count in named_counts)
-            return LangfuseTraceRedactionAudit(
+            observation_count = _observation_count(payload)
+            observation_set_complete = (
+                expected_observation_count is None
+                or observation_count == expected_observation_count
+            )
+            last_read = LangfuseTraceRedactionAudit(
                 policy_id=LANGFUSE_OTLP_REDACTION_POLICY,
-                passed=occurrence_count == 0,
+                passed=occurrence_count == 0 and observation_set_complete,
                 read_succeeded=True,
                 occurrence_count=occurrence_count,
                 named_occurrence_counts=named_counts,
                 field_count=_mapping_field_count(payload),
-                observation_count=_observation_count(payload),
+                observation_count=observation_count,
+                expected_observation_count=expected_observation_count,
                 attempts=used_attempts,
             )
+            if observation_set_complete:
+                return last_read
+            if attempt < attempts:
+                time.sleep(max(retry_delay_seconds, 0))
+        if last_read is not None:
+            return last_read
         return LangfuseTraceRedactionAudit(
             policy_id=LANGFUSE_OTLP_REDACTION_POLICY,
             passed=False,
             read_succeeded=False,
             occurrence_count=0,
-            named_occurrence_counts=tuple(
-                (name, 0) for name, _ in self._named_sensitive_values
-            ),
+            named_occurrence_counts=tuple((name, 0) for name, _ in self._named_sensitive_values),
             field_count=0,
             observation_count=0,
+            expected_observation_count=expected_observation_count,
             attempts=used_attempts,
         )
 
@@ -419,8 +431,7 @@ class _LangfuseOTLPRedactingExporter:
 
     def export(self, spans: Sequence[Any]) -> Any:
         redacted = tuple(
-            _redacted_readable_span(span, sensitive_values=self._sensitive_values)
-            for span in spans
+            _redacted_readable_span(span, sensitive_values=self._sensitive_values) for span in spans
         )
         return self._delegate.export(redacted)
 
@@ -555,8 +566,7 @@ def _model_payload(value: Any) -> Any:
 def _sensitive_occurrence_count(value: Any, secrets: Sequence[str]) -> int:
     if isinstance(value, Mapping):
         return sum(
-            _sensitive_occurrence_count(key, secrets)
-            + _sensitive_occurrence_count(item, secrets)
+            _sensitive_occurrence_count(key, secrets) + _sensitive_occurrence_count(item, secrets)
             for key, item in value.items()
         )
     if isinstance(value, (list, tuple)):

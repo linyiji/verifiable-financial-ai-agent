@@ -59,8 +59,7 @@ class DeterministicReviewer:
                 )
                 continue
             periods = [
-                evidence_by_id[evidence_id].period
-                for evidence_id in calculation.input_evidence_ids
+                evidence_by_id[evidence_id].period for evidence_id in calculation.input_evidence_ids
             ]
             if calculation.formula_id == "ebitda_margin_v1" and len(set(periods)) > 1:
                 status = ReviewStatus.BLOCK

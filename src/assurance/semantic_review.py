@@ -11,4 +11,3 @@ class SemanticReviewAdapter(Protocol):
         evidence_refs: list[str],
         calculation_refs: list[str],
     ) -> list[JsonObject]: ...
-

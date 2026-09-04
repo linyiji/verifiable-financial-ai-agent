@@ -15,4 +15,3 @@ class ResearchObject(TimestampedModel):
     currency: str = "USD"
     identity_version: int = 1
     updated_at: datetime = Field(default_factory=utc_now)
-

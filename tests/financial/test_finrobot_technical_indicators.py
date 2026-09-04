@@ -135,8 +135,7 @@ async def test_macd_is_byte_decimal_invariant_and_matches_independent_oracle() -
             )
             production = tuple(item.output_value for item in calculations)
             oracle = tuple(
-                independent_review._recompute(formula_id, closes)
-                for formula_id in formula_ids
+                independent_review._recompute(formula_id, closes) for formula_id in formula_ids
             )
 
         assert production == oracle

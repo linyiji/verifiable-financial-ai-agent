@@ -180,9 +180,7 @@ def test_backend_rejects_code_before_starting_docker(monkeypatch: pytest.MonkeyP
 def test_backend_rejects_secret_like_fixture_fields(fixture: dict[str, object]) -> None:
     backend = DockerSandboxBackend()
     with pytest.raises(ValueError, match="secret-like"):
-        backend.execute(
-            SandboxRequest(source=SAFE_SOURCE, test_source=SAFE_TESTS, fixture=fixture)
-        )
+        backend.execute(SandboxRequest(source=SAFE_SOURCE, test_source=SAFE_TESTS, fixture=fixture))
 
 
 def test_in_process_execution_is_not_a_production_backend() -> None:
