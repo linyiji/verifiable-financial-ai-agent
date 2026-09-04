@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 import pytest
@@ -180,6 +181,20 @@ class FakeBuilder:
             output_tokens=20,
             latency_ms=12.5,
         )
+
+
+class BlockingBuilder(FakeBuilder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancelled = asyncio.Event()
+
+    async def generate(self, request: CapabilityBuildRequest) -> GeneratedCapabilityCandidate:
+        self.calls.append(request)
+        try:
+            await asyncio.Event().wait()
+        finally:
+            self.cancelled.set()
+        raise AssertionError("cancelled provider work must not continue")
 
 
 def _candidate_output():
@@ -426,6 +441,37 @@ async def test_generation_failures_are_bounded_and_explicit() -> None:
         if event.type is RuntimeEventType.CAPABILITY_BUILD_FAILED
     ]
     assert [event.payload["terminal"] for event in failures] == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_generation_overall_deadline_cancels_work_and_stops_retries() -> None:
+    builder = BlockingBuilder()
+    events = InMemoryRuntimeEventStore()
+    service = GeneratedCapabilityOrchestrator(
+        registry=FakeRegistry(),
+        research_lead=FakeResearchLead(),
+        code_builder=builder,
+        validator=FakeValidator(),
+        event_store=events,
+        max_attempts=2,
+        overall_generation_deadline_seconds=0.02,
+    )
+    state = make_state()
+
+    with pytest.raises(CapabilityBuildFailedError) as raised:
+        await service.lookup_or_build(state=state, request=make_request())
+
+    assert builder.cancelled.is_set()
+    assert len(builder.calls) == 1
+    assert len(raised.value.build_records) == 1
+    failures = [
+        event
+        for event in await events.replay("RUN-1")
+        if event.type is RuntimeEventType.CAPABILITY_BUILD_FAILED
+    ]
+    assert len(failures) == 1
+    assert failures[0].payload["terminal"] is True
+    assert failures[0].payload["error_type"] == "GeneratedCapabilityDeadlineExceededError"
 
 
 @pytest.mark.asyncio

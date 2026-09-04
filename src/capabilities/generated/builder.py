@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from time import perf_counter
 
@@ -42,6 +43,18 @@ class PlannerProviderCodeBuilder:
         self.builder_id = f"{provider_name}-code-builder-v1"
         self._trace = trace or GeneratedCapabilityTrace()
 
+    @property
+    def provider_name(self) -> str:
+        return self._provider_name
+
+    @property
+    def model_name(self) -> str:
+        return str(getattr(self._provider, "model_name", ""))
+
+    @property
+    def execution_policy(self):
+        return getattr(self._provider, "execution_policy", None)
+
     async def generate(self, request: CapabilityBuildRequest) -> GeneratedCapabilityCandidate:
         requirement = request.gap.requirement
         started = perf_counter()
@@ -51,16 +64,37 @@ class PlannerProviderCodeBuilder:
             build_id=request.build_id,
             capability_id=requirement.capability_id,
             attempt=request.attempt,
+            provider=self.provider_name,
+            model=self.model_name,
+            workload_type="GENERATED_CAPABILITY",
         ) as generation:
             try:
                 response = await self._provider.complete_structured(
                     messages=_messages(request),
                     response_model=CodeBuilderProviderOutput,
                     schema_name=self.schema_name,
+                    workload_type="GENERATED_CAPABILITY",
                 )
                 output = response.output.to_domain()
                 _validate_output_against_requirement(output, request)
                 implementation_hash = _source_hash(output.source_code)
+            except asyncio.CancelledError:
+                await self._trace.complete_generation(
+                    generation,
+                    requested_model=self.model_name or None,
+                    actual_model=None,
+                    provider=self._provider_name,
+                    latency_ms=(perf_counter() - started) * 1000,
+                    input_tokens=None,
+                    output_tokens=None,
+                    implementation_hash=None,
+                    result_status="error",
+                    error_type="GeneratedCapabilityDeadlineExceededError",
+                    workload_type="GENERATED_CAPABILITY",
+                    attempt_number=request.attempt,
+                    failure_class="overall_deadline_exceeded",
+                )
+                raise
             except Exception as exc:
                 await self._trace.complete_generation(
                     generation,
@@ -73,6 +107,11 @@ class PlannerProviderCodeBuilder:
                     implementation_hash=None,
                     result_status="error",
                     error_type=type(exc).__name__,
+                    workload_type="GENERATED_CAPABILITY",
+                    attempt_number=request.attempt,
+                    failure_class=_optional_text(
+                        getattr(getattr(exc, "failure_classification", None), "value", None)
+                    ),
                 )
                 raise
 
@@ -87,6 +126,8 @@ class PlannerProviderCodeBuilder:
                 output_tokens=response.output_tokens,
                 implementation_hash=implementation_hash,
                 result_status="success",
+                workload_type="GENERATED_CAPABILITY",
+                attempt_number=request.attempt,
             )
             return GeneratedCapabilityCandidate(
                 build_id=request.build_id,

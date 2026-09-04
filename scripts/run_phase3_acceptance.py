@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 from urllib.parse import quote_from_bytes
 from uuid import uuid4
@@ -52,9 +53,10 @@ from src.adapters.llm import (
     LockedPlannerProvider,
     MimoClient,
     PlannerProviderHealth,
-    PlannerProviderRouter,
-    PlannerProviderUnavailableError,
+    PlannerWorkload,
     TeamoRouterClient,
+    WorkloadProviderRouter,
+    WorkloadProviderUnavailableError,
 )
 from src.adapters.risc0 import (
     EXPECTED_REVENUE_GROWTH_HOST_SHA256,
@@ -75,12 +77,14 @@ from src.agentic.llm_integration import (
     PlannerProviderResearchLeadPlanner,
     PlannerProviderSchemeGenerator,
 )
+from src.agentic.scheme import DeterministicSchemeGenerator
 from src.application.evidence_collection import LiveFMPEvidenceCollector
 from src.application.phase3_financial import (
     FCF_MARGIN_CAPABILITY_ID,
     FreeCashFlowMarginValidationPlanProvider,
     Phase3FinancialCapabilityExtension,
     Phase3ResearchLeadCapabilityAuthority,
+    free_cash_flow_margin_requirement,
 )
 from src.application.phase3_proof import RevenueGrowthRiscZeroProofWorkflow
 from src.application.service import ResearchApplicationService
@@ -90,11 +94,13 @@ from src.capabilities.financial.growth import (
     calculate_revenue_growth as calculate_native_revenue_growth,
 )
 from src.capabilities.generated import (
+    CapabilityBuildRequest,
     GeneratedCapabilityArtifactStore,
     GeneratedCapabilityOrchestrator,
     GeneratedCapabilityTrace,
     GeneratedCapabilityValidator,
     PlannerProviderCodeBuilder,
+    ResearchLeadCapabilityApproval,
     ScopedCapabilityRegistry,
 )
 from src.domain.capability import (
@@ -114,6 +120,7 @@ from src.domain.enums import (
     ReviewStatus,
     RunStatus,
     SourceCoverageStatus,
+    TaskStatus,
 )
 from src.domain.financial_semantics import canonical_decimal, metric_semantics_hash
 from src.domain.financial_validation import (
@@ -139,6 +146,7 @@ from src.domain.report import (
 )
 from src.domain.research_goal import ResearchGoal
 from src.domain.research_object import ResearchObject
+from src.domain.task import Task
 from src.infrastructure.config import Settings
 from src.infrastructure.database.artifacts import TaskDependencyGraphKind
 from src.infrastructure.database.composition import create_postgresql_persistence
@@ -197,6 +205,10 @@ class CountingLLMProvider:
         self.model_name = delegate.model_name
         self.logical_calls = 0
         self.schemas: Counter[str] = Counter()
+
+    @property
+    def execution_policy(self) -> Any:
+        return self._delegate.execution_policy
 
     async def complete_structured(self, **kwargs: Any) -> Any:
         self.logical_calls += 1
@@ -278,6 +290,264 @@ async def _planner_provider_preflight(provider: LLMProvider) -> PlannerProviderH
         provider=provider_name,
         model=actual_models[0],
         passed=True,
+    )
+
+
+def _preflight_context() -> tuple[ResearchObject, ResearchGoal]:
+    research_object = ResearchObject(
+        object_id="OBJ-NVDA-PREFLIGHT",
+        symbol="NVDA",
+        company_name="NVIDIA Corporation",
+        exchange="NASDAQ",
+    )
+    goal = ResearchGoal(
+        goal_id="GOAL-NVDA-PROVIDER-PREFLIGHT",
+        research_object_id=research_object.object_id,
+        goal_text="Validate one governed NVDA LLM workload without creating a Research Run.",
+        as_of=date(2026, 9, 4),
+    )
+    return research_object, goal
+
+
+def _failed_workload_health(
+    provider: LLMProvider,
+    workload: PlannerWorkload,
+    error: Exception,
+    *,
+    attempt: int,
+    started: float,
+) -> PlannerProviderHealth:
+    classification = getattr(error, "failure_classification", None)
+    classification_value = getattr(classification, "value", classification)
+    if not isinstance(classification_value, str) or not classification_value:
+        classification_value = (
+            "overall_deadline_exceeded"
+            if isinstance(error, TimeoutError)
+            else "semantic_schema_failure"
+            if isinstance(error, ValueError)
+            else "provider_unavailable"
+        )
+    return PlannerProviderHealth(
+        provider=str(getattr(provider, "provider_name", "")),
+        model=str(getattr(provider, "model_name", "")) or None,
+        passed=False,
+        failure_classification=classification_value,
+        workload_type=workload,
+        attempt=attempt,
+        elapsed_seconds=perf_counter() - started,
+        retryable=bool(getattr(error, "retryable", False)),
+    )
+
+
+def _fallback_workload_health(
+    provider: LLMProvider,
+    workload: PlannerWorkload,
+    failure_classification: str | None,
+    *,
+    attempt: int,
+    started: float,
+) -> PlannerProviderHealth:
+    classification = failure_classification or "semantic_schema_failure"
+    retryable = classification in {
+        "quota_or_rate_limit",
+        "retryable_http_failure",
+        "provider_unavailable",
+        "connect_timeout",
+        "read_timeout",
+        "overall_deadline_exceeded",
+        "remote_protocol_error",
+    }
+    return PlannerProviderHealth(
+        provider=str(getattr(provider, "provider_name", "")),
+        model=str(getattr(provider, "model_name", "")) or None,
+        passed=False,
+        failure_classification=classification,
+        workload_type=workload,
+        attempt=attempt,
+        elapsed_seconds=perf_counter() - started,
+        retryable=retryable,
+    )
+
+
+async def _scheme_provider_preflight(provider: LLMProvider) -> PlannerProviderHealth:
+    """Require two consecutive exact Scheme planner responses."""
+
+    workload = PlannerWorkload.SCHEME_PLANNER
+    provider_name = str(getattr(provider, "provider_name", ""))
+    started = perf_counter()
+    research_object, goal = _preflight_context()
+    actual_models: list[str] = []
+    for probe in range(1, 3):
+        try:
+            result = await PlannerProviderSchemeGenerator(
+                provider,
+                max_validation_attempts=3,
+            ).generate_with_decision(research_object=research_object, goal=goal)
+            if result.audit.deterministic_fallback or not result.audit.actual_model:
+                return _fallback_workload_health(
+                    provider,
+                    workload,
+                    result.audit.failure_classification,
+                    attempt=probe,
+                    started=started,
+                )
+            if result.audit.provider != provider_name:
+                raise ValueError("owned Scheme planner provider identity drifted")
+            actual_models.append(result.audit.actual_model)
+        except Exception as exc:
+            return _failed_workload_health(provider, workload, exc, attempt=probe, started=started)
+    if len(set(actual_models)) != 1:
+        return PlannerProviderHealth(
+            provider=provider_name,
+            model=None,
+            passed=False,
+            failure_classification="semantic_schema_failure",
+            workload_type=workload,
+            attempt=2,
+            elapsed_seconds=perf_counter() - started,
+            retryable=False,
+        )
+    return PlannerProviderHealth(
+        provider=provider_name,
+        model=actual_models[0],
+        passed=True,
+        workload_type=workload,
+        attempt=2,
+        elapsed_seconds=perf_counter() - started,
+        retryable=False,
+    )
+
+
+async def _lead_provider_preflight(provider: LLMProvider) -> PlannerProviderHealth:
+    """Require two consecutive exact Lead planner responses from a fixed owned Scheme."""
+
+    workload = PlannerWorkload.LEAD_PLANNER
+    provider_name = str(getattr(provider, "provider_name", ""))
+    started = perf_counter()
+    research_object, goal = _preflight_context()
+    scheme = await DeterministicSchemeGenerator().generate(
+        research_object=research_object,
+        goal=goal,
+    )
+    scheme.confirmed_at = datetime.now(UTC)
+    actual_models: list[str] = []
+    for probe in range(1, 3):
+        try:
+            result = await PlannerProviderResearchLeadPlanner(
+                provider,
+                max_validation_attempts=3,
+            ).plan_with_decision(
+                run_id=f"PREFLIGHT:{provider_name}:LEAD:{probe}",
+                goal=goal,
+                scheme=scheme,
+            )
+            if result.audit.deterministic_fallback or not result.audit.actual_model:
+                return _fallback_workload_health(
+                    provider,
+                    workload,
+                    result.audit.failure_classification,
+                    attempt=probe,
+                    started=started,
+                )
+            if result.audit.provider != provider_name:
+                raise ValueError("owned Lead planner provider identity drifted")
+            actual_models.append(result.audit.actual_model)
+        except Exception as exc:
+            return _failed_workload_health(provider, workload, exc, attempt=probe, started=started)
+    if len(set(actual_models)) != 1:
+        return PlannerProviderHealth(
+            provider=provider_name,
+            model=None,
+            passed=False,
+            failure_classification="semantic_schema_failure",
+            workload_type=workload,
+            attempt=2,
+            elapsed_seconds=perf_counter() - started,
+            retryable=False,
+        )
+    return PlannerProviderHealth(
+        provider=provider_name,
+        model=actual_models[0],
+        passed=True,
+        workload_type=workload,
+        attempt=2,
+        elapsed_seconds=perf_counter() - started,
+        retryable=False,
+    )
+
+
+async def _generated_capability_provider_preflight(
+    provider: LLMProvider,
+) -> PlannerProviderHealth:
+    """Require two exact, non-persisted Code Builder responses."""
+
+    workload = PlannerWorkload.GENERATED_CAPABILITY
+    provider_name = str(getattr(provider, "provider_name", ""))
+    started = perf_counter()
+    task = Task(
+        task_id="TASK-NVDA-GENERATED-CAPABILITY-PREFLIGHT",
+        run_id="PREFLIGHT:GENERATED_CAPABILITY",
+        task_type="fundamental_analysis",
+        goal="Qualify deterministic free cash flow margin generation.",
+        assigned_agent="fundamental_analyst",
+        skill_id="fundamental_analysis_v1",
+        status=TaskStatus.RUNNING,
+    )
+    gap = CapabilityGapRecord(
+        gap_id="GAP-NVDA-GENERATED-CAPABILITY-PREFLIGHT",
+        run_id=task.run_id,
+        task_id=task.task_id,
+        requirement=free_cash_flow_margin_requirement(task),
+        requested_by=task.assigned_agent,
+        detail="Non-persisted provider stability qualification.",
+    )
+    approval = ResearchLeadCapabilityApproval(
+        decision_id="DEC-NVDA-GENERATED-CAPABILITY-PREFLIGHT",
+        run_id=task.run_id,
+        task_id=task.task_id,
+        gap_id=gap.gap_id,
+        phase="SPEC",
+        approved=True,
+        approved_by="research_lead",
+        reason_code="PROVIDER_STABILITY_QUALIFICATION",
+        summary="Safe controlled Generated Capability provider qualification.",
+    )
+    builder = PlannerProviderCodeBuilder(provider)
+    actual_models: list[str] = []
+    for probe in range(1, 3):
+        request = CapabilityBuildRequest(
+            build_id=f"BUILD-NVDA-GENERATED-CAPABILITY-PREFLIGHT-{probe}",
+            gap=gap,
+            approval=approval,
+            attempt=probe,
+            max_attempts=2,
+        )
+        try:
+            candidate = await builder.generate(request)
+            if candidate.provider != provider_name or not candidate.actual_model:
+                raise ValueError("owned Code Builder provider identity drifted")
+            actual_models.append(candidate.actual_model)
+        except Exception as exc:
+            return _failed_workload_health(provider, workload, exc, attempt=probe, started=started)
+    if len(set(actual_models)) != 1:
+        return PlannerProviderHealth(
+            provider=provider_name,
+            model=None,
+            passed=False,
+            failure_classification="semantic_schema_failure",
+            workload_type=workload,
+            attempt=2,
+            elapsed_seconds=perf_counter() - started,
+            retryable=False,
+        )
+    return PlannerProviderHealth(
+        provider=provider_name,
+        model=actual_models[0],
+        passed=True,
+        workload_type=workload,
+        attempt=2,
+        elapsed_seconds=perf_counter() - started,
+        retryable=False,
     )
 
 
@@ -586,6 +856,7 @@ def _candidate_preflight(repository_root: Path, expected_head: str) -> dict[str,
         "alembic/versions/20260904_0005_financial_evidence_semantics.py",
         "alembic/versions/20260904_0006_generated_capability_artifact_retention.py",
         "scripts/run_phase3_acceptance.py",
+        "src/adapters/llm/execution.py",
         "src/adapters/llm/mimo.py",
         "src/adapters/llm/router.py",
         "src/capabilities/generated/artifacts.py",
@@ -595,10 +866,12 @@ def _candidate_preflight(repository_root: Path, expected_head: str) -> dict[str,
         "src/observability/langfuse_adapter.py",
         "docs/PHASE3_INDEPENDENT_AUDIT_REMEDIATION.md",
         "docs/PHASE3_PLANNER_PROVIDER_ROUTER_REMEDIATION.md",
+        "docs/PHASE3_PROVIDER_RELIABILITY_REMEDIATION.md",
         "tests/unit/generated/test_artifact_retention.py",
         "src/adapters/risc0/release_manifest.py",
         "tests/test_phase3_acceptance_runner.py",
         "tests/unit/llm/test_planner_provider_router.py",
+        "tests/unit/llm/test_provider_execution_policy.py",
         "zk/revenue_growth/RISC_ZERO_RELEASE_MANIFEST.json",
         "zk/revenue_growth/build-host.sh",
         "zk/revenue_growth/normalize_macos_host.py",
@@ -2124,34 +2397,46 @@ async def _run_authoritative(
         planner_providers.append(
             TeamoRouterClient(settings.llm, client=llm_http_client, timeout_seconds=60.0)
         )
-    planner_router = PlannerProviderRouter(
-        planner_providers,
-        preference_order=settings.planner_provider_order,
-    )
-    audit_state["failed_stage"] = "planner_provider_preflight"
+    planner_router = WorkloadProviderRouter(planner_providers)
+    audit_state["failed_stage"] = "workload_provider_preflight"
     try:
-        planner_selection = await planner_router.select(_planner_provider_preflight)
-    except PlannerProviderUnavailableError as exc:
-        audit_state["planner_provider_selection"] = {
-            "selected_provider": None,
-            "selected_model": None,
-            "health_checks": [
-                {
-                    "provider": item.provider,
-                    "model": item.model,
-                    "passed": item.passed,
-                    "failure_classification": item.failure_classification,
-                }
-                for item in exc.health_checks
-            ],
-            "provider_model_locked": False,
+        provider_bindings = await planner_router.select(
+            {
+                PlannerWorkload.SCHEME_PLANNER: _scheme_provider_preflight,
+                PlannerWorkload.LEAD_PLANNER: _lead_provider_preflight,
+                PlannerWorkload.GENERATED_CAPABILITY: (_generated_capability_provider_preflight),
+            }
+        )
+    except WorkloadProviderUnavailableError as exc:
+        audit_state["run_provider_bindings"] = {
+            "policy_id": "MIMO_PRIMARY_TEAMOROUTER_SECONDARY_V2",
+            "failed_workload": exc.workload_type.value,
+            "health_checks": [item.safe_evidence() for item in exc.health_checks],
+            "binding_map_locked": False,
             "mid_run_failover_enabled": False,
         }
+        audit_state["planner_provider_selection"] = audit_state["run_provider_bindings"]
         raise
-    planner_selection_evidence = planner_selection.safe_evidence()
-    audit_state["planner_provider_selection"] = planner_selection_evidence
+    provider_bindings_evidence = provider_bindings.safe_evidence()
+    audit_state["run_provider_bindings"] = provider_bindings_evidence
+    audit_state["planner_provider_selection"] = provider_bindings_evidence
+    _write_json(
+        output / "run_provider_bindings.json",
+        {
+            "run_id": run_id,
+            "candidate_head": candidate["candidate_head"],
+            "fmp_credential_alias": fmp_credential_alias,
+            **provider_bindings_evidence,
+        },
+    )
     planner_preflight_http_attempts = llm_http_counter.http_attempts
-    llm = CountingLLMProvider(planner_selection.provider)
+    scheme_binding = provider_bindings.binding_for(PlannerWorkload.SCHEME_PLANNER)
+    lead_binding = provider_bindings.binding_for(PlannerWorkload.LEAD_PLANNER)
+    generated_binding = provider_bindings.binding_for(PlannerWorkload.GENERATED_CAPABILITY)
+    scheme_llm = CountingLLMProvider(scheme_binding.provider)
+    lead_llm = CountingLLMProvider(lead_binding.provider)
+    generated_llm = CountingLLMProvider(generated_binding.provider)
+    workload_llms = (scheme_llm, lead_llm, generated_llm)
     sandbox = DockerSandboxBackend()
     generated_artifact_store = GeneratedCapabilityArtifactStore(
         output / "generated",
@@ -2185,15 +2470,19 @@ async def _run_authoritative(
             attributes={
                 "object_id": "OBJ-NVDA",
                 "phase": "phase3",
-                "planner_provider": planner_selection.provider_name,
-                "planner_model": planner_selection.model_name,
-                "planner_provider_policy": planner_selection.policy_id,
-                "planner_fallback_used": planner_selection.fallback_used,
+                "provider_selection_policy": provider_bindings.policy_id,
+                "scheme_planner_provider": scheme_binding.provider_name,
+                "scheme_planner_model": scheme_binding.model_name,
+                "lead_planner_provider": lead_binding.provider_name,
+                "lead_planner_model": lead_binding.model_name,
+                "generated_capability_provider": generated_binding.provider_name,
+                "generated_capability_model": generated_binding.model_name,
+                "mid_run_failover_enabled": False,
             },
         ) as trace:
             scheme_generator = PlannerProviderSchemeGenerator(
                 InstrumentedLLMProvider(
-                    llm,
+                    scheme_llm,
                     trace=trace,
                     stage=ObservationStage.SCHEME_GENERATION,
                 ),
@@ -2201,7 +2490,7 @@ async def _run_authoritative(
             )
             planner = PlannerProviderResearchLeadPlanner(
                 InstrumentedLLMProvider(
-                    llm,
+                    lead_llm,
                     trace=trace,
                     stage=ObservationStage.PLANNER_GENERATION,
                 ),
@@ -2227,7 +2516,10 @@ async def _run_authoritative(
             generated_orchestrator = GeneratedCapabilityOrchestrator(
                 registry=scoped_registry,
                 research_lead=Phase3ResearchLeadCapabilityAuthority(),
-                code_builder=PlannerProviderCodeBuilder(llm, trace=generated_trace),
+                code_builder=PlannerProviderCodeBuilder(
+                    generated_llm,
+                    trace=generated_trace,
+                ),
                 validator=GeneratedCapabilityValidator(
                     sandbox=sandbox,
                     plans=FreeCashFlowMarginValidationPlanProvider(),
@@ -2292,11 +2584,14 @@ async def _run_authoritative(
             if planner.last_audit is None or planner.last_audit.deterministic_fallback:
                 raise RuntimeError("real selected-provider planner generation did not pass")
             for planner_audit in (scheme_generator.last_audit, planner.last_audit):
+                expected_binding = (
+                    scheme_binding if planner_audit is scheme_generator.last_audit else lead_binding
+                )
                 if (
-                    planner_audit.provider != planner_selection.provider_name
-                    or planner_audit.actual_model != planner_selection.model_name
+                    planner_audit.provider != expected_binding.provider_name
+                    or planner_audit.actual_model != expected_binding.model_name
                 ):
-                    raise RuntimeError("authoritative planner provider/model lock was violated")
+                    raise RuntimeError("authoritative workload provider/model lock was violated")
             canonical = aggregate.artifacts.canonical_record
             released = aggregate.artifacts.released_result
             if canonical is None or released is None:
@@ -2383,7 +2678,7 @@ async def _run_authoritative(
 
             external_before = (
                 fmp_transport.total,
-                llm.logical_calls,
+                sum(item.logical_calls for item in workload_llms),
                 llm_http_counter.http_attempts,
             )
             raw_before = _tree_snapshot(output / "raw")
@@ -2444,7 +2739,7 @@ async def _run_authoritative(
             report_records = [chart.record, published.html, published.pdf]
             external_after = (
                 fmp_transport.total,
-                llm.logical_calls,
+                sum(item.logical_calls for item in workload_llms),
                 llm_http_counter.http_attempts,
             )
             no_refetch = (
@@ -2561,8 +2856,8 @@ async def _run_authoritative(
         report_artifacts = await repository.list(ReportArtifactRecord, run_id)
         generated_retention_audit = _audit_generated_artifact_retention(
             store=generated_artifact_store,
-            expected_provider=planner_selection.provider_name,
-            expected_model=planner_selection.model_name,
+            expected_provider=generated_binding.provider_name,
+            expected_model=generated_binding.model_name,
             records=generated_artifacts,
             builds=builds,
             generated=generated,
@@ -2760,6 +3055,7 @@ async def _run_authoritative(
             "run_id": run_id,
             "run_status": aggregate.run.status.value,
             "symbol": "NVDA",
+            "run_provider_bindings": provider_bindings_evidence,
             "frontend": "DEFERRED_FROZEN",
             "runtime": runtime,
             "postgresql": {
@@ -2786,13 +3082,18 @@ async def _run_authoritative(
                 ),
             },
             "llm": {
-                "provider": planner_selection.provider_name,
-                "model": planner_selection.model_name,
-                "provider_selection": planner_selection_evidence,
-                "logical_calls": llm.logical_calls,
+                "provider_bindings": provider_bindings_evidence,
+                "logical_calls": sum(item.logical_calls for item in workload_llms),
                 "http_attempts": (llm_http_counter.http_attempts - planner_preflight_http_attempts),
                 "preflight_http_attempts": planner_preflight_http_attempts,
-                "schemas": dict(llm.schemas),
+                "schemas": {
+                    workload.value: dict(counter.schemas)
+                    for workload, counter in (
+                        (PlannerWorkload.SCHEME_PLANNER, scheme_llm),
+                        (PlannerWorkload.LEAD_PLANNER, lead_llm),
+                        (PlannerWorkload.GENERATED_CAPABILITY, generated_llm),
+                    )
+                },
                 "scheme": scheme_generator.last_audit.model_dump(mode="json"),
                 "planner": planner.last_audit.model_dump(mode="json"),
             },
@@ -3444,6 +3745,7 @@ def _write_failure_envelope(
         "candidate": audit_state.get("candidate"),
         "fmp_credential_alias": audit_state.get("fmp_credential_alias"),
         "planner_provider_selection": audit_state.get("planner_provider_selection"),
+        "run_provider_bindings": audit_state.get("run_provider_bindings"),
         "final_status": "FAIL",
         "failed_stage": audit_state.get("failed_stage", "unknown"),
         "error_type": error_type,

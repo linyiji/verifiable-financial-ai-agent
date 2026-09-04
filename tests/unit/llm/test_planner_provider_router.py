@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import MappingProxyType
 
 import httpx
 import pytest
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 
 from src.adapters.llm import (
     MIMO_PRIMARY_TEAMOROUTER_SECONDARY,
+    MIMO_PRIMARY_TEAMOROUTER_SECONDARY_V2,
     LLMMessage,
     LLMProviderUnavailableError,
     LLMStructuredResponse,
@@ -16,7 +18,10 @@ from src.adapters.llm import (
     PlannerProviderLockError,
     PlannerProviderRouter,
     PlannerProviderUnavailableError,
+    PlannerWorkload,
     TeamoRouterClient,
+    WorkloadProviderRouter,
+    WorkloadProviderUnavailableError,
 )
 from src.infrastructure.config.settings import LLMSettings
 
@@ -207,4 +212,129 @@ async def test_locked_provider_rejects_a_mid_run_model_change() -> None:
             messages=[LLMMessage(role="user", content="answer")],
             response_model=Answer,
             schema_name="answer_v1",
+        )
+
+
+def workload_health(
+    provider: FakeProvider,
+    workload: PlannerWorkload,
+    passed: bool,
+) -> PlannerProviderHealth:
+    return PlannerProviderHealth(
+        provider=provider.provider_name,
+        model=provider.model_name if passed else None,
+        passed=passed,
+        failure_classification=None if passed else "provider_unavailable",
+        workload_type=workload,
+        attempt=2,
+        elapsed_seconds=0.2,
+        retryable=not passed,
+    )
+
+
+@pytest.mark.asyncio
+async def test_workload_router_selects_each_workload_independently() -> None:
+    mimo = FakeProvider("mimo", "mimo-v2.5")
+    teamorouter = FakeProvider("teamorouter", "gpt-5.6-sol")
+    probes: list[tuple[PlannerWorkload, str]] = []
+
+    def preflight(workload: PlannerWorkload):
+        async def run(provider: FakeProvider) -> PlannerProviderHealth:
+            probes.append((workload, provider.provider_name))
+            passed = not (
+                workload is PlannerWorkload.GENERATED_CAPABILITY
+                and provider.provider_name == "mimo"
+            )
+            return workload_health(provider, workload, passed)
+
+        return run
+
+    router = WorkloadProviderRouter((mimo, teamorouter))
+    bindings = await router.select({workload: preflight(workload) for workload in PlannerWorkload})
+
+    assert bindings.policy_id == MIMO_PRIMARY_TEAMOROUTER_SECONDARY_V2
+    assert bindings.binding_for(PlannerWorkload.SCHEME_PLANNER).provider_name == "mimo"
+    assert bindings.binding_for(PlannerWorkload.LEAD_PLANNER).provider_name == "mimo"
+    generated = bindings.binding_for(PlannerWorkload.GENERATED_CAPABILITY)
+    assert generated.provider_name == "teamorouter"
+    assert generated.fallback_used is True
+    assert probes == [
+        (PlannerWorkload.SCHEME_PLANNER, "mimo"),
+        (PlannerWorkload.LEAD_PLANNER, "mimo"),
+        (PlannerWorkload.GENERATED_CAPABILITY, "mimo"),
+        (PlannerWorkload.GENERATED_CAPABILITY, "teamorouter"),
+    ]
+    assert isinstance(bindings.bindings, MappingProxyType)
+    with pytest.raises(TypeError):
+        bindings.bindings[PlannerWorkload.SCHEME_PLANNER] = generated
+    with pytest.raises(PlannerProviderLockError, match="immutable"):
+        await router.select({workload: preflight(workload) for workload in PlannerWorkload})
+    with pytest.raises(PlannerProviderLockError, match="workload provider binding"):
+        await generated.provider.complete_structured(
+            messages=[LLMMessage(role="user", content="answer")],
+            response_model=Answer,
+            schema_name="answer_v1",
+            workload_type=PlannerWorkload.SCHEME_PLANNER.value,
+        )
+
+
+@pytest.mark.asyncio
+async def test_workload_router_uses_mimo_for_all_when_every_exact_probe_passes() -> None:
+    mimo = FakeProvider("mimo", "mimo-v2.5")
+    teamorouter = FakeProvider("teamorouter", "gpt-5.6-sol")
+
+    def preflight(workload: PlannerWorkload):
+        async def run(provider: FakeProvider) -> PlannerProviderHealth:
+            return workload_health(provider, workload, True)
+
+        return run
+
+    bindings = await WorkloadProviderRouter((mimo, teamorouter)).select(
+        {workload: preflight(workload) for workload in PlannerWorkload}
+    )
+
+    assert {binding.provider_name for binding in bindings.bindings.values()} == {"mimo"}
+
+
+@pytest.mark.asyncio
+async def test_workload_router_fails_closed_for_one_unavailable_workload() -> None:
+    mimo = FakeProvider("mimo", "mimo-v2.5")
+    teamorouter = FakeProvider("teamorouter", "gpt-5.6-sol")
+
+    def preflight(workload: PlannerWorkload):
+        async def run(provider: FakeProvider) -> PlannerProviderHealth:
+            return workload_health(
+                provider,
+                workload,
+                workload is not PlannerWorkload.GENERATED_CAPABILITY,
+            )
+
+        return run
+
+    with pytest.raises(WorkloadProviderUnavailableError) as caught:
+        await WorkloadProviderRouter((mimo, teamorouter)).select(
+            {workload: preflight(workload) for workload in PlannerWorkload}
+        )
+
+    assert caught.value.workload_type is PlannerWorkload.GENERATED_CAPABILITY
+    assert [item.provider for item in caught.value.health_checks] == [
+        "mimo",
+        "teamorouter",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_workload_router_rejects_false_workload_health_identity() -> None:
+    mimo = FakeProvider("mimo", "mimo-v2.5")
+
+    async def wrong(provider: FakeProvider) -> PlannerProviderHealth:
+        return workload_health(provider, PlannerWorkload.LEAD_PLANNER, True)
+
+    with pytest.raises(PlannerProviderLockError, match="workload identity"):
+        await WorkloadProviderRouter((mimo,)).select(
+            {
+                PlannerWorkload.SCHEME_PLANNER: wrong,
+                PlannerWorkload.LEAD_PLANNER: wrong,
+                PlannerWorkload.GENERATED_CAPABILITY: wrong,
+            }
         )

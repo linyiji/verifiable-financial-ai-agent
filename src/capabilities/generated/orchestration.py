@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from platform import python_version
 from uuid import uuid4
 
@@ -51,6 +52,13 @@ class CapabilityAuthorityError(ValueError):
     pass
 
 
+class GeneratedCapabilityDeadlineExceededError(RuntimeError):
+    """Secret-safe owned deadline failure for Generated Capability construction."""
+
+    failure_classification = "overall_deadline_exceeded"
+    retryable = True
+
+
 class GeneratedCapabilityOrchestrator:
     """Coordinate a registry miss without adding a Research Task to the graph."""
 
@@ -65,9 +73,21 @@ class GeneratedCapabilityOrchestrator:
         recorder: CapabilityWorkflowRecorder | None = None,
         trace: GeneratedCapabilityTrace | None = None,
         max_attempts: int = 2,
+        overall_generation_deadline_seconds: float | None = None,
     ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be positive")
+        inferred_policy = getattr(code_builder, "execution_policy", None)
+        inferred_deadline = getattr(inferred_policy, "overall_workload_deadline_seconds", None)
+        deadline = (
+            overall_generation_deadline_seconds
+            if overall_generation_deadline_seconds is not None
+            else inferred_deadline
+        )
+        if deadline is not None and (
+            not isinstance(deadline, (int, float)) or isinstance(deadline, bool) or deadline <= 0
+        ):
+            raise ValueError("overall generation deadline must be positive")
         self._registry = registry
         self._research_lead = research_lead
         self._code_builder = code_builder
@@ -76,6 +96,9 @@ class GeneratedCapabilityOrchestrator:
         self._recorder = recorder or NoopCapabilityWorkflowRecorder()
         self._trace = trace or GeneratedCapabilityTrace()
         self._max_attempts = max_attempts
+        self._overall_generation_deadline_seconds = (
+            float(deadline) if deadline is not None else None
+        )
 
     async def lookup_or_build(
         self,
@@ -139,6 +162,11 @@ class GeneratedCapabilityOrchestrator:
 
         builds: list[CapabilityBuildRecord] = []
         last_error: Exception | None = None
+        generation_deadline_at = (
+            asyncio.get_running_loop().time() + self._overall_generation_deadline_seconds
+            if self._overall_generation_deadline_seconds is not None
+            else None
+        )
         for attempt in range(1, self._max_attempts + 1):
             generated: GeneratedCapabilityRecord | None = None
             artifact_retention = None
@@ -180,7 +208,21 @@ class GeneratedCapabilityOrchestrator:
             )
             try:
                 failure_stage = "generation"
-                candidate = await self._code_builder.generate(build_request)
+                if generation_deadline_at is None:
+                    candidate = await self._code_builder.generate(build_request)
+                else:
+                    remaining = generation_deadline_at - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        raise GeneratedCapabilityDeadlineExceededError(
+                            "Generated Capability exceeded its owned overall deadline"
+                        )
+                    try:
+                        async with asyncio.timeout(remaining):
+                            candidate = await self._code_builder.generate(build_request)
+                    except TimeoutError:
+                        raise GeneratedCapabilityDeadlineExceededError(
+                            "Generated Capability exceeded its owned overall deadline"
+                        ) from None
                 generated = _generated_record(request, gap, candidate)
                 build = build.model_copy(
                     update={
@@ -365,13 +407,18 @@ class GeneratedCapabilityOrchestrator:
                         "attempt": attempt,
                         "max_attempts": self._max_attempts,
                         "error_type": type(exc).__name__,
-                        "terminal": attempt == self._max_attempts,
+                        "terminal": (
+                            attempt == self._max_attempts
+                            or isinstance(exc, GeneratedCapabilityDeadlineExceededError)
+                        ),
                     },
                 )
+                if isinstance(exc, GeneratedCapabilityDeadlineExceededError):
+                    break
 
         task.status = TaskStatus.CAPABILITY_BUILD_FAILED
         raise CapabilityBuildFailedError(
-            f"capability build failed after {self._max_attempts} attempt(s): "
+            f"capability build failed after {len(builds)} attempt(s): "
             f"{type(last_error).__name__ if last_error else 'unknown'}",
             gap=gap,
             build_records=tuple(builds),

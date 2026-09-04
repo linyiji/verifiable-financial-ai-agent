@@ -43,6 +43,9 @@ class GeneratedCapabilityTrace:
         build_id: str,
         capability_id: str,
         attempt: int,
+        provider: str | None = None,
+        model: str | None = None,
+        workload_type: str = "GENERATED_CAPABILITY",
     ):
         return self._adapter.generation(
             "vfas.capability_generation",
@@ -53,6 +56,10 @@ class GeneratedCapabilityTrace:
                     "build_id": build_id,
                     "capability_id": capability_id,
                     "validation_attempt": attempt,
+                    "attempt_id": attempt,
+                    "provider": provider,
+                    "model": model,
+                    "workload_type": workload_type,
                 }
             ),
         )
@@ -70,6 +77,9 @@ class GeneratedCapabilityTrace:
         implementation_hash: str | None,
         result_status: str,
         error_type: str | None = None,
+        workload_type: str = "GENERATED_CAPABILITY",
+        attempt_number: int | None = None,
+        failure_class: str | None = None,
     ) -> None:
         total_tokens = (
             input_tokens + output_tokens
@@ -99,6 +109,10 @@ class GeneratedCapabilityTrace:
                     "implementation_hash": implementation_hash,
                     "result_status": result_status,
                     "error_type": error_type,
+                    "workload_type": workload_type,
+                    "attempt_number": attempt_number,
+                    "attempt_id": attempt_number,
+                    "failure_class": failure_class,
                 }
             ),
             usage_details=usage,

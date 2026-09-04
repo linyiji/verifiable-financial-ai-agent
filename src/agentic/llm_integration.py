@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 from dataclasses import dataclass
 from typing import Generic, Literal, TypeVar
@@ -12,6 +14,7 @@ from src.adapters.llm import (
     LLMMessage,
     LLMProvider,
     LLMProviderError,
+    LLMProviderUnavailableError,
     LLMStructuredResponse,
     StructuredOutputError,
 )
@@ -145,10 +148,14 @@ class PlannerProviderSchemeGenerator:
         last_error: LLMProviderError | ValueError | None = None
         attempted_models: list[str] = []
         validation_attempts = 0
+        deadline_at = asyncio.get_running_loop().time() + _overall_deadline_seconds(self._provider)
         for attempt in range(1, self._max_validation_attempts + 1):
             validation_attempts = attempt
             try:
-                response = await self._provider.complete_structured(
+                response = await _complete_before_deadline(
+                    self._provider,
+                    deadline_at=deadline_at,
+                    workload_type="SCHEME_PLANNER",
                     messages=messages,
                     response_model=SchemeProposal,
                     schema_name="research_scheme_proposal_v2",
@@ -277,10 +284,14 @@ class PlannerProviderResearchLeadPlanner:
         last_error: LLMProviderError | ValueError | None = None
         attempted_models: list[str] = []
         validation_attempts = 0
+        deadline_at = asyncio.get_running_loop().time() + _overall_deadline_seconds(self._provider)
         for attempt in range(1, self._max_validation_attempts + 1):
             validation_attempts = attempt
             try:
-                response = await self._provider.complete_structured(
+                response = await _complete_before_deadline(
+                    self._provider,
+                    deadline_at=deadline_at,
+                    workload_type="LEAD_PLANNER",
                     messages=messages,
                     response_model=PlannedGraphProposal,
                     schema_name="planned_task_graph_v1",
@@ -348,6 +359,56 @@ class PlannerProviderResearchLeadPlanner:
 # provider-neutral names above.
 TeamoRouterSchemeGenerator = PlannerProviderSchemeGenerator
 TeamoRouterResearchLeadPlanner = PlannerProviderResearchLeadPlanner
+
+
+def _overall_deadline_seconds(provider: LLMProvider) -> float:
+    policy = getattr(provider, "execution_policy", None)
+    value = getattr(policy, "overall_workload_deadline_seconds", 180.0)
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        return 180.0
+    return float(value)
+
+
+async def _complete_before_deadline(
+    provider: LLMProvider,
+    *,
+    deadline_at: float,
+    workload_type: str,
+    **kwargs: object,
+) -> LLMStructuredResponse:
+    remaining = deadline_at - asyncio.get_running_loop().time()
+    if remaining <= 0:
+        raise _overall_deadline_error(provider, workload_type)
+    parameters = inspect.signature(provider.complete_structured).parameters.values()
+    supports_workload = any(
+        parameter.name == "workload_type" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+    call_kwargs = dict(kwargs)
+    if supports_workload:
+        call_kwargs["workload_type"] = workload_type
+    try:
+        async with asyncio.timeout(remaining):
+            return await provider.complete_structured(**call_kwargs)
+    except TimeoutError:
+        raise _overall_deadline_error(provider, workload_type) from None
+
+
+def _overall_deadline_error(
+    provider: LLMProvider, workload_type: str
+) -> LLMProviderUnavailableError:
+    provider_name = _provider_name(provider)
+    model_name = str(getattr(provider, "model_name", "")) or None
+    return LLMProviderUnavailableError(
+        f"{provider_name} {workload_type} exceeded its owned overall deadline",
+        requested_model=model_name,
+        attempted_models=(),
+        failure_classification=LLMFailureClassification.OVERALL_DEADLINE_EXCEEDED,
+        provider=provider_name,
+        model=model_name,
+        workload_type=workload_type,
+        retryable=True,
+    )
 
 
 def _scheme_messages(research_object: ResearchObject, goal: ResearchGoal) -> list[LLMMessage]:

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from time import perf_counter
 from typing import Any, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from src.adapters.llm.execution import ProviderExecutionPolicyV1
 from src.adapters.llm.provider import (
     LLMFailureClassification,
     LLMMessage,
@@ -20,9 +23,16 @@ StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
 
 class _RetryableProviderFailure(RuntimeError):
-    def __init__(self, message: str, classification: LLMFailureClassification) -> None:
+    def __init__(
+        self,
+        message: str,
+        classification: LLMFailureClassification,
+        *,
+        retryable: bool = True,
+    ) -> None:
         super().__init__(message)
         self.classification = classification
+        self.retryable = retryable
 
 
 class OpenAICompatiblePlannerClient:
@@ -40,6 +50,7 @@ class OpenAICompatiblePlannerClient:
         *,
         client: httpx.AsyncClient | None = None,
         timeout_seconds: float = 60.0,
+        execution_policy: ProviderExecutionPolicyV1 | None = None,
     ) -> None:
         if not self.provider_name:
             raise TypeError("OpenAICompatiblePlannerClient must be specialized")
@@ -53,7 +64,14 @@ class OpenAICompatiblePlannerClient:
             raise ValueError("timeout_seconds must be positive")
         self._settings = settings
         self._client = client
-        self._timeout_seconds = timeout_seconds
+        self._execution_policy = execution_policy or ProviderExecutionPolicyV1(
+            connect_timeout_seconds=min(10.0, timeout_seconds),
+            read_timeout_seconds=timeout_seconds,
+            write_timeout_seconds=min(30.0, timeout_seconds),
+            pool_timeout_seconds=min(10.0, timeout_seconds),
+            per_attempt_deadline_seconds=90.0,
+            overall_workload_deadline_seconds=180.0,
+        )
 
     def __repr__(self) -> str:
         return (
@@ -67,6 +85,10 @@ class OpenAICompatiblePlannerClient:
     def model_name(self) -> str:
         return self._settings.primary_model
 
+    @property
+    def execution_policy(self) -> ProviderExecutionPolicyV1:
+        return self._execution_policy
+
     def lock_to_model(self, model_name: str) -> OpenAICompatiblePlannerClient:
         if model_name not in {
             self._settings.primary_model,
@@ -79,7 +101,7 @@ class OpenAICompatiblePlannerClient:
         return type(self)(
             locked_settings,
             client=self._client,
-            timeout_seconds=self._timeout_seconds,
+            execution_policy=self._execution_policy,
         )
 
     async def complete_structured(
@@ -89,8 +111,11 @@ class OpenAICompatiblePlannerClient:
         response_model: type[StructuredModel],
         schema_name: str,
         force_fallback: bool = False,
+        workload_type: str | None = None,
     ) -> LLMStructuredResponse[StructuredModel]:
         requested_model = self._settings.primary_model
+        started = perf_counter()
+        attempted: list[str] = []
         try:
             _validate_completion_url(self._completion_url)
             request_template = _structured_request_template(
@@ -104,6 +129,11 @@ class OpenAICompatiblePlannerClient:
                 requested_model=requested_model,
                 attempted_models=(),
                 failure_classification=LLMFailureClassification.PREFLIGHT_FAILURE,
+                provider=self.provider_name,
+                model=requested_model,
+                workload_type=workload_type,
+                attempt=0,
+                elapsed_seconds=perf_counter() - started,
             ) from None
         if force_fallback:
             raise LLMRequestError(
@@ -111,26 +141,76 @@ class OpenAICompatiblePlannerClient:
                 requested_model=requested_model,
                 attempted_models=(),
                 failure_classification=LLMFailureClassification.PREFLIGHT_FAILURE,
+                provider=self.provider_name,
+                model=requested_model,
+                workload_type=workload_type,
+                attempt=0,
+                elapsed_seconds=perf_counter() - started,
             )
-        route = [requested_model, self._settings.fallback_model]
-        attempted: list[str] = []
-        last_retryable: _RetryableProviderFailure | None = None
-        for model in route:
-            if model in attempted:
-                continue
-            attempted.append(model)
-            try:
-                return await self._send(
-                    model=model,
+        try:
+            async with asyncio.timeout(self._execution_policy.overall_workload_deadline_seconds):
+                return await self._complete_within_budget(
                     requested_model=requested_model,
-                    attempted_models=tuple(attempted),
                     request_template=request_template,
                     response_model=response_model,
                     schema_name=schema_name,
+                    workload_type=workload_type,
+                    started=started,
+                    attempted=attempted,
+                )
+        except TimeoutError:
+            raise LLMProviderUnavailableError(
+                f"{self.provider_name} provider operation exceeded its owned overall deadline",
+                requested_model=requested_model,
+                attempted_models=tuple(attempted),
+                failure_classification=LLMFailureClassification.OVERALL_DEADLINE_EXCEEDED,
+                provider=self.provider_name,
+                model=attempted[-1] if attempted else requested_model,
+                workload_type=workload_type,
+                attempt=len(attempted) or None,
+                elapsed_seconds=perf_counter() - started,
+                retryable=True,
+            ) from None
+
+    async def _complete_within_budget(
+        self,
+        *,
+        requested_model: str,
+        request_template: dict[str, Any],
+        response_model: type[StructuredModel],
+        schema_name: str,
+        workload_type: str | None,
+        started: float,
+        attempted: list[str],
+    ) -> LLMStructuredResponse[StructuredModel]:
+        route = list(dict.fromkeys((requested_model, self._settings.fallback_model)))[
+            : self._execution_policy.max_attempts
+        ]
+        last_retryable: _RetryableProviderFailure | None = None
+        for attempt, model in enumerate(route, start=1):
+            attempted.append(model)
+            try:
+                async with asyncio.timeout(self._execution_policy.per_attempt_deadline_seconds):
+                    return await self._send(
+                        model=model,
+                        requested_model=requested_model,
+                        attempted_models=tuple(attempted),
+                        request_template=request_template,
+                        response_model=response_model,
+                        schema_name=schema_name,
+                        workload_type=workload_type,
+                        attempt=attempt,
+                        started=started,
+                    )
+            except TimeoutError:
+                last_retryable = _RetryableProviderFailure(
+                    "owned per-attempt deadline exceeded",
+                    LLMFailureClassification.OVERALL_DEADLINE_EXCEEDED,
                 )
             except _RetryableProviderFailure as exc:
                 last_retryable = exc
-                continue
+            if attempt < len(route):
+                await asyncio.sleep(self._execution_policy.backoff_seconds(attempt))
         detail = str(last_retryable) if last_retryable else "provider route unavailable"
         raise LLMProviderUnavailableError(
             f"{self.provider_name} models unavailable after {len(attempted)} attempt(s): {detail}",
@@ -139,6 +219,12 @@ class OpenAICompatiblePlannerClient:
             failure_classification=(
                 last_retryable.classification if last_retryable is not None else None
             ),
+            provider=self.provider_name,
+            model=attempted[-1] if attempted else requested_model,
+            workload_type=workload_type,
+            attempt=len(attempted),
+            elapsed_seconds=perf_counter() - started,
+            retryable=last_retryable.retryable if last_retryable else True,
         )
 
     async def _send(
@@ -150,6 +236,9 @@ class OpenAICompatiblePlannerClient:
         request_template: dict[str, Any],
         response_model: type[StructuredModel],
         schema_name: str,
+        workload_type: str | None,
+        attempt: int,
+        started: float,
     ) -> LLMStructuredResponse[StructuredModel]:
         payload = {"model": model, **request_template}
         headers = {
@@ -158,7 +247,9 @@ class OpenAICompatiblePlannerClient:
         }
         try:
             if self._client is None:
-                async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
+                async with httpx.AsyncClient(
+                    timeout=self._execution_policy.httpx_timeout
+                ) as client:
                     response = await client.post(
                         self._completion_url, json=payload, headers=headers
                     )
@@ -167,38 +258,83 @@ class OpenAICompatiblePlannerClient:
                     self._completion_url,
                     json=payload,
                     headers=headers,
-                    timeout=self._timeout_seconds,
+                    timeout=self._execution_policy.httpx_timeout,
                 )
+        except httpx.ConnectTimeout:
+            raise _RetryableProviderFailure(
+                "connect timeout", LLMFailureClassification.CONNECT_TIMEOUT
+            ) from None
+        except httpx.ReadTimeout:
+            raise _RetryableProviderFailure(
+                "read timeout", LLMFailureClassification.READ_TIMEOUT
+            ) from None
+        except httpx.RemoteProtocolError:
+            raise _RetryableProviderFailure(
+                "remote protocol error", LLMFailureClassification.REMOTE_PROTOCOL_ERROR
+            ) from None
         except httpx.TransportError as exc:
             raise _RetryableProviderFailure(
-                type(exc).__name__, LLMFailureClassification.RETRYABLE_TRANSPORT_FAILURE
+                type(exc).__name__, LLMFailureClassification.PROVIDER_UNAVAILABLE
             ) from None
 
-        if response.status_code in {408, 429} or response.status_code >= 500:
+        if response.status_code == 429:
+            raise _RetryableProviderFailure(
+                "HTTP 429", LLMFailureClassification.QUOTA_OR_RATE_LIMIT
+            )
+        if response.status_code == 408 or response.status_code >= 500:
             raise _RetryableProviderFailure(
                 f"HTTP {response.status_code}",
                 LLMFailureClassification.RETRYABLE_HTTP_FAILURE,
             )
         if response.is_error:
+            classification = (
+                LLMFailureClassification.AUTHENTICATION_FAILURE
+                if response.status_code in {401, 403}
+                else LLMFailureClassification.REQUEST_REJECTED
+            )
             raise LLMRequestError(
                 f"{self.provider_name} rejected structured request: HTTP {response.status_code}",
                 requested_model=requested_model,
                 attempted_models=attempted_models,
-                failure_classification=LLMFailureClassification.REQUEST_REJECTED,
+                failure_classification=classification,
+                provider=self.provider_name,
+                model=model,
+                workload_type=workload_type,
+                attempt=attempt,
+                elapsed_seconds=perf_counter() - started,
             )
 
         try:
             body = response.json()
             content = _extract_content(body)
             decoded = json.loads(content) if isinstance(content, str) else content
+        except (ValueError, TypeError, KeyError, IndexError) as exc:
+            raise StructuredOutputError(
+                f"{self.provider_name} response failed {schema_name} decoding: "
+                f"{type(exc).__name__}",
+                requested_model=requested_model,
+                attempted_models=attempted_models,
+                failure_classification=LLMFailureClassification.INVALID_PROVIDER_RESPONSE,
+                provider=self.provider_name,
+                model=model,
+                workload_type=workload_type,
+                attempt=attempt,
+                elapsed_seconds=perf_counter() - started,
+            ) from None
+        try:
             output = response_model.model_validate(decoded)
-        except (ValueError, TypeError, KeyError, IndexError, ValidationError) as exc:
+        except ValidationError as exc:
             raise StructuredOutputError(
                 f"{self.provider_name} response failed {schema_name} validation: "
                 f"{type(exc).__name__}",
                 requested_model=requested_model,
                 attempted_models=attempted_models,
-                failure_classification=LLMFailureClassification.STRUCTURED_OUTPUT_INVALID,
+                failure_classification=LLMFailureClassification.SEMANTIC_SCHEMA_FAILURE,
+                provider=self.provider_name,
+                model=model,
+                workload_type=workload_type,
+                attempt=attempt,
+                elapsed_seconds=perf_counter() - started,
             ) from None
 
         usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}

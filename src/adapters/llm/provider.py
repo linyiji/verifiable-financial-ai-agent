@@ -9,11 +9,20 @@ from pydantic import BaseModel
 
 class LLMFailureClassification(StrEnum):
     PREFLIGHT_FAILURE = "preflight_failure"
-    RETRYABLE_TRANSPORT_FAILURE = "retryable_transport_failure"
+    AUTHENTICATION_FAILURE = "authentication_failure"
+    QUOTA_OR_RATE_LIMIT = "quota_or_rate_limit"
     RETRYABLE_HTTP_FAILURE = "retryable_http_failure"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    RETRYABLE_TRANSPORT_FAILURE = "provider_unavailable"
+    CONNECT_TIMEOUT = "connect_timeout"
+    READ_TIMEOUT = "read_timeout"
+    OVERALL_DEADLINE_EXCEEDED = "overall_deadline_exceeded"
+    REMOTE_PROTOCOL_ERROR = "remote_protocol_error"
+    INVALID_PROVIDER_RESPONSE = "invalid_provider_response"
+    SEMANTIC_SCHEMA_FAILURE = "semantic_schema_failure"
+    STRUCTURED_OUTPUT_INVALID = "semantic_schema_failure"
+    SEMANTIC_VALIDATION_FAILED = "semantic_schema_failure"
     REQUEST_REJECTED = "request_rejected"
-    STRUCTURED_OUTPUT_INVALID = "structured_output_invalid"
-    SEMANTIC_VALIDATION_FAILED = "semantic_validation_failed"
 
 
 class LLMProviderError(RuntimeError):
@@ -26,11 +35,23 @@ class LLMProviderError(RuntimeError):
         requested_model: str | None = None,
         attempted_models: tuple[str, ...] = (),
         failure_classification: LLMFailureClassification | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        workload_type: str | None = None,
+        attempt: int | None = None,
+        elapsed_seconds: float | None = None,
+        retryable: bool = False,
     ) -> None:
         super().__init__(message)
         self.requested_model = requested_model
         self.attempted_models = attempted_models
         self.failure_classification = failure_classification
+        self.provider = provider
+        self.model = model
+        self.workload_type = workload_type
+        self.attempt = attempt
+        self.elapsed_seconds = elapsed_seconds
+        self.retryable = retryable
 
 
 class LLMProviderUnavailableError(LLMProviderError):
@@ -43,12 +64,24 @@ class LLMProviderUnavailableError(LLMProviderError):
         requested_model: str | None = None,
         attempted_models: tuple[str, ...] = (),
         failure_classification: LLMFailureClassification | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        workload_type: str | None = None,
+        attempt: int | None = None,
+        elapsed_seconds: float | None = None,
+        retryable: bool = True,
     ) -> None:
         super().__init__(
             message,
             requested_model=requested_model,
             attempted_models=attempted_models,
             failure_classification=failure_classification,
+            provider=provider,
+            model=model,
+            workload_type=workload_type,
+            attempt=attempt,
+            elapsed_seconds=elapsed_seconds,
+            retryable=retryable,
         )
 
 
@@ -98,4 +131,5 @@ class LLMProvider(Protocol):
         response_model: type[StructuredModel],
         schema_name: str,
         force_fallback: bool = False,
+        workload_type: str | None = None,
     ) -> LLMStructuredResponse[StructuredModel]: ...

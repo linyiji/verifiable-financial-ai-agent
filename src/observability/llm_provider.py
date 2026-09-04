@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from time import perf_counter
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -36,6 +36,18 @@ class InstrumentedLLMProvider:
         self._trace = trace
         self._stage = stage
 
+    @property
+    def provider_name(self) -> str:
+        return str(getattr(self._delegate, "provider_name", ""))
+
+    @property
+    def model_name(self) -> str:
+        return str(getattr(self._delegate, "model_name", ""))
+
+    @property
+    def execution_policy(self) -> Any:
+        return getattr(self._delegate, "execution_policy", None)
+
     async def complete_structured(
         self,
         *,
@@ -43,6 +55,7 @@ class InstrumentedLLMProvider:
         response_model: type[StructuredModel],
         schema_name: str,
         force_fallback: bool = False,
+        workload_type: str | None = None,
     ) -> LLMStructuredResponse[StructuredModel]:
         manager = (
             self._trace.scheme_generation
@@ -50,13 +63,20 @@ class InstrumentedLLMProvider:
             else self._trace.planner_generation
         )
         started = perf_counter()
-        async with manager(attributes={"schema_name": schema_name}) as generation:
+        async with manager(
+            attributes={"schema_name": schema_name, "workload_type": workload_type}
+        ) as generation:
             try:
+                provider_kwargs: dict[str, Any] = {
+                    "messages": messages,
+                    "response_model": response_model,
+                    "schema_name": schema_name,
+                    "force_fallback": force_fallback,
+                }
+                if workload_type is not None:
+                    provider_kwargs["workload_type"] = workload_type
                 response = await self._delegate.complete_structured(
-                    messages=messages,
-                    response_model=response_model,
-                    schema_name=schema_name,
-                    force_fallback=force_fallback,
+                    **provider_kwargs,
                 )
             except Exception as exc:
                 await self._trace.complete_generation(
@@ -68,7 +88,21 @@ class InstrumentedLLMProvider:
                     input_tokens=None,
                     output_tokens=None,
                     total_tokens=None,
-                    attributes={"result_status": "error", "error_type": type(exc).__name__},
+                    attributes={
+                        "result_status": "error",
+                        "error_type": type(exc).__name__,
+                        "workload_type": workload_type,
+                        "failure_class": _optional_text(
+                            getattr(
+                                getattr(exc, "failure_classification", None),
+                                "value",
+                                None,
+                            )
+                        ),
+                        "attempt_number": getattr(exc, "attempt", None),
+                        "elapsed_seconds": getattr(exc, "elapsed_seconds", None),
+                        "retryable": bool(getattr(exc, "retryable", False)),
+                    },
                 )
                 raise
             total_tokens = (
@@ -85,7 +119,10 @@ class InstrumentedLLMProvider:
                 input_tokens=response.input_tokens,
                 output_tokens=response.output_tokens,
                 total_tokens=total_tokens,
-                attributes={"result_status": "success"},
+                attributes={
+                    "result_status": "success",
+                    "workload_type": workload_type,
+                },
             )
             return response
 
