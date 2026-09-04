@@ -51,7 +51,13 @@ async def run(output: Path) -> dict[str, Any]:
     persistence = create_postgresql_persistence(settings.database)
     run_id = f"RUN-{uuid4()}"
     references = InMemoryTraceReferenceRepository()
-    trace_build = create_langfuse_trace_adapter(settings.langfuse)
+    trace_build = create_langfuse_trace_adapter(
+        settings.langfuse,
+        additional_sensitive_values={
+            "FMP_API_KEY": settings.fmp.api_key.get_secret_value(),
+            "TEAMOROUTER_API_KEY": settings.llm.api_key.get_secret_value(),
+        },
+    )
     if not trace_build.enabled:
         raise RuntimeError(f"Langfuse adapter is not enabled: {trace_build.classification.value}")
     instrumentation = RuntimeInstrumentation(

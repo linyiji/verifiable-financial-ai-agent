@@ -15,7 +15,7 @@ from collections import Counter
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_from_bytes
@@ -39,6 +39,7 @@ from src.adapters.finrobot.professional_reporting import (
     ControlledArtifactStore,
     ProfessionalReportPublisher,
 )
+from src.adapters.finrobot.technical import moving_average_convergence_divergence
 from src.adapters.fmp import (
     FinancialProviderMode,
     FMPProvider,
@@ -103,6 +104,7 @@ from src.domain.enums import (
     SourceCoverageStatus,
 )
 from src.domain.financial_semantics import canonical_decimal, metric_semantics_hash
+from src.domain.macd_policy import MACD_DECIMAL_CONTEXT_POLICY
 from src.domain.proof import (
     ProofArtifactReference,
     ProofInputCommitment,
@@ -1017,6 +1019,16 @@ def _financial_semantic_matrix(
         and _same_canonical_decimal(oracle.get("value"), generated_calculation.output_value)
     )
     technical = [item for item in metrics if item.formula_id in MATERIAL_FORMULAS[3:]]
+    macd_determinism = _macd_ambient_context_check(
+        calculations=calculations,
+        evidence=aggregate.artifacts.evidence,
+    )
+    policy = MACD_DECIMAL_CONTEXT_POLICY
+    macd_metadata = [
+        item.method_metadata
+        for item in technical
+        if item.formula_id.startswith("macd_")
+    ]
     technical_passed = (
         len(technical) == 7
         and all(
@@ -1028,6 +1040,23 @@ def _financial_semantic_matrix(
             for item in technical
             if item.formula_id != "latest_volume_to_average_volume_20_v1"
         )
+        and len(macd_metadata) == 3
+        and all(
+            method is not None
+            and method.decimal_context_policy_id == policy.policy_id
+            and method.decimal_precision == policy.precision
+            and method.decimal_rounding == policy.rounding
+            and method.ema_adjust is policy.ema_adjust
+            and method.ema_seed == policy.ema_seed
+            and method.fast_span == policy.fast_span
+            and method.slow_span == policy.slow_span
+            and method.signal_span == policy.signal_span
+            and method.warmup_required == policy.warmup_required
+            and method.warmup_satisfied is True
+            and method.technical_price_basis is not None
+            for method in macd_metadata
+        )
+        and macd_determinism["passed"]
     )
     growth = next((item for item in calculations if item.formula_id == "revenue_growth_v1"), None)
     proof_input = proof_inputs[0] if len(proof_inputs) == 1 else None
@@ -1094,7 +1123,16 @@ def _financial_semantic_matrix(
             review_negative["cohort_mismatch_blocked"], {"negative": "cohort_mismatch"}
         ),
         "FS-009": _gate(generated_oracle_passed, {"validation_record_count": len(validations)}),
-        "FS-010": _gate(technical_passed, {"technical_metric_count": len(technical)}),
+        "FS-010": _gate(
+            technical_passed,
+            {
+                "technical_metric_count": len(technical),
+                "macd_decimal_context_policy_id": policy.policy_id,
+                "ambient_precisions": macd_determinism["ambient_precisions"],
+                "decimal_variant_count": macd_determinism["decimal_variant_count"],
+                "byte_variant_count": macd_determinism["byte_variant_count"],
+            },
+        ),
         "FS-011": _gate(proof_identity, {"proof_id": proof.proof_id if proof else None}),
         "FS-012": _gate(partial_coverage, {"partial_entitlement_directions": 2}),
         "FS-013": _gate(cross_view, {"metric_semantics_hash": metrics_hash}),
@@ -1106,6 +1144,71 @@ def _same_canonical_decimal(left: Any, right: Any) -> bool:
         return canonical_decimal(left) == canonical_decimal(right)
     except (ArithmeticError, TypeError, ValueError):
         return False
+
+
+def _macd_ambient_context_check(
+    *, calculations: list[Any], evidence: list[Any]
+) -> dict[str, Any]:
+    formula_ids = (
+        "macd_line_close_12_26_adjust_false_v1",
+        "macd_signal_close_12_26_9_adjust_false_v1",
+        "macd_histogram_close_12_26_9_adjust_false_v1",
+    )
+    by_formula = {item.formula_id: item for item in calculations if item.formula_id in formula_ids}
+    if set(by_formula) != set(formula_ids):
+        return {
+            "passed": False,
+            "ambient_precisions": [10, 28, 50],
+            "decimal_variant_count": 0,
+            "byte_variant_count": 0,
+        }
+    line = by_formula[formula_ids[0]]
+    if any(
+        by_formula[formula_id].input_evidence_ids != line.input_evidence_ids
+        for formula_id in formula_ids
+    ):
+        return {
+            "passed": False,
+            "ambient_precisions": [10, 28, 50],
+            "decimal_variant_count": 0,
+            "byte_variant_count": 0,
+        }
+    evidence_by_id = {item.evidence_id: item for item in evidence}
+    try:
+        closes = [
+            Decimal(str(evidence_by_id[evidence_id].normalized_value))
+            for evidence_id in line.input_evidence_ids
+        ]
+        authoritative = tuple(Decimal(str(by_formula[item].output_value)) for item in formula_ids)
+    except (KeyError, TypeError, ValueError):
+        return {
+            "passed": False,
+            "ambient_precisions": [10, 28, 50],
+            "decimal_variant_count": 0,
+            "byte_variant_count": 0,
+        }
+    decimal_variants: set[tuple[Any, ...]] = set()
+    byte_variants: set[bytes] = set()
+    all_match = True
+    for precision in (10, 28, 50):
+        with localcontext() as ambient:
+            ambient.prec = precision
+            value = moving_average_convergence_divergence(closes)
+        result = (value.line, value.signal, value.histogram)
+        all_match = all_match and result == authoritative
+        decimal_variants.add(tuple(item.as_tuple() for item in result))
+        byte_variants.add(
+            json.dumps(
+                [canonical_decimal(item) for item in result],
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+    return {
+        "passed": all_match and len(decimal_variants) == len(byte_variants) == 1,
+        "ambient_precisions": [10, 28, 50],
+        "decimal_variant_count": len(decimal_variants),
+        "byte_variant_count": len(byte_variants),
+    }
 
 
 def _report_content_matches_metrics(
@@ -1800,7 +1903,13 @@ async def _run_authoritative(
     if migration_current != migration_head:
         raise RuntimeError("PostgreSQL migration current revision does not match Alembic head")
     references = InMemoryTraceReferenceRepository()
-    trace_build = create_langfuse_trace_adapter(settings.langfuse)
+    trace_build = create_langfuse_trace_adapter(
+        settings.langfuse,
+        additional_sensitive_values={
+            "FMP_API_KEY": settings.fmp.api_key.get_secret_value(),
+            "TEAMOROUTER_API_KEY": settings.llm.api_key.get_secret_value(),
+        },
+    )
     if not trace_build.enabled:
         raise RuntimeError(f"Langfuse adapter is not enabled: {trace_build.classification.value}")
     audited_trace = AuditedTraceAdapter(trace_build.adapter)
@@ -2173,6 +2282,12 @@ async def _run_authoritative(
             trace_id = trace.trace_id
 
         await instrumentation.flush()
+        if trace_build.audit_reader is None:
+            raise RuntimeError("Langfuse trace read-back audit is unavailable")
+        langfuse_redaction_audit = await asyncio.to_thread(
+            trace_build.audit_reader.audit,
+            trace_id,
+        )
         events = list(await persistence.event_store.replay(run_id))
         event_sequences = [item.sequence for item in events]
         events_integrity_passed = (
@@ -2371,7 +2486,8 @@ async def _run_authoritative(
         langfuse_evidence = {
             "passed": trace_passed
             and trace_observation_passed
-            and required_trace_events.issubset(set(event_types)),
+            and required_trace_events.issubset(set(event_types))
+            and langfuse_redaction_audit.passed,
             "trace_id": trace_id,
             "root_trace_count": len(trace_ids),
             "reference_count": len(all_references),
@@ -2381,6 +2497,21 @@ async def _run_authoritative(
             "observation_names": sorted(observation_names),
             "tool_observations": sorted(observed_tool_names),
             "observation_trace_ids": sorted(observation_trace_ids),
+            "credential_redaction": {
+                "policy_id": langfuse_redaction_audit.policy_id,
+                "passed": langfuse_redaction_audit.passed,
+                "read_succeeded": langfuse_redaction_audit.read_succeeded,
+                "occurrence_count": langfuse_redaction_audit.occurrence_count,
+                "named_occurrence_counts": dict(
+                    langfuse_redaction_audit.named_occurrence_counts
+                ),
+                "serialized_field_count": langfuse_redaction_audit.field_count,
+                "observation_count": langfuse_redaction_audit.observation_count,
+                "attempts": langfuse_redaction_audit.attempts,
+                "inspected_surfaces": list(
+                    langfuse_redaction_audit.inspected_surfaces
+                ),
+            },
         }
         audit_state["langfuse"] = langfuse_evidence
         summary: dict[str, Any] = {

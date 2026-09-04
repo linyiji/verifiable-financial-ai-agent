@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import ast
+import json
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, localcontext
 from pathlib import Path
 
 import pytest
 
+import src.assurance.independent_financial_review as independent_review
 from src.adapters.finrobot.audit import FINROBOT_PINNED_COMMIT
 from src.adapters.finrobot.technical import (
     UPSTREAM_TECHNICAL_SOURCE,
@@ -30,6 +32,8 @@ from src.domain.calculation import CalculationRecord
 from src.domain.capability import CapabilityContext
 from src.domain.enums import CalculationStatus, EvidenceCategory, EvidenceStatus
 from src.domain.evidence import EvidenceRecord
+from src.domain.financial_semantics import canonical_decimal
+from src.domain.macd_policy import MACD_DECIMAL_CONTEXT_POLICY
 
 
 def history(*, count: int = 220, run_id: str = "RUN-1") -> list[EvidenceRecord]:
@@ -101,6 +105,57 @@ def test_pure_math_formulas_are_deterministic_and_version_choices_are_explicit()
         assert latest_volume_ratio([Decimal(index) for index in range(1, 21)]) == Decimal(
             20
         ) / Decimal("10.5")
+
+
+@pytest.mark.asyncio
+async def test_macd_is_byte_decimal_invariant_and_matches_independent_oracle() -> None:
+    records = history(count=80)
+    close_index = 0
+    for index, record in enumerate(records):
+        if record.normalized_field != "close":
+            continue
+        value = Decimal(f"{100 + close_index}.{(close_index * 982451653 + 17):018d}")
+        records[index] = record.model_copy(update={"normalized_value": canonical_decimal(value)})
+        close_index += 1
+    closes = [record for record in records if record.normalized_field == "close"]
+    formula_ids = (
+        "macd_line_close_12_26_adjust_false_v1",
+        "macd_signal_close_12_26_9_adjust_false_v1",
+        "macd_histogram_close_12_26_9_adjust_false_v1",
+    )
+    decimal_results: list[tuple[tuple[int, tuple[int, ...], int], ...]] = []
+    canonical_bytes: list[bytes] = []
+
+    for precision in (10, 28, 50):
+        with localcontext() as ambient:
+            ambient.prec = precision
+            calculations = await MACD12269Capability().execute(
+                {"history": records, "calculation_id": "CALC-MACD-CONTEXT"},
+                context(records),
+            )
+            production = tuple(item.output_value for item in calculations)
+            oracle = tuple(
+                independent_review._recompute(formula_id, closes)
+                for formula_id in formula_ids
+            )
+
+        assert production == oracle
+        decimal_results.append(tuple(value.as_tuple() for value in production))
+        canonical_bytes.append(
+            json.dumps(
+                [canonical_decimal(value) for value in production],
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        for calculation in calculations:
+            snapshot = calculation.input_values_snapshot
+            assert snapshot["decimal_context_policy_id"] == "macd-decimal-context-v1"
+            assert snapshot["decimal_precision"] == 28
+            assert snapshot["decimal_rounding"] == "ROUND_HALF_EVEN"
+
+    assert len(set(decimal_results)) == 1
+    assert len(set(canonical_bytes)) == 1
+    assert independent_review.MACD_DECIMAL_CONTEXT_POLICY is MACD_DECIMAL_CONTEXT_POLICY
 
 
 def test_evidence_gate_requires_ordered_accepted_paired_market_history() -> None:

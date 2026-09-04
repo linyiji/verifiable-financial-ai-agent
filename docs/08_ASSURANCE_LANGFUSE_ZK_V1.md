@@ -82,6 +82,23 @@ Implement:
 
 No credentials → Noop.
 
+### Phase 3 remediation: outbound credential redaction
+
+`langfuse-otel-export-redaction-v1` preserves the Langfuse SDK's original
+instrumentation-scope `public_key` until `LangfuseSpanProcessor` completes its
+project-routing check. The adapter then clones completed spans at the processor's OTLP
+exporter boundary, removes credential-shaped fields recursively, and redacts configured
+credential values from scope, resource, span, event, link, status, provider, tool, and
+embedded JSON payload surfaces. The delegate exporter and its authentication headers are
+unchanged.
+
+The existing Phase 3 `P3-INT-005` gate performs a post-flush Langfuse API read-back. Its
+evidence contains only the policy identifier, inspected field names, occurrence counts,
+structural counts, and status; trace payloads and configured values are never persisted.
+Each of `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `FMP_API_KEY`, and
+`TEAMOROUTER_API_KEY` must have zero occurrences. A missing/failed read-back fails the
+acceptance gate without changing fail-open behavior for ordinary business execution.
+
 ## 6. ZK proof boundary
 
 MVP recommended proof:

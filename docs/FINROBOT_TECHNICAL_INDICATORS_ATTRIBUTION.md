@@ -31,9 +31,19 @@ and chart modules. This port therefore freezes and versions the following choice
 - RSI 14: simple average of gains/losses over the latest 14 price changes; 15 closes required;
   all-gain = 100, all-loss = 0, unchanged = 50.
 - MACD 12/26/9: recursive EMA equivalent to pandas `adjust=False`, seeded from the first observed
-  close.
+  close. Every fast EMA, slow EMA, line, signal EMA, and histogram operation runs under
+  `macd-decimal-context-v1` with precision `28` and `ROUND_HALF_EVEN`; the implementation does not
+  inherit the process-global `Decimal` context.
 - Volume Ratio 20: latest volume divided by the mean of the latest 20 volumes, including the latest
   observation.
 
 Every produced `CalculationRecord.source_ref` contains the upstream repository, exact commit,
 symbol, and `Apache-2.0` marker; `implementation_hash` hashes the owned checked-in source.
+
+## Phase 3 financial-audit remediation delta
+
+The existing technical semantics oracle (`FS-010`) is strengthened without adding a gate: it now
+requires the calculation snapshot and released methodology to bind the policy ID, precision,
+rounding, EMA adjustment/seed, 12/26/9 spans, observation count, warm-up status, and technical
+price basis. The independent reviewer imports that same versioned policy definition for its owned
+recomputation instead of carrying a separate precision constant.

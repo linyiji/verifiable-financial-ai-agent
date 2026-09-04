@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import ROUND_HALF_EVEN, Context, Decimal, InvalidOperation, localcontext
 from typing import Literal
 from uuid import uuid4
 
@@ -39,6 +39,7 @@ from src.domain.enums import (
     TechnicalPriceBasis,
 )
 from src.domain.evidence import EvidenceRecord
+from src.domain.macd_policy import MACD_DECIMAL_CONTEXT_POLICY
 
 UPSTREAM_TECHNICAL_SOURCE = (
     "https://github.com/AI4Finance-Foundation/FinRobot/"
@@ -260,13 +261,20 @@ def exponential_moving_average(values: Sequence[Decimal], *, span: int) -> tuple
         raise ValueError("span must be positive")
     if not values:
         raise InsufficientHistoryError("EMA requires at least one value")
-    with localcontext() as context:
-        context.prec = 50
-        alpha = Decimal(2) / Decimal(span + 1)
-        output = [values[0]]
-        for value in values[1:]:
-            output.append(output[-1] + alpha * (value - output[-1]))
-        return tuple(output)
+    with localcontext(Context(prec=50, rounding=ROUND_HALF_EVEN)):
+        return _exponential_moving_average(values, span=span)
+
+
+def _exponential_moving_average(
+    values: Sequence[Decimal], *, span: int
+) -> tuple[Decimal, ...]:
+    """Compute an EMA inside the caller's explicit local Decimal context."""
+
+    alpha = Decimal(2) / Decimal(span + 1)
+    output = [values[0]]
+    for value in values[1:]:
+        output.append(output[-1] + alpha * (value - output[-1]))
+    return tuple(output)
 
 
 def moving_average_convergence_divergence(
@@ -285,15 +293,19 @@ def moving_average_convergence_divergence(
         raise InsufficientHistoryError(
             f"MACD requires at least {warmup} closing prices for signal warm-up"
         )
-    fast_ema = exponential_moving_average(values, span=fast)
-    slow_ema = exponential_moving_average(values, span=slow)
-    lines = tuple(
-        fast_value - slow_value for fast_value, slow_value in zip(fast_ema, slow_ema, strict=True)
-    )
-    signal_values = exponential_moving_average(lines, span=signal)
-    line = lines[-1]
-    signal_value = signal_values[-1]
-    return MACDValue(line=line, signal=signal_value, histogram=line - signal_value)
+    policy = MACD_DECIMAL_CONTEXT_POLICY
+    with localcontext(policy.decimal_context()):
+        fast_ema = _exponential_moving_average(values, span=fast)
+        slow_ema = _exponential_moving_average(values, span=slow)
+        lines = tuple(
+            fast_value - slow_value
+            for fast_value, slow_value in zip(fast_ema, slow_ema, strict=True)
+        )
+        signal_values = _exponential_moving_average(lines, span=signal)
+        line = lines[-1]
+        signal_value = signal_values[-1]
+        histogram = line - signal_value
+    return MACDValue(line=line, signal=signal_value, histogram=histogram)
 
 
 def latest_volume_ratio(values: Sequence[Decimal], *, window: int = 20) -> Decimal:
@@ -441,7 +453,13 @@ class MACD12269Capability:
     ) -> tuple[CalculationRecord, CalculationRecord, CalculationRecord]:
         points = _points_from_inputs(inputs, context)
         values = [point.close for point in points]
-        result = moving_average_convergence_divergence(values)
+        policy = MACD_DECIMAL_CONTEXT_POLICY
+        result = moving_average_convergence_divergence(
+            values,
+            fast=policy.fast_span,
+            slow=policy.slow_span,
+            signal=policy.signal_span,
+        )
         evidence_ids = [point.close_evidence_id for point in points]
         base_id = _calculation_id(inputs)
         common = {
@@ -449,16 +467,19 @@ class MACD12269Capability:
             "definition": self.definition,
             "evidence_ids": evidence_ids,
             "input_snapshot": {
-                "fast_span": 12,
-                "slow_span": 26,
-                "signal_span": 9,
-                "ema_adjust": False,
-                "ema_seed": "first_observation",
+                "decimal_context_policy_id": policy.policy_id,
+                "decimal_precision": policy.precision,
+                "decimal_rounding": policy.rounding,
+                "fast_span": policy.fast_span,
+                "slow_span": policy.slow_span,
+                "signal_span": policy.signal_span,
+                "ema_adjust": policy.ema_adjust,
+                "ema_seed": policy.ema_seed,
                 "observation_count": len(points),
                 "first_as_of": points[0].as_of.isoformat(),
                 "last_as_of": points[-1].as_of.isoformat(),
-                "warmup_required": 34,
-                "warmup_satisfied": len(points) >= 34,
+                "warmup_required": policy.warmup_required,
+                "warmup_satisfied": len(points) >= policy.warmup_required,
                 **_technical_input_metadata(points),
             },
             "unit": _price_output_unit(points),

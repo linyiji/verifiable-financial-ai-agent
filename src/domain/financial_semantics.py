@@ -20,6 +20,7 @@ from src.domain.enums import (
     SourceCoverageStatus,
     TechnicalPriceBasis,
 )
+from src.domain.macd_policy import MACD_DECIMAL_CONTEXT_POLICY
 
 _FY = re.compile(r"^FY(?P<year>\d{4})$")
 _QUARTER = re.compile(r"^Q(?P<quarter>[1-4])FY(?P<year>\d{4})$")
@@ -110,6 +111,14 @@ class TechnicalMethodMetadata(FinancialSemanticModel):
     last_as_of: date | None = None
     is_wilder: bool | None = None
     ema_adjust: bool | None = None
+    ema_seed: str | None = None
+    fast_span: int | None = Field(default=None, ge=1)
+    slow_span: int | None = Field(default=None, ge=1)
+    signal_span: int | None = Field(default=None, ge=1)
+    decimal_context_policy_id: str | None = None
+    decimal_precision: int | None = Field(default=None, ge=1)
+    decimal_rounding: str | None = None
+    technical_price_basis: TechnicalPriceBasis | None = None
 
     @field_validator("method")
     @classmethod
@@ -117,6 +126,33 @@ class TechnicalMethodMetadata(FinancialSemanticModel):
         if not value.strip():
             raise ValueError("technical method must not be blank")
         return value.strip()
+
+    @model_validator(mode="after")
+    def validate_macd_policy(self) -> Self:
+        if self.method != "MACD_EMA_12_26_9_FIRST_OBSERVATION_SEED":
+            return self
+        policy = MACD_DECIMAL_CONTEXT_POLICY
+        expected = {
+            "decimal_context_policy_id": policy.policy_id,
+            "decimal_precision": policy.precision,
+            "decimal_rounding": policy.rounding,
+            "ema_adjust": policy.ema_adjust,
+            "ema_seed": policy.ema_seed,
+            "fast_span": policy.fast_span,
+            "slow_span": policy.slow_span,
+            "signal_span": policy.signal_span,
+            "warmup_required": policy.warmup_required,
+        }
+        actual = {key: getattr(self, key) for key in expected}
+        if actual != expected:
+            raise ValueError(
+                "MACD methodology metadata does not match its versioned Decimal policy"
+            )
+        if self.observation_count is None or self.warmup_satisfied is None:
+            raise ValueError("MACD methodology metadata requires observation and warm-up status")
+        if self.technical_price_basis is None:
+            raise ValueError("MACD methodology metadata requires technical_price_basis")
+        return self
 
 
 class ReleasedFinancialMetric(FinancialSemanticModel):
@@ -200,6 +236,11 @@ class ReleasedFinancialMetric(FinancialSemanticModel):
             and not self.corporate_action_guard_refs
         ):
             raise ValueError("ADJUSTED_CLOSE metrics require adjustment evidence refs")
+        if self.formula_id.startswith("macd_") and (
+            self.method_metadata is None
+            or self.method_metadata.technical_price_basis is not self.technical_price_basis
+        ):
+            raise ValueError("MACD release requires matching versioned methodology metadata")
         return self
 
     def semantic_payload(self) -> JsonObject:

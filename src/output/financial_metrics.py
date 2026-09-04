@@ -24,6 +24,7 @@ from src.domain.financial_semantics import (
     TechnicalMethodMetadata,
     canonical_decimal,
 )
+from src.domain.macd_policy import MACD_DECIMAL_CONTEXT_POLICY
 
 MATERIAL_FORMULAS = (
     "revenue_growth_v1",
@@ -318,15 +319,39 @@ def _method_metadata(
             is_wilder=False,
         )
     if calculation.formula_id.startswith("macd_"):
+        policy = MACD_DECIMAL_CONTEXT_POLICY
+        price_bases = {
+            item.technical_price_basis
+            or (
+                TechnicalPriceBasis.ADJUSTED_CLOSE
+                if item.normalized_field == "adjusted_close"
+                else TechnicalPriceBasis.RAW_CLOSE
+            )
+            for item in inputs
+        }
+        if len(price_bases) != 1:
+            raise ValueError("MACD methodology requires one technical price basis")
         return TechnicalMethodMetadata(
             method="MACD_EMA_12_26_9_FIRST_OBSERVATION_SEED",
-            parameters=(("fast", "12"), ("slow", "26"), ("signal", "9")),
+            parameters=(
+                ("fast", str(policy.fast_span)),
+                ("slow", str(policy.slow_span)),
+                ("signal", str(policy.signal_span)),
+            ),
             observation_count=count,
-            warmup_required=34,
-            warmup_satisfied=count >= 34,
+            warmup_required=policy.warmup_required,
+            warmup_satisfied=count >= policy.warmup_required,
             first_as_of=first,
             last_as_of=last,
-            ema_adjust=False,
+            ema_adjust=policy.ema_adjust,
+            ema_seed=policy.ema_seed,
+            fast_span=policy.fast_span,
+            slow_span=policy.slow_span,
+            signal_span=policy.signal_span,
+            decimal_context_policy_id=policy.policy_id,
+            decimal_precision=policy.precision,
+            decimal_rounding=policy.rounding,
+            technical_price_basis=next(iter(price_bases)),
         )
     window = int(snapshot.get("window") or 1)
     return TechnicalMethodMetadata(

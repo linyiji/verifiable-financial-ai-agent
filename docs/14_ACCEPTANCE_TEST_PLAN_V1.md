@@ -75,6 +75,11 @@ End-to-end offline controlled flow.
 | AC-025 | Run checkpoint can recover |
 | AC-026 | Comparison gate rejects incompatible period/definition |
 
+Phase 3 remediation strengthens the existing Langfuse acceptance oracle in
+`P3-INT-005`; it does not add a gate. After flush, the authoritative trace and all
+observations are read back and recursively checked for zero configured-credential
+occurrences. Persisted audit evidence is counts-only.
+
 ## 4. Phase 1 minimum acceptance
 
 Must pass before Phase 2:

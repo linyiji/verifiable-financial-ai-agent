@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from contextlib import AbstractContextManager
+from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel
@@ -19,7 +21,12 @@ from src.observability import (
     create_langfuse_trace_adapter,
     run_langfuse_smoke,
 )
-from src.observability.langfuse_adapter import LangfuseSDKClient
+from src.observability.langfuse_adapter import (
+    LANGFUSE_OTLP_REDACTION_POLICY,
+    LangfuseSDKClient,
+    LangfuseTraceAuditReader,
+    _LangfuseOTLPRedactingExporter,
+)
 
 
 class FakeSpan:
@@ -343,6 +350,254 @@ async def test_metadata_is_sanitized_for_spans_and_events() -> None:
         assert metadata["normalized_value"] == "[REDACTED]"
         assert metadata["output"] == "[REDACTED]"
         assert "credential-value" not in str(metadata)
+
+
+@pytest.mark.asyncio
+async def test_sdk_bridge_redacts_all_configured_credentials_across_keys_and_values() -> None:
+    sdk = FakeLangfuseSDK()
+    configured_values = {
+        "FMP_API_KEY": "fmp-sensitive-sentinel",
+        "TEAMOROUTER_API_KEY": "router-sensitive-sentinel",
+    }
+    build = create_langfuse_trace_adapter(
+        settings(public="public-sensitive-sentinel", secret="secret-sensitive-sentinel"),
+        sdk_factory=lambda **kwargs: sdk,
+        additional_sensitive_values=configured_values,
+    )
+    hooks = RuntimeInstrumentation(build.adapter)
+    unsafe = {
+        "provider": "fmp-sensitive-sentinel",
+        "nested": {
+            "safe_label": "router-sensitive-sentinel",
+            "publicKey": "unknown-public-value",
+            "client-password": "unknown-password-value",
+            "sessionTokenField": "unknown-token-value",
+            "api-key": "unknown-api-key-value",
+        },
+    }
+
+    async with hooks.run(run_id="RUN-REDACTION", attributes=unsafe):
+        pass
+    await hooks.emit(
+        ObservationStage.TOOL,
+        "failed",
+        run_id="RUN-REDACTION",
+        attributes={"error": unsafe, "secret": "secret-sensitive-sentinel"},
+    )
+
+    serialized = json.dumps(
+        {"spans": sdk.spans, "events": sdk.events},
+        default=str,
+        sort_keys=True,
+    )
+    for sentinel in (
+        "public-sensitive-sentinel",
+        "secret-sensitive-sentinel",
+        "fmp-sensitive-sentinel",
+        "router-sensitive-sentinel",
+        "unknown-public-value",
+        "unknown-password-value",
+        "unknown-token-value",
+        "unknown-api-key-value",
+    ):
+        assert sentinel not in serialized
+
+
+class _CapturingSpanExporter:
+    def __init__(self) -> None:
+        self.spans: tuple[object, ...] = ()
+        self.authorization = "public-sensitive-sentinel:secret-sensitive-sentinel"
+
+    def export(self, spans: tuple[object, ...]) -> object:
+        from opentelemetry.sdk.trace.export import SpanExportResult
+
+        self.spans = spans
+        return SpanExportResult.SUCCESS
+
+    def shutdown(self) -> None:
+        return None
+
+
+def test_otlp_export_boundary_removes_credentials_from_fully_serialized_spans() -> None:
+    from opentelemetry.exporter.otlp.proto.common.trace_encoder import encode_spans
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import Event, ReadableSpan
+    from opentelemetry.sdk.util.instrumentation import InstrumentationScope
+    from opentelemetry.trace import (
+        Link,
+        SpanContext,
+        SpanKind,
+        Status,
+        StatusCode,
+        TraceFlags,
+        TraceState,
+    )
+
+    configured = (
+        "public-sensitive-sentinel",
+        "secret-sensitive-sentinel",
+        "fmp-sensitive-sentinel",
+        "router-sensitive-sentinel",
+    )
+    payloads = {
+        "root": {"public-key": "generic-root-sentinel"},
+        "observation": {"secret": "generic-observation-sentinel"},
+        "error": {"password": "generic-error-sentinel"},
+        "provider": {"apiKey": "generic-provider-sentinel"},
+        "tool": {"bearerTokenValue": "generic-tool-sentinel"},
+    }
+    context = SpanContext(
+        trace_id=1,
+        span_id=2,
+        is_remote=False,
+        trace_flags=TraceFlags(1),
+        trace_state=TraceState(),
+    )
+    scope = InstrumentationScope(
+        "langfuse-sdk",
+        attributes={"public_key": configured[0]},
+    )
+    spans = tuple(
+        ReadableSpan(
+            name=f"vfas.{surface}",
+            context=context,
+            resource=Resource(
+                {
+                    "service.name": "vfas",
+                    "FMP_API_KEY": configured[2],
+                }
+            ),
+            attributes={
+                "payload": json.dumps(payload),
+                "provider_reference": configured[3],
+            },
+            events=(
+                Event(
+                    "exception",
+                    attributes={"exception.message": configured[1]},
+                ),
+            ),
+            links=(Link(context, attributes={"accessToken": "generic-link-sentinel"}),),
+            kind=SpanKind.INTERNAL,
+            instrumentation_scope=scope,
+            status=Status(StatusCode.ERROR, description=configured[1]),
+            start_time=1,
+            end_time=2,
+        )
+        for surface, payload in payloads.items()
+    )
+    delegate = _CapturingSpanExporter()
+    exporter = _LangfuseOTLPRedactingExporter(
+        delegate,
+        sensitive_values=configured,
+    )
+
+    exporter.export(spans)
+
+    assert spans[0].instrumentation_scope.attributes["public_key"] == configured[0]
+    assert delegate.authorization == f"{configured[0]}:{configured[1]}"
+    assert len(delegate.spans) == len(payloads)
+    assert all(span.instrumentation_scope.attributes == {} for span in delegate.spans)
+    outbound = encode_spans(delegate.spans).SerializeToString()
+    for sentinel in (
+        *configured,
+        "generic-root-sentinel",
+        "generic-observation-sentinel",
+        "generic-error-sentinel",
+        "generic-provider-sentinel",
+        "generic-tool-sentinel",
+        "generic-link-sentinel",
+    ):
+        assert sentinel.encode() not in outbound
+    for sensitive_field in (
+        b"public_key",
+        b"FMP_API_KEY",
+        b"public-key",
+        b"secret",
+        b"password",
+        b"apiKey",
+        b"bearerTokenValue",
+        b"accessToken",
+    ):
+        assert sensitive_field not in outbound
+
+
+def test_factory_wraps_only_matching_langfuse_exporter_after_project_routing() -> None:
+    public = "public-sensitive-sentinel"
+    delegate = _CapturingSpanExporter()
+    processor_type = type("LangfuseSpanProcessor", (), {})
+    processor_type.__module__ = "langfuse._client.span_processor"
+    processor = processor_type()
+    processor.public_key = public
+    processor._batch_processor = SimpleNamespace(_exporter=delegate)
+    sdk_type = type("Langfuse", (), {})
+    sdk_type.__module__ = "langfuse.fake"
+    sdk = sdk_type()
+    sdk._resources = SimpleNamespace(
+        tracer_provider=SimpleNamespace(
+            _active_span_processor=SimpleNamespace(_span_processors=(processor,))
+        )
+    )
+    sdk.start_as_current_span = lambda **kwargs: None
+    sdk.create_event = lambda **kwargs: None
+    sdk.flush = lambda: None
+
+    build = create_langfuse_trace_adapter(
+        settings(public=public, secret="secret-sensitive-sentinel"),
+        sdk_factory=lambda **kwargs: sdk,
+        additional_sensitive_values={"FMP_API_KEY": "fmp-sensitive-sentinel"},
+    )
+
+    assert build.enabled is True
+    assert isinstance(processor._batch_processor._exporter, _LangfuseOTLPRedactingExporter)
+    assert processor.public_key == public
+    assert processor._batch_processor._exporter._delegate is delegate
+
+
+def test_trace_readback_audit_reports_only_named_counts() -> None:
+    values = {
+        "LANGFUSE_PUBLIC_KEY": "public-sensitive-sentinel",
+        "LANGFUSE_SECRET_KEY": "secret-sensitive-sentinel",
+        "FMP_API_KEY": "fmp-sensitive-sentinel",
+        "TEAMOROUTER_API_KEY": "router-sensitive-sentinel",
+    }
+    response = {
+        "metadata": {
+            "scope": {"attributes": {"public_key": values["LANGFUSE_PUBLIC_KEY"]}}
+        },
+        "observations": [
+            {
+                "metadata": {
+                    "scope": {
+                        "attributes": {"public_key": values["LANGFUSE_PUBLIC_KEY"]}
+                    }
+                },
+                "provider": values["TEAMOROUTER_API_KEY"],
+                "tool": values["FMP_API_KEY"],
+                "error": values["LANGFUSE_SECRET_KEY"],
+            }
+        ],
+    }
+    sdk = SimpleNamespace(
+        api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: response))
+    )
+
+    audit = LangfuseTraceAuditReader(
+        sdk,
+        named_sensitive_values=values,
+    ).audit("trace-id", attempts=1)
+
+    assert audit.policy_id == LANGFUSE_OTLP_REDACTION_POLICY
+    assert audit.passed is False
+    assert audit.occurrence_count == 5
+    assert dict(audit.named_occurrence_counts) == {
+        "FMP_API_KEY": 1,
+        "LANGFUSE_PUBLIC_KEY": 2,
+        "LANGFUSE_SECRET_KEY": 1,
+        "TEAMOROUTER_API_KEY": 1,
+    }
+    serialized_audit = repr(audit)
+    assert all(value not in serialized_audit for value in values.values())
 
 
 class BrokenSDK:

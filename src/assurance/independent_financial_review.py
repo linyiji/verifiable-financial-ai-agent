@@ -32,6 +32,7 @@ from src.domain.financial_semantics import (
     canonical_decimal,
     evidence_unit_class,
 )
+from src.domain.macd_policy import MACD_DECIMAL_CONTEXT_POLICY
 from src.domain.review import ReviewCheck, ReviewRecord
 from src.output.financial_metrics import MATERIAL_FORMULAS
 
@@ -648,15 +649,19 @@ def _snapshot_matches(
             and snapshot.get("rsi_method") == "simple_average_not_wilder"
         )
     if formula_id.startswith("macd_"):
+        policy = MACD_DECIMAL_CONTEXT_POLICY
         return (
             common
-            and snapshot.get("fast_span") == 12
-            and snapshot.get("slow_span") == 26
-            and snapshot.get("signal_span") == 9
-            and snapshot.get("ema_adjust") is False
-            and snapshot.get("ema_seed") == "first_observation"
+            and snapshot.get("decimal_context_policy_id") == policy.policy_id
+            and snapshot.get("decimal_precision") == policy.precision
+            and snapshot.get("decimal_rounding") == policy.rounding
+            and snapshot.get("fast_span") == policy.fast_span
+            and snapshot.get("slow_span") == policy.slow_span
+            and snapshot.get("signal_span") == policy.signal_span
+            and snapshot.get("ema_adjust") is policy.ema_adjust
+            and snapshot.get("ema_seed") == policy.ema_seed
             and snapshot.get("observation_count") == len(inputs)
-            and snapshot.get("warmup_required") == 34
+            and snapshot.get("warmup_required") == policy.warmup_required
             and snapshot.get("warmup_satisfied") is True
         )
     return (
@@ -790,11 +795,38 @@ def _method_metadata_matches(
         expected = ("RSI_SIMPLE_AVERAGE_NOT_WILDER", 15, 15)
         extra = method.is_wilder is False and method.parameters == (("period", "14"),)
     elif formula_id.startswith("macd_"):
-        expected = ("MACD_EMA_12_26_9_FIRST_OBSERVATION_SEED", len(inputs), 34)
-        extra = method.ema_adjust is False and method.parameters == (
-            ("fast", "12"),
-            ("slow", "26"),
-            ("signal", "9"),
+        policy = MACD_DECIMAL_CONTEXT_POLICY
+        expected = (
+            "MACD_EMA_12_26_9_FIRST_OBSERVATION_SEED",
+            len(inputs),
+            policy.warmup_required,
+        )
+        price_bases = {
+            item.technical_price_basis
+            or (
+                TechnicalPriceBasis.ADJUSTED_CLOSE
+                if item.normalized_field == "adjusted_close"
+                else TechnicalPriceBasis.RAW_CLOSE
+            )
+            for item in inputs
+        }
+        extra = (
+            len(price_bases) == 1
+            and method.decimal_context_policy_id == policy.policy_id
+            and method.decimal_precision == policy.precision
+            and method.decimal_rounding == policy.rounding
+            and method.ema_adjust is policy.ema_adjust
+            and method.ema_seed == policy.ema_seed
+            and method.fast_span == policy.fast_span
+            and method.slow_span == policy.slow_span
+            and method.signal_span == policy.signal_span
+            and method.technical_price_basis is next(iter(price_bases))
+            and method.parameters
+            == (
+                ("fast", str(policy.fast_span)),
+                ("slow", str(policy.slow_span)),
+                ("signal", str(policy.signal_span)),
+            )
         )
     elif formula_id == "latest_volume_to_average_volume_20_v1":
         expected = ("VOLUME_RATIO", 20, 20)
@@ -1061,6 +1093,18 @@ def _recompute(formula_id: str, inputs: Sequence[EvidenceRecord]) -> Decimal:
                 "revenue"
             ]
     closes = _values(inputs, "adjusted_close") or _values(inputs, "close")
+    if formula_id.startswith("macd_"):
+        policy = MACD_DECIMAL_CONTEXT_POLICY
+        with localcontext(policy.decimal_context()):
+            fast = _ema(closes, policy.fast_span)
+            slow = _ema(closes, policy.slow_span)
+            line_values = [a - b for a, b in zip(fast, slow, strict=True)]
+            signal_values = _ema(line_values, policy.signal_span)
+            if formula_id == "macd_line_close_12_26_adjust_false_v1":
+                return line_values[-1]
+            if formula_id == "macd_signal_close_12_26_9_adjust_false_v1":
+                return signal_values[-1]
+            return line_values[-1] - signal_values[-1]
     with localcontext() as context:
         context.prec = 50
         if formula_id == "sma_close_50_v1":
@@ -1082,41 +1126,22 @@ def _recompute(formula_id: str, inputs: Sequence[EvidenceRecord]) -> Decimal:
                 return Decimal(0)
             strength = average_gain / average_loss
             return Decimal(100) - Decimal(100) / (Decimal(1) + strength)
-        if formula_id.startswith("macd_"):
-            fast = _ema(closes, 12)
-            slow = _ema(closes, 26)
         if formula_id == "latest_volume_to_average_volume_20_v1":
             volume = _values(inputs, "volume")[-20:]
             average = sum(volume, Decimal(0)) / Decimal(20)
             if average == 0:
                 raise ValueError("average volume is zero")
             return volume[-1] / average
-    if formula_id.startswith("macd_"):
-        fast = _ema(closes, 12)
-        slow = _ema(closes, 26)
-        with localcontext() as context:
-            context.prec = 28
-            line_values = [a - b for a, b in zip(fast, slow, strict=True)]
-        signal_values = _ema(line_values, 9)
-        if formula_id == "macd_line_close_12_26_adjust_false_v1":
-            return line_values[-1]
-        if formula_id == "macd_signal_close_12_26_9_adjust_false_v1":
-            return signal_values[-1]
-        with localcontext() as context:
-            context.prec = 28
-            return line_values[-1] - signal_values[-1]
     raise ValueError(f"unsupported material formula: {formula_id}")
 
 
 def _ema(values: Sequence[Decimal], span: int) -> list[Decimal]:
     if not values:
         raise ValueError("EMA inputs are empty")
-    with localcontext() as context:
-        context.prec = 50
-        alpha = Decimal(2) / Decimal(span + 1)
-        result = [values[0]]
-        for value in values[1:]:
-            result.append(result[-1] + alpha * (value - result[-1]))
+    alpha = Decimal(2) / Decimal(span + 1)
+    result = [values[0]]
+    for value in values[1:]:
+        result.append(result[-1] + alpha * (value - result[-1]))
     return result
 
 

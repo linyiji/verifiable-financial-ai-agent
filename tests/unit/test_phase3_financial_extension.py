@@ -498,6 +498,44 @@ async def test_extension_executes_generated_gap_and_finrobot_technical_runtime()
         if item.status is ReviewStatus.BLOCK
     ]
     assert len(review.checks) == 54
+    macd_methods = [
+        item.method_metadata for item in metrics if item.formula_id.startswith("macd_")
+    ]
+    assert len(macd_methods) == 3
+    assert all(method is not None for method in macd_methods)
+    assert {
+        (
+            method.decimal_context_policy_id,
+            method.decimal_precision,
+            method.decimal_rounding,
+            method.ema_adjust,
+            method.ema_seed,
+            method.fast_span,
+            method.slow_span,
+            method.signal_span,
+            method.observation_count,
+            method.warmup_required,
+            method.warmup_satisfied,
+            method.technical_price_basis.value,
+        )
+        for method in macd_methods
+        if method is not None and method.technical_price_basis is not None
+    } == {
+        (
+            "macd-decimal-context-v1",
+            28,
+            "ROUND_HALF_EVEN",
+            False,
+            "first_observation",
+            12,
+            26,
+            9,
+            200,
+            34,
+            True,
+            "RAW_CLOSE",
+        )
+    }
     tampered = calculations.copy()
     tampered[0] = growth.model_copy(update={"output_value": Decimal("0.2501")})
     blocked = reviewer.review(

@@ -52,7 +52,13 @@ async def run(output: Path) -> dict[str, Any]:
     llm_client = TeamoRouterClient(settings.llm, timeout_seconds=60.0)
     scheme_generator = TeamoRouterSchemeGenerator(llm_client, max_validation_attempts=2)
     planner = TeamoRouterResearchLeadPlanner(llm_client, max_validation_attempts=3)
-    trace_build = create_langfuse_trace_adapter(settings.langfuse)
+    trace_build = create_langfuse_trace_adapter(
+        settings.langfuse,
+        additional_sensitive_values={
+            "FMP_API_KEY": settings.fmp.api_key.get_secret_value(),
+            "TEAMOROUTER_API_KEY": settings.llm.api_key.get_secret_value(),
+        },
+    )
     service = ResearchApplicationService(
         trace_adapter=trace_build.adapter,
         evidence_repository=evidence_repository,

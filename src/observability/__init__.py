@@ -6,8 +6,11 @@ from src.observability.instrumentation import (
     RuntimeInstrumentation,
 )
 from src.observability.langfuse_adapter import (
+    LANGFUSE_OTLP_REDACTION_POLICY,
     LangfuseSDKClient,
+    LangfuseTraceAuditReader,
     LangfuseTraceAdapter,
+    LangfuseTraceRedactionAudit,
     TraceAdapterBuild,
     TraceAdapterClassification,
     build_trace_adapter,
@@ -39,8 +42,11 @@ __all__ = [
     "InMemoryTraceReferenceRepository",
     "InstrumentedLLMProvider",
     "JAPAN_LANGFUSE_BASE_URL",
+    "LANGFUSE_OTLP_REDACTION_POLICY",
     "LangfuseConnectivityClassification",
     "LangfuseSDKClient",
+    "LangfuseTraceAuditReader",
+    "LangfuseTraceRedactionAudit",
     "LangfuseSmokeResult",
     "LangfuseTraceAdapter",
     "NoopTraceAdapter",
