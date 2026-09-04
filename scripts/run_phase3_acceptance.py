@@ -1804,6 +1804,7 @@ async def _run_authoritative(
                 ),
                 as_of=date(2026, 9, 4),
                 preferences={"depth": "standard", "provider": "live_fmp", "phase": 3},
+                observation_run_id=run_id,
             )
             aggregate = await service.confirm_run(
                 draft_id=draft.draft_id,

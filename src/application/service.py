@@ -176,6 +176,7 @@ class ResearchApplicationService:
         research_goal: str,
         as_of,
         preferences: dict[str, object],
+        observation_run_id: str | None = None,
     ) -> ResearchRunDraft:
         research_object = await self._object(research_object_id)
         goal_id = f"GOAL-{uuid4()}"
@@ -186,7 +187,10 @@ class ResearchApplicationService:
             as_of=as_of,
             preferences=preferences,
         )
-        async with self.instrumentation.scheme(run_id=f"DRAFT:{goal_id}"):
+        if observation_run_id is not None and not observation_run_id.strip():
+            raise ValueError("observation_run_id must not be blank")
+        trace_run_id = observation_run_id or f"DRAFT:{goal_id}"
+        async with self.instrumentation.scheme(run_id=trace_run_id):
             scheme = await self.scheme_generator.generate(
                 research_object=research_object,
                 goal=goal,

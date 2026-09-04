@@ -19,17 +19,18 @@ class _Span:
 class _RecordingTraceAdapter:
     def __init__(self) -> None:
         self.names: list[str] = []
+        self.attributes: list[dict[str, object]] = []
 
     @asynccontextmanager
     async def span(self, name: str, *, attributes=None):
-        del attributes
         self.names.append(name)
+        self.attributes.append(attributes or {})
         yield _Span(trace_id="trace-integration", span_id=f"span-{len(self.names)}")
 
     @asynccontextmanager
     async def generation(self, name: str, **kwargs):
-        del kwargs
         self.names.append(name)
+        self.attributes.append(kwargs.get("attributes") or {})
         yield _Span(trace_id="trace-integration", span_id=f"generation-{len(self.names)}")
 
     async def complete_generation(self, generation, **kwargs) -> None:
@@ -83,3 +84,25 @@ async def test_runtime_observations_and_canonical_trace_references() -> None:
     assert set(aggregate.artifacts.canonical_record.trace_refs).issubset(
         {reference.reference_id for reference in persisted}
     )
+
+
+@pytest.mark.asyncio
+async def test_preallocated_run_id_owns_prepare_observation() -> None:
+    adapter = _RecordingTraceAdapter()
+    service = ResearchApplicationService(trace_adapter=adapter)
+    research_object = await service.create_object(
+        symbol="NVDA",
+        company_name="NVIDIA Corporation",
+        exchange="NASDAQ",
+    )
+
+    await service.prepare_run(
+        research_object_id=research_object.object_id,
+        research_goal="Keep the scheme observation in the authoritative run trace",
+        as_of=date(2026, 9, 4),
+        preferences={},
+        observation_run_id="RUN-PREALLOCATED",
+    )
+
+    scheme_index = adapter.names.index("vfas.scheme")
+    assert adapter.attributes[scheme_index]["run_id"] == "RUN-PREALLOCATED"

@@ -218,7 +218,10 @@ class GeneratedCapabilityOrchestrator:
                 handoff.assert_ready_for_task_approval(candidate)
                 progress.assert_complete()
                 generated = generated.model_copy(
-                    update={"lifecycle": CapabilityLifecycle.FINANCIAL_VALIDATED}
+                    update={
+                        "lifecycle": CapabilityLifecycle.FINANCIAL_VALIDATED,
+                        "runtime_version": handoff.sandbox_execution.runtime_version,
+                    }
                 )
                 build = build.model_copy(
                     update={"lifecycle": CapabilityLifecycle.FINANCIAL_VALIDATED}
@@ -242,9 +245,7 @@ class GeneratedCapabilityOrchestrator:
                 generated = generated.model_copy(
                     update={"lifecycle": CapabilityLifecycle.TASK_APPROVED}
                 )
-                build = build.model_copy(
-                    update={"lifecycle": CapabilityLifecycle.TASK_APPROVED}
-                )
+                build = build.model_copy(update={"lifecycle": CapabilityLifecycle.TASK_APPROVED})
                 builds[-1] = build
                 await self._recorder.record_build(build)
                 await self._recorder.record_generated(generated)
@@ -275,9 +276,7 @@ class GeneratedCapabilityOrchestrator:
                 generated = generated.model_copy(
                     update={"lifecycle": CapabilityLifecycle.ACTIVE_FOR_SCOPE}
                 )
-                build = build.model_copy(
-                    update={"lifecycle": CapabilityLifecycle.ACTIVE_FOR_SCOPE}
-                )
+                build = build.model_copy(update={"lifecycle": CapabilityLifecycle.ACTIVE_FOR_SCOPE})
                 builds[-1] = build
                 await self._recorder.record_build(build)
                 await self._recorder.record_generated(generated)
@@ -427,9 +426,7 @@ class _ValidationProgress(CapabilityValidationProgressPort):
         )
 
     async def tests_passed(self, implementation_hash: str) -> None:
-        await self._advance(
-            "tests", RuntimeEventType.CAPABILITY_TEST_PASSED, implementation_hash
-        )
+        await self._advance("tests", RuntimeEventType.CAPABILITY_TEST_PASSED, implementation_hash)
 
     async def financial_validated(self, implementation_hash: str) -> None:
         await self._advance(

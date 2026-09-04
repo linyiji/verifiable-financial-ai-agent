@@ -108,9 +108,7 @@ class FakeRegistry:
         assert registration.lifecycle is CapabilityLifecycle.TASK_APPROVED
         assert registration.scope is not None
         self._capability = capability
-        active = registration.model_copy(
-            update={"lifecycle": CapabilityLifecycle.ACTIVE_FOR_SCOPE}
-        )
+        active = registration.model_copy(update={"lifecycle": CapabilityLifecycle.ACTIVE_FOR_SCOPE})
         self.registrations.append(active)
         return active
 
@@ -308,6 +306,8 @@ async def test_full_governed_path_scopes_and_resumes_same_task_without_graph_mut
     assert state.actual_graph.version == initial_graph_version
     assert len(state.actual_graph.tasks) == 1  # Capability Build is not a Research Task.
     assert recorder.gaps and recorder.generated and recorder.validations and recorder.registrations
+    assert result.generated.runtime_version == result.sandbox_execution.runtime_version
+    assert recorder.generated[-1].runtime_version == result.sandbox_execution.runtime_version
 
     event_types = [event.type for event in await events.replay("RUN-1")]
     assert event_types == [
@@ -358,8 +358,7 @@ async def test_generation_failures_are_bounded_and_explicit() -> None:
     assert state.task("TASK-1").status is TaskStatus.CAPABILITY_BUILD_FAILED
     assert len(raised.value.build_records) == 2
     assert all(
-        build.lifecycle is CapabilityLifecycle.BUILD_FAILED
-        for build in raised.value.build_records
+        build.lifecycle is CapabilityLifecycle.BUILD_FAILED for build in raised.value.build_records
     )
     failures = [
         event
