@@ -70,6 +70,13 @@ class FakeRiscZeroAdapter:
         return True
 
 
+class TamperingRiscZeroAdapter(FakeRiscZeroAdapter):
+    async def verify(self, result):
+        verified = await super().verify(result)
+        self.receipt.write_bytes(b"receipt-changed-after-verify")
+        return verified
+
+
 def _growth() -> CalculationRecord:
     return CalculationRecord(
         calculation_id="CALC-GROWTH",
@@ -110,7 +117,7 @@ async def test_workflow_maps_verified_receipt_to_durable_records(tmp_path: Path)
     assert outcome.requirements == {"CALC-GROWTH": ProofRequirement.MUST_PROVE}
     proof = outcome.proofs["CALC-GROWTH"]
     assert isinstance(proof, ProofRecord)
-    assert proof.status is ProofStatus.VALID
+    assert proof.status is ProofStatus.VERIFIED
     assert proof.receipt_hash and proof.journal_hash
     assert outcome.runtime_state["dev_mode"] is False
     assert len(adapter.requests) == 1
@@ -149,3 +156,42 @@ async def test_workflow_returns_missing_proof_on_prover_error(tmp_path: Path) ->
     assert outcome.proofs == {}
     assert outcome.runtime_state["status"] == ProofStatus.ERROR.value
     assert (await events.replay("RUN-1"))[-1].type.value == "proof.failed"
+
+
+@pytest.mark.asyncio
+async def test_workflow_rehashes_receipt_after_verification(tmp_path: Path) -> None:
+    events = InMemoryRuntimeEventStore()
+    workflow = RevenueGrowthRiscZeroProofWorkflow(
+        adapter=TamperingRiscZeroAdapter(  # type: ignore[arg-type]
+            tmp_path / "receipts" / "proof.receipt"
+        ),
+        artifact_dir=tmp_path,
+        event_store=events,
+    )
+
+    outcome = await workflow.execute(run_id="RUN-1", calculations=[_growth()])
+
+    assert outcome.proofs == {}
+    assert outcome.runtime_state["status"] == ProofStatus.ERROR.value
+    assert (await events.replay("RUN-1"))[-1].type.value == "proof.failed"
+
+
+@pytest.mark.asyncio
+async def test_workflow_rejects_mixed_run_calculations_before_persistence(
+    tmp_path: Path,
+) -> None:
+    repository = RecordingRepository()
+    workflow = RevenueGrowthRiscZeroProofWorkflow(
+        adapter=FakeRiscZeroAdapter(  # type: ignore[arg-type]
+            tmp_path / "receipts" / "proof.receipt"
+        ),
+        artifact_dir=tmp_path,
+        event_store=InMemoryRuntimeEventStore(),
+        repository=repository,
+    )
+    wrong_run = _growth().model_copy(update={"calculation_id": "CALC-OTHER", "run_id": "RUN-OTHER"})
+
+    with pytest.raises(ValueError, match="requested run"):
+        await workflow.execute(run_id="RUN-1", calculations=[_growth(), wrong_run])
+
+    assert repository.records == []

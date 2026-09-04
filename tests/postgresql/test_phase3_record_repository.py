@@ -74,3 +74,33 @@ async def test_phase3_record_cannot_move_between_runs(tmp_path) -> None:
     with pytest.raises(ValueError, match="cannot move between runs"):
         await repository.save(artifact, run_id="RUN-2")
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_save_many_rolls_back_the_complete_record_group(tmp_path) -> None:
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'atomic.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    repository = SQLAlchemyPhase3RecordRepository(sessions)
+    first = ProofRecord(
+        proof_id="PROOF-FIRST",
+        run_id="RUN-1",
+        calculation_id="CALC-1",
+        backend="risc0",
+        program_id="revenue_growth_v1",
+        image_id="IMAGE-1",
+        implementation_hash="sha256:implementation",
+        input_commitment="sha256:input",
+        receipt_artifact_ref="artifact://proofs/receipt.bin",
+        receipt_hash="sha256:receipt",
+        journal_hash="sha256:journal",
+        status=ProofStatus.VERIFIED,
+    )
+    wrong_run = first.model_copy(update={"proof_id": "PROOF-WRONG-RUN", "run_id": "RUN-2"})
+
+    with pytest.raises(ValueError, match="different run"):
+        await repository.save_many([first, wrong_run], run_id="RUN-1")
+
+    assert await repository.get(ProofRecord, first.proof_id) is None
+    await engine.dispose()

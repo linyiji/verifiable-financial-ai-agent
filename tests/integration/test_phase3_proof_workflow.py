@@ -39,14 +39,16 @@ class RevenueGrowthProofWorkflow:
                 receipt_artifact_ref="artifact://proofs/receipt.bin",
                 receipt_hash="sha256:receipt",
                 journal_hash="sha256:journal",
-                status=ProofStatus.VALID,
+                status=ProofStatus.VERIFIED,
                 proving_duration_ms=1,
             )
         return ProofWorkflowOutcome(
             requirements=requirements,
             proofs=proofs,
             runtime_state={
-                "status": ProofStatus.VALID.value if proofs else ProofStatus.REQUIRED_PENDING.value
+                "status": (
+                    ProofStatus.VERIFIED.value if proofs else ProofStatus.REQUIRED_PENDING.value
+                )
             },
         )
 
@@ -81,7 +83,7 @@ async def test_valid_required_proof_is_referenced_by_canonical_record() -> None:
     assert completed.artifacts.canonical_record.proof_refs == [
         f"PROOF-{aggregate.run.run_id}-REVENUE-GROWTH"
     ]
-    assert completed.runtime.proof_state["status"] == ProofStatus.VALID.value
+    assert completed.runtime.proof_state["status"] == ProofStatus.VERIFIED.value
 
 
 @pytest.mark.asyncio

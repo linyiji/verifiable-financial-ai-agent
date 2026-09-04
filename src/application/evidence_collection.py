@@ -305,11 +305,14 @@ class LiveFMPEvidenceCollector:
     ) -> EvidenceIngestionResult | None:
         if probe.snapshot is None:
             return None
-        policy = (
-            FreshnessPolicy(max_age_days=800)
-            if plan.request.dataset == "annual_financials"
-            else None
-        )
+        if plan.request.dataset == "annual_financials":
+            policy = FreshnessPolicy(max_age_days=800)
+        elif plan.request.dataset == "historical_prices":
+            # Historical observations are deliberately old; freshness here
+            # means the requested bounded series, not a current quote.
+            policy = FreshnessPolicy(max_age_days=max(365, plan.request.limit * 2))
+        else:
+            policy = None
         service = EvidenceIngestionService(
             repository=self._repository,
             artifact_store=self._artifact_store,
@@ -339,9 +342,7 @@ def evidence_request_plans(
     plans = (
         EvidenceRequestPlan(
             scope=EvidenceAcquisitionScope.COMPANY,
-            request=ProviderRequest(
-                symbol=symbol, dataset="company_profile", as_of=as_of, limit=1
-            ),
+            request=ProviderRequest(symbol=symbol, dataset="company_profile", as_of=as_of, limit=1),
             category=EvidenceCategory.COMPANY_PROFILE,
             purpose="company_identity",
         ),
@@ -383,9 +384,7 @@ def evidence_request_plans(
         ),
         EvidenceRequestPlan(
             scope=EvidenceAcquisitionScope.PEER,
-            request=ProviderRequest(
-                symbol=symbol, dataset="peer_multiples", as_of=as_of, limit=10
-            ),
+            request=ProviderRequest(symbol=symbol, dataset="peer_multiples", as_of=as_of, limit=10),
             category=EvidenceCategory.PEER,
             purpose="peer_discovery",
         ),
@@ -499,8 +498,7 @@ def _acquisition_status(
         return EvidenceAcquisitionStatus.FAILED
     has_nonaccepted = any(item.non_accepted_count for item in statuses)
     has_unavailable = any(
-        item.status not in {FMPAccessStatus.AVAILABLE, FMPAccessStatus.NO_DATA}
-        for item in statuses
+        item.status not in {FMPAccessStatus.AVAILABLE, FMPAccessStatus.NO_DATA} for item in statuses
     )
     if not accepted or has_nonaccepted or has_unavailable:
         return EvidenceAcquisitionStatus.PARTIAL

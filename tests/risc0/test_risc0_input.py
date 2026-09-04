@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -13,10 +14,14 @@ from src.adapters.risc0 import (
     build_proof_input,
     calculate_revenue_growth,
     load_proof_input,
+    write_proof_input,
 )
+from src.domain.enums import ProofStatus
 from src.domain.proof import ProofAdapter, ProofRequest
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "risc0_revenue_growth_input.json"
+PYTHON_HOST = Path(sys.executable).resolve()
+PYTHON_HOST_DIGEST = f"sha256:{hashlib.sha256(PYTHON_HOST.read_bytes()).hexdigest()}"
 
 
 def test_fixture_binds_complete_proof_context() -> None:
@@ -69,7 +74,7 @@ async def test_adapter_rejects_dev_mode_even_before_host_invocation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("RISC0_DEV_MODE", "1")
-    adapter = RiscZeroProofAdapter(host_binary=sys.executable, artifact_dir=tmp_path)
+    adapter = RiscZeroProofAdapter(host_binary=PYTHON_HOST, artifact_dir=tmp_path)
     with pytest.raises(RiscZeroAdapterError, match="forbidden"):
         await adapter.prove(
             ProofRequest(
@@ -84,5 +89,63 @@ async def test_adapter_rejects_dev_mode_even_before_host_invocation(
 
 
 def test_adapter_satisfies_frozen_proof_protocol(tmp_path: Path) -> None:
-    adapter = RiscZeroProofAdapter(host_binary=sys.executable, artifact_dir=tmp_path)
+    adapter = RiscZeroProofAdapter(host_binary=PYTHON_HOST, artifact_dir=tmp_path)
     assert isinstance(adapter, ProofAdapter)
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_unpinned_host_binary(tmp_path: Path) -> None:
+    adapter = RiscZeroProofAdapter(host_binary=PYTHON_HOST, artifact_dir=tmp_path)
+    proof_input = load_proof_input(FIXTURE)
+
+    with pytest.raises(RiscZeroAdapterError, match="digest does not match release pin"):
+        await adapter.prove(
+            ProofRequest(
+                proof_id="PROOF-UNPINNED",
+                run_id=proof_input.run_id,
+                calculation_id=proof_input.calculation_id,
+                program_id=proof_input.formula_id,
+                input_commitments=[proof_input.input_commitment],
+                proof_input_ref=str(FIXTURE),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_input_outside_controlled_root(tmp_path: Path) -> None:
+    adapter = RiscZeroProofAdapter(
+        host_binary=PYTHON_HOST,
+        artifact_dir=tmp_path,
+        expected_host_sha256=PYTHON_HOST_DIGEST,
+    )
+    proof_input = load_proof_input(FIXTURE)
+
+    result = await adapter.prove(
+        ProofRequest(
+            proof_id="PROOF-ESCAPE",
+            run_id=proof_input.run_id,
+            calculation_id=proof_input.calculation_id,
+            program_id=proof_input.formula_id,
+            input_commitments=[proof_input.input_commitment],
+            proof_input_ref=str(FIXTURE),
+        )
+    )
+
+    assert result.status is ProofStatus.ERROR
+    assert "escapes the controlled artifact root" in (result.detail or "")
+
+
+def test_proof_input_write_is_exclusive(tmp_path: Path) -> None:
+    target = tmp_path / "input.json"
+    proof_input = load_proof_input(FIXTURE)
+    write_proof_input(target, proof_input)
+
+    with pytest.raises(FileExistsError):
+        write_proof_input(target, proof_input)
+
+    assert load_proof_input(target) == proof_input
+
+
+def test_adapter_rejects_filesystem_root_as_artifact_directory() -> None:
+    with pytest.raises(ValueError, match="filesystem root"):
+        RiscZeroProofAdapter(host_binary=Path(sys.executable).resolve(), artifact_dir=Path("/"))

@@ -1,5 +1,6 @@
 """Durable Phase 3 record repository over append-only schema migrations."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
@@ -68,9 +69,7 @@ _MAPPINGS: dict[type[BaseModel], _RecordMapping] = {
         GeneratedCapabilityRecordRow, "generated_capability_id"
     ),
     SandboxExecutionRecord: _RecordMapping(SandboxExecutionRecordRow, "execution_id"),
-    CapabilityValidationRecord: _RecordMapping(
-        CapabilityValidationRecordRow, "validation_id"
-    ),
+    CapabilityValidationRecord: _RecordMapping(CapabilityValidationRecordRow, "validation_id"),
     ScopedCapabilityRegistration: _RecordMapping(
         ScopedCapabilityRegistrationRow, "registration_id"
     ),
@@ -90,33 +89,26 @@ class SQLAlchemyPhase3RecordRepository:
         self._sessions = sessions
 
     async def save(self, entity: Phase3Record, *, run_id: str | None = None) -> Phase3Record:
-        mapping = self._mapping(type(entity))
-        entity_run_id = getattr(entity, "run_id", None)
-        resolved_run_id = run_id or entity_run_id
-        if not resolved_run_id:
-            raise ValueError("run_id is required for this Phase 3 record")
-        if run_id and entity_run_id and run_id != entity_run_id:
-            raise ValueError("record cannot be stored under a different run")
-        entity_id = str(getattr(entity, mapping.id_field))
         async with self._sessions() as session:
-            row = await session.get(mapping.row_type, entity_id)
-            payload = entity.model_dump(mode="json")
-            if row is None:
-                session.add(
-                    mapping.row_type(
-                        **{
-                            mapping.id_field: entity_id,
-                            "run_id": resolved_run_id,
-                            "payload": payload,
-                        }
-                    )
-                )
-            else:
-                if row.run_id != resolved_run_id:
-                    raise ValueError(f"record {entity_id} cannot move between runs")
-                row.payload = payload
-            await session.commit()
+            async with session.begin():
+                await self._save_in_session(session, entity, run_id=run_id)
         return entity
+
+    async def save_many(
+        self,
+        entities: Sequence[Phase3Record],
+        *,
+        run_id: str | None = None,
+    ) -> list[Phase3Record]:
+        """Atomically persist one logically complete Phase 3 record group."""
+
+        if not entities:
+            raise ValueError("save_many requires at least one record")
+        async with self._sessions() as session:
+            async with session.begin():
+                for entity in entities:
+                    await self._save_in_session(session, entity, run_id=run_id)
+        return list(entities)
 
     async def get(self, model_type: type[RecordT], entity_id: str) -> RecordT | None:
         mapping = self._mapping(model_type)
@@ -142,3 +134,35 @@ class SQLAlchemyPhase3RecordRepository:
             return _MAPPINGS[model_type]
         except KeyError as exc:
             raise TypeError(f"unsupported Phase 3 record type: {model_type.__name__}") from exc
+
+    async def _save_in_session(
+        self,
+        session: AsyncSession,
+        entity: Phase3Record,
+        *,
+        run_id: str | None,
+    ) -> None:
+        mapping = self._mapping(type(entity))
+        entity_run_id = getattr(entity, "run_id", None)
+        resolved_run_id = run_id or entity_run_id
+        if not resolved_run_id:
+            raise ValueError("run_id is required for this Phase 3 record")
+        if run_id and entity_run_id and run_id != entity_run_id:
+            raise ValueError("record cannot be stored under a different run")
+        entity_id = str(getattr(entity, mapping.id_field))
+        row = await session.get(mapping.row_type, entity_id)
+        payload = entity.model_dump(mode="json")
+        if row is None:
+            session.add(
+                mapping.row_type(
+                    **{
+                        mapping.id_field: entity_id,
+                        "run_id": resolved_run_id,
+                        "payload": payload,
+                    }
+                )
+            )
+            return
+        if row.run_id != resolved_run_id:
+            raise ValueError(f"record {entity_id} cannot move between runs")
+        row.payload = payload

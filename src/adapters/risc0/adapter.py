@@ -16,6 +16,13 @@ from src.adapters.risc0.models import (
 from src.domain.enums import ProofStatus
 from src.domain.proof import ProofRequest, ProofResult
 
+EXPECTED_REVENUE_GROWTH_IMAGE_ID = (
+    "f49335e68f2f12c7f9f144bc587c9bb735e8c6be1edaab2b52a67828c989a354"
+)
+EXPECTED_REVENUE_GROWTH_HOST_SHA256 = (
+    "sha256:8f622fd58f3e7493ed35d6fdf048cbbfa84e912dcd4e7ae60bed6e5fe0c206c4"
+)
+
 
 class RiscZeroAdapterError(RuntimeError):
     pass
@@ -30,10 +37,25 @@ class RiscZeroProofAdapter:
         host_binary: str | Path,
         artifact_dir: str | Path,
         timeout_seconds: float = 900.0,
+        expected_host_sha256: str = EXPECTED_REVENUE_GROWTH_HOST_SHA256,
+        expected_image_id: str = EXPECTED_REVENUE_GROWTH_IMAGE_ID,
     ) -> None:
-        self._host_binary = Path(host_binary).expanduser().resolve()
-        self._artifact_dir = Path(artifact_dir).expanduser().resolve()
+        requested_binary = Path(host_binary).expanduser()
+        if requested_binary.is_symlink():
+            raise ValueError("RISC Zero host binary must not be a symlink")
+        self._host_binary = requested_binary.resolve()
+        requested_artifacts = Path(artifact_dir).expanduser()
+        if requested_artifacts == Path(requested_artifacts.anchor):
+            raise ValueError("filesystem root cannot be used as proof artifact root")
+        if requested_artifacts.is_symlink():
+            raise ValueError("proof artifact root must not be a symlink")
+        requested_artifacts.mkdir(parents=True, exist_ok=True)
+        self._artifact_dir = requested_artifacts.resolve(strict=True)
+        if self._artifact_dir == Path(self._artifact_dir.anchor):
+            raise ValueError("filesystem root cannot be used as proof artifact root")
         self._timeout_seconds = timeout_seconds
+        self._expected_host_sha256 = expected_host_sha256
+        self._expected_image_id = expected_image_id
 
     async def prove(self, request: ProofRequest) -> ProofResult:
         self._assert_secure_runtime()
@@ -43,6 +65,8 @@ class RiscZeroProofAdapter:
             safe_proof_id = hashlib.sha256(request.proof_id.encode("utf-8")).hexdigest()
             proof_input_path = self._artifact_dir / f"{safe_proof_id}.input.json"
             receipt_path = self._artifact_dir / f"{safe_proof_id}.receipt"
+            self._require_unused_regular_target(proof_input_path)
+            self._require_unused_regular_target(receipt_path)
             write_proof_input(proof_input_path, proof_input)
             proof_input_path.chmod(0o600)
             output = await self._run_host(
@@ -59,7 +83,7 @@ class RiscZeroProofAdapter:
                 receipt_path=receipt_path,
             )
             receipt_path.chmod(0o600)
-        except RiscZeroAdapterError as error:
+        except (OSError, ValueError, RiscZeroAdapterError) as error:
             return ProofResult(
                 proof_id=request.proof_id,
                 status=ProofStatus.ERROR,
@@ -98,6 +122,8 @@ class RiscZeroProofAdapter:
                 str(proof_input_path),
                 "--receipt",
                 str(receipt_path),
+                "--expected-image-id",
+                self._expected_image_id,
             )
             self._validate_host_output(
                 output,
@@ -106,9 +132,7 @@ class RiscZeroProofAdapter:
                 receipt_path=receipt_path,
             )
             original_hash = result.verifier_result.get("receipt_hash")
-            verified = (
-                original_hash == output["receipt_hash"] and output.get("dev_mode") is False
-            )
+            verified = original_hash == output["receipt_hash"] and output.get("dev_mode") is False
             if verified:
                 proving_duration_ms = result.verifier_result.get("proving_duration_ms")
                 result.status = ProofStatus.VERIFIED
@@ -123,11 +147,10 @@ class RiscZeroProofAdapter:
         except (OSError, ValueError, RiscZeroAdapterError):
             return False
 
-    @staticmethod
-    def _resolve_result_paths(proof_input_ref: str, receipt_ref: str) -> tuple[Path, Path]:
+    def _resolve_result_paths(self, proof_input_ref: str, receipt_ref: str) -> tuple[Path, Path]:
         return (
-            Path(proof_input_ref).expanduser().resolve(),
-            Path(receipt_ref).expanduser().resolve(),
+            self._require_owned_regular_file(proof_input_ref),
+            self._require_owned_regular_file(receipt_ref),
         )
 
     def _assert_secure_runtime(self) -> None:
@@ -137,13 +160,16 @@ class RiscZeroProofAdapter:
             raise RiscZeroAdapterError(
                 f"RISC Zero host binary is not executable: {self._host_binary}"
             )
+        actual_hash = f"sha256:{hashlib.sha256(self._host_binary.read_bytes()).hexdigest()}"
+        if actual_hash != self._expected_host_sha256:
+            raise RiscZeroAdapterError("RISC Zero host binary digest does not match release pin")
 
     def _validate_request(self, request: ProofRequest) -> tuple[Path, Any]:
         if request.program_id != FORMULA_ID:
             raise RiscZeroAdapterError(f"unsupported proof program: {request.program_id}")
         if request.proof_input_ref is None:
             raise RiscZeroAdapterError("proof_input_ref is required")
-        path = Path(request.proof_input_ref).expanduser().resolve()
+        path = self._require_owned_regular_file(request.proof_input_ref)
         try:
             proof_input = load_proof_input(path)
         except (OSError, ValueError) as error:
@@ -157,8 +183,11 @@ class RiscZeroProofAdapter:
         return path, proof_input
 
     async def _run_host(self, *arguments: str) -> dict[str, Any]:
-        child_env = os.environ.copy()
-        child_env.pop("RISC0_DEV_MODE", None)
+        child_env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
+            "RUST_BACKTRACE": "0",
+        }
         try:
             process = await asyncio.create_subprocess_exec(
                 str(self._host_binary),
@@ -187,9 +216,13 @@ class RiscZeroProofAdapter:
             raise RiscZeroAdapterError("RISC Zero host response must be an object")
         return decoded
 
-    @staticmethod
     def _validate_host_output(
-        output: dict[str, Any], *, status: str, proof_input: Any, receipt_path: Path
+        self,
+        output: dict[str, Any],
+        *,
+        status: str,
+        proof_input: Any,
+        receipt_path: Path,
     ) -> None:
         if output.get("status") != status:
             raise RiscZeroAdapterError("unexpected host proof status")
@@ -210,8 +243,31 @@ class RiscZeroProofAdapter:
             raise RiscZeroAdapterError("host receipt path mismatch")
         if not isinstance(output.get("image_id"), str) or not output["image_id"]:
             raise RiscZeroAdapterError("host image id is missing")
+        if output["image_id"] != self._expected_image_id:
+            raise RiscZeroAdapterError("host image id does not match the compiled program pin")
         if not receipt_path.is_file():
             raise RiscZeroAdapterError("host did not create a receipt")
         actual_receipt_hash = f"sha256:{hashlib.sha256(receipt_path.read_bytes()).hexdigest()}"
         if output.get("receipt_hash") != actual_receipt_hash:
             raise RiscZeroAdapterError("receipt artifact hash mismatch")
+
+    def _require_owned_regular_file(self, value: str | Path) -> Path:
+        requested = Path(value).expanduser()
+        if requested.is_symlink():
+            raise RiscZeroAdapterError("proof paths must not be symlinks")
+        path = requested.resolve(strict=True)
+        try:
+            path.relative_to(self._artifact_dir)
+        except ValueError as exc:
+            raise RiscZeroAdapterError("proof path escapes the controlled artifact root") from exc
+        if not path.is_file():
+            raise RiscZeroAdapterError("proof path is not a regular file")
+        return path
+
+    def _require_unused_regular_target(self, path: Path) -> None:
+        try:
+            path.parent.resolve(strict=True).relative_to(self._artifact_dir)
+        except ValueError as exc:
+            raise RiscZeroAdapterError("proof target escapes the controlled artifact root") from exc
+        if path.exists() or path.is_symlink():
+            raise RiscZeroAdapterError("proof target already exists")

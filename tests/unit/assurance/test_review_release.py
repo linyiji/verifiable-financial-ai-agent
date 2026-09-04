@@ -107,9 +107,7 @@ def test_proof_policy_and_release_gate_control_plane() -> None:
         review=review,
         proof_requirements={calc.calculation_id: requirement},
         proofs={
-            calc.calculation_id: ProofResult(
-                proof_id="PROOF-1", status=ProofStatus.NOT_IMPLEMENTED
-            )
+            calc.calculation_id: ProofResult(proof_id="PROOF-1", status=ProofStatus.NOT_IMPLEMENTED)
         },
     )
     assert blocked.allowed is False
@@ -134,7 +132,7 @@ def test_proof_policy_and_release_gate_control_plane() -> None:
         receipt_artifact_ref="artifact://proofs/receipt.bin",
         receipt_hash="sha256:receipt",
         journal_hash="sha256:journal",
-        status=ProofStatus.VALID,
+        status=ProofStatus.VERIFIED,
     )
     proven = ReleaseGate().evaluate(
         review=review,
@@ -164,11 +162,59 @@ def test_must_prove_rejects_missing_and_invalid_real_proof() -> None:
         review=review,
         proof_requirements={calc.calculation_id: ProofRequirement.MUST_PROVE},
         proofs={
-            calc.calculation_id: ProofResult(
-                proof_id="PROOF-INVALID", status=ProofStatus.INVALID
-            )
+            calc.calculation_id: ProofResult(proof_id="PROOF-INVALID", status=ProofStatus.INVALID)
         },
     )
 
     assert missing.reason_codes == ("PROOF_MISSING:CALC-1",)
     assert invalid.reason_codes == ("PROOF_INVALID:CALC-1",)
+
+
+def test_must_prove_rejects_unverified_result_and_mismatched_record() -> None:
+    calc = calculation()
+    review = DeterministicReviewer().review(
+        review_id="REV-1",
+        run_id="RUN-1",
+        evidence=[
+            evidence("E-1", "FY2025", EvidenceStatus.ACCEPTED),
+            evidence("E-2", "FY2026", EvidenceStatus.ACCEPTED),
+        ],
+        calculations=[calc],
+    )
+    unverified = ReleaseGate().evaluate(
+        review=review,
+        proof_requirements={calc.calculation_id: ProofRequirement.MUST_PROVE},
+        proofs={
+            calc.calculation_id: ProofResult(
+                proof_id="PROOF-RAW",
+                status=ProofStatus.VALID,
+                receipt_ref="artifact://proofs/raw.receipt",
+                verifier_result={"verified": False},
+            )
+        },
+    )
+    mismatched = ReleaseGate().evaluate(
+        review=review,
+        proof_requirements={calc.calculation_id: ProofRequirement.MUST_PROVE},
+        proofs={
+            calc.calculation_id: ProofRecord(
+                proof_id="PROOF-WRONG",
+                run_id="OTHER-RUN",
+                calculation_id="OTHER-CALC",
+                backend="risc0",
+                program_id="revenue_growth_v1",
+                image_id="IMAGE-1",
+                implementation_hash="sha256:implementation",
+                input_commitment="sha256:input",
+                receipt_artifact_ref="artifact://proofs/receipt.bin",
+                receipt_hash="sha256:receipt",
+                journal_hash="sha256:journal",
+                status=ProofStatus.VALID,
+            )
+        },
+    )
+
+    assert unverified.allowed is False
+    assert unverified.reason_codes == ("PROOF_VALID:CALC-1",)
+    assert mismatched.allowed is False
+    assert mismatched.reason_codes == ("PROOF_IDENTITY_OR_VERIFICATION_INVALID:CALC-1",)

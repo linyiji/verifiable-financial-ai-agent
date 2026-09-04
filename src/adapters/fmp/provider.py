@@ -235,7 +235,10 @@ class FMPProvider:
     async def probe(self, request: ProviderRequest) -> FMPFetchResult:
         spec = endpoint_for(request.dataset)
         params = _params_for(spec, request)
-        envelope = await self._request(spec, params)
+        if spec.endpoint is FMPEndpoint.HISTORICAL and request.limit >= 200:
+            envelope = await self._request_long_history(spec, request, params)
+        else:
+            envelope = await self._request(spec, params)
         if envelope.status not in {FMPAccessStatus.AVAILABLE, FMPAccessStatus.NO_DATA}:
             return FMPFetchResult(
                 endpoint=spec.endpoint,
@@ -273,6 +276,72 @@ class FMPProvider:
             mapped_record_count=len(records),
             error_code=envelope.error_code,
         )
+
+    async def _request_long_history(
+        self,
+        spec: FMPEndpointSpec,
+        request: ProviderRequest,
+        base_params: dict[str, str | int],
+    ) -> FMPResponseEnvelope:
+        """Collect a bounded long history from provider-respected monthly windows."""
+
+        collected: dict[str, dict[str, Any]] = {}
+        window_end = request.as_of
+        latest_success: FMPResponseEnvelope | None = None
+        max_pages = 24
+        for _ in range(max_pages):
+            window_start = window_end - timedelta(days=31)
+            params = {
+                **base_params,
+                "from": window_start.isoformat(),
+                "to": window_end.isoformat(),
+            }
+            envelope = await self._request_history_window(spec, params)
+            if envelope.status not in {FMPAccessStatus.AVAILABLE, FMPAccessStatus.NO_DATA}:
+                # Long history is an aggregate of independently bounded windows.
+                # A late transient failure must not discard already accepted pages.
+                if collected:
+                    break
+                return envelope
+            latest_success = envelope
+            before = len(collected)
+            for item in _object_list(envelope.payload):
+                observed = item.get("date")
+                if isinstance(observed, str) and observed:
+                    collected.setdefault(observed, item)
+            if len(collected) >= request.limit:
+                break
+            if envelope.status is FMPAccessStatus.AVAILABLE and len(collected) == before:
+                break
+            window_end = window_start - timedelta(days=1)
+
+        if not collected:
+            assert latest_success is not None
+            return latest_success
+        assert latest_success is not None
+        ordered = [collected[key] for key in sorted(collected, reverse=True)]
+        return FMPResponseEnvelope(
+            endpoint=spec.endpoint,
+            status=FMPAccessStatus.AVAILABLE,
+            http_status=latest_success.http_status,
+            retrieved_at=latest_success.retrieved_at,
+            payload=ordered,
+        )
+
+    async def _request_history_window(
+        self,
+        spec: FMPEndpointSpec,
+        params: dict[str, str | int],
+    ) -> FMPResponseEnvelope:
+        """Retry one transient window failure without retrying access denials."""
+
+        envelope = await self._request(spec, params)
+        if envelope.status not in {
+            FMPAccessStatus.PROVIDER_ERROR,
+            FMPAccessStatus.RATE_LIMITED,
+        }:
+            return envelope
+        return await self._request(spec, params)
 
     async def _request(
         self,

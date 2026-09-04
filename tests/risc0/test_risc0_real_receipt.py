@@ -23,9 +23,7 @@ from src.domain.proof import ProofRequest, ProofResult
 
 ROOT = Path(__file__).parents[2]
 FIXTURE = ROOT / "tests" / "fixtures" / "risc0_revenue_growth_input.json"
-DEFAULT_HOST = ROOT / "zk" / "revenue_growth" / "target" / "release" / (
-    "revenue-growth-proof-host"
-)
+DEFAULT_HOST = ROOT / "zk" / "revenue_growth" / "target" / "release" / ("revenue-growth-proof-host")
 
 
 @dataclass(frozen=True)
@@ -50,7 +48,7 @@ def real_proof(tmp_path_factory: pytest.TempPathFactory) -> RealProof:
     proof_input = load_proof_input(input_path)
     adapter = RiscZeroProofAdapter(
         host_binary=host_binary,
-        artifact_dir=temp_dir / "receipts",
+        artifact_dir=temp_dir,
         timeout_seconds=1_800,
     )
     result = asyncio.run(
@@ -87,9 +85,9 @@ def test_real_receipt_passes_independent_verification(real_proof: RealProof) -> 
     assert real_proof.result.verifier_result["image_id"]
 
 
-def test_tampered_revenue_is_rejected(real_proof: RealProof, tmp_path: Path) -> None:
+def test_tampered_revenue_is_rejected(real_proof: RealProof) -> None:
     original = load_proof_input(real_proof.input_path)
-    tampered_path = tmp_path / "tampered-revenue.json"
+    tampered_path = real_proof.input_path.parent / "tampered-revenue.json"
     tampered = build_proof_input(
         run_id=original.run_id,
         calculation_id=original.calculation_id,
@@ -114,7 +112,7 @@ def test_tampered_revenue_is_rejected(real_proof: RealProof, tmp_path: Path) -> 
     assert asyncio.run(real_proof.adapter.verify(forged_context)) is False
 
 
-def test_tampered_expected_result_is_rejected(real_proof: RealProof, tmp_path: Path) -> None:
+def test_tampered_expected_result_is_rejected(real_proof: RealProof) -> None:
     original = load_proof_input(real_proof.input_path)
     fake_result = CanonicalRevenueGrowthResult(
         growth_numerator=1,
@@ -125,7 +123,7 @@ def test_tampered_expected_result_is_rejected(real_proof: RealProof, tmp_path: P
         update={"expected_output_commitment": output_commitment(original.formula_id, fake_result)}
     )
     tampered = tampered.model_copy(update={"input_commitment": input_commitment(tampered)})
-    tampered_path = tmp_path / "tampered-result.json"
+    tampered_path = real_proof.input_path.parent / "tampered-result.json"
     tampered_path.write_text(
         json.dumps(tampered.model_dump(mode="json"), sort_keys=True), encoding="utf-8"
     )
@@ -160,8 +158,8 @@ def test_wrong_program_image_is_rejected(real_proof: RealProof) -> None:
     assert "cryptographic verification" in completed.stderr.lower()
 
 
-def test_corrupted_receipt_is_rejected(real_proof: RealProof, tmp_path: Path) -> None:
-    corrupted_path = tmp_path / "corrupted.receipt"
+def test_corrupted_receipt_is_rejected(real_proof: RealProof) -> None:
+    corrupted_path = real_proof.input_path.parent / "corrupted.receipt"
     encoded = bytearray(real_proof.receipt_path.read_bytes())
     encoded[len(encoded) // 2] ^= 0x01
     corrupted_path.write_bytes(encoded)

@@ -50,7 +50,15 @@ class RevenueGrowthRiscZeroProofWorkflow:
         instrumentation: RuntimeInstrumentation | None = None,
     ) -> None:
         self._adapter = adapter
-        self._artifact_dir = Path(artifact_dir).expanduser().resolve()
+        requested_artifacts = Path(artifact_dir).expanduser()
+        if requested_artifacts == Path(requested_artifacts.anchor):
+            raise ValueError("filesystem root cannot be used as proof artifact root")
+        if requested_artifacts.is_symlink():
+            raise ValueError("proof artifact root must not be a symlink")
+        requested_artifacts.mkdir(parents=True, exist_ok=True)
+        self._artifact_dir = requested_artifacts.resolve(strict=True)
+        if self._artifact_dir == Path(self._artifact_dir.anchor):
+            raise ValueError("filesystem root cannot be used as proof artifact root")
         self._event_store = event_store
         self._repository = repository
         self._instrumentation = instrumentation
@@ -61,8 +69,9 @@ class RevenueGrowthRiscZeroProofWorkflow:
         run_id: str,
         calculations: list[CalculationRecord],
     ) -> ProofWorkflowOutcome:
+        _validate_calculation_set(run_id, calculations)
         requirements: dict[str, ProofRequirement] = {}
-        growth: CalculationRecord | None = None
+        growth = next(item for item in calculations if item.formula_id == FORMULA_ID)
         for calculation in calculations:
             requirement = (
                 ProofRequirement.MUST_PROVE
@@ -84,14 +93,6 @@ class RevenueGrowthRiscZeroProofWorkflow:
                 ),
             )
             await self._save(decision)
-            if requirement is ProofRequirement.MUST_PROVE:
-                if growth is not None:
-                    raise ValueError("Phase 3 proof policy requires exactly one revenue growth")
-                growth = calculation
-        if growth is None:
-            raise ValueError("Phase 3 proof policy requires a revenue_growth_v1 calculation")
-        if growth.run_id != run_id:
-            raise ValueError("proof calculation belongs to a different run")
 
         proof_id = f"PROOF-{run_id}-REVENUE-GROWTH"
         await self._event_store.emit(
@@ -163,9 +164,7 @@ class RevenueGrowthRiscZeroProofWorkflow:
                 artifact_root=self._artifact_dir,
             )
             proof_record, verification, artifact = records
-            await self._save(proof_record)
-            await self._save(verification, run_id=run_id)
-            await self._save(artifact, run_id=run_id)
+            await self._save_verified_records(records, run_id=run_id)
             await self._event_store.emit(
                 run_id=run_id,
                 task_id=growth.task_id,
@@ -183,7 +182,7 @@ class RevenueGrowthRiscZeroProofWorkflow:
                 requirements=requirements,
                 proofs={growth.calculation_id: proof_record},
                 runtime_state={
-                    "status": ProofStatus.VALID.value,
+                    "status": ProofStatus.VERIFIED.value,
                     "proof_id": proof_id,
                     "image_id": proof_record.image_id,
                     "verification_id": verification.verification_id,
@@ -220,11 +219,29 @@ class RevenueGrowthRiscZeroProofWorkflow:
         directory = self._artifact_dir / "inputs"
         directory.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256(proof_id.encode("utf-8")).hexdigest()
-        return directory / f"{digest}.json"
+        target = directory / f"{digest}.json"
+        if target.exists() or target.is_symlink():
+            raise ValueError("proof input target already exists")
+        return target
 
     async def _save(self, entity: Any, *, run_id: str | None = None) -> None:
         if self._repository is not None:
             await self._repository.save(entity, run_id=run_id)
+
+    async def _save_verified_records(
+        self,
+        records: tuple[ProofRecord, ProofVerificationRecord, ProofArtifactReference],
+        *,
+        run_id: str,
+    ) -> None:
+        if self._repository is None:
+            return
+        save_many = getattr(self._repository, "save_many", None)
+        if callable(save_many):
+            await save_many(records, run_id=run_id)
+            return
+        for record in records:
+            await self._repository.save(record, run_id=run_id)
 
     @asynccontextmanager
     async def _proof_span(
@@ -306,6 +323,9 @@ def _map_verified_records(
     image_id = _required_text(values, "image_id")
     receipt_hash = _required_text(values, "receipt_hash")
     journal_hash = _required_text(values, "journal_hash")
+    actual_receipt_hash = f"sha256:{hashlib.sha256(receipt.read_bytes()).hexdigest()}"
+    if receipt_hash != actual_receipt_hash:
+        raise ValueError("receipt changed after independent verification")
     if values.get("dev_mode") is not False or values.get("verified") is not True:
         raise ValueError("verified proof metadata does not attest formal mode")
     proof = ProofRecord(
@@ -320,7 +340,7 @@ def _map_verified_records(
         receipt_artifact_ref=str(receipt),
         receipt_hash=receipt_hash,
         journal_hash=journal_hash,
-        status=ProofStatus.VALID,
+        status=ProofStatus.VERIFIED,
         proving_duration_ms=int(values.get("proving_duration_ms") or 0),
     )
     verification = ProofVerificationRecord(
@@ -330,7 +350,7 @@ def _map_verified_records(
         image_id=image_id,
         receipt_hash=receipt_hash,
         journal_hash=journal_hash,
-        status=ProofStatus.VALID,
+        status=ProofStatus.VERIFIED,
         verified=True,
         detail="Receipt::verify passed for the compiled revenue growth image.",
     )
@@ -350,3 +370,19 @@ def _required_text(values: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"verified proof metadata is missing {key}")
     return value
+
+
+def _validate_calculation_set(
+    run_id: str,
+    calculations: list[CalculationRecord],
+) -> None:
+    if not calculations:
+        raise ValueError("proof workflow requires completed calculations")
+    if any(calculation.run_id != run_id for calculation in calculations):
+        raise ValueError("all proof-policy calculations must belong to the requested run")
+    identifiers = [calculation.calculation_id for calculation in calculations]
+    if len(identifiers) != len(set(identifiers)):
+        raise ValueError("proof-policy calculation ids must be unique")
+    growth = [calculation for calculation in calculations if calculation.formula_id == FORMULA_ID]
+    if len(growth) != 1:
+        raise ValueError("Phase 3 proof policy requires exactly one revenue_growth_v1 calculation")

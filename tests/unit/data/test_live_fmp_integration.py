@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +58,55 @@ class EndpointTransport:
             error_code=(
                 "PAYLOAD_ENTITLEMENT" if self.status is FMPAccessStatus.ENTITLEMENT_DENIED else None
             ),
+        )
+
+
+class PaginatedHistoryTransport:
+    def __init__(self, *, fail_first: bool = False, fail_after: int | None = None) -> None:
+        self.fail_first = fail_first
+        self.fail_after = fail_after
+        self.calls = 0
+
+    async def request(
+        self,
+        *,
+        endpoint: FMPEndpoint,
+        path: str,
+        params: dict[str, str | int],
+    ) -> FMPResponseEnvelope:
+        del path
+        self.calls += 1
+        if (self.fail_first and self.calls == 1) or (
+            self.fail_after is not None and self.calls >= self.fail_after
+        ):
+            return FMPResponseEnvelope(
+                endpoint=endpoint,
+                status=FMPAccessStatus.PROVIDER_ERROR,
+                http_status=503,
+                retrieved_at=RETRIEVED_AT,
+                payload=None,
+                error_code="TRANSIENT",
+            )
+        start = date.fromisoformat(str(params["from"]))
+        end = date.fromisoformat(str(params["to"]))
+        payload = []
+        observed = end
+        while observed >= start:
+            payload.append(
+                {
+                    "symbol": "NVDA",
+                    "date": observed.isoformat(),
+                    "close": 100.0,
+                    "volume": 1_000,
+                }
+            )
+            observed -= timedelta(days=1)
+        return FMPResponseEnvelope(
+            endpoint=endpoint,
+            status=FMPAccessStatus.AVAILABLE,
+            http_status=200,
+            retrieved_at=RETRIEVED_AT,
+            payload=payload,
         )
 
 
@@ -201,14 +250,35 @@ async def test_historical_request_uses_explicit_window_for_long_indicator_histor
 
     await provider.probe(_request("historical_prices", limit=250))
 
-    endpoint, _, params = transport.calls[-1]
+    endpoint, _, _ = transport.calls[-1]
     assert endpoint is FMPEndpoint.HISTORICAL
-    assert params == {
+    assert transport.calls[0][2] == {
         "symbol": "NVDA",
         "limit": 250,
-        "from": "2025-04-22",
+        "from": "2026-08-04",
         "to": "2026-09-04",
     }
+    assert len(transport.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_long_history_retries_first_transient_window_failure() -> None:
+    transport = PaginatedHistoryTransport(fail_first=True)
+    result = await FMPProvider(transport).probe(_request("historical_prices", limit=250))
+
+    assert result.status is FMPAccessStatus.AVAILABLE
+    assert result.mapped_record_count >= 250
+    assert transport.calls >= 9
+
+
+@pytest.mark.asyncio
+async def test_long_history_keeps_completed_pages_after_late_transient_failure() -> None:
+    transport = PaginatedHistoryTransport(fail_after=3)
+    result = await FMPProvider(transport).probe(_request("historical_prices", limit=250))
+
+    assert result.status is FMPAccessStatus.AVAILABLE
+    assert result.mapped_record_count >= 60
+    assert transport.calls == 4
 
 
 @pytest.mark.parametrize(

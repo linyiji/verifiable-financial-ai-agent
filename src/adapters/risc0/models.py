@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Protocol
 
@@ -144,9 +145,7 @@ def input_commitment(input_data: RiscZeroRevenueGrowthInput) -> str:
     )
     _write_field(hasher, "currency", input_data.canonical_inputs.currency)
     _write_field(hasher, "scale", str(input_data.canonical_inputs.scale))
-    _write_field(
-        hasher, "expected_output_commitment", input_data.expected_output_commitment
-    )
+    _write_field(hasher, "expected_output_commitment", input_data.expected_output_commitment)
     return _finish_hash(hasher)
 
 
@@ -184,7 +183,18 @@ def load_proof_input(path: str | Path) -> RiscZeroRevenueGrowthInput:
 def write_proof_input(path: str | Path, proof_input: RiscZeroRevenueGrowthInput) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(proof_input.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    payload = (
+        json.dumps(proof_input.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(target, flags, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise

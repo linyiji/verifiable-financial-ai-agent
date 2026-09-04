@@ -30,7 +30,23 @@ class ReleaseGate:
             proof = proofs.get(calculation_id)
             if proof is None:
                 reasons.append(f"PROOF_MISSING:{calculation_id}")
-            elif proof.status not in {ProofStatus.VALID, ProofStatus.VERIFIED}:
+            elif isinstance(proof, ProofRecord) and (
+                proof.status is not ProofStatus.VERIFIED
+                or proof.run_id != review.run_id
+                or proof.calculation_id != calculation_id
+                or not proof.image_id
+                or not proof.implementation_hash
+                or not proof.input_commitment
+                or not proof.receipt_artifact_ref
+                or not proof.receipt_hash
+                or not proof.journal_hash
+            ):
+                reasons.append(f"PROOF_IDENTITY_OR_VERIFICATION_INVALID:{calculation_id}")
+            elif isinstance(proof, ProofResult) and (
+                proof.status is not ProofStatus.VERIFIED
+                or not proof.receipt_ref
+                or proof.verifier_result.get("verified") is not True
+            ):
                 reasons.append(f"PROOF_{proof.status.value}:{calculation_id}")
 
         return ReleaseDecision(allowed=not reasons, reason_codes=tuple(reasons))
