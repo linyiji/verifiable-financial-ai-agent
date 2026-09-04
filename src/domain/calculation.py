@@ -20,6 +20,8 @@ class CalculationRecord(TimestampedModel):
     output_unit: str
     status: CalculationStatus
     review_status: ReviewStatus | None = None
+    implementation_hash: str | None = None
+    # Deprecated Phase 1/2 name retained for persisted-record compatibility.
     code_hash: str | None = None
     source_ref: str | None = None
     runtime_version: str | None = None

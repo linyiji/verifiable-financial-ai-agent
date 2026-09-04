@@ -1,11 +1,5 @@
-from enum import StrEnum
-
 from src.domain.calculation import CalculationRecord
-
-
-class ProofRequirement(StrEnum):
-    NOT_REQUIRED = "NOT_REQUIRED"
-    MUST_PROVE = "MUST_PROVE"
+from src.domain.enums import ProofRequirement
 
 
 class ProofPolicy:
@@ -19,4 +13,3 @@ class ProofPolicy:
         }:
             return ProofRequirement.MUST_PROVE
         return ProofRequirement.NOT_REQUIRED
-

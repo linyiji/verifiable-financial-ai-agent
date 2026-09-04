@@ -15,14 +15,21 @@
         "run.created", "run.started", "run.status_changed", "run.completed", "run.failed",
         "scheme.generation_started", "scheme.generated", "scheme.confirmed", "plan.generated",
         "task.created", "task.ready", "task.started", "task.progress",
+        "task.waiting_for_capability", "task.resumed",
         "task.self_correcting", "task.correction_resolved", "task.completed", "task.failed",
         "replan.requested", "replan.approved", "replan.rejected",
         "graph.task_added", "graph.edge_added", "graph.edge_removed", "graph.version_changed",
         "evidence.accepted", "evidence.conflict",
         "calculation.started", "calculation.completed", "capability.gap_detected",
+        "capability.build_requested", "capability.build_started", "capability.generated",
+        "capability.static_validated", "capability.sandbox_started",
+        "capability.test_passed", "capability.test_failed",
+        "capability.financial_validated", "capability.approved",
+        "capability.registered", "capability.build_failed",
         "workspace.created", "capability.generation_started", "capability.tested",
         "capability.validated", "review.started", "review.required",
-        "review.resolved", "proof.started", "proof.verified", "release.completed"
+        "review.resolved", "proof.required", "proof.started", "proof.generated",
+        "proof.verified", "proof.failed", "release.completed"
       ]
     },
     "timestamp": {"type": "string", "format": "date-time"},
