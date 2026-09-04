@@ -306,13 +306,24 @@ class GeneratedCapabilityValidator:
                 raise GeneratedCapabilityValidationError(
                     "static_validation", f"{filename} rejected: {codes}"
                 )
-        actual_imports = _source_imports(output.source_code) | _source_imports(output.unit_tests)
+        source_imports = _source_imports(output.source_code)
+        actual_imports = source_imports | _source_imports(output.unit_tests)
         undeclared = actual_imports - set(output.allowed_imports)
         if undeclared:
             raise GeneratedCapabilityValidationError(
                 "static_validation",
                 "source uses imports absent from approved candidate declaration: "
                 + ", ".join(sorted(undeclared)),
+            )
+        schema_types = {
+            str(value).strip().lower()
+            for schema in (output.input_schema, output.output_schema)
+            for value in schema.values()
+        }
+        if "decimal" in schema_types and "decimal" not in source_imports:
+            raise GeneratedCapabilityValidationError(
+                "static_validation",
+                "decimal financial contracts must import the owned Decimal runtime",
             )
         _require_function(output.source_code, "execute", positional_args=1)
         _require_function(output.unit_tests, "run_tests", positional_args=2)

@@ -128,6 +128,11 @@ class FreeCashFlowMarginValidationPlanProvider:
                     "capital_expenditure": "-20",
                     "revenue": "100",
                 },
+                {
+                    "operating_cash_flow": "37.12345678901234567890123456",
+                    "capital_expenditure": "-11.00000000000000000000000001",
+                    "revenue": "97.33333333333333333333333333",
+                },
             ),
             financial_policy=CallableFinancialValidationPolicy(
                 callback=_validate_free_cash_flow_margin_output

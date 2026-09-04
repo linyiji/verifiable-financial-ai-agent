@@ -584,3 +584,18 @@ def test_owned_validation_plan_checks_exact_financial_formula() -> None:
             plan.primary_fixture,
             {"value": "0.6", "unit": "RATIO"},
         )
+
+    precision_fixture = plan.edge_case_fixtures[-1]
+    binary_float_result = str(
+        (
+            float(str(precision_fixture["operating_cash_flow"]))
+            + float(str(precision_fixture["capital_expenditure"]))
+        )
+        / float(str(precision_fixture["revenue"]))
+    )
+    with pytest.raises(ValueError, match="owned free cash flow margin oracle"):
+        plan.financial_policy.validate(
+            candidate,
+            precision_fixture,
+            {"value": binary_float_result, "unit": "RATIO"},
+        )

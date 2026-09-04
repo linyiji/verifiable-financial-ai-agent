@@ -238,6 +238,21 @@ async def test_undeclared_allowed_import_is_still_rejected() -> None:
 
 
 @pytest.mark.asyncio
+async def test_decimal_contract_rejects_binary_float_implementation() -> None:
+    generated = candidate(
+        source_code=(
+            "def execute(inputs):\n"
+            "    value = float(inputs['gross_profit']) / float(inputs['revenue'])\n"
+            "    return {'value': str(value), 'unit': 'ratio'}\n"
+        ),
+        allowed_imports=["decimal"],
+    )
+
+    with pytest.raises(GeneratedCapabilityValidationError, match="Decimal runtime"):
+        await validator(FormulaSandbox()).validate(generated, progress=ProgressSpy())
+
+
+@pytest.mark.asyncio
 async def test_declared_import_outside_sandbox_policy_is_rejected() -> None:
     generated = candidate(allowed_imports=["decimal", "os"])
     with pytest.raises(GeneratedCapabilityValidationError, match="outside sandbox policy"):
@@ -295,9 +310,7 @@ async def test_hash_mismatch_fails_before_financial_approval() -> None:
         ({"value": "not-a-decimal", "unit": "ratio"}, "financial_invariants"),
     ],
 )
-async def test_output_contract_failure_is_explicit(
-    bad_output: object, expected_stage: str
-) -> None:
+async def test_output_contract_failure_is_explicit(bad_output: object, expected_stage: str) -> None:
     class BadOutputSandbox(FormulaSandbox):
         def execute(self, request: SandboxRequest) -> SandboxResult:
             self.calls.append(request)

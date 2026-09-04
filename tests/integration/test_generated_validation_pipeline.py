@@ -3,12 +3,15 @@ from decimal import Decimal
 
 import pytest
 
-from src.capabilities.generated.models import GeneratedCapabilityCandidate
+from src.application.phase3_financial import FreeCashFlowMarginValidationPlanProvider
+from src.capabilities.generated.models import CodeBuilderOutput, GeneratedCapabilityCandidate
 from src.capabilities.generated.scoped_registry import ScopedCapabilityRegistry
 from src.capabilities.generated.validation import (
     CapabilityValidationPlan,
+    GeneratedCapabilityValidationError,
     GeneratedCapabilityValidator,
     StaticCapabilityValidationPlanProvider,
+    source_sha256,
 )
 from src.capabilities.registry import CapabilityRegistry
 from src.domain.capability import CapabilityContext, ScopedCapabilityRegistration
@@ -115,3 +118,57 @@ async def test_real_docker_validation_scoped_activation_and_calculation_lineage(
     assert calculation.input_evidence_ids == ["EVD-GROSS-REAL", "EVD-REVENUE-REAL"]
     assert calculation.output_unit == "ratio"
     assert calculation.runtime_version.startswith("Python 3.11.")
+
+
+@pytest.mark.asyncio
+async def test_real_docker_validation_rejects_binary_float_financial_candidate() -> None:
+    source = """
+from decimal import Decimal
+
+def execute(inputs):
+    value = (
+        float(inputs["operating_cash_flow"])
+        + float(inputs["capital_expenditure"])
+    ) / float(inputs["revenue"])
+    return {"value": str(value), "unit": "RATIO"}
+"""
+    generated = GeneratedCapabilityCandidate(
+        build_id="BUILD-FLOAT",
+        output=CodeBuilderOutput(
+            capability_id="free_cash_flow_margin",
+            version="1.0.0-generated",
+            purpose="Calculate exact free cash flow margin.",
+            input_schema={
+                "operating_cash_flow": "decimal",
+                "capital_expenditure": "decimal",
+                "revenue": "decimal",
+            },
+            output_schema={"value": "decimal", "unit": "RATIO"},
+            formula_id="operating_cash_flow_plus_signed_capex_divided_by_revenue_v1",
+            formula_description="(operating cash flow + signed capex) / revenue",
+            source_code=source,
+            unit_tests=(
+                "def run_tests(execute, fixture):\n"
+                "    result = execute(fixture)\n"
+                "    assert result['unit'] == 'RATIO'\n"
+                "    return True\n"
+            ),
+            financial_invariants=["revenue_non_zero", "result_is_finite"],
+            allowed_imports=["decimal"],
+        ),
+        implementation_hash=source_sha256(source),
+        provider="teamorouter",
+        requested_model="gpt-5.6-sol",
+        actual_model="gpt-5.6-sol",
+        attempted_models=("gpt-5.6-sol",),
+        input_tokens=1,
+        output_tokens=1,
+        latency_ms=1.0,
+    )
+    validator = GeneratedCapabilityValidator(
+        sandbox=DockerSandboxBackend(image=DEFAULT_SANDBOX_IMAGE),
+        plans=FreeCashFlowMarginValidationPlanProvider(),
+    )
+
+    with pytest.raises(GeneratedCapabilityValidationError, match="financial_validation"):
+        await validator.validate(generated, progress=ProgressSpy())
