@@ -2,6 +2,7 @@ import json
 import subprocess
 from contextlib import asynccontextmanager
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +16,7 @@ from scripts.run_phase3_acceptance import (
     _expected_core_gate_ids,
     _expected_financial_semantic_gate_ids,
     _failure_matrix,
+    _financial_review_negative_checks,
     _integration_matrix,
     _report_content_matches_metrics,
     _require_formal_mode,
@@ -154,6 +156,80 @@ def test_failure_matrix_is_exact_and_preserves_completed_regression_evidence() -
     assert matrix["P3-INT-003"]["status"] == "PASS"
     assert matrix["P3-INT-004"]["status"] == "FAIL"
     assert matrix["P3-INT-010"]["status"] == "FAIL"
+
+
+def test_financial_review_evidence_negatives_never_replace_calculation_with_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Copyable(SimpleNamespace):
+        def model_copy(self, *, update: dict[str, object]) -> "Copyable":
+            return Copyable(**{**vars(self), **update})
+
+    prior = Copyable(
+        evidence_id="E-PRIOR",
+        period="FY2025",
+        normalized_field="revenue",
+        statement_cohort="COHORT-2025",
+        unit="USD",
+        currency="USD",
+    )
+    current = Copyable(
+        evidence_id="E-CURRENT",
+        period="FY2026",
+        normalized_field="revenue",
+        statement_cohort="COHORT-2026",
+        unit="USD",
+        currency="USD",
+    )
+    ebitda = Copyable(
+        evidence_id="E-EBITDA",
+        period="FY2026",
+        normalized_field="ebitda",
+        statement_cohort="COHORT-2026",
+        unit="USD",
+        currency="USD",
+    )
+    growth = Copyable(
+        calculation_id="CALC-GROWTH",
+        formula_id="revenue_growth_v1",
+        input_evidence_ids=[prior.evidence_id, current.evidence_id],
+        output_value=Decimal("0.25"),
+    )
+    margin = Copyable(
+        calculation_id="CALC-MARGIN",
+        formula_id="ebitda_margin_v1",
+        input_evidence_ids=[ebitda.evidence_id, current.evidence_id],
+        output_value=Decimal("0.50"),
+    )
+    aggregate = SimpleNamespace(
+        run=SimpleNamespace(run_id="RUN-1", as_of=date(2026, 9, 4)),
+        artifacts=SimpleNamespace(
+            evidence=[prior, current, ebitda],
+            calculations=[growth, margin],
+            released_result=SimpleNamespace(released_metrics=(), material_claims=()),
+            judgments=[],
+        ),
+    )
+
+    class Reviewer:
+        def review(self, **kwargs: object) -> SimpleNamespace:
+            calculations = kwargs["calculations"]
+            assert isinstance(calculations, list)
+            assert calculations and all(item is not None for item in calculations)
+            return SimpleNamespace(status=acceptance_runner.ReviewStatus.BLOCK)
+
+    monkeypatch.setattr(acceptance_runner, "IndependentFinancialReviewer", Reviewer)
+    checks = _financial_review_negative_checks(
+        aggregate=aggregate,
+        proof_requirements={},
+    )
+    assert checks == {
+        "period_mismatch_blocked": True,
+        "unit_mismatch_blocked": True,
+        "currency_mismatch_blocked": True,
+        "cohort_mismatch_blocked": True,
+        "calculation_tamper_blocked": True,
+    }
 
 
 @pytest.mark.asyncio

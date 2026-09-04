@@ -865,7 +865,11 @@ def _financial_review_negative_checks(
             for item in evidence
         ]
         changed_calculations = [
-            calculation_update if item.calculation_id == growth.calculation_id else item
+            (
+                calculation_update
+                if calculation_update is not None and item.calculation_id == growth.calculation_id
+                else item
+            )
             for item in calculations
         ]
         return (
