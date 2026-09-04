@@ -257,6 +257,8 @@ def test_request_plans_enforce_scoped_ownership() -> None:
         ("peer_multiples", EvidenceCategory.PEER)
     ]
     assert {plan.request.dataset for plan in research} == {"news", "transcript"}
+    historical = next(plan for plan in company if plan.request.dataset == "historical_prices")
+    assert historical.request.limit == 250
     assert {plan.category for plan in research} == {
         EvidenceCategory.NEWS,
         EvidenceCategory.TRANSCRIPT,

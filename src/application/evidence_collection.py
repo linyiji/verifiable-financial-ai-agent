@@ -408,7 +408,8 @@ def evidence_request_plans(
                 dataset="historical_prices",
                 as_of=as_of,
                 fields=("close", "volume"),
-                limit=5,
+                # Phase 3 technical indicators require an accepted 200-day window.
+                limit=250,
             ),
             category=EvidenceCategory.MARKET,
             purpose="historical_market_context",
