@@ -110,6 +110,7 @@ def test_exact_formal_phase3_gate_identity() -> None:
     assert {item for item in gate_ids if item.startswith("P3-INT-")} == {
         f"P3-INT-{index:03d}" for index in range(1, 11)
     }
+    assert _expected_financial_semantic_gate_ids() == {f"FS-{index:03d}" for index in range(1, 14)}
 
 
 @pytest.mark.asyncio
@@ -117,7 +118,26 @@ async def test_planner_preflight_requires_two_owned_results_with_governed_retrie
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = SimpleNamespace(provider_name="mimo", model_name="mimo-v2.5")
+    schemes: list[str] = []
     probes: list[str] = []
+
+    class SchemeGenerator:
+        def __init__(self, selected: object, *, max_validation_attempts: int) -> None:
+            assert selected is provider
+            assert max_validation_attempts == 3
+
+        async def generate_with_decision(self, **kwargs: object) -> object:
+            del kwargs
+            schemes.append("generated")
+            return SimpleNamespace(
+                output=SimpleNamespace(confirmed_at=None),
+                audit=SimpleNamespace(
+                    provider="mimo",
+                    actual_model="mimo-v2.5",
+                    deterministic_fallback=False,
+                    failure_classification=None,
+                ),
+            )
 
     class Planner:
         def __init__(self, selected: object, *, max_validation_attempts: int) -> None:
@@ -136,14 +156,15 @@ async def test_planner_preflight_requires_two_owned_results_with_governed_retrie
                 )
             )
 
+    monkeypatch.setattr(acceptance_runner, "PlannerProviderSchemeGenerator", SchemeGenerator)
     monkeypatch.setattr(acceptance_runner, "PlannerProviderResearchLeadPlanner", Planner)
     health = await acceptance_runner._planner_provider_preflight(provider)
 
     assert health.passed is True
     assert health.provider == "mimo"
     assert health.model == "mimo-v2.5"
+    assert schemes == ["generated", "generated"]
     assert probes == ["PREFLIGHT:mimo:1", "PREFLIGHT:mimo:2"]
-    assert _expected_financial_semantic_gate_ids() == {f"FS-{index:03d}" for index in range(1, 14)}
 
 
 def test_integration_gate_failure_participates_in_decision() -> None:
@@ -292,6 +313,11 @@ async def test_authoritative_run_failure_writes_sanitized_complete_matrix(
         state = kwargs["audit_state"]
         assert isinstance(state, dict)
         state["failed_stage"] = "postgresql_migration"
+        state["fmp_credential_alias"] = "vfa-fmp-01"
+        state["planner_provider_selection"] = {
+            "selected_provider": "mimo",
+            "selected_model": "mimo-v2.5",
+        }
         state["regressions"] = {
             "phase1": {"passed": True},
             "phase2": {"passed": True},
@@ -319,6 +345,12 @@ async def test_authoritative_run_failure_writes_sanitized_complete_matrix(
     assert matrix["P3-INT-004"]["status"] == "FAIL"
     persisted = (run_directories[0] / "phase3_acceptance.json").read_text(encoding="utf-8")
     assert "sensitive-upstream-message" not in persisted
+    summary = json.loads(persisted)
+    assert summary["fmp_credential_alias"] == "vfa-fmp-01"
+    assert summary["planner_provider_selection"] == {
+        "selected_provider": "mimo",
+        "selected_model": "mimo-v2.5",
+    }
 
 
 def test_formal_mode_rejects_dev_mode_presence_even_when_false_like() -> None:

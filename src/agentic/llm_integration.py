@@ -354,8 +354,13 @@ def _scheme_messages(research_object: ResearchObject, goal: ResearchGoal) -> lis
     system = (
         "Create a research method only. Return the strict JSON schema. Never generate financial "
         "numbers, estimates, CalculationRecords, or hidden reasoning. Require accepted evidence "
-        "and deterministic code for every calculable financial value. Preserve the exact "
-        "calculation requirement identifiers constrained by the response schema."
+        "and deterministic code for every calculable financial value. skill_requirements must "
+        "contain each of these identifiers exactly once: evidence_collection_v1, "
+        "fundamental_analysis_v1, peer_analysis_v1, research_news_analysis_v1, "
+        "valuation_analysis_v1, risk_analysis_v1, report_synthesis_v1. "
+        "calculation_requirements must contain exactly these two different identifiers, once "
+        "each: deterministic_financial_calculations_only and "
+        "calculation_records_for_reported_values."
     )
     user = json.dumps(
         {
@@ -374,13 +379,20 @@ def _planner_messages(
 ) -> list[LLMMessage]:
     system = (
         "Build the complete initial task graph before execution. Return strict JSON only. "
-        "Dependencies must use task keys, be acyclic, and reference declared tasks. Include every "
-        "required skill with its matching task type. Create three independent evidence_collection "
-        "tasks whose keys/goals unambiguously identify company, peer/comparable, and "
-        "research-news/transcript scopes. Fundamental, peer, and research-news analysis must "
-        "depend on their scoped evidence; valuation and risk must depend on the relevant analyses; "
-        "report_synthesis must depend on all five analysis outputs. Do not generate financial "
-        "values, calculations, or chain-of-thought."
+        "Use exactly these nine task keys with the stated task type, skill, and direct dependency "
+        "keys: collect-company-evidence (evidence_collection, evidence_collection_v1, []); "
+        "collect-peer-evidence (evidence_collection, evidence_collection_v1, []); "
+        "collect-research-news-evidence (evidence_collection, evidence_collection_v1, []); "
+        "fundamentals (fundamental_analysis, fundamental_analysis_v1, "
+        "[collect-company-evidence]); peers (peer_analysis, peer_analysis_v1, "
+        "[collect-company-evidence, collect-peer-evidence]); research-news "
+        "(research_news_analysis, research_news_analysis_v1, "
+        "[collect-research-news-evidence]); valuation (valuation_analysis, "
+        "valuation_analysis_v1, [fundamentals, peers]); risk (risk_analysis, risk_analysis_v1, "
+        "[fundamentals, peers, research-news]); synthesis (report_synthesis, "
+        "report_synthesis_v1, [fundamentals, peers, research-news, valuation, risk]). "
+        "dependency_keys must use those keys verbatim. Supply a concise goal and assigned_agent "
+        "for each task. Do not generate financial values, calculations, or chain-of-thought."
     )
     user = json.dumps(
         {

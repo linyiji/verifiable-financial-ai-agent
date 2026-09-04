@@ -75,7 +75,6 @@ from src.agentic.llm_integration import (
     PlannerProviderResearchLeadPlanner,
     PlannerProviderSchemeGenerator,
 )
-from src.agentic.scheme import DeterministicSchemeGenerator
 from src.application.evidence_collection import LiveFMPEvidenceCollector
 from src.application.phase3_financial import (
     FCF_MARGIN_CAPABILITY_ID,
@@ -208,7 +207,7 @@ class CountingLLMProvider:
 
 
 async def _planner_provider_preflight(provider: LLMProvider) -> PlannerProviderHealth:
-    """Validate two consecutive owned planner results without creating a Run."""
+    """Validate two consecutive owned scheme-and-plan results without creating a Run."""
 
     provider_name = str(getattr(provider, "provider_name", ""))
     model_name = str(getattr(provider, "model_name", "")) or None
@@ -224,13 +223,30 @@ async def _planner_provider_preflight(provider: LLMProvider) -> PlannerProviderH
         goal_text="Validate the governed NVDA research planner capability.",
         as_of=date(2026, 9, 4),
     )
-    scheme = await DeterministicSchemeGenerator().generate(
-        research_object=research_object,
-        goal=goal,
-    )
-    scheme.confirmed_at = datetime.now(UTC)
     actual_models: list[str] = []
     for probe in range(1, 3):
+        scheme_result = await PlannerProviderSchemeGenerator(
+            provider,
+            max_validation_attempts=3,
+        ).generate_with_decision(
+            research_object=research_object,
+            goal=goal,
+        )
+        scheme_audit = scheme_result.audit
+        if (
+            scheme_audit.deterministic_fallback
+            or scheme_audit.provider != provider_name
+            or not scheme_audit.actual_model
+        ):
+            return PlannerProviderHealth(
+                provider=provider_name,
+                model=model_name,
+                passed=False,
+                failure_classification=scheme_audit.failure_classification
+                or "owned_scheme_preflight_failed",
+            )
+        scheme = scheme_result.output
+        scheme.confirmed_at = datetime.now(UTC)
         planner = PlannerProviderResearchLeadPlanner(provider, max_validation_attempts=3)
         result = await planner.plan_with_decision(
             run_id=f"PREFLIGHT:{provider_name}:{probe}",
@@ -250,7 +266,7 @@ async def _planner_provider_preflight(provider: LLMProvider) -> PlannerProviderH
                 failure_classification=audit.failure_classification
                 or "owned_planner_preflight_failed",
             )
-        actual_models.append(audit.actual_model)
+        actual_models.extend((scheme_audit.actual_model, audit.actual_model))
     if len(set(actual_models)) != 1:
         return PlannerProviderHealth(
             provider=provider_name,
@@ -2181,7 +2197,7 @@ async def _run_authoritative(
                     trace=trace,
                     stage=ObservationStage.SCHEME_GENERATION,
                 ),
-                max_validation_attempts=2,
+                max_validation_attempts=3,
             )
             planner = PlannerProviderResearchLeadPlanner(
                 InstrumentedLLMProvider(
@@ -3426,6 +3442,8 @@ def _write_failure_envelope(
         "run_id": run_id,
         "candidate_head": candidate_head,
         "candidate": audit_state.get("candidate"),
+        "fmp_credential_alias": audit_state.get("fmp_credential_alias"),
+        "planner_provider_selection": audit_state.get("planner_provider_selection"),
         "final_status": "FAIL",
         "failed_stage": audit_state.get("failed_stage", "unknown"),
         "error_type": error_type,
