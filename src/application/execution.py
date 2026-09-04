@@ -240,7 +240,38 @@ class IntegratedTaskExecutor:
             },
             context=context,
         )
-        self._aggregate.artifacts.calculations.extend([growth, margin])
+        extension_calculations = []
+        extension_refs: list[str] = []
+        extension_judgments: list[dict[str, object]] = []
+        extension_output: dict[str, object] = {}
+        for extension in self._service.calculation_extensions:
+            result = await extension.execute(
+                task=task,
+                state=self._aggregate.runtime,
+                evidence=evidence,
+                context=context,
+            )
+            for calculation in result.calculations:
+                if calculation.run_id != task.run_id or calculation.task_id != task.task_id:
+                    raise ValueError("calculation extension returned cross-task lineage")
+                await self._service.event_store.emit(
+                    run_id=task.run_id,
+                    task_id=task.task_id,
+                    event_type=RuntimeEventType.CALCULATION_COMPLETED,
+                    payload={
+                        "calculation_id": calculation.calculation_id,
+                        "capability_id": calculation.capability_id,
+                    },
+                )
+            extension_calculations.extend(result.calculations)
+            extension_refs.extend(result.generated_capability_refs)
+            extension_judgments.extend(result.judgments)
+            extension_output.update(result.task_output)
+        self._aggregate.artifacts.calculations.extend(
+            [growth, margin, *extension_calculations]
+        )
+        self._aggregate.artifacts.generated_capability_refs.extend(extension_refs)
+        self._aggregate.artifacts.judgments.extend(extension_judgments)
         await self._service.event_store.emit(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -250,10 +281,15 @@ class IntegratedTaskExecutor:
         self._aggregate.artifacts.task_outputs[task.task_id] = {
             "revenue_growth": str(growth.output_value),
             "ebitda_margin": str(margin.output_value),
+            **extension_output,
         }
         return TaskExecutionResult(
             result_ref=f"analysis://{task.task_id}",
-            output_refs=(growth.calculation_id, margin.calculation_id),
+            output_refs=(
+                growth.calculation_id,
+                margin.calculation_id,
+                *(item.calculation_id for item in extension_calculations),
+            ),
         )
 
     async def _execute_calculation(

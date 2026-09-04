@@ -5,8 +5,9 @@ from src.domain.calculation import CalculationRecord
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
 from src.domain.correction import CorrectionRecord
 from src.domain.evidence import EvidenceRecord
-from src.domain.proof import ProofResult
+from src.domain.proof import ProofRecord, ProofResult
 from src.domain.released_research_result import ReleasedResearchResult
+from src.domain.report import ReportArtifactRecord
 from src.domain.research_goal import ResearchGoal
 from src.domain.research_run import ResearchRun
 from src.domain.research_scheme import ResearchSchemeSnapshot
@@ -31,7 +32,10 @@ class CompletedRunArtifacts(DomainModel):
     corrections: list[CorrectionRecord] = Field(default_factory=list)
     replans: list[ReplanRequest] = Field(default_factory=list)
     review: ReviewRecord | None = None
-    proofs: list[ProofResult] = Field(default_factory=list)
+    proofs: list[ProofRecord | ProofResult] = Field(default_factory=list)
+    generated_capability_refs: list[str] = Field(default_factory=list)
+    judgments: list[JsonObject] = Field(default_factory=list)
+    report_artifacts: list[ReportArtifactRecord] = Field(default_factory=list)
     canonical_record: CanonicalExecutionRecord | None = None
     released_result: ReleasedResearchResult | None = None
     projections: CanonicalRecordProjections | None = None

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -16,6 +16,7 @@ from src.application.evidence_routing import (
     TaskEvidenceRoutingResult,
 )
 from src.application.execution import IntegratedTaskExecutor, decimal_as_float
+from src.application.extensions import TaskCalculationExtension
 from src.application.models import ResearchRunDraft, RunAggregate
 from src.application.repository import ApplicationRepository, InMemoryApplicationRepository
 from src.assurance import DeterministicReviewer, ReleaseGate
@@ -77,6 +78,7 @@ class ResearchApplicationService:
         instrumentation: RuntimeInstrumentation | None = None,
         trace_reference_repository: TraceReferenceRepository | None = None,
         run_id_factory: Callable[[], str] | None = None,
+        calculation_extensions: Sequence[TaskCalculationExtension] = (),
     ) -> None:
         self.repository = repository or InMemoryApplicationRepository()
         self.event_store = event_store or InMemoryRuntimeEventStore()
@@ -100,6 +102,7 @@ class ResearchApplicationService:
         )
         self._evidence_stores: dict[str, RunEvidenceStore] = {}
         self._idempotency: dict[tuple[str, str], object] = {}
+        self.calculation_extensions = list(calculation_extensions)
 
         registry = CapabilityRegistry()
         registry.register(RevenueGrowthCapability())
@@ -109,6 +112,11 @@ class ResearchApplicationService:
             registry,
             {CapabilityBackend.NATIVE: NativeToolBackend(registry)},
         )
+
+    def add_calculation_extension(self, extension: TaskCalculationExtension) -> None:
+        if not isinstance(extension, TaskCalculationExtension):
+            raise TypeError("extension must implement TaskCalculationExtension")
+        self.calculation_extensions.append(extension)
 
     async def create_object(
         self,
@@ -405,6 +413,7 @@ class ResearchApplicationService:
             calculation_refs=[
                 calculation.calculation_id for calculation in aggregate.artifacts.calculations
             ],
+            generated_capability_refs=aggregate.artifacts.generated_capability_refs,
             correction_refs=[item.correction_id for item in aggregate.artifacts.corrections],
             replan_refs=[item.replan_id for item in aggregate.artifacts.replans],
             review_refs=[review.review_id],
@@ -475,7 +484,8 @@ class ResearchApplicationService:
                     "judgment_ref": f"JUDGMENT-{run_id}-V1",
                     "version": 1,
                     "text": "Evidence-backed research execution; not investment advice.",
-                }
+                },
+                *aggregate.artifacts.judgments,
             ],
             risk_output=risk_result,
             limitations=limitations,
