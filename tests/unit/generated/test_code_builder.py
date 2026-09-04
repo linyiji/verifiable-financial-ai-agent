@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from contextlib import asynccontextmanager
 
 import pytest
 
+from src.adapters.llm.execution import ProviderExecutionPolicyV1
 from src.adapters.llm.provider import LLMStructuredResponse
 from src.capabilities.generated.builder import (
-    CodeBuilderOutputMismatch,
+    GeneratedCapabilityDeadlineExceededError,
     TeamoRouterCodeBuilder,
+)
+from src.capabilities.generated.contract import (
+    GeneratedCapabilityBundleV1,
+    GeneratedCapabilityBundleValidationError,
 )
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
-    CodeBuilderProviderOutput,
     ResearchLeadCapabilityApproval,
 )
 from src.capabilities.generated.telemetry import GeneratedCapabilityTrace
@@ -61,23 +67,20 @@ def build_request() -> CapabilityBuildRequest:
     )
 
 
-def builder_output(**updates: object) -> dict[str, object]:
+def bundle_output(**updates: object) -> dict[str, object]:
     output: dict[str, object] = {
+        "schema_version": "generated-capability-bundle/v1",
         "capability_id": "gross_margin",
-        "version": "1.0.0-generated",
-        "purpose": "Calculate gross margin from accepted evidence.",
-        "input_schema": {"gross_profit": "decimal", "revenue": "decimal"},
-        "output_schema": {"value": "decimal", "unit": "ratio"},
         "formula_id": "gross_margin_v1",
-        "formula_description": "gross_profit / revenue",
-        "source_code": (
+        "entrypoint": "execute",
+        "source": (
             "from decimal import Decimal\n\n"
             "def execute(inputs):\n"
             "    gross_profit = Decimal(str(inputs['gross_profit']))\n"
             "    revenue = Decimal(str(inputs['revenue']))\n"
             "    return {'value': str(gross_profit / revenue), 'unit': 'ratio'}\n"
         ),
-        "unit_tests": (
+        "tests": (
             "def run_tests(execute, fixture):\n"
             "    result = execute(fixture)\n"
             "    expected = Decimal(str(fixture['gross_profit'])) / "
@@ -86,54 +89,66 @@ def builder_output(**updates: object) -> dict[str, object]:
             "    assert result['unit'] == 'ratio'\n"
             "    return True\n"
         ),
-        "financial_invariants": ["revenue_non_zero", "result_is_finite"],
-        "allowed_imports": ["decimal"],
+        "input_schema": [
+            {"name": "gross_profit", "type": "decimal"},
+            {"name": "revenue", "type": "decimal"},
+        ],
+        "output_schema": [
+            {"name": "value", "type": "decimal"},
+            {"name": "unit", "type": "ratio"},
+        ],
+        "methodology": "gross_profit / revenue using Decimal",
+        "declared_dependencies": ["decimal"],
     }
     output.update(updates)
     return output
 
 
-class FakeTeamoRouterProvider:
+class FakeProvider:
     provider_name = "teamorouter"
 
-    def __init__(self, output: dict[str, object]) -> None:
-        self.output = output
+    def __init__(
+        self,
+        outputs: list[dict[str, object]],
+        *,
+        model: str = "gpt-5.6-sol",
+        delay: float = 0.0,
+        policy: ProviderExecutionPolicyV1 | None = None,
+    ) -> None:
+        self.outputs = list(outputs)
+        self.model_name = model
+        self.delay = delay
+        self.execution_policy = policy or ProviderExecutionPolicyV1(bounded_backoff_seconds=(0.0,))
         self.calls: list[dict[str, object]] = []
+        self.locked_models: list[str] = []
+
+    def lock_to_model(self, model_name: str) -> FakeProvider:
+        self.locked_models.append(model_name)
+        assert model_name == self.model_name
+        return self
 
     async def complete_structured(self, **kwargs: object) -> LLMStructuredResponse:
         self.calls.append(kwargs)
-        model = kwargs["response_model"]
-        assert model is CodeBuilderProviderOutput
-        wire_output = dict(self.output)
-        for field in ("input_schema", "output_schema"):
-            mapping = wire_output[field]
-            assert isinstance(mapping, dict)
-            wire_output[field] = [{"name": name, "type": value} for name, value in mapping.items()]
+        assert kwargs["response_model"] is GeneratedCapabilityBundleV1
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        output = self.outputs[min(len(self.calls) - 1, len(self.outputs) - 1)]
         return LLMStructuredResponse(
-            output=model.model_validate(wire_output),
-            provider="teamorouter",
-            requested_model="gpt-5.6-sol",
-            actual_model="gpt-5.6-luna",
-            attempted_models=("gpt-5.6-sol", "gpt-5.6-luna"),
+            output=GeneratedCapabilityBundleV1.model_validate(output),
+            provider=self.provider_name,
+            requested_model=self.model_name,
+            actual_model=self.model_name,
+            attempted_models=(self.model_name,),
             input_tokens=101,
             output_tokens=53,
         )
 
 
-class FakeMimoProvider(FakeTeamoRouterProvider):
+class FakeMimoProvider(FakeProvider):
     provider_name = "mimo"
 
-    async def complete_structured(self, **kwargs: object) -> LLMStructuredResponse:
-        response = await super().complete_structured(**kwargs)
-        return LLMStructuredResponse(
-            output=response.output,
-            provider="mimo",
-            requested_model="mimo-v2.5",
-            actual_model="mimo-v2.5",
-            attempted_models=("mimo-v2.5",),
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-        )
+    def __init__(self, outputs: list[dict[str, object]]) -> None:
+        super().__init__(outputs, model="mimo-v2.5")
 
 
 class TraceSpy:
@@ -161,33 +176,27 @@ class TraceSpy:
 
 
 @pytest.mark.asyncio
-async def test_builder_uses_owned_provider_schema_and_records_only_metadata() -> None:
-    provider = FakeTeamoRouterProvider(builder_output())
+async def test_builder_accepts_strict_owned_bundle_and_records_only_safe_metadata() -> None:
+    provider = FakeProvider([bundle_output()])
     trace_spy = TraceSpy()
-    builder = TeamoRouterCodeBuilder(
-        provider,
-        trace=GeneratedCapabilityTrace(trace_spy),
-    )
+    builder = TeamoRouterCodeBuilder(provider, trace=GeneratedCapabilityTrace(trace_spy))
 
     candidate = await builder.generate(build_request())
 
     assert candidate.provider == "teamorouter"
-    assert candidate.requested_model == "gpt-5.6-sol"
-    assert candidate.actual_model == "gpt-5.6-luna"
+    assert candidate.actual_model == "gpt-5.6-sol"
     assert candidate.implementation_hash.startswith("sha256:")
-    assert candidate.output.input_schema == requirement().input_schema
-    assert candidate.output.output_schema == requirement().output_schema
-    assert provider.calls[0]["schema_name"] == "generated_capability_candidate_v1"
-    assert "Do not include reasoning" in provider.calls[0]["messages"][0].content
-    assert "invokes run_tests repeatedly" in provider.calls[0]["messages"][0].content
-    assert "never hard-code one fixture-specific result" in provider.calls[0]["messages"][0].content
-    assert "including zero and negative results" in provider.calls[0]["messages"][0].content
-    assert "do not use pytest, unittest" in provider.calls[0]["messages"][0].content
+    assert candidate.output.purpose == requirement().purpose
+    assert candidate.output.financial_invariants == requirement().financial_invariants
+    assert provider.calls[0]["schema_name"] == "generated_capability_bundle_v1"
+    prompt = provider.calls[0]["messages"]
+    assert "Do not include reasoning" in prompt[0].content
+    assert json.loads(prompt[1].content)["schema_version"] == "generated-capability-request/v1"
 
     trace_dump = str([trace_spy.generations, trace_spy.updates, trace_spy.events])
     assert "gross_profit / revenue" not in trace_dump
-    assert "source_code" not in trace_dump
-    assert "unit_tests" not in trace_dump
+    assert "source" not in trace_dump
+    assert "tests" not in trace_dump
     assert "chain-of-thought" not in trace_dump.lower()
     assert candidate.implementation_hash in trace_dump
     assert trace_spy.updates[0]["usage_details"] == {"input": 101, "output": 53, "total": 154}
@@ -204,55 +213,95 @@ def test_provider_wire_schema_contains_no_free_form_objects() -> None:
             for child in value:
                 yield from object_schemas(child)
 
-    schema = CodeBuilderProviderOutput.model_json_schema()
+    schema = GeneratedCapabilityBundleV1.model_json_schema()
     objects = list(object_schemas(schema))
     assert objects
     assert all(item.get("additionalProperties") is False for item in objects)
+    assert set(schema["required"]) == set(schema["properties"])
 
 
 @pytest.mark.asyncio
-async def test_builder_rejects_structured_output_that_expands_approved_imports() -> None:
-    provider = FakeTeamoRouterProvider(builder_output(allowed_imports=["decimal", "os"]))
-    trace_spy = TraceSpy()
-    builder = TeamoRouterCodeBuilder(
-        provider,
-        trace=GeneratedCapabilityTrace(trace_spy),
+async def test_invalid_formula_gets_one_same_model_full_bundle_repair() -> None:
+    invalid_source = str(bundle_output()["source"]).replace(
+        "gross_profit / revenue", "gross_profit - revenue"
     )
+    provider = FakeProvider([bundle_output(source=invalid_source), bundle_output()])
+    trace_spy = TraceSpy()
+    builder = TeamoRouterCodeBuilder(provider, trace=GeneratedCapabilityTrace(trace_spy))
 
-    with pytest.raises(CodeBuilderOutputMismatch, match="allowed_imports"):
-        await builder.generate(build_request())
+    candidate = await builder.generate(build_request())
 
-    assert trace_spy.updates[0]["attributes"]["result_status"] == "error"
-    assert trace_spy.updates[0]["attributes"]["error_type"] == "CodeBuilderOutputMismatch"
+    assert candidate.actual_model == "gpt-5.6-sol"
+    assert len(provider.calls) == 2
+    assert provider.locked_models == ["gpt-5.6-sol"]
+    repair = json.loads(provider.calls[1]["messages"][1].content)
+    assert repair["previous_bundle"]["source"] == invalid_source
+    assert repair["deterministic_validation_findings"] == [
+        {
+            "code": "GC_FINANCIAL_FORMULA_MISMATCH",
+            "description": "deterministic generated-capability requirement not satisfied",
+            "field": "source",
+            "expected_rule": "exact owned formula semantics",
+        }
+    ]
+    trace_dump = str(trace_spy.events)
+    assert "GC_FINANCIAL_FORMULA_MISMATCH" in trace_dump
+    assert invalid_source not in trace_dump
+    assert candidate.input_tokens == 202
+    assert candidate.output_tokens == 106
 
 
 @pytest.mark.asyncio
-async def test_builder_rejects_provider_purpose_drift() -> None:
-    provider = FakeTeamoRouterProvider(builder_output(purpose="Different unapproved purpose."))
-    builder = TeamoRouterCodeBuilder(provider)
+async def test_final_invalid_bundle_returns_machine_codes_without_provider_switch() -> None:
+    bad = bundle_output(declared_dependencies=["decimal", "os"])
+    provider = FakeProvider([bad, bad])
 
-    with pytest.raises(CodeBuilderOutputMismatch, match="purpose"):
-        await builder.generate(build_request())
+    with pytest.raises(GeneratedCapabilityBundleValidationError) as captured:
+        await TeamoRouterCodeBuilder(provider).generate(build_request())
+
+    assert "GC_SCHEMA_DEPENDENCY_FORBIDDEN" in captured.value.codes
+    assert len(provider.calls) == 2
+    assert provider.locked_models == ["gpt-5.6-sol"]
+
+
+@pytest.mark.asyncio
+async def test_absolute_deadline_covers_generation_and_prevents_repair_reset() -> None:
+    policy = ProviderExecutionPolicyV1(
+        connect_timeout_seconds=0.01,
+        read_timeout_seconds=0.01,
+        write_timeout_seconds=0.01,
+        pool_timeout_seconds=0.01,
+        max_attempts=2,
+        bounded_backoff_seconds=(0.0,),
+        per_attempt_deadline_seconds=0.02,
+        overall_workload_deadline_seconds=0.03,
+    )
+    provider = FakeProvider([bundle_output()], delay=0.1, policy=policy)
+
+    with pytest.raises(GeneratedCapabilityDeadlineExceededError):
+        await TeamoRouterCodeBuilder(provider).generate(build_request())
+
+    assert len(provider.calls) == 1
 
 
 def test_builder_rejects_a_new_direct_provider_route() -> None:
-    class DirectProvider(FakeTeamoRouterProvider):
+    class DirectProvider(FakeProvider):
         provider_name = "openai"
 
     with pytest.raises(ValueError, match="registered planner provider"):
-        TeamoRouterCodeBuilder(DirectProvider(builder_output()))
+        TeamoRouterCodeBuilder(DirectProvider([bundle_output()]))
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("provider", "expected_provider"),
     (
-        (FakeTeamoRouterProvider(builder_output()), "teamorouter"),
-        (FakeMimoProvider(builder_output()), "mimo"),
+        (FakeProvider([bundle_output()]), "teamorouter"),
+        (FakeMimoProvider([bundle_output()]), "mimo"),
     ),
 )
-async def test_builder_accepts_each_registered_provider_truthfully(
-    provider: FakeTeamoRouterProvider,
+async def test_same_contract_accepts_each_registered_provider(
+    provider: FakeProvider,
     expected_provider: str,
 ) -> None:
     candidate = await TeamoRouterCodeBuilder(provider).generate(build_request())
