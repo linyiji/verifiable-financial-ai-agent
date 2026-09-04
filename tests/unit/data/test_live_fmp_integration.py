@@ -56,9 +56,7 @@ class EndpointTransport:
             retrieved_at=RETRIEVED_AT,
             payload=self.payloads.get(endpoint, []),
             error_code=(
-                "PAYLOAD_ENTITLEMENT"
-                if self.status is FMPAccessStatus.ENTITLEMENT_DENIED
-                else None
+                "PAYLOAD_ENTITLEMENT" if self.status is FMPAccessStatus.ENTITLEMENT_DENIED else None
             ),
         )
 
@@ -118,9 +116,7 @@ def _payloads() -> dict[FMPEndpoint, Any]:
             }
         ],
         FMPEndpoint.PEERS: [{"symbol": "NVDA", "peersList": ["AMD", "AVGO"]}],
-        FMPEndpoint.QUOTE: [
-            {"symbol": "NVDA", "name": "NVIDIA", "price": 190.0, "pe": 45.0}
-        ],
+        FMPEndpoint.QUOTE: [{"symbol": "NVDA", "name": "NVIDIA", "price": 190.0, "pe": 45.0}],
         FMPEndpoint.HISTORICAL: [
             {"symbol": "NVDA", "date": "2026-09-03", "close": 189.0, "volume": 1000}
         ],
@@ -198,6 +194,23 @@ def test_endpoint_specs_use_stable_paths() -> None:
     assert endpoint_for("analyst_recommendations").path == "/stable/grades-consensus"
 
 
+@pytest.mark.asyncio
+async def test_historical_request_uses_explicit_window_for_long_indicator_history() -> None:
+    transport = EndpointTransport(_payloads())
+    provider = FMPProvider(transport)
+
+    await provider.probe(_request("historical_prices", limit=250))
+
+    endpoint, _, params = transport.calls[-1]
+    assert endpoint is FMPEndpoint.HISTORICAL
+    assert params == {
+        "symbol": "NVDA",
+        "limit": 250,
+        "from": "2025-04-22",
+        "to": "2026-09-04",
+    }
+
+
 @pytest.mark.parametrize(
     ("http_status", "payload", "expected"),
     [
@@ -222,9 +235,7 @@ def test_entitlement_and_access_classification(
 
 @pytest.mark.asyncio
 async def test_entitlement_denial_raises_typed_error_without_provider_message() -> None:
-    provider = FMPProvider(
-        EndpointTransport({}, status=FMPAccessStatus.ENTITLEMENT_DENIED)
-    )
+    provider = FMPProvider(EndpointTransport({}, status=FMPAccessStatus.ENTITLEMENT_DENIED))
 
     with pytest.raises(FMPAccessError) as raised:
         await provider.fetch(_request("company_profile"))

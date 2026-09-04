@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
@@ -614,6 +614,13 @@ def _params_for(spec: FMPEndpointSpec, request: ProviderRequest) -> dict[str, st
         params["period"] = "quarter"
     elif spec.endpoint in {FMPEndpoint.INCOME, FMPEndpoint.BALANCE, FMPEndpoint.CASHFLOW}:
         params["period"] = "annual"
+    if spec.endpoint is FMPEndpoint.HISTORICAL:
+        # The stable historical endpoint otherwise defaults to a short recent
+        # window even when a larger limit is requested. Ask for enough calendar
+        # days to cover the requested number of trading observations.
+        calendar_days = max(365, request.limit * 2)
+        params["from"] = (request.as_of - timedelta(days=calendar_days)).isoformat()
+        params["to"] = request.as_of.isoformat()
     if spec.endpoint is FMPEndpoint.NEWS:
         params = {"symbols": request.symbol.upper(), "limit": request.limit, "page": 0}
     if spec.endpoint is FMPEndpoint.TRANSCRIPT:

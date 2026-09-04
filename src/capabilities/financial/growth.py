@@ -43,6 +43,8 @@ class RevenueGrowthCapability:
             raise ValueError("revenue_growth requires revenue evidence")
         if prior.period == current.period:
             raise PeriodMismatchError("prior and current revenue periods must differ")
+        if not prior.currency or prior.currency != current.currency:
+            raise ValueError("revenue_growth requires one explicit, consistent currency")
         value = calculate_revenue_growth(
             decimal_value(prior.normalized_value), decimal_value(current.normalized_value)
         )
@@ -60,6 +62,7 @@ class RevenueGrowthCapability:
             input_values_snapshot={
                 "prior_revenue": str(prior.normalized_value),
                 "current_revenue": str(current.normalized_value),
+                "currency": prior.currency,
             },
             output_value=value,
             output_unit="ratio",
