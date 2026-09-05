@@ -26,6 +26,7 @@ from acceptance.phase4.vs01.harness.gate import (
     redact_url,
     result_markdown,
     scan_public_surface,
+    sqlalchemy_async_database_url,
     validate_integrated_config,
 )
 
@@ -296,24 +297,34 @@ def test_public_surface_scan_rejects_secrets_hidden_reasoning_and_paths() -> Non
         scan_public_surface({"message": "Traceback (most recent call last):\nValueError"})
 
 
-def test_postgresql_urls_are_driver_normalized_and_redacted() -> None:
-    admin = "postgresql://alice:p%40ss@db.example:5432/postgres?sslmode=require"
+def test_postgresql_urls_are_consumer_specific_identity_stable_and_redacted() -> None:
+    admin = (
+        "postgresql://al%40ice:p%40ss%2Fword@db.example:5432/"
+        "postgres?sslmode=require"
+    )
     application = application_database_url(admin, "vfas_vs01_1234_abcdef")
-    assert application.startswith("postgresql://alice:p%40ss@db.example:5432/")
+    assert application.startswith(
+        "postgresql://al%40ice:p%40ss%2Fword@db.example:5432/"
+    )
     assert "/vfas_vs01_1234_abcdef" in application
     assert application.endswith("?sslmode=require")
-    redacted = redact_url(admin)
-    assert "p%40ss" not in redacted
-    assert "alice" not in redacted
-    assert redacted.endswith("/postgres")
     assert _libpq_env(application)["PGSSLMODE"] == "require"
 
-    driver_specific = application_database_url(
-        admin,
-        "vfas_vs01_1234_abcdef",
-        application_scheme="postgresql+psycopg",
+    async_application = sqlalchemy_async_database_url(application)
+    assert async_application.startswith(
+        "postgresql+asyncpg://al%40ice:p%40ss%2Fword@db.example:5432/"
     )
-    assert driver_specific.startswith("postgresql+psycopg://")
+    assert async_application.removeprefix("postgresql+asyncpg://") == (
+        application.removeprefix("postgresql://")
+    )
+
+    for safe in (redact_url(admin), redact_url(application), redact_url(async_application)):
+        assert "p%40ss" not in safe
+        assert "al%40ice" not in safe
+        assert "db.example:5432" in safe
+
+    with pytest.raises(GateConfigurationError, match="libpq-safe"):
+        sqlalchemy_async_database_url(async_application)
 
 
 @pytest.mark.parametrize(

@@ -611,6 +611,21 @@ def application_database_url(
     return urlunsplit((scheme, parsed.netloc, f"/{quote(database_name, safe='')}", query, ""))
 
 
+def sqlalchemy_async_database_url(libpq_url: str) -> str:
+    """Render one libpq-safe database identity for the installed asyncpg dialect."""
+
+    parsed, database = _postgres_parts(libpq_url)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        raise GateConfigurationError(
+            "SQLAlchemy async rendering requires a libpq-safe PostgreSQL URL"
+        )
+    return application_database_url(
+        libpq_url,
+        database,
+        application_scheme="postgresql+asyncpg",
+    )
+
+
 @dataclass(frozen=True)
 class CommandObservation:
     returncode: int
@@ -1795,6 +1810,7 @@ __all__ = [
     "run_command",
     "scan_public_surface",
     "sha256_json",
+    "sqlalchemy_async_database_url",
     "validate_integrated_config",
     "write_result_bundle",
 ]
