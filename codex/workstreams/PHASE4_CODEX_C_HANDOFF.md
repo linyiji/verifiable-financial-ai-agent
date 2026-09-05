@@ -86,7 +86,9 @@ byte-for-byte from approved V17 R2 commit
   failure is the same frozen `task.started.attempt` fixture mismatch above.
 - Ruff lint/format, Python compileall, JSON schema load, and `git diff --check`: pass.
 - Isolated strict TypeScript C surface: pass when supplied the two declared B seam types below.
-  The real C+B compile remains dependent on B adding those declarations.
+  The live C+B seam remains blocked by six missing-export diagnostics for those two B types and
+  one existing B-owned `ErrorEnvelope.resource.type` assignment diagnostic; no C-owned TypeScript
+  diagnostic remains once the frozen declarations are supplied.
 - Full production build: not run because Parent-only frontend bootstrap/package/root-composition
   files are intentionally absent from this child branch.
 

@@ -77,4 +77,3 @@ The parent-authorized Git ref-prefix recovery maps the planned branch
    edited. Required integration is returned as a semantic patch proposal.
 5. Production code has no demo/fixture fallback and never fabricates Tasks from
    sparse events or Scheme content.
-
