@@ -203,14 +203,14 @@
     },
     {
       "control_id": "VS01-SSE-012",
-      "contract_source": "PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md",
-      "contract_section_ref": "§8 terminal contract",
+      "contract_source": "PHASE4_BACKEND_FINAL_CONTRACT_MANIFEST.json + PHASE4_BACKEND_FINAL_FREEZE_DECISION_DRAFT.md",
+      "contract_section_ref": "runtime event focused addenda; §§13-14 TerminalFailureV1 / UAC-011",
       "owner_dependency": "C",
       "layer": "L3_RUN_SSE_RECOVERY_ACCEPTANCE",
       "positive_negative": "NEGATIVE",
       "test_implementation_path": "acceptance/phase4/vs01/harness/sse.py:assert_terminal_stream",
       "precondition": "ordinary controlled real input causes terminal failure/cancellation",
-      "expected_result": "one final run.failed carries safe FAILED/CANCELLED vocabulary; stream closes and no released success is fabricated",
+      "expected_result": "one final run.failed carries exact FAILED/CANCELLED status, required 11-value failure_stage, stable failure_code, and optional safe_message; stream closes and no released success is fabricated",
       "actual_result": null,
       "status": "BLOCKED_BY_C"
     },

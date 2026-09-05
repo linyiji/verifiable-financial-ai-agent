@@ -53,6 +53,13 @@
       "sha256": "e91ed0321a96067f93eb0b1a284c7374b1919688e2db52c9e4e9cda360d93569"
     }
   ],
+  "revision_bound_addenda": [
+    {
+      "id": "final_freeze_decision",
+      "path": "docs/integration/PHASE4_BACKEND_FINAL_FREEZE_DECISION_DRAFT.md",
+      "sha256": "8b7fd1a7002224f056fe18ea7250dc39024f4dfb8e3e105152cb8356d29cb191"
+    }
+  ],
   "wire": {
     "contract_family": "phase4-core/v1",
     "event_contract_family": "phase4-runtime-event/v1",

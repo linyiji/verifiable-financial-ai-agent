@@ -9,6 +9,7 @@ Authority (revision qualified):
 * ``p4-ig00-contract-freeze`` / ``764d7613...``
 * ``docs/integration/FINAL_CONTRACT_FREEZE_PROMOTION.json``
 * ``docs/integration/PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md``
+* ``docs/integration/PHASE4_BACKEND_FINAL_FREEZE_DECISION_DRAFT.md`` §§13-14
 * ``docs/integration/PHASE4_BACKEND_API_SCHEMA_DRAFT.md``
 * ``docs/integration/PHASE4_BACKEND_IDENTITY_ERROR_AVAILABILITY_CONTRACT.md``
 * ``docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.json``
@@ -35,6 +36,7 @@ EVENT_CONTRACT_VERSION = "phase4-runtime-event/v1"
 PAYLOAD_SCHEMA_VERSION = 1
 RUN_PROJECTION_VERSION = "phase4-run-projection/v1"
 ERROR_SCHEMA_VERSION = "phase4-error/v1"
+MAX_SIGNED_64 = 9_223_372_036_854_775_807
 
 RUN_STATUS_VALUES = frozenset(
     {
@@ -87,6 +89,21 @@ CONNECTION_STATE_VALUES = frozenset(
 )
 PATH_CHANGE_VALUES = frozenset({"SELF_CORRECTION", "ADD_TASK", "CHANGE_DEPENDENCY"})
 GRAPH_OPERATION_VALUES = frozenset({"add_node", "add_edge", "remove_edge"})
+FAILURE_STAGE_VALUES = frozenset(
+    {
+        "PLANNING",
+        "DATA_EVIDENCE",
+        "TASK_EXECUTION",
+        "GENERATED_CAPABILITY",
+        "FINANCIAL_REVIEW",
+        "PROOF",
+        "ARTIFACT_GENERATION",
+        "RELEASE",
+        "POST_SCHEDULER",
+        "PERSISTENCE",
+        "CANCELLATION",
+    }
+)
 
 
 PATCH_PROJECTION_EVENTS = frozenset(
@@ -359,9 +376,12 @@ PAYLOAD_RULES: Mapping[str, _PayloadRule] = {
     "run.status_changed": _rule(["status"], literals={"status": RUN_STATUS_VALUES}),
     "run.completed": _rule(["status"], literals={"status": ["RELEASED"]}),
     "run.failed": _rule(
-        ["status", "failure_code"],
+        ["status", "failure_stage", "failure_code"],
         ["safe_message"],
-        {"status": ["FAILED", "CANCELLED"]},
+        {
+            "status": ["FAILED", "CANCELLED"],
+            "failure_stage": FAILURE_STAGE_VALUES,
+        },
     ),
     "scheme.generated": _rule(
         ["scheme_id", "generated_by", "generated_at", "generation_stage", "retrospective"]
@@ -753,8 +773,14 @@ def validate_event_payload(event_type: str, payload: Any, graph_version: int | N
     if "generated_at" in payload_map:
         _require_rfc3339_utc(payload_map["generated_at"], "payload.generated_at")
     if event_type == "run.failed" and payload_map["status"] == "CANCELLED":
-        if payload_map["failure_code"] != "RUN_CANCELLED":
-            _fail("UNSUPPORTED_EVENT", "cancelled Run must use failure_code RUN_CANCELLED")
+        if (
+            payload_map["failure_stage"] != "CANCELLATION"
+            or payload_map["failure_code"] != "RUN_CANCELLED"
+        ):
+            _fail(
+                "UNSUPPORTED_EVENT",
+                "cancelled Run must use CANCELLATION/RUN_CANCELLED",
+            )
 
 
 def validate_runtime_event(
@@ -871,6 +897,8 @@ def resolve_cursor(
         return CursorResolution(CursorDisposition.INVALID_CURSOR, None, "INVALID_CURSOR")
     if _CANONICAL_DECIMAL_CURSOR.fullmatch(cursor):
         value = int(cursor)
+        if value > MAX_SIGNED_64:
+            return CursorResolution(CursorDisposition.INVALID_CURSOR, None, "INVALID_CURSOR")
         if value > tail_sequence:
             return CursorResolution(CursorDisposition.CURSOR_AHEAD, None, "CURSOR_AHEAD")
         return CursorResolution(CursorDisposition.RESUME, value, None)
@@ -1101,6 +1129,29 @@ def validate_run_projection(
         terminal[field_name] is not None for field_name in ("outcome", "event_id", "sequence")
     ):
         _fail("INTEGRITY_FAILURE", "nonterminal projection carries terminal metadata")
+    # Reuse the HTTP projection validator for the complete frozen DTO surface
+    # (object/run fields, graph edges, Task progress/parent closure, lifecycle,
+    # availability summaries, activity and terminal exactness).  This module adds
+    # SSE-specific recovery semantics; it must not maintain a weaker second
+    # projection decoder.
+    from acceptance.phase4.vs01.harness.backend import (
+        ContractViolation as BackendContractViolation,
+    )
+    from acceptance.phase4.vs01.harness.backend import validate_atomic_run_projection
+
+    try:
+        validate_atomic_run_projection(
+            dict(projection),
+            expected_object_id=object_id,
+            expected_goal_id=str(run.get("goal_id")),
+            expected_scheme_id=str(run.get("scheme_id")),
+            expected_as_of=str(run.get("as_of")),
+            expected_run_id=run_id,
+            expected_planned_graph_id=planned_graph_id,
+            etag=f'"p4:{run_id}:{revision}:{sequence}"',
+        )
+    except BackendContractViolation as exc:
+        _fail("SCHEMA_INCOMPATIBLE", f"projection DTO failed frozen validation: {exc}")
     return SnapshotView(
         run_id=run_id,
         object_id=object_id,
@@ -1301,18 +1352,22 @@ async def collect_live_sse(
     requested_cursor: str | None,
     oracle: SSEProjectionOracle | None = None,
     max_frames: int | None = None,
+    max_business_events: int | None = None,
     snapshot_loader: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]] | None = None,
 ) -> LiveStreamObservation:
     """Capture and validate a finite/caller-time-bounded live streaming response.
 
-    The caller owns the HTTP timeout and response context.  ``max_frames`` is a
-    collection limit, not a pass condition.  Terminal-close proof requires natural
-    iterator exhaustion (``stream_exhausted`` true).
+    The caller owns the HTTP timeout and response context.  ``max_frames`` and
+    ``max_business_events`` are collection limits, not pass conditions.  The latter
+    ignores comment heartbeats.  Terminal-close proof requires natural iterator
+    exhaustion (``stream_exhausted`` true).
     """
 
     assert_sse_success_headers(response.status_code, response.headers)
     if max_frames is not None and max_frames <= 0:
         raise ValueError("max_frames must be positive")
+    if max_business_events is not None and max_business_events <= 0:
+        raise ValueError("max_business_events must be positive")
     parser = IncrementalSSEParser()
     frames: list[SSEFrame] = []
     events: list[ValidatedRuntimeEvent] = []
@@ -1347,6 +1402,9 @@ async def collect_live_sse(
             if max_frames is not None and len(frames) >= max_frames:
                 exhausted = False
                 break
+            if max_business_events is not None and len(events) >= max_business_events:
+                exhausted = False
+                break
         if not exhausted:
             break
     if exhausted:
@@ -1369,6 +1427,7 @@ def assert_numeric_resume(
     *,
     committed_sequence: int,
     durable_tail: int,
+    full_baseline: LiveStreamObservation | None = None,
 ) -> None:
     if resumed.requested_run_id != before_disconnect.requested_run_id:
         _fail("IDENTITY_MISMATCH", "reconnect changed Run identity")
@@ -1381,6 +1440,51 @@ def assert_numeric_resume(
         _fail("INTEGRITY_FAILURE", "numeric replay suffix is not contiguous")
     if resumed.stream_exhausted and sequences and sequences[-1] != durable_tail:
         _fail("INTEGRITY_FAILURE", "exhausted replay did not reach durable tail")
+    if full_baseline is not None:
+        assert_replay_suffix_matches_baseline(
+            full_baseline,
+            resumed,
+            committed_sequence=committed_sequence,
+        )
+
+
+def _replay_identity(
+    event: ValidatedRuntimeEvent,
+) -> tuple[int, str, str]:
+    return (
+        event.sequence,
+        event.event_id,
+        event.canonical_content_sha256,
+    )
+
+
+def assert_replay_suffix_matches_baseline(
+    full_baseline: LiveStreamObservation,
+    observed_suffix: LiveStreamObservation,
+    *,
+    committed_sequence: int,
+) -> None:
+    """Bind a replay suffix to exact identities captured in a full-stream baseline."""
+
+    if committed_sequence < 0:
+        raise ValueError("committed_sequence must be non-negative")
+    if full_baseline.requested_run_id != observed_suffix.requested_run_id:
+        _fail("IDENTITY_MISMATCH", "replay and full baseline target different Runs")
+    baseline_identities = tuple(_replay_identity(event) for event in full_baseline.events)
+    baseline_sequences = tuple(identity[0] for identity in baseline_identities)
+    if baseline_sequences and baseline_sequences != tuple(
+        range(baseline_sequences[0], baseline_sequences[-1] + 1)
+    ):
+        _fail("INTEGRITY_FAILURE", "full replay baseline is not contiguous")
+    expected = tuple(
+        identity for identity in baseline_identities if identity[0] > committed_sequence
+    )
+    observed = tuple(_replay_identity(event) for event in observed_suffix.events)
+    if expected != observed:
+        _fail(
+            "INTEGRITY_FAILURE",
+            "replay event identity/content differs from captured baseline suffix",
+        )
 
 
 def assert_numeric_opaque_suffix_equal(
@@ -1389,9 +1493,9 @@ def assert_numeric_opaque_suffix_equal(
 ) -> None:
     if numeric.requested_run_id != opaque.requested_run_id:
         _fail("IDENTITY_MISMATCH", "paired cursor probes target different Runs")
-    numeric_content = [event.canonical_content_sha256 for event in numeric.events]
-    opaque_content = [event.canonical_content_sha256 for event in opaque.events]
-    if numeric_content != opaque_content:
+    numeric_identities = tuple(_replay_identity(event) for event in numeric.events)
+    opaque_identities = tuple(_replay_identity(event) for event in opaque.events)
+    if numeric_identities != opaque_identities:
         _fail("INTEGRITY_FAILURE", "numeric and opaque cursors returned different suffixes")
 
 
@@ -1632,6 +1736,7 @@ __all__ = [
     "ERROR_SCHEMA_VERSION",
     "EVENT_CONTRACT_VERSION",
     "EVENT_EFFECT",
+    "FAILURE_STAGE_VALUES",
     "EventDisposition",
     "IncrementalSSEParser",
     "LiveStreamObservation",
@@ -1656,6 +1761,7 @@ __all__ = [
     "assert_exact_run_event_url",
     "assert_numeric_opaque_suffix_equal",
     "assert_numeric_resume",
+    "assert_replay_suffix_matches_baseline",
     "assert_research_path_projection",
     "assert_self_correction_same_task_same_graph",
     "assert_sse_success_headers",

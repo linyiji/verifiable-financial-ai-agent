@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections.abc import AsyncIterator, Mapping
 from copy import deepcopy
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -30,6 +31,7 @@ from acceptance.phase4.vs01.harness.sse import (
     assert_exact_run_event_url,
     assert_numeric_opaque_suffix_equal,
     assert_numeric_resume,
+    assert_replay_suffix_matches_baseline,
     assert_research_path_projection,
     assert_self_correction_same_task_same_graph,
     assert_sse_success_headers,
@@ -53,7 +55,11 @@ PAYLOAD_SAMPLES: dict[str, dict[str, Any]] = {
     "run.started": {},
     "run.status_changed": {"status": "RUNNING"},
     "run.completed": {"status": "RELEASED"},
-    "run.failed": {"status": "FAILED", "failure_code": "CONTROLLED_FAILURE"},
+    "run.failed": {
+        "status": "FAILED",
+        "failure_stage": "TASK_EXECUTION",
+        "failure_code": "TASK_EXECUTION_FAILED",
+    },
     "scheme.generated": {
         "scheme_id": "SCHEME-A",
         "generated_by": "research_lead_agent",
@@ -62,7 +68,7 @@ PAYLOAD_SAMPLES: dict[str, dict[str, Any]] = {
         "retrospective": False,
     },
     "scheme.confirmed": {"scheme_id": "SCHEME-A"},
-    "plan.generated": {"graph_id": "PLAN-A", "task_count": 1},
+    "plan.generated": {"graph_id": "GRAPH-PLAN-A", "task_count": 1},
     "task.created": {"task_type": "fundamental"},
     "task.ready": {},
     "task.started": {"attempt": 1},
@@ -176,6 +182,8 @@ def _task(
         "task_id": task_id,
         "run_id": RUN_ID,
         "status": status,
+        "progress": 1.0 if status == "COMPLETED" else 0.25,
+        "parent_task_id": None,
         "dependencies": dependencies or [],
         "task_type": "fundamental",
         "goal": "authoritative goal",
@@ -200,49 +208,141 @@ def _snapshot(
         for task in task_rows
         if not task.get("origin") or task.get("origin") == "PLAN"
     ]
+    planned_edges = [
+        {"source_task_id": dependency, "target_task_id": task["task_id"]}
+        for task in planned_tasks
+        for dependency in task["dependencies"]
+    ]
+    actual_edges = [
+        {"source_task_id": dependency, "target_task_id": task["task_id"]}
+        for task in task_rows
+        for dependency in task["dependencies"]
+    ]
     return {
         "projection_schema_version": "phase4-run-projection/v1",
         "projection_revision": revision,
         "projection_sequence": sequence,
         "generated_at": NOW,
-        "object": {"object_id": OBJECT_ID, "symbol": "NVDA", "company_name": "NVIDIA"},
+        "object": {
+            "object_id": OBJECT_ID,
+            "symbol": "NVDA",
+            "company_name": "NVIDIA",
+            "object_type": "public_company",
+            "exchange": "NASDAQ",
+            "sector": None,
+            "currency": "USD",
+            "identity_version": 1,
+        },
         "run": {
             "run_id": RUN_ID,
             "research_object_id": OBJECT_ID,
             "goal_id": "GOAL-A",
             "scheme_id": "SCHEME-A",
             "status": status,
-            "planned_graph_id": "PLAN-A",
-            "actual_graph_id": "ACTUAL-A",
+            "stage": {
+                "RUNNING": "RESEARCH",
+                "RELEASED": "COMPLETE",
+                "FAILED": "FAILED",
+                "CANCELLED": "CANCELLED",
+            }.get(status, status),
+            "as_of": "2026-09-05",
+            "planned_graph_id": "GRAPH-PLAN-A",
+            "actual_graph_id": "GRAPH-ACTUAL-A",
+            "execution_target": "SERVER_SANDBOX",
+            "created_at": NOW,
+            "started_at": NOW,
+            "completed_at": NOW if terminal else None,
+            "updated_at": NOW,
         },
         "goal": {"goal_id": "GOAL-A", "research_object_id": OBJECT_ID},
         "confirmed_scheme": {
             "scheme_id": "SCHEME-A",
             "goal_id": "GOAL-A",
             "research_object_id": OBJECT_ID,
+            "confirmed_at": NOW,
         },
         "planned_graph": {
-            "graph_id": "PLAN-A",
+            "graph_id": "GRAPH-PLAN-A",
             "run_id": RUN_ID,
             "version": 1,
             "tasks": planned_tasks,
+            "edges": planned_edges,
         },
         "actual_graph": {
-            "graph_id": "ACTUAL-A",
+            "graph_id": "GRAPH-ACTUAL-A",
             "run_id": RUN_ID,
             "version": graph_version,
             "tasks": deepcopy(task_rows),
+            "edges": actual_edges,
         },
         "graph_version": graph_version,
         "tasks": task_rows,
         "path_changes": deepcopy(path_changes or []),
         "activity": [],
-        "lifecycle": {"status": status},
-        "review": {"availability": {"status": "PENDING"}},
-        "result": {"availability": {"status": "PENDING"}},
-        "artifacts": {"availability": {"status": "PENDING"}},
-        "proof": {"availability": {"status": "PENDING"}},
-        "execution": {"availability": {"status": "PENDING"}},
+        "lifecycle": {
+            "status": status,
+            "stage": {
+                "RUNNING": "RESEARCH",
+                "RELEASED": "COMPLETE",
+                "FAILED": "FAILED",
+                "CANCELLED": "CANCELLED",
+            }.get(status, status),
+            "progress": {
+                "method": "ACTUAL_TASK_MEAN_V1",
+                "completed_tasks": sum(task["status"] == "COMPLETED" for task in task_rows),
+                "total_tasks": len(task_rows),
+                "fraction": sum(task["progress"] for task in task_rows) / len(task_rows),
+            },
+            "terminal": terminal,
+            "terminal_outcome": outcome,
+            "safe_failure": {"failure_code": "ACCEPTANCE_FAILURE"} if status == "FAILED" else None,
+        },
+        "review": {
+            "availability": {
+                "status": "PENDING",
+                "reason_code": "RUN_NONTERMINAL",
+                "retryable": False,
+            },
+            "review_id": None,
+            "status": None,
+        },
+        "result": {
+            "availability": {
+                "status": "PENDING",
+                "reason_code": "RUN_NONTERMINAL",
+                "retryable": False,
+            },
+            "released_result_id": None,
+            "canonical_record_id": None,
+            "released_at": None,
+        },
+        "artifacts": {
+            "availability": {
+                "status": "NOT_GENERATED",
+                "reason_code": "RUN_NONTERMINAL",
+                "retryable": False,
+            },
+            "report_id": None,
+            "representation_ids": [],
+        },
+        "proof": {
+            "availability": {
+                "status": "NOT_GENERATED",
+                "reason_code": "RUN_NONTERMINAL",
+                "retryable": False,
+            },
+            "policy": "UNKNOWN",
+            "status": None,
+            "proof_refs": [],
+        },
+        "execution": {
+            "availability": {
+                "status": "NOT_GENERATED",
+                "reason_code": "RUN_NONTERMINAL",
+                "retryable": False,
+            },
+            "canonical_record_id": None,
+        },
         "terminal": {
             "is_terminal": terminal,
             "outcome": outcome,
@@ -480,26 +580,47 @@ def test_task_progress_variants_are_exact_and_non_guessing() -> None:
         _validated("task.progress", 3, payload={"progress": 50, "progress_scale": "PERCENT"})
 
 
+def test_terminal_failure_requires_frozen_stage_vocabulary() -> None:
+    _validated(
+        "run.failed",
+        1,
+        payload={
+            "status": "FAILED",
+            "failure_stage": "PLANNING",
+            "failure_code": "PLANNING_FAILED",
+            "safe_message": None,
+        },
+    )
+    for payload in (
+        {"status": "FAILED", "failure_code": "PLANNING_FAILED"},
+        {
+            "status": "FAILED",
+            "failure_stage": "UNKNOWN",
+            "failure_code": "PLANNING_FAILED",
+        },
+        {
+            "status": "CANCELLED",
+            "failure_stage": "TASK_EXECUTION",
+            "failure_code": "RUN_CANCELLED",
+        },
+    ):
+        with pytest.raises(SSEAcceptanceError) as failure:
+            _validated("run.failed", 1, payload=payload)
+        assert failure.value.code == "UNSUPPORTED_EVENT"
+
+
 def test_cursor_protocol_is_strict_for_numeric_opaque_cross_run_and_ahead() -> None:
     event_ids = {"EVT-A": 3}
     assert resolve_cursor(None, tail_sequence=4, same_run_event_ids=event_ids).sequence == 0
     assert resolve_cursor("3", tail_sequence=4, same_run_event_ids=event_ids).sequence == 3
     assert resolve_cursor("EVT-A", tail_sequence=4, same_run_event_ids=event_ids).sequence == 3
-    for cursor in ("-1", "+1", "01", " 1", "UNKNOWN"):
+    for cursor in ("-1", "+1", "01", " 1", "UNKNOWN", "9223372036854775808"):
         assert (
             resolve_cursor(cursor, tail_sequence=4, same_run_event_ids=event_ids).disposition
             is CursorDisposition.INVALID_CURSOR
         )
     assert (
         resolve_cursor("5", tail_sequence=4, same_run_event_ids=event_ids).disposition
-        is CursorDisposition.CURSOR_AHEAD
-    )
-    assert (
-        resolve_cursor(
-            "999999999999999999999999",
-            tail_sequence=4,
-            same_run_event_ids=event_ids,
-        ).disposition
         is CursorDisposition.CURSOR_AHEAD
     )
 
@@ -709,16 +830,106 @@ async def test_live_collector_validates_chunked_real_wire_shape_and_recovery() -
     assert observation.dispositions[0].disposition is EventDisposition.APPLIED
 
 
+@pytest.mark.asyncio
+async def test_live_collector_business_limit_ignores_heartbeat_comments() -> None:
+    raw = b": heartbeat\n\n" + _frame("task.progress", 1).raw_bytes
+    observation = await collect_live_sse(
+        _Response([raw]),
+        expected_run_id=RUN_ID,
+        requested_cursor="0",
+        max_business_events=1,
+    )
+    assert observation.stream_exhausted is False
+    assert observation.business_sequences == (1,)
+    assert len(observation.frames) == 2
+
+
 def test_numeric_and_opaque_resume_oracles_require_same_exact_suffix() -> None:
     before = _observation([_validated("task.progress", 1)], cursor="0")
     suffix = [_validated("task.progress", 2), _validated("task.progress", 3)]
     numeric = _observation(suffix, cursor="1")
     opaque = _observation(suffix, cursor="EVT-1")
-    assert_numeric_resume(before, numeric, committed_sequence=1, durable_tail=3)
+    baseline = _observation(
+        [*before.events, *suffix],
+        cursor="0",
+    )
+    assert_numeric_resume(
+        before,
+        numeric,
+        committed_sequence=1,
+        durable_tail=3,
+        full_baseline=baseline,
+    )
+    assert_replay_suffix_matches_baseline(
+        baseline,
+        opaque,
+        committed_sequence=1,
+    )
     assert_numeric_opaque_suffix_equal(numeric, opaque)
     wrong = _observation([_validated("task.progress", 3)], cursor="1")
     with pytest.raises(SSEAcceptanceError, match=r"N\+1"):
         assert_numeric_resume(before, wrong, committed_sequence=1, durable_tail=3)
+
+
+def test_replay_oracles_reject_same_sequences_with_changed_event_identity() -> None:
+    baseline_events = [
+        _validated("task.progress", 1),
+        _validated("task.progress", 2),
+        _validated("task.progress", 3),
+    ]
+    baseline = _observation(baseline_events, cursor="0")
+    expected_suffix = baseline_events[1:]
+    changed_identity = [
+        replace(expected_suffix[0], event_id="EVT-DIFFERENT"),
+        expected_suffix[1],
+    ]
+    forged = _observation(changed_identity, cursor="1")
+
+    with pytest.raises(SSEAcceptanceError, match="identity/content differs"):
+        assert_replay_suffix_matches_baseline(
+            baseline,
+            forged,
+            committed_sequence=1,
+        )
+    with pytest.raises(SSEAcceptanceError, match="different suffixes"):
+        assert_numeric_opaque_suffix_equal(
+            _observation(expected_suffix, cursor="1"),
+            _observation(changed_identity, cursor="EVT-1"),
+        )
+
+
+def test_replay_oracles_reject_same_sequences_and_ids_with_changed_content() -> None:
+    baseline_events = [
+        _validated("task.progress", 1),
+        _validated("task.progress", 2),
+        _validated("task.progress", 3),
+    ]
+    baseline = _observation(baseline_events, cursor="0")
+    expected_suffix = baseline_events[1:]
+    changed_content = [
+        _validated(
+            "task.progress",
+            2,
+            event_id="EVT-2",
+            payload={"progress": 0.75, "progress_scale": "RATIO_0_1"},
+        ),
+        expected_suffix[1],
+    ]
+    forged = _observation(changed_content, cursor="1")
+
+    with pytest.raises(SSEAcceptanceError, match="identity/content differs"):
+        assert_numeric_resume(
+            _observation([baseline_events[0]], cursor="0"),
+            forged,
+            committed_sequence=1,
+            durable_tail=3,
+            full_baseline=baseline,
+        )
+    with pytest.raises(SSEAcceptanceError, match="different suffixes"):
+        assert_numeric_opaque_suffix_equal(
+            _observation(expected_suffix, cursor="1"),
+            _observation(changed_content, cursor="EVT-1"),
+        )
 
 
 def test_terminal_success_failure_and_equal_cursor_close() -> None:

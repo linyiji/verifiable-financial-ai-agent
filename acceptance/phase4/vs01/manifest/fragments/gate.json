@@ -1,0 +1,240 @@
+{
+  "schema_version": "phase4-vs01-acceptance-fragment/v1",
+  "fragment_id": "VS01-X4-CROSS-COMPONENT-GATE",
+  "specialist": "X4",
+  "scope": "CROSS_COMPONENT_NEGATIVE_AND_GATE_ORCHESTRATION_ONLY",
+  "authority": {
+    "freeze_revision": "764d76132cfac13d47125e031b280b7894eb249f",
+    "phase4_contract_set_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+    "v17_r2_canonical_sha256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19",
+    "contract_family": "phase4-core/v1",
+    "event_contract_family": "phase4-runtime-event/v1"
+  },
+  "implementation": {
+    "runner": "acceptance/phase4/vs01/run_vs01.py",
+    "orchestrator": "acceptance/phase4/vs01/harness/gate.py",
+    "self_test_path": "acceptance/phase4/vs01/self_tests/test_gate.py",
+    "product_imports": false,
+    "final_pass_policy": "REAL_BACKEND_POSTGRESQL16_SSE_FRONTEND_AND_MANAGED_RESTART_REQUIRED",
+    "mock_pass_possible": false
+  },
+  "dependencies": [
+    {
+      "owner": "A",
+      "dependency": "PostgreSQL-backed Product routes and exact A/B identity closure",
+      "required_evidence": "X1 live backend controls plus X4 A/B public-response matrix"
+    },
+    {
+      "owner": "B",
+      "dependency": "Production frontend build with runtime decoder, base journey, typed error and no-Demo fallback",
+      "required_evidence": "X2 real Playwright suite against the isolated stack"
+    },
+    {
+      "owner": "C",
+      "dependency": "Exact-Run SSE, recovery, Task projection and dynamic-path contract plus tracked real-scenario capture driver",
+      "required_evidence": "X3 public SSE/projection oracles applied to runtime database/process/session-bound bytes"
+    },
+    {
+      "owner": "PARENT",
+      "dependency": "Serial A+B+C composition, route/bootstrap/migration registration and production launch commands",
+      "required_evidence": "one clean integrated Candidate and one X4 runner configuration"
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "VS01-ID-001",
+      "contract_source": "PHASE4_BACKEND_IDENTITY_ERROR_AVAILABILITY_CONTRACT.md + PHASE4_IDENTITY_NEGATIVE_TEST_PLAN.md",
+      "contract_section_ref": "Identity §§1-2,7; IDN-RUN-01",
+      "owner_dependency": "A+PARENT",
+      "layer": "L4_IDENTITY_NEGATIVE_ACCEPTANCE",
+      "positive_negative": "POSITIVE_AND_NEGATIVE",
+      "test_implementation_path": "acceptance/phase4/vs01/run_vs01.py:_run_integrated",
+      "precondition": "two distinct Objects/Runs created through the real public Product path",
+      "expected_result": "Object A history contains only A Runs, Object B history contains only B Runs, and no cross-Object/latest/first substitution occurs",
+      "actual_result": null,
+      "status": "BLOCKED_BY_A"
+    },
+    {
+      "control_id": "VS01-ID-002",
+      "contract_source": "PHASE4_BACKEND_API_SCHEMA_DRAFT.md + PHASE4_IDENTITY_NEGATIVE_TEST_PLAN.md",
+      "contract_section_ref": "API §5.3; IDN-GOAL-01/IDN-SCHEME-01",
+      "owner_dependency": "A",
+      "layer": "L4_IDENTITY_NEGATIVE_ACCEPTANCE",
+      "positive_negative": "NEGATIVE",
+      "test_implementation_path": "acceptance/phase4/vs01/run_vs01.py:_check_cross_object_confirm",
+      "precondition": "fresh unconsumed A draft and distinct real Object B",
+      "expected_result": "confirming A's draft under B fails with the frozen typed identity contract and creates no Run for either Object",
+      "actual_result": null,
+      "status": "BLOCKED_BY_A"
+    },
+    {
+      "control_id": "VS01-ID-003",
+      "contract_source": "PHASE4_BACKEND_IDENTITY_ERROR_AVAILABILITY_CONTRACT.md + V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.json",
+      "contract_section_ref": "Identity §7; V17 R2 shared response-admission rules",
+      "owner_dependency": "B+C",
+      "layer": "L4_IDENTITY_NEGATIVE_ACCEPTANCE",
+      "positive_negative": "NEGATIVE",
+      "test_implementation_path": "acceptance/phase4/vs01/browser/tests/vs01-frontend.real.spec.mjs + harness/sse.py:SSEProjectionOracle",
+      "precondition": "Run A is current while an authentic delayed response for an obsolete same-Object Run arrives after a real switch",
+      "expected_result": "the real browser remains on exact Run A and preserves its authoritative Task/status/dependency projection after the delayed obsolete response is consumed; no mutation or fallback occurs",
+      "actual_result": null,
+      "status": "BLOCKED_BY_C"
+    },
+    {
+      "control_id": "VS01-ID-004",
+      "contract_source": "PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md + PHASE4_BACKEND_IDENTITY_ERROR_AVAILABILITY_CONTRACT.md",
+      "contract_section_ref": "Event §§6-7; Identity §7",
+      "owner_dependency": "C",
+      "layer": "L4_IDENTITY_NEGATIVE_ACCEPTANCE",
+      "positive_negative": "NEGATIVE",
+      "test_implementation_path": "acceptance/phase4/vs01/run_vs01.py:_run_live_sse_matrix",
+      "precondition": "real Run A/B streams and captured opaque event identities",
+      "expected_result": "A frame cannot mutate B and A opaque cursor on B returns pre-header INVALID_CURSOR with zero foreign frames",
+      "actual_result": null,
+      "status": "BLOCKED_BY_C"
+    },
+    {
+      "control_id": "VS01-REC-012",
+      "contract_source": "PHASE4_TEST_DATA_AND_ENVIRONMENT_STRATEGY.md",
+      "contract_section_ref": "Environments E1/E2; Isolation, cleanup and secrets",
+      "owner_dependency": "PARENT",
+      "layer": "L3_RUN_RECOVERY_ACCEPTANCE",
+      "positive_negative": "CONTROL",
+      "test_implementation_path": "acceptance/phase4/vs01/harness/gate.py:PostgreSQLIsolation",
+      "precondition": "secret-bearing administrative URL supplied only through a named environment variable",
+      "expected_result": "server is PostgreSQL major 16; a high-entropy dedicated database is created without printing credentials",
+      "actual_result": null,
+      "status": "BLOCKED_BY_PARENT"
+    },
+    {
+      "control_id": "VS01-REC-013",
+      "contract_source": "PHASE4_TEST_DATA_AND_ENVIRONMENT_STRATEGY.md",
+      "contract_section_ref": "Isolation, cleanup and secrets",
+      "owner_dependency": "PARENT",
+      "layer": "L3_RUN_RECOVERY_ACCEPTANCE",
+      "positive_negative": "CONTROL",
+      "test_implementation_path": "acceptance/phase4/vs01/harness/gate.py:PostgreSQLIsolation.drop",
+      "precondition": "runner-created database identifier remains within its generated namespace",
+      "expected_result": "cleanup can affect only the exact disposable VS01 database and refuses any unrelated database",
+      "actual_result": null,
+      "status": "BLOCKED_BY_PARENT"
+    },
+    {
+      "control_id": "VS01-REC-014",
+      "contract_source": "PHASE4_TEST_DATA_AND_ENVIRONMENT_STRATEGY.md + PHASE4_BACKEND_ACCEPTANCE_GATE_CATALOG.md",
+      "contract_section_ref": "E2 full stack; P4-BE-017",
+      "owner_dependency": "A+PARENT",
+      "layer": "L3_RUN_RECOVERY_ACCEPTANCE",
+      "positive_negative": "CONTROL",
+      "test_implementation_path": "acceptance/phase4/vs01/harness/gate.py:ManagedService",
+      "precondition": "Parent supplies product ASGI launch command and health URL",
+      "expected_result": "runner supervises a real Product process, detects early exit, and records a non-secret process boundary",
+      "actual_result": null,
+      "status": "BLOCKED_BY_PARENT"
+    },
+    {
+      "control_id": "VS01-REC-015",
+      "contract_source": "PHASE4_BACKEND_API_SCHEMA_DRAFT.md + PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md",
+      "contract_section_ref": "API §6; Event §10 restart oracle",
+      "owner_dependency": "A+C+PARENT",
+      "layer": "L3_RUN_RECOVERY_ACCEPTANCE",
+      "positive_negative": "POSITIVE_AND_NEGATIVE",
+      "test_implementation_path": "acceptance/phase4/vs01/run_vs01.py:_run_integrated",
+      "precondition": "pre-restart A/B checkpoints and same runner-owned PostgreSQL database",
+      "expected_result": "new backend process retrieves the exact Runs/projections and replays confirmations/events without storage recreation or identity substitution",
+      "actual_result": null,
+      "status": "BLOCKED_BY_PARENT"
+    },
+    {
+      "control_id": "VS01-SEC-001",
+      "contract_source": "PHASE4_BACKEND_IDENTITY_ERROR_AVAILABILITY_CONTRACT.md + PHASE4_TEST_DATA_AND_ENVIRONMENT_STRATEGY.md",
+      "contract_section_ref": "Error §4; Isolation, cleanup and secrets",
+      "owner_dependency": "A+B+C",
+      "layer": "L4_SECURITY_NEGATIVE_ACCEPTANCE",
+      "positive_negative": "NEGATIVE",
+      "test_implementation_path": "acceptance/phase4/vs01/harness/gate.py:scan_public_surface",
+      "precondition": "random acceptance sentinel injected into managed processes and public JSON/SSE/DOM evidence captured",
+      "expected_result": "zero API keys, auth headers, bearer/private tokens, passwords or sentinel values appear on public surfaces",
+      "actual_result": null,
+      "status": "BLOCKED_BY_C"
+    },
+    {
+      "control_id": "VS01-SEC-002",
+      "contract_source": "PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md + PHASE4_BACKEND_IDENTITY_ERROR_AVAILABILITY_CONTRACT.md",
+      "contract_section_ref": "Event §2 safety exclusions; Identity §4 safe details",
+      "owner_dependency": "A+B+C",
+      "layer": "L4_SECURITY_NEGATIVE_ACCEPTANCE",
+      "positive_negative": "NEGATIVE",
+      "test_implementation_path": "acceptance/phase4/vs01/harness/gate.py:scan_public_surface",
+      "precondition": "all retained public response/event evidence",
+      "expected_result": "hidden chain-of-thought, scratch/system prompts, raw provider payloads, stack traces and local filesystem refs are absent",
+      "actual_result": null,
+      "status": "BLOCKED_BY_C"
+    },
+    {
+      "control_id": "VS01-E2E-001",
+      "contract_source": "PHASE4_E2E_ACCEPTANCE_SPEC.md + PHASE4_TEST_DATA_AND_ENVIRONMENT_STRATEGY.md",
+      "contract_section_ref": "P4-E2E-065..068; E2 full-stack environment",
+      "owner_dependency": "A+B+C+PARENT",
+      "layer": "L7_VS01_VERTICAL_SLICE",
+      "positive_negative": "CONTROL",
+      "test_implementation_path": "acceptance/phase4/vs01/run_vs01.py:_run_integrated",
+      "precondition": "real Product backend/frontend commands, tracked C capture driver, and isolated PostgreSQL 16 are available",
+      "expected_result": "one execution proves real backend, PostgreSQL, Run, frontend, exact-Run SSE, runtime-bound scenario bytes, and no fulfilled/mock business response",
+      "actual_result": null,
+      "status": "BLOCKED_BY_PARENT"
+    },
+    {
+      "control_id": "VS01-E2E-002",
+      "contract_source": "PHASE4 VS01 Acceptance Harness brief",
+      "contract_section_ref": "§§29-32 manifest, runner and result",
+      "owner_dependency": "NONE",
+      "layer": "HARNESS_SELF_TEST",
+      "positive_negative": "CONTROL",
+      "test_implementation_path": "acceptance/phase4/vs01/self_tests/test_gate.py",
+      "precondition": "X1/X2/X3/X4 fragments and local Python/Node harness dependencies",
+      "expected_result": "the documented clean bootstrap plus one gate command validates authority/self-tests, aggregates unique controls, and writes distinct JSON/Markdown harness and integrated statuses",
+      "actual_result": null,
+      "status": "READY"
+    },
+    {
+      "control_id": "VS01-E2E-003",
+      "contract_source": "PHASE4_E2E_ACCEPTANCE_SPEC.md + PHASE4_FRONTEND_BROWSER_E2E_MASTER_PLAN.md",
+      "contract_section_ref": "P4-E2E-065..067; FE-E2E-12",
+      "owner_dependency": "B+PARENT",
+      "layer": "L7_VS01_VERTICAL_SLICE",
+      "positive_negative": "NEGATIVE",
+      "test_implementation_path": "acceptance/phase4/vs01/run_vs01.py:_run_browser",
+      "precondition": "two reviewed real frontend instances expose primary and unreachable-backend API boundaries",
+      "expected_result": "the observed primary API origin/path completes the journey; the observed unavailable boundary shows error with zero Demo/fixture fallback",
+      "actual_result": null,
+      "status": "BLOCKED_BY_PARENT"
+    },
+    {
+      "control_id": "VS01-E2E-004",
+      "contract_source": "PHASE4 VS01 Acceptance Harness brief + PHASE4_E2E_ACCEPTANCE_SPEC.md",
+      "contract_section_ref": "§5 no mock-only PASS; P4-E2E-065..068",
+      "owner_dependency": "PARENT",
+      "layer": "L7_VS01_VERTICAL_SLICE",
+      "positive_negative": "NEGATIVE",
+      "test_implementation_path": "acceptance/phase4/vs01/harness/gate.py:build_result",
+      "precondition": "aggregate decision is evaluated",
+      "expected_result": "missing real-service/restart predicates or any unexecuted required control forces FAIL; self-test mode always reports integrated NOT_RUN",
+      "actual_result": null,
+      "status": "BLOCKED_BY_PARENT"
+    },
+    {
+      "control_id": "VS01-E2E-005",
+      "contract_source": "PHASE4_ACCEPTANCE_EVIDENCE_MANIFEST_SPEC.md",
+      "contract_section_ref": "§§3,5 root manifest and gate result record",
+      "owner_dependency": "PARENT",
+      "layer": "L7_VS01_VERTICAL_SLICE",
+      "positive_negative": "CONTROL",
+      "test_implementation_path": "acceptance/phase4/vs01/harness/gate.py:apply_outcomes",
+      "precondition": "all four specialist fragments are present and integrated execution finishes",
+      "expected_result": "every stable control has one actual result; missing required evidence is FAIL, never READY/BLOCKED/PASS by inference",
+      "actual_result": null,
+      "status": "BLOCKED_BY_PARENT"
+    }
+  ]
+}

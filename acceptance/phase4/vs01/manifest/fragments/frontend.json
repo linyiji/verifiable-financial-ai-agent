@@ -124,13 +124,13 @@
     {
       "control_id": "VS01-FE-008",
       "contract_source": "PHASE4_IDENTITY_NEGATIVE_TEST_PLAN.md + PHASE4_E2E_ACCEPTANCE_SPEC.md",
-      "contract_section_ref": "IDN-TASK-01/STATE-06 and P4-ID-008/023/025-027; P4-E2E-073",
+      "contract_section_ref": "IDN-TASK-01; P4-ID-008/020/025-027; P4-E2E-034/036/073",
       "owner_dependency": "B+C",
       "layer": "L4_IDENTITY_NEGATIVE_ACCEPTANCE",
       "positive_negative": "NEGATIVE",
-      "test_implementation_path": "acceptance/phase4/vs01/browser/tests/vs01-frontend.real.spec.mjs:stale and wrong-resource state is quarantined",
-      "precondition": "real A Run projection plus a captured B-owned Task/Run/Object and safe B-only sentinels",
-      "expected_result": "a B Task in A context is visibly quarantined without B content, request, mutation, or same-title fallback; a stale candidate cannot replace the last-valid A projection",
+      "test_implementation_path": "acceptance/phase4/vs01/browser/tests/vs01-frontend.real.spec.mjs:real wrong-resource quarantine [VS01-FE-008]",
+      "precondition": "real A Run projection plus a captured B-owned Task and safe B-only Object/Run/Task sentinels",
+      "expected_result": "a B-owned Task deep-linked in A's Run context is visibly quarantined while the original A route remains identifiable; no B content, B Run request, mutation, or same-title fallback is observed",
       "actual_result": null,
       "status": "BLOCKED_BY_B"
     },

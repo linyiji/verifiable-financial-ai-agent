@@ -8,7 +8,6 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-
 VS01_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 AUTHORITY_PATH = VS01_ROOT / "contract_authority.json"
@@ -99,8 +98,10 @@ def verify_authority(
     if len(components) != contract_config["component_count"]:
         raise AuthorityError("Phase 4 contract component count mismatch")
     component_set = sorted(
-        ({"id": component_id, "sha256": component["sha256"]}
-         for component_id, component in components.items()),
+        (
+            {"id": component_id, "sha256": component["sha256"]}
+            for component_id, component in components.items()
+        ),
         key=lambda item: item["id"],
     )
     _require_hash(
@@ -108,6 +109,25 @@ def verify_authority(
         actual=_sha256(_canonical_json(component_set)),
         expected=contract_config["canonical_sha256"],
     )
+
+    verified_contract_components: list[str] = []
+    for component_id, component in sorted(components.items()):
+        if "payload" in component:
+            actual_component_hash = _sha256(_canonical_json(component["payload"]))
+        elif isinstance(component.get("artifact"), str):
+            actual_component_hash = _sha256(
+                _git_bytes(revision, component["artifact"], repository=repository)
+            )
+        else:
+            raise AuthorityError(
+                f"{component_id} has neither a canonical payload nor an exact artifact"
+            )
+        _require_hash(
+            label=f"{component_id} frozen component",
+            actual=actual_component_hash,
+            expected=component["sha256"],
+        )
+        verified_contract_components.append(component_id)
 
     verified_components: list[str] = []
     for component in authority["exact_byte_components"]:
@@ -122,6 +142,16 @@ def verify_authority(
             raise AuthorityError(f"{component['id']} is not bound by the contract manifest")
         verified_components.append(component["id"])
 
+    verified_addenda: list[str] = []
+    for addendum in authority.get("revision_bound_addenda", []):
+        addendum_bytes = _git_bytes(revision, addendum["path"], repository=repository)
+        _require_hash(
+            label=f"{addendum['id']} bytes",
+            actual=_sha256(addendum_bytes),
+            expected=addendum["sha256"],
+        )
+        verified_addenda.append(addendum["id"])
+
     return {
         "schema_version": authority["schema_version"],
         "status": "PASS",
@@ -131,7 +161,9 @@ def verify_authority(
         "v17_r2_canonical_sha256": v17_config["canonical_sha256"],
         "phase4_contract_set_sha256": contract_config["canonical_sha256"],
         "contract_component_count": len(components),
+        "contract_components_verified": verified_contract_components,
         "exact_byte_components_verified": verified_components,
+        "revision_bound_addenda_verified": verified_addenda,
         "wire": authority["wire"],
     }
 

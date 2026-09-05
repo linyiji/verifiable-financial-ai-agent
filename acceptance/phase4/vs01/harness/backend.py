@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import re
 import secrets
 import time
 from collections.abc import Mapping
@@ -40,11 +42,103 @@ RUN_STAGE = {
     "CANCELLED": "CANCELLED",
 }
 TERMINAL_RUN_STATUSES = frozenset({"RELEASED", "FAILED", "CANCELLED"})
+TASK_STATUS_VALUES = frozenset(
+    {
+        "CREATED",
+        "WAITING",
+        "READY",
+        "RUNNING",
+        "WAITING_FOR_CAPABILITY",
+        "SELF_CORRECTING",
+        "BLOCKED",
+        "REVIEW",
+        "COMPLETED",
+        "FAILED",
+        "CAPABILITY_BUILD_FAILED",
+        "CANCELLED",
+    }
+)
+REVIEW_STATUS_VALUES = frozenset({"PASS", "REVIEW", "BLOCK"})
+PROOF_POLICY_VALUES = frozenset({"NOT_REQUIRED", "MUST_PROVE", "MIXED", "UNKNOWN"})
+PROOF_STATUS_VALUES = frozenset(
+    {
+        "NOT_REQUIRED",
+        "PENDING",
+        "PROVING",
+        "GENERATED_UNVERIFIED",
+        "VERIFIED",
+        "INVALID",
+        "ERROR",
+        "UNSUPPORTED",
+    }
+)
 AUTO_STARTED_RUN_STATUSES = frozenset({"RUNNING", "REVIEW", "PROVING", "RELEASED"})
 AVAILABILITY_STATUSES = frozenset(
     {"PENDING", "AVAILABLE", "NOT_GENERATED", "NOT_RELEASED", "UNAVAILABLE", "FAILED"}
 )
 PATH_CHANGE_KINDS = frozenset({"SELF_CORRECTION", "ADD_TASK", "CHANGE_DEPENDENCY"})
+TASK_ORIGINS = frozenset({"PLAN", "REPLAN", "REVIEW_FIX"})
+TASK_REQUIRED_FIELDS = frozenset(
+    {
+        "task_id",
+        "run_id",
+        "parent_task_id",
+        "task_type",
+        "goal",
+        "assigned_agent",
+        "skill_id",
+        "dependencies",
+        "origin",
+        "reason_code",
+        "status",
+        "progress",
+    }
+)
+TASK_APPROVED_OPTIONAL_FIELDS = frozenset(
+    {
+        "attempt_count",
+        "task_input_evidence_ids",
+        "task_output_evidence_ids",
+        "evidence_acquisition_status",
+        "evidence_source_coverage",
+        "created_at",
+    }
+)
+ACTIVITY_FIELDS = frozenset(
+    {"event_id", "type", "sequence", "timestamp", "task_id", "message_code"}
+)
+ACTIVITY_PROJECTION_OPTIONAL_FIELDS = frozenset(
+    {
+        "status",
+        "actor_id",
+        "actor_type",
+        "duration_ms",
+        "input_refs",
+        "output_refs",
+        "evidence_refs",
+        "calculation_refs",
+        "claim_refs",
+        "judgment_refs",
+        "review_refs",
+        "proof_refs",
+        "artifact_refs",
+        "trace_bundle_refs",
+    }
+)
+TERMINAL_TASK_STATUSES = frozenset({"COMPLETED", "FAILED", "CAPABILITY_BUILD_FAILED", "CANCELLED"})
+EVIDENCE_ACQUISITION_STATUSES = frozenset({"COMPLETED", "PARTIAL", "ENTITLEMENT_BLOCKED", "FAILED"})
+FAILURE_STAGE_CODES: dict[str, frozenset[str]] = {
+    "PLANNING": frozenset({"PLANNING_FAILED"}),
+    "DATA_EVIDENCE": frozenset({"DATA_EVIDENCE_FAILED"}),
+    "TASK_EXECUTION": frozenset({"TASK_EXECUTION_FAILED"}),
+    "GENERATED_CAPABILITY": frozenset({"GENERATED_CAPABILITY_FAILED"}),
+    "FINANCIAL_REVIEW": frozenset({"FINANCIAL_REVIEW_BLOCKED", "FINANCIAL_REVIEW_FAILED"}),
+    "PROOF": frozenset({"PROOF_INVALID", "PROOF_FAILED"}),
+    "ARTIFACT_GENERATION": frozenset({"REQUIRED_ARTIFACT_GENERATION_FAILED"}),
+    "RELEASE": frozenset({"RELEASE_GATE_BLOCKED", "RELEASE_FAILED"}),
+    "POST_SCHEDULER": frozenset({"POST_SCHEDULER_FAILED"}),
+    "PERSISTENCE": frozenset({"PERSISTENCE_FINALIZATION_FAILED"}),
+}
 
 ERROR_TUPLES: dict[str, tuple[int, bool, str]] = {
     "INVALID_CURSOR": (400, False, "SNAPSHOT_RELOAD"),
@@ -84,6 +178,147 @@ CONTROL_ORDER = (
 )
 
 JsonObject = dict[str, Any]
+MAX_SAFE_JSON_INTEGER = 9_007_199_254_740_991
+FORBIDDEN_PUBLIC_KEY = re.compile(
+    r"authorization|api[_-]?key|bearer|secret|prompt|chain[_-]?of[_-]?thought|"
+    r"scratch[_-]?reasoning|raw[_-]?provider|filesystem[_-]?path",
+    re.IGNORECASE,
+)
+FORBIDDEN_PUBLIC_TEXT = re.compile(
+    r"(?:\bBearer\s+[A-Za-z0-9._~+\-/]+=*|\bsk-[A-Za-z0-9_-]{16,}|"
+    r"postgres(?:ql)?://|(?:^|\s)/(?:Users|home)/|[A-Za-z]:\\|"
+    r"chain[- ]of[- ]thought|system prompt|scratch reasoning)",
+    re.IGNORECASE,
+)
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> JsonObject:
+    result: JsonObject = {}
+    for name, value in pairs:
+        if name in result:
+            raise ValueError(f"duplicate JSON member: {name}")
+        result[name] = value
+    return result
+
+
+def _strict_json_loads(value: str) -> Any:
+    """Decode I-JSON-compatible input and reject duplicate members/non-finite constants."""
+
+    return json.loads(
+        value,
+        object_pairs_hook=_unique_json_object,
+        parse_constant=_reject_json_constant,
+    )
+
+
+def _canonical_json_string(value: str) -> str:
+    try:
+        value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise ContractViolation("canonical JSON strings cannot contain lone surrogates") from exc
+    escaped: list[str] = ['"']
+    short_escapes = {
+        "\b": "\\b",
+        "\t": "\\t",
+        "\n": "\\n",
+        "\f": "\\f",
+        "\r": "\\r",
+        '"': '\\"',
+        "\\": "\\\\",
+    }
+    for character in value:
+        replacement = short_escapes.get(character)
+        if replacement is not None:
+            escaped.append(replacement)
+        elif ord(character) < 0x20:
+            escaped.append(f"\\u{ord(character):04x}")
+        else:
+            escaped.append(character)
+    escaped.append('"')
+    return "".join(escaped)
+
+
+def _canonical_float(value: float) -> str:
+    if not math.isfinite(value):
+        raise ContractViolation("canonical JSON forbids non-finite numbers")
+    if value == 0:
+        return "0"
+    negative = value < 0
+    raw = repr(abs(value)).lower()
+    if "e" in raw:
+        mantissa, raw_exponent = raw.split("e", 1)
+        exponent = int(raw_exponent)
+    else:
+        mantissa = raw
+        exponent = 0
+    if "." in mantissa:
+        integer_part, fractional_part = mantissa.split(".", 1)
+    else:
+        integer_part, fractional_part = mantissa, ""
+    digits = integer_part + fractional_part
+    leading = len(digits) - len(digits.lstrip("0"))
+    decimal_point = len(integer_part) + exponent - leading
+    digits = digits[leading:].rstrip("0") or "0"
+    scientific_exponent = decimal_point - 1
+    if -6 <= scientific_exponent < 21:
+        if decimal_point <= 0:
+            rendered = "0." + ("0" * -decimal_point) + digits
+        elif decimal_point >= len(digits):
+            rendered = digits + ("0" * (decimal_point - len(digits)))
+        else:
+            rendered = f"{digits[:decimal_point]}.{digits[decimal_point:]}"
+    else:
+        coefficient = digits[0]
+        if len(digits) > 1:
+            coefficient += f".{digits[1:]}"
+        sign = "+" if scientific_exponent >= 0 else ""
+        rendered = f"{coefficient}e{sign}{scientific_exponent}"
+    return f"-{rendered}" if negative else rendered
+
+
+def _canonical_json(value: Any) -> str:
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, str):
+        return _canonical_json_string(value)
+    if isinstance(value, int):
+        if abs(value) > MAX_SAFE_JSON_INTEGER:
+            raise ContractViolation("canonical JSON integer exceeds IEEE-754 safe range")
+        return str(value)
+    if isinstance(value, float):
+        return _canonical_float(value)
+    if isinstance(value, list):
+        return "[" + ",".join(_canonical_json(item) for item in value) + "]"
+    if isinstance(value, dict):
+        try:
+            names = sorted(value, key=lambda name: name.encode("utf-16-be", errors="strict"))
+        except (AttributeError, UnicodeEncodeError) as exc:
+            raise ContractViolation("canonical JSON object keys must be Unicode strings") from exc
+        return (
+            "{"
+            + ",".join(
+                f"{_canonical_json_string(name)}:{_canonical_json(value[name])}" for name in names
+            )
+            + "}"
+        )
+    raise ContractViolation(f"canonical JSON cannot encode {type(value).__name__}")
+
+
+def draft_payload_sha256(value: Mapping[str, Any]) -> str:
+    """Compute the frozen RFC 8785 immutable draft hash, excluding only draft_hash."""
+
+    payload = dict(value)
+    payload.pop("draft_hash", None)
+    canonical = _canonical_json(payload).encode("utf-8")
+    return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
 
 
 class ContractViolation(AssertionError):
@@ -115,8 +350,8 @@ class HttpObservation:
     def json_object(self) -> JsonObject:
         try:
             decoded = self.body.decode("utf-8")
-            value = json.loads(decoded)
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            value = _strict_json_loads(decoded)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             raise ContractViolation("response is not valid UTF-8 JSON") from exc
         if not isinstance(value, dict):
             raise ContractViolation("response JSON root must be an object")
@@ -161,9 +396,9 @@ class UrllibJsonTransport:
         request_headers = {"Accept": "application/json", **dict(headers or {})}
         payload: bytes | None = None
         if json_body is not None:
-            payload = json.dumps(
-                dict(json_body), ensure_ascii=False, separators=(",", ":")
-            ).encode("utf-8")
+            payload = json.dumps(dict(json_body), ensure_ascii=False, separators=(",", ":")).encode(
+                "utf-8"
+            )
             request_headers["Content-Type"] = "application/json; charset=utf-8"
         request = Request(
             f"{self.base_url}{path}",
@@ -214,9 +449,10 @@ class BackendHarnessConfig:
         if missing:
             raise ValueError(f"object_request is missing fields: {sorted(missing)}")
         for name in required:
-            if not isinstance(self.object_request[name], str) or not str(
-                self.object_request[name]
-            ).strip():
+            if (
+                not isinstance(self.object_request[name], str)
+                or not str(self.object_request[name]).strip()
+            ):
                 raise ValueError(f"object_request.{name} must be a non-empty string")
         if not self.research_goal.strip():
             raise ValueError("research_goal must be non-empty")
@@ -404,11 +640,9 @@ def _list(value: Any, path: str) -> list[Any]:
     return value
 
 
-def _text(value: Any, path: str, *, prefix: str | None = None) -> str:
-    if not isinstance(value, str) or not value:
+def _text(value: Any, path: str) -> str:
+    if not isinstance(value, str) or not value.strip():
         raise ContractViolation(f"{path} must be a non-empty string")
-    if prefix is not None and not value.startswith(prefix):
-        raise ContractViolation(f"{path} must use canonical prefix {prefix}")
     return value
 
 
@@ -422,7 +656,7 @@ def _number(value: Any, path: str, *, minimum: float, maximum: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ContractViolation(f"{path} must be numeric")
     result = float(value)
-    if result < minimum or result > maximum:
+    if not math.isfinite(result) or result < minimum or result > maximum:
         raise ContractViolation(f"{path} must be in {minimum}..{maximum}")
     return result
 
@@ -447,6 +681,13 @@ def _sha256(value: Any, path: str) -> str:
     return text
 
 
+def _string_array(value: Any, path: str) -> tuple[str, ...]:
+    items = _list(value, path)
+    for index, item in enumerate(items):
+        _text(item, f"{path}[{index}]")
+    return tuple(items)
+
+
 def _expect(value: Any, expected: Any, path: str) -> None:
     if value != expected:
         raise ContractViolation(f"{path} must equal the frozen contract value")
@@ -458,8 +699,53 @@ def _absent(payload: Mapping[str, Any], names: set[str], path: str) -> None:
         raise ContractViolation(f"{path} contains excluded fields: {sorted(present)}")
 
 
+def _exact_fields(payload: Mapping[str, Any], names: set[str], path: str) -> None:
+    observed = set(payload)
+    if observed != names:
+        missing = sorted(names - observed)
+        extra = sorted(observed - names)
+        raise ContractViolation(f"{path} fields differ; missing={missing}, extra={extra}")
+
+
+def _required_approved_fields(
+    payload: Mapping[str, Any],
+    required: frozenset[str],
+    optional: frozenset[str],
+    path: str,
+) -> None:
+    missing = sorted(required - set(payload))
+    extra = sorted(set(payload) - required - optional)
+    if missing or extra:
+        raise ContractViolation(f"{path} fields differ; missing={missing}, extra={extra}")
+
+
+def _assert_safe_public_json(value: Any, path: str) -> None:
+    if value is None or isinstance(value, bool):
+        return
+    if isinstance(value, str):
+        if FORBIDDEN_PUBLIC_TEXT.search(value):
+            raise ContractViolation(f"{path} contains forbidden public diagnostic content")
+        return
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ContractViolation(f"{path} contains a non-finite number")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _assert_safe_public_json(item, f"{path}[{index}]")
+        return
+    if isinstance(value, dict):
+        for name, item in value.items():
+            if FORBIDDEN_PUBLIC_KEY.search(name):
+                raise ContractViolation(f"{path}.{name} is forbidden on the public surface")
+            _assert_safe_public_json(item, f"{path}.{name}")
+        return
+    raise ContractViolation(f"{path} is not safe JSON")
+
+
 def validate_availability(value: Any, path: str) -> JsonObject:
     availability = _mapping(value, path)
+    _exact_fields(availability, {"status", "reason_code", "retryable"}, path)
     status = availability.get("status")
     if status not in AVAILABILITY_STATUSES:
         raise ContractViolation(f"{path}.status is unsupported")
@@ -480,17 +766,38 @@ def validate_research_object_detail(
     expected_request: Mapping[str, Any] | None = None,
     expected_object_id: str | None = None,
 ) -> str:
-    object_id = _text(body.get("object_id"), "object.object_id", prefix="OBJ-")
+    _exact_fields(
+        body,
+        {
+            "object_id",
+            "object_type",
+            "symbol",
+            "company_name",
+            "exchange",
+            "sector",
+            "currency",
+            "identity_version",
+            "created_at",
+            "updated_at",
+        },
+        "object",
+    )
+    object_id = _text(body.get("object_id"), "object.object_id")
     if expected_object_id is not None:
         _expect(object_id, expected_object_id, "object.object_id")
     _expect(body.get("object_type"), "public_company", "object.object_type")
     _text(body.get("symbol"), "object.symbol")
     _text(body.get("company_name"), "object.company_name")
     _text(body.get("exchange"), "object.exchange")
+    sector = body.get("sector")
+    if sector is not None and (not isinstance(sector, str) or not sector.strip()):
+        raise ContractViolation("object.sector must be null or a non-empty string")
     _text(body.get("currency"), "object.currency")
     _integer(body.get("identity_version"), "object.identity_version", minimum=1)
-    _timestamp(body.get("created_at"), "object.created_at")
-    _timestamp(body.get("updated_at"), "object.updated_at")
+    created_at = _timestamp(body.get("created_at"), "object.created_at")
+    updated_at = _timestamp(body.get("updated_at"), "object.updated_at")
+    if updated_at < created_at:
+        raise ContractViolation("object.updated_at precedes object.created_at")
     _absent(
         body,
         {
@@ -513,27 +820,73 @@ def validate_research_object_detail(
 def _validate_projection_object(body: JsonObject, *, expected_object_id: str) -> None:
     """Validate the smaller NormalizedObjectIdentity embedded in a Run projection."""
 
+    _exact_fields(
+        body,
+        {
+            "object_id",
+            "symbol",
+            "company_name",
+            "object_type",
+            "exchange",
+            "sector",
+            "currency",
+            "identity_version",
+        },
+        "projection.object",
+    )
     _expect(body.get("object_id"), expected_object_id, "projection.object.object_id")
     _expect(body.get("object_type"), "public_company", "projection.object.object_type")
     _text(body.get("symbol"), "projection.object.symbol")
     _text(body.get("company_name"), "projection.object.company_name")
     _text(body.get("exchange"), "projection.object.exchange")
+    sector = body.get("sector")
+    if sector is not None and (not isinstance(sector, str) or not sector.strip()):
+        raise ContractViolation("projection.object.sector must be null or non-empty")
     _text(body.get("currency"), "projection.object.currency")
     _integer(body.get("identity_version"), "projection.object.identity_version", minimum=1)
 
 
 def validate_run_collection(body: JsonObject, *, expected_object_id: str) -> tuple[str, ...]:
+    _exact_fields(body, {"schema_version", "items", "next_cursor"}, "collection")
     _expect(body.get("schema_version"), "phase4-run-collection/v1", "collection.schema_version")
     items = _list(body.get("items"), "collection.items")
     cursor = body.get("next_cursor")
     if cursor is not None and (not isinstance(cursor, str) or not cursor):
         raise ContractViolation("collection.next_cursor must be null or a non-empty opaque string")
     run_ids: list[str] = []
+    sort_keys: list[tuple[datetime, str]] = []
     for index, raw_item in enumerate(items):
         path = f"collection.items[{index}]"
         item = _mapping(raw_item, path)
-        run_id = _text(item.get("run_id"), f"{path}.run_id", prefix="RUN-")
+        _exact_fields(
+            item,
+            {
+                "run_id",
+                "object",
+                "status",
+                "stage",
+                "progress",
+                "activity",
+                "graph_version",
+                "projection_revision",
+                "projection_sequence",
+                "as_of",
+                "created_at",
+                "updated_at",
+                "started_at",
+                "completed_at",
+                "terminal",
+                "result_availability",
+            },
+            path,
+        )
+        run_id = _text(item.get("run_id"), f"{path}.run_id")
         object_summary = _mapping(item.get("object"), f"{path}.object")
+        _exact_fields(
+            object_summary,
+            {"object_id", "symbol", "company_name"},
+            f"{path}.object",
+        )
         _expect(object_summary.get("object_id"), expected_object_id, f"{path}.object.object_id")
         _text(object_summary.get("symbol"), f"{path}.object.symbol")
         _text(object_summary.get("company_name"), f"{path}.object.company_name")
@@ -542,19 +895,68 @@ def validate_run_collection(body: JsonObject, *, expected_object_id: str) -> tup
             raise ContractViolation(f"{path}.status is unsupported")
         _expect(item.get("stage"), RUN_STAGE[status], f"{path}.stage")
         progress = _mapping(item.get("progress"), f"{path}.progress")
+        _exact_fields(
+            progress,
+            {"method", "completed_tasks", "total_tasks", "fraction"},
+            f"{path}.progress",
+        )
         _expect(progress.get("method"), "ACTUAL_TASK_MEAN_V1", f"{path}.progress.method")
-        _integer(progress.get("completed_tasks"), f"{path}.progress.completed_tasks", minimum=0)
-        _integer(progress.get("total_tasks"), f"{path}.progress.total_tasks", minimum=0)
+        completed = _integer(
+            progress.get("completed_tasks"), f"{path}.progress.completed_tasks", minimum=0
+        )
+        total = _integer(progress.get("total_tasks"), f"{path}.progress.total_tasks", minimum=0)
+        if completed > total:
+            raise ContractViolation(f"{path}.progress.completed_tasks exceeds total_tasks")
         _number(progress.get("fraction"), f"{path}.progress.fraction", minimum=0, maximum=1)
+        graph_version = item.get("graph_version")
+        if graph_version is not None:
+            _integer(graph_version, f"{path}.graph_version", minimum=1)
         _integer(item.get("projection_revision"), f"{path}.projection_revision", minimum=1)
         _integer(item.get("projection_sequence"), f"{path}.projection_sequence", minimum=0)
         terminal = item.get("terminal")
         if not isinstance(terminal, bool) or terminal != (status in TERMINAL_RUN_STATUSES):
             raise ContractViolation(f"{path}.terminal is inconsistent with status")
+        as_of = _text(item.get("as_of"), f"{path}.as_of")
+        try:
+            date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise ContractViolation(f"{path}.as_of must be an ISO date") from exc
+        created_at = _timestamp(item.get("created_at"), f"{path}.created_at")
+        updated_at = _timestamp(item.get("updated_at"), f"{path}.updated_at")
+        if updated_at < created_at:
+            raise ContractViolation(f"{path}.updated_at precedes created_at")
+        started_at = item.get("started_at")
+        completed_at = item.get("completed_at")
+        if started_at is not None:
+            started_at = _timestamp(started_at, f"{path}.started_at")
+            if started_at < created_at:
+                raise ContractViolation(f"{path}.started_at precedes created_at")
+        if completed_at is not None:
+            completed_at = _timestamp(completed_at, f"{path}.completed_at")
+        if terminal != (completed_at is not None):
+            raise ContractViolation(f"{path}.completed_at nullability disagrees with terminal")
+        activity = item.get("activity")
+        if activity is not None:
+            activity_body = _mapping(activity, f"{path}.activity")
+            _exact_fields(activity_body, set(ACTIVITY_FIELDS), f"{path}.activity")
+            _text(activity_body.get("event_id"), f"{path}.activity.event_id")
+            _text(activity_body.get("type"), f"{path}.activity.type")
+            activity_sequence = _integer(
+                activity_body.get("sequence"), f"{path}.activity.sequence", minimum=1
+            )
+            if activity_sequence > item["projection_sequence"]:
+                raise ContractViolation(f"{path}.activity.sequence exceeds projection watermark")
+            _timestamp(activity_body.get("timestamp"), f"{path}.activity.timestamp")
+            if activity_body.get("task_id") is not None:
+                _text(activity_body.get("task_id"), f"{path}.activity.task_id")
+            _text(activity_body.get("message_code"), f"{path}.activity.message_code")
         validate_availability(item.get("result_availability"), f"{path}.result_availability")
         run_ids.append(run_id)
+        sort_keys.append((updated_at, run_id))
     if len(run_ids) != len(set(run_ids)):
         raise ContractViolation("collection contains duplicate Run identities")
+    if sort_keys != sorted(sort_keys, reverse=True):
+        raise ContractViolation("collection is not stably ordered by updated_at/run_id descending")
     return tuple(run_ids)
 
 
@@ -566,8 +968,27 @@ def validate_research_run_draft(
     expected_as_of: str,
     expected_preferences: Mapping[str, Any],
 ) -> DraftEvidence:
+    _exact_fields(
+        body,
+        {
+            "schema_version",
+            "draft_id",
+            "draft_version",
+            "status",
+            "preview_kind",
+            "planned_graph_availability",
+            "object_id",
+            "goal",
+            "scheme_snapshot",
+            "prepare_request_hash",
+            "draft_hash",
+            "created_at",
+            "expires_at",
+        },
+        "draft",
+    )
     _expect(body.get("schema_version"), "phase4-run-draft/v1", "draft.schema_version")
-    draft_id = _text(body.get("draft_id"), "draft.draft_id", prefix="DRAFT-")
+    draft_id = _text(body.get("draft_id"), "draft.draft_id")
     draft_version = _integer(body.get("draft_version"), "draft.draft_version", minimum=1)
     _expect(body.get("status"), "AWAITING_CONFIRMATION", "draft.status")
     _expect(body.get("preview_kind"), "SCHEME_ONLY", "draft.preview_kind")
@@ -583,7 +1004,20 @@ def validate_research_run_draft(
     _expect(body.get("object_id"), expected_object_id, "draft.object_id")
 
     goal = _mapping(body.get("goal"), "draft.goal")
-    goal_id = _text(goal.get("goal_id"), "draft.goal.goal_id", prefix="GOAL-")
+    _exact_fields(
+        goal,
+        {
+            "goal_id",
+            "research_object_id",
+            "goal_type",
+            "goal_text",
+            "as_of",
+            "preferences",
+            "created_at",
+        },
+        "draft.goal",
+    )
+    goal_id = _text(goal.get("goal_id"), "draft.goal.goal_id")
     _expect(goal.get("research_object_id"), expected_object_id, "draft.goal.research_object_id")
     _expect(
         goal.get("goal_type"),
@@ -593,10 +1027,32 @@ def validate_research_run_draft(
     _expect(goal.get("goal_text"), expected_goal_text, "draft.goal.goal_text")
     _expect(goal.get("as_of"), expected_as_of, "draft.goal.as_of")
     _expect(goal.get("preferences"), dict(expected_preferences), "draft.goal.preferences")
+    _assert_safe_public_json(goal.get("preferences"), "draft.goal.preferences")
     _timestamp(goal.get("created_at"), "draft.goal.created_at")
 
     scheme = _mapping(body.get("scheme_snapshot"), "draft.scheme_snapshot")
-    scheme_id = _text(scheme.get("scheme_id"), "draft.scheme_snapshot.scheme_id", prefix="SCHEME-")
+    _exact_fields(
+        scheme,
+        {
+            "scheme_id",
+            "research_object_id",
+            "goal_id",
+            "research_scope",
+            "data_requirements",
+            "agent_requirements",
+            "skill_requirements",
+            "calculation_requirements",
+            "assurance_requirements",
+            "report_requirements",
+            "limitations",
+            "generated_by",
+            "generated_model",
+            "created_at",
+            "confirmed_at",
+        },
+        "draft.scheme_snapshot",
+    )
+    scheme_id = _text(scheme.get("scheme_id"), "draft.scheme_snapshot.scheme_id")
     _expect(
         scheme.get("research_object_id"),
         expected_object_id,
@@ -612,8 +1068,11 @@ def validate_research_run_draft(
         "report_requirements",
         "limitations",
     ):
-        _list(scheme.get(name), f"draft.scheme_snapshot.{name}")
-    _mapping(scheme.get("assurance_requirements"), "draft.scheme_snapshot.assurance_requirements")
+        _string_array(scheme.get(name), f"draft.scheme_snapshot.{name}")
+    assurance = _mapping(
+        scheme.get("assurance_requirements"), "draft.scheme_snapshot.assurance_requirements"
+    )
+    _assert_safe_public_json(assurance, "draft.scheme_snapshot.assurance_requirements")
     _text(scheme.get("generated_by"), "draft.scheme_snapshot.generated_by")
     generated_model = scheme.get("generated_model")
     if generated_model is not None and (
@@ -625,6 +1084,7 @@ def validate_research_run_draft(
 
     _sha256(body.get("prepare_request_hash"), "draft.prepare_request_hash")
     draft_hash = _sha256(body.get("draft_hash"), "draft.draft_hash")
+    _expect(draft_hash, draft_payload_sha256(body), "draft.draft_hash")
     created_at = _timestamp(body.get("created_at"), "draft.created_at")
     expires_at = _timestamp(body.get("expires_at"), "draft.expires_at")
     if expires_at <= created_at:
@@ -652,6 +1112,7 @@ def validate_confirm_response(
     expected_object_id: str,
     expected_replayed: bool,
 ) -> JsonObject:
+    _exact_fields(body, {"schema_version", "admission", "response_meta"}, "confirm")
     _expect(body.get("schema_version"), "phase4-confirm-response/v1", "confirm.schema_version")
     _absent(
         body,
@@ -668,13 +1129,35 @@ def validate_confirm_response(
         "confirm",
     )
     admission = _mapping(body.get("admission"), "confirm.admission")
+    _exact_fields(
+        admission,
+        {
+            "schema_version",
+            "admission_id",
+            "run_id",
+            "object_id",
+            "draft_id",
+            "draft_version",
+            "draft_hash",
+            "goal_id",
+            "scheme_id",
+            "planned_graph_id",
+            "status",
+            "auto_start",
+            "confirmation_request_hash",
+            "admitted_at",
+            "projection_ref",
+            "events_ref",
+        },
+        "confirm.admission",
+    )
     _expect(
         admission.get("schema_version"),
         "phase4-run-admission/v1",
         "confirm.admission.schema_version",
     )
-    _text(admission.get("admission_id"), "confirm.admission.admission_id", prefix="ADMISSION-")
-    _text(admission.get("run_id"), "confirm.admission.run_id", prefix="RUN-")
+    _text(admission.get("admission_id"), "confirm.admission.admission_id")
+    _text(admission.get("run_id"), "confirm.admission.run_id")
     _expect(admission.get("object_id"), expected_object_id, "confirm.admission.object_id")
     _expect(admission.get("draft_id"), expected_draft.draft_id, "confirm.admission.draft_id")
     _expect(
@@ -685,13 +1168,10 @@ def validate_confirm_response(
     _expect(admission.get("draft_hash"), expected_draft.draft_hash, "confirm.admission.draft_hash")
     _expect(admission.get("goal_id"), expected_draft.goal_id, "confirm.admission.goal_id")
     _expect(admission.get("scheme_id"), expected_draft.scheme_id, "confirm.admission.scheme_id")
-    _text(
-        admission.get("planned_graph_id"),
-        "confirm.admission.planned_graph_id",
-        prefix="GRAPH-",
-    )
+    _text(admission.get("planned_graph_id"), "confirm.admission.planned_graph_id")
     _expect(admission.get("status"), "PLANNING", "confirm.admission.status")
     auto_start = _mapping(admission.get("auto_start"), "confirm.admission.auto_start")
+    _exact_fields(auto_start, {"required", "admitted"}, "confirm.admission.auto_start")
     _expect(auto_start, {"required": True, "admitted": True}, "confirm.admission.auto_start")
     _sha256(
         admission.get("confirmation_request_hash"),
@@ -710,6 +1190,11 @@ def validate_confirm_response(
         "confirm.admission.events_ref",
     )
     response_meta = _mapping(body.get("response_meta"), "confirm.response_meta")
+    _exact_fields(
+        response_meta,
+        {"schema_version", "request_id", "idempotency_replayed"},
+        "confirm.response_meta",
+    )
     _expect(
         response_meta.get("schema_version"),
         "phase4-response-meta/v1",
@@ -726,7 +1211,109 @@ def validate_confirm_response(
     return admission
 
 
-def validate_run_detail(
+def _validate_projection_goal(
+    value: Any,
+    *,
+    expected_goal_id: str,
+    expected_object_id: str,
+    expected_as_of: str,
+) -> None:
+    goal = _mapping(value, "projection.goal")
+    _exact_fields(
+        goal,
+        {
+            "goal_id",
+            "research_object_id",
+            "goal_type",
+            "goal_text",
+            "as_of",
+            "preferences",
+            "created_at",
+        },
+        "projection.goal",
+    )
+    _expect(goal.get("goal_id"), expected_goal_id, "projection.goal.goal_id")
+    _expect(
+        goal.get("research_object_id"),
+        expected_object_id,
+        "projection.goal.research_object_id",
+    )
+    _expect(
+        goal.get("goal_type"),
+        "comprehensive_equity_research",
+        "projection.goal.goal_type",
+    )
+    _text(goal.get("goal_text"), "projection.goal.goal_text")
+    _expect(goal.get("as_of"), expected_as_of, "projection.goal.as_of")
+    preferences = _mapping(goal.get("preferences"), "projection.goal.preferences")
+    _assert_safe_public_json(preferences, "projection.goal.preferences")
+    _timestamp(goal.get("created_at"), "projection.goal.created_at")
+
+
+def _validate_projection_scheme(
+    value: Any,
+    *,
+    expected_scheme_id: str,
+    expected_goal_id: str,
+    expected_object_id: str,
+) -> None:
+    scheme = _mapping(value, "projection.confirmed_scheme")
+    _exact_fields(
+        scheme,
+        {
+            "scheme_id",
+            "research_object_id",
+            "goal_id",
+            "research_scope",
+            "data_requirements",
+            "agent_requirements",
+            "skill_requirements",
+            "calculation_requirements",
+            "assurance_requirements",
+            "report_requirements",
+            "limitations",
+            "generated_by",
+            "generated_model",
+            "created_at",
+            "confirmed_at",
+        },
+        "projection.confirmed_scheme",
+    )
+    _expect(scheme.get("scheme_id"), expected_scheme_id, "projection.confirmed_scheme.scheme_id")
+    _expect(
+        scheme.get("research_object_id"),
+        expected_object_id,
+        "projection.confirmed_scheme.research_object_id",
+    )
+    _expect(scheme.get("goal_id"), expected_goal_id, "projection.confirmed_scheme.goal_id")
+    for name in (
+        "research_scope",
+        "data_requirements",
+        "agent_requirements",
+        "skill_requirements",
+        "calculation_requirements",
+        "report_requirements",
+        "limitations",
+    ):
+        _string_array(scheme.get(name), f"projection.confirmed_scheme.{name}")
+    assurance = _mapping(
+        scheme.get("assurance_requirements"),
+        "projection.confirmed_scheme.assurance_requirements",
+    )
+    _assert_safe_public_json(assurance, "projection.confirmed_scheme.assurance_requirements")
+    _text(scheme.get("generated_by"), "projection.confirmed_scheme.generated_by")
+    generated_model = scheme.get("generated_model")
+    if generated_model is not None:
+        _text(generated_model, "projection.confirmed_scheme.generated_model")
+    created_at = _timestamp(scheme.get("created_at"), "projection.confirmed_scheme.created_at")
+    confirmed_at = _timestamp(
+        scheme.get("confirmed_at"), "projection.confirmed_scheme.confirmed_at"
+    )
+    if confirmed_at < created_at:
+        raise ContractViolation("projection.confirmed_scheme.confirmed_at precedes created_at")
+
+
+def _validate_run_detail_values(
     body: JsonObject,
     *,
     object_id: str,
@@ -744,37 +1331,268 @@ def validate_run_detail(
     status = body.get("status")
     if status not in RUN_STAGE:
         raise ContractViolation("run.status is unsupported")
+    _expect(body.get("stage"), RUN_STAGE[status], "run.stage")
+    actual_graph_id = body.get("actual_graph_id")
+    if actual_graph_id is not None:
+        _text(actual_graph_id, "run.actual_graph_id")
+    _text(body.get("execution_target"), "run.execution_target")
     as_of = _text(body.get("as_of"), "run.as_of")
     try:
         date.fromisoformat(as_of)
     except ValueError as exc:
         raise ContractViolation("run.as_of must be an ISO date") from exc
     _expect(as_of, expected_as_of, "run.as_of")
-    _timestamp(body.get("created_at"), "run.created_at")
-    for name in ("updated_at", "started_at", "completed_at"):
-        value = body.get(name)
-        if value is not None:
-            _timestamp(value, f"run.{name}")
+    created_at = _timestamp(body.get("created_at"), "run.created_at")
+    updated_at = _timestamp(body.get("updated_at"), "run.updated_at")
+    if updated_at < created_at:
+        raise ContractViolation("run.updated_at precedes run.created_at")
+    started_at = body.get("started_at")
+    completed_at = body.get("completed_at")
+    if started_at is not None:
+        started_at = _timestamp(started_at, "run.started_at")
+        if started_at < created_at or started_at > updated_at:
+            raise ContractViolation("run.started_at is outside created_at..updated_at")
+    if completed_at is not None:
+        completed_at = _timestamp(completed_at, "run.completed_at")
+        if started_at is None or completed_at < started_at or completed_at > updated_at:
+            raise ContractViolation("run.completed_at is outside started_at..updated_at")
+    is_terminal = status in TERMINAL_RUN_STATUSES
+    if is_terminal != (completed_at is not None):
+        raise ContractViolation("run.completed_at must be present exactly for terminal status")
+    if status in AUTO_STARTED_RUN_STATUSES and started_at is None:
+        raise ContractViolation("an auto-started Run requires run.started_at")
 
 
-def _validate_progress(value: Any, path: str) -> None:
+def validate_run_detail(
+    body: JsonObject,
+    *,
+    object_id: str,
+    goal_id: str,
+    scheme_id: str,
+    expected_as_of: str,
+    run_id: str,
+    planned_graph_id: str,
+) -> None:
+    """Validate the 14-field Run embedded by frozen AtomicRunProjectionV1."""
+
+    _exact_fields(
+        body,
+        {
+            "run_id",
+            "research_object_id",
+            "goal_id",
+            "scheme_id",
+            "status",
+            "stage",
+            "as_of",
+            "planned_graph_id",
+            "actual_graph_id",
+            "execution_target",
+            "created_at",
+            "started_at",
+            "completed_at",
+            "updated_at",
+        },
+        "run",
+    )
+    _validate_run_detail_values(
+        body,
+        object_id=object_id,
+        goal_id=goal_id,
+        scheme_id=scheme_id,
+        expected_as_of=expected_as_of,
+        run_id=run_id,
+        planned_graph_id=planned_graph_id,
+    )
+
+
+def validate_standalone_run_detail(
+    body: JsonObject,
+    *,
+    object_id: str,
+    goal_id: str,
+    scheme_id: str,
+    expected_as_of: str,
+    run_id: str,
+    planned_graph_id: str,
+) -> tuple[int, int]:
+    """Validate the public Run-detail form, including its required watermarks."""
+
+    _exact_fields(
+        body,
+        {
+            "run_id",
+            "research_object_id",
+            "goal_id",
+            "scheme_id",
+            "status",
+            "stage",
+            "as_of",
+            "planned_graph_id",
+            "actual_graph_id",
+            "execution_target",
+            "created_at",
+            "started_at",
+            "completed_at",
+            "updated_at",
+            "terminal",
+            "projection_revision",
+            "projection_sequence",
+        },
+        "standalone run",
+    )
+    _validate_run_detail_values(
+        body,
+        object_id=object_id,
+        goal_id=goal_id,
+        scheme_id=scheme_id,
+        expected_as_of=expected_as_of,
+        run_id=run_id,
+        planned_graph_id=planned_graph_id,
+    )
+    status = body["status"]
+    _expect(body.get("terminal"), status in TERMINAL_RUN_STATUSES, "standalone run.terminal")
+    revision = _integer(
+        body.get("projection_revision"), "standalone run.projection_revision", minimum=1
+    )
+    sequence = _integer(
+        body.get("projection_sequence"), "standalone run.projection_sequence", minimum=0
+    )
+    return revision, sequence
+
+
+def _validate_progress(value: Any, path: str) -> tuple[int, int, float]:
     progress = _mapping(value, path)
+    _exact_fields(progress, {"method", "completed_tasks", "total_tasks", "fraction"}, path)
     _expect(progress.get("method"), "ACTUAL_TASK_MEAN_V1", f"{path}.method")
     completed = _integer(progress.get("completed_tasks"), f"{path}.completed_tasks", minimum=0)
     total = _integer(progress.get("total_tasks"), f"{path}.total_tasks", minimum=0)
     if completed > total:
         raise ContractViolation(f"{path}.completed_tasks cannot exceed total_tasks")
-    _number(progress.get("fraction"), f"{path}.fraction", minimum=0, maximum=1)
+    fraction = _number(progress.get("fraction"), f"{path}.fraction", minimum=0, maximum=1)
+    return completed, total, fraction
 
 
-def _validate_graph(value: Any, path: str, *, run_id: str) -> str:
+def _validate_task(value: Any, path: str, *, run_id: str) -> dict[str, Any]:
+    task = _mapping(value, path)
+    _required_approved_fields(
+        task,
+        TASK_REQUIRED_FIELDS,
+        TASK_APPROVED_OPTIONAL_FIELDS,
+        path,
+    )
+    task_id = _text(task.get("task_id"), f"{path}.task_id")
+    _expect(task.get("run_id"), run_id, f"{path}.run_id")
+    task_type = _text(task.get("task_type"), f"{path}.task_type")
+    goal = _text(task.get("goal"), f"{path}.goal")
+    assigned_agent = _text(task.get("assigned_agent"), f"{path}.assigned_agent")
+    skill_id = _text(task.get("skill_id"), f"{path}.skill_id")
+    origin = task.get("origin")
+    if origin not in TASK_ORIGINS:
+        raise ContractViolation(f"{path}.origin is unsupported")
+    reason_code = task.get("reason_code")
+    if reason_code is not None:
+        _text(reason_code, f"{path}.reason_code")
+    status = task.get("status")
+    if status not in TASK_STATUS_VALUES:
+        raise ContractViolation(f"{path}.status is unsupported")
+    progress = _number(task.get("progress"), f"{path}.progress", minimum=0, maximum=1)
+    dependencies = _list(task.get("dependencies"), f"{path}.dependencies")
+    if not all(isinstance(item, str) and item.strip() for item in dependencies):
+        raise ContractViolation(f"{path}.dependencies must contain Task IDs")
+    if len(dependencies) != len(set(dependencies)) or task_id in dependencies:
+        raise ContractViolation(f"{path}.dependencies are duplicated or self-referential")
+    parent = task.get("parent_task_id")
+    if parent is not None:
+        _text(parent, f"{path}.parent_task_id")
+        if parent == task_id:
+            raise ContractViolation(f"{path}.parent_task_id cannot reference itself")
+    normalized: dict[str, Any] = {
+        "task_id": task_id,
+        "run_id": run_id,
+        "task_type": task_type,
+        "goal": goal,
+        "assigned_agent": assigned_agent,
+        "skill_id": skill_id,
+        "origin": origin,
+        "reason_code": reason_code,
+        "status": status,
+        "progress": progress,
+        "dependencies": tuple(dependencies),
+        "parent_task_id": parent,
+    }
+    if "attempt_count" in task:
+        normalized["attempt_count"] = _integer(
+            task.get("attempt_count"), f"{path}.attempt_count", minimum=0
+        )
+    for name in ("task_input_evidence_ids", "task_output_evidence_ids"):
+        if name in task:
+            identifiers = _list(task.get(name), f"{path}.{name}")
+            if not all(isinstance(item, str) and item.strip() for item in identifiers):
+                raise ContractViolation(f"{path}.{name} must contain non-empty identities")
+            if len(identifiers) != len(set(identifiers)):
+                raise ContractViolation(f"{path}.{name} contains duplicate identities")
+            normalized[name] = tuple(identifiers)
+    if "evidence_acquisition_status" in task:
+        evidence_status = task.get("evidence_acquisition_status")
+        if evidence_status is not None and evidence_status not in EVIDENCE_ACQUISITION_STATUSES:
+            raise ContractViolation(f"{path}.evidence_acquisition_status is unsupported")
+        normalized["evidence_acquisition_status"] = evidence_status
+    if "evidence_source_coverage" in task:
+        normalized["evidence_source_coverage"] = _mapping(
+            task.get("evidence_source_coverage"), f"{path}.evidence_source_coverage"
+        )
+    if "created_at" in task:
+        normalized["created_at"] = _timestamp(task.get("created_at"), f"{path}.created_at")
+    _assert_safe_public_json(task, path)
+    return normalized
+
+
+def _validate_task_graph_acyclic(tasks: Mapping[str, Mapping[str, Any]], path: str) -> None:
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(task_id: str) -> None:
+        if task_id in visiting:
+            raise ContractViolation(f"{path} contains a dependency cycle")
+        if task_id in visited:
+            return
+        visiting.add(task_id)
+        for dependency in tasks[task_id]["dependencies"]:
+            visit(dependency)
+        visiting.remove(task_id)
+        visited.add(task_id)
+
+    for task_id in tasks:
+        visit(task_id)
+
+
+def _validate_graph(
+    value: Any,
+    path: str,
+    *,
+    run_id: str,
+) -> tuple[str, dict[str, dict[str, Any]]]:
     graph = _mapping(value, path)
-    graph_id = _text(graph.get("graph_id"), f"{path}.graph_id", prefix="GRAPH-")
+    _exact_fields(graph, {"graph_id", "run_id", "version", "tasks"}, path)
+    graph_id = _text(graph.get("graph_id"), f"{path}.graph_id")
     _expect(graph.get("run_id"), run_id, f"{path}.run_id")
     _integer(graph.get("version"), f"{path}.version", minimum=1)
-    if "tasks" in graph:
-        _list(graph["tasks"], f"{path}.tasks")
-    return graph_id
+    tasks: dict[str, dict[str, Any]] = {}
+    for index, raw_task in enumerate(_list(graph.get("tasks"), f"{path}.tasks")):
+        task = _validate_task(raw_task, f"{path}.tasks[{index}]", run_id=run_id)
+        if task["task_id"] in tasks:
+            raise ContractViolation(f"{path}.tasks contains duplicate Task identities")
+        tasks[task["task_id"]] = task
+    known = set(tasks)
+    for task in tasks.values():
+        related = set(task["dependencies"])
+        if task["parent_task_id"] is not None:
+            related.add(task["parent_task_id"])
+        if not related <= known:
+            raise ContractViolation(f"{path}.tasks references a Task outside the graph")
+    _validate_task_graph_acyclic(tasks, f"{path}.tasks")
+    return graph_id, tasks
 
 
 def validate_atomic_run_projection(
@@ -788,6 +1606,33 @@ def validate_atomic_run_projection(
     expected_planned_graph_id: str,
     etag: str | None,
 ) -> tuple[int, int, str]:
+    _exact_fields(
+        body,
+        {
+            "projection_schema_version",
+            "projection_revision",
+            "projection_sequence",
+            "generated_at",
+            "object",
+            "run",
+            "goal",
+            "confirmed_scheme",
+            "planned_graph",
+            "actual_graph",
+            "graph_version",
+            "tasks",
+            "path_changes",
+            "activity",
+            "lifecycle",
+            "review",
+            "result",
+            "artifacts",
+            "proof",
+            "execution",
+            "terminal",
+        },
+        "projection",
+    )
     _expect(
         body.get("projection_schema_version"),
         "phase4-run-projection/v1",
@@ -818,24 +1663,20 @@ def validate_atomic_run_projection(
     status = run["status"]
     _expect(run.get("stage"), RUN_STAGE[status], "projection.run.stage")
 
-    goal = _mapping(body.get("goal"), "projection.goal")
-    _expect(goal.get("goal_id"), expected_goal_id, "projection.goal.goal_id")
-    _expect(
-        goal.get("research_object_id"),
-        expected_object_id,
-        "projection.goal.research_object_id",
+    _validate_projection_goal(
+        body.get("goal"),
+        expected_goal_id=expected_goal_id,
+        expected_object_id=expected_object_id,
+        expected_as_of=expected_as_of,
     )
-    scheme = _mapping(body.get("confirmed_scheme"), "projection.confirmed_scheme")
-    _expect(scheme.get("scheme_id"), expected_scheme_id, "projection.confirmed_scheme.scheme_id")
-    _expect(
-        scheme.get("research_object_id"),
-        expected_object_id,
-        "projection.confirmed_scheme.research_object_id",
+    _validate_projection_scheme(
+        body.get("confirmed_scheme"),
+        expected_scheme_id=expected_scheme_id,
+        expected_goal_id=expected_goal_id,
+        expected_object_id=expected_object_id,
     )
-    _expect(scheme.get("goal_id"), expected_goal_id, "projection.confirmed_scheme.goal_id")
-    _timestamp(scheme.get("confirmed_at"), "projection.confirmed_scheme.confirmed_at")
 
-    planned_graph_id = _validate_graph(
+    planned_graph_id, planned_tasks = _validate_graph(
         body.get("planned_graph"),
         "projection.planned_graph",
         run_id=expected_run_id,
@@ -844,31 +1685,67 @@ def validate_atomic_run_projection(
     actual_graph = body.get("actual_graph")
     graph_version = body.get("graph_version")
     if actual_graph is None:
-        if graph_version is not None:
-            raise ContractViolation("projection.graph_version must be null without actual_graph")
+        if graph_version is not None or run.get("actual_graph_id") is not None:
+            raise ContractViolation(
+                "projection actual_graph/run.actual_graph_id/graph_version must be jointly null"
+            )
     else:
         actual = _mapping(actual_graph, "projection.actual_graph")
-        actual_graph_id = _validate_graph(actual, "projection.actual_graph", run_id=expected_run_id)
+        actual_graph_id, actual_tasks = _validate_graph(
+            actual,
+            "projection.actual_graph",
+            run_id=expected_run_id,
+        )
         _expect(run.get("actual_graph_id"), actual_graph_id, "projection.run.actual_graph_id")
         version = _integer(graph_version, "projection.graph_version", minimum=1)
         _expect(actual.get("version"), version, "projection.actual_graph.version")
+        if not set(planned_tasks) <= set(actual_tasks):
+            raise ContractViolation("projection.actual_graph omits a planned Task")
 
     tasks = _list(body.get("tasks"), "projection.tasks")
-    task_ids: set[str] = set()
+    task_records: dict[str, dict[str, Any]] = {}
     for index, raw_task in enumerate(tasks):
         path = f"projection.tasks[{index}]"
-        task = _mapping(raw_task, path)
-        task_id = _text(task.get("task_id"), f"{path}.task_id", prefix="TASK-")
-        _expect(task.get("run_id"), expected_run_id, f"{path}.run_id")
-        if task_id in task_ids:
+        task = _validate_task(raw_task, path, run_id=expected_run_id)
+        task_id = task["task_id"]
+        if task_id in task_records:
             raise ContractViolation("projection contains duplicate Task identities")
-        task_ids.add(task_id)
+        task_records[task_id] = task
+    task_ids = set(task_records)
+    for task in task_records.values():
+        related = set(task["dependencies"])
+        if task["parent_task_id"] is not None:
+            related.add(task["parent_task_id"])
+        if not related <= task_ids:
+            raise ContractViolation("projection Task relationships escape the exact Run")
+    active_tasks = actual_tasks if actual_graph is not None else planned_tasks
+    if task_records != active_tasks:
+        raise ContractViolation("projection Tasks disagree with the active graph")
 
     path_changes = _list(body.get("path_changes"), "projection.path_changes")
     path_change_ids: set[str] = set()
     for index, raw_change in enumerate(path_changes):
         path = f"projection.path_changes[{index}]"
         change = _mapping(raw_change, path)
+        _exact_fields(
+            change,
+            {
+                "path_change_id",
+                "source_kind",
+                "source_id",
+                "change_kind",
+                "status",
+                "decision",
+                "reason_code",
+                "task_refs",
+                "operations",
+                "graph_version_before",
+                "graph_version_after",
+                "created_at",
+                "resolved_at",
+            },
+            path,
+        )
         identity = _text(change.get("path_change_id"), f"{path}.path_change_id")
         if identity in path_change_ids:
             raise ContractViolation("projection contains duplicate path-change identities")
@@ -876,40 +1753,397 @@ def validate_atomic_run_projection(
         if change.get("source_kind") not in {"CORRECTION", "REPLAN"}:
             raise ContractViolation(f"{path}.source_kind is unsupported")
         _text(change.get("source_id"), f"{path}.source_id")
+        _expect(change.get("source_id"), identity, f"{path}.source_id")
         if change.get("change_kind") not in PATH_CHANGE_KINDS:
             raise ContractViolation(f"{path}.change_kind is unsupported")
-        for task_id in _list(change.get("task_refs"), f"{path}.task_refs"):
+        source_kind = change["source_kind"]
+        change_kind = change["change_kind"]
+        if (source_kind == "CORRECTION") != (change_kind == "SELF_CORRECTION"):
+            raise ContractViolation(f"{path} has an impossible source/change kind combination")
+        task_refs = _list(change.get("task_refs"), f"{path}.task_refs")
+        for task_id in task_refs:
+            _text(task_id, f"{path}.task_refs")
             if task_id not in task_ids:
                 raise ContractViolation(f"{path}.task_refs contains a foreign Task")
-        _list(change.get("operations"), f"{path}.operations")
-        _timestamp(change.get("created_at"), f"{path}.created_at")
-        if change.get("resolved_at") is not None:
-            _timestamp(change["resolved_at"], f"{path}.resolved_at")
+        if len(task_refs) != len(set(task_refs)):
+            raise ContractViolation(f"{path}.task_refs contains duplicate Task identities")
+        status_value = change.get("status")
+        _text(status_value, f"{path}.status")
+        for nullable_name in ("decision", "reason_code"):
+            nullable = change.get(nullable_name)
+            if nullable is not None and (not isinstance(nullable, str) or not nullable):
+                raise ContractViolation(f"{path}.{nullable_name} must be null or non-empty")
+        operations = _list(change.get("operations"), f"{path}.operations")
+        for operation_index, raw_operation in enumerate(operations):
+            operation_path = f"{path}.operations[{operation_index}]"
+            operation = _mapping(raw_operation, operation_path)
+            operation_kind = operation.get("operation")
+            if operation_kind == "add_node":
+                required = {"operation", "task_id"}
+            elif operation_kind in {"add_edge", "remove_edge"}:
+                raise ContractViolation(
+                    f"{operation_path} edge-operation wire fields are not frozen; "
+                    "Parent contract clarification is required"
+                )
+            else:
+                raise ContractViolation(f"{operation_path}.operation is unsupported")
+            _exact_fields(operation, required, operation_path)
+            for field_name in required - {"operation"}:
+                reference = _text(operation.get(field_name), f"{operation_path}.{field_name}")
+                if reference not in task_ids or reference not in task_refs:
+                    raise ContractViolation(f"{operation_path}.{field_name} is a foreign Task")
+        before = change.get("graph_version_before")
+        after = change.get("graph_version_after")
+        if before is not None:
+            before = _integer(before, f"{path}.graph_version_before", minimum=1)
+        if after is not None:
+            after = _integer(after, f"{path}.graph_version_after", minimum=1)
+            if graph_version is None or after > graph_version:
+                raise ContractViolation(f"{path}.graph_version_after exceeds active graph version")
+        created_at = _timestamp(change.get("created_at"), f"{path}.created_at")
+        resolved_at = change.get("resolved_at")
+        if resolved_at is not None:
+            resolved_at = _timestamp(resolved_at, f"{path}.resolved_at")
+            if resolved_at < created_at:
+                raise ContractViolation(f"{path}.resolved_at precedes created_at")
 
-    _list(body.get("activity"), "projection.activity")
+        decision = change.get("decision")
+        if source_kind == "CORRECTION":
+            if status_value not in {"RESOLVED", "FAILED", "ESCALATED"}:
+                raise ContractViolation(f"{path}.status is not a Correction status")
+            if decision is not None or len(task_refs) != 1 or operations:
+                raise ContractViolation(
+                    f"{path} Self-Correction must remain one-Task and topology-neutral"
+                )
+            if change.get("reason_code") is None:
+                raise ContractViolation(f"{path} Correction requires reason_code")
+            if before is not None or after is not None:
+                raise ContractViolation(
+                    f"{path} topology-neutral Self-Correction requires null graph versions"
+                )
+        else:
+            if decision not in {"PENDING", "APPROVED", "REJECTED"} or status_value != decision:
+                raise ContractViolation(f"{path} Replan status/decision are inconsistent")
+            if decision == "PENDING":
+                if resolved_at is not None or after is not None:
+                    raise ContractViolation(
+                        f"{path} pending Replan cannot be resolved or mutate graph"
+                    )
+            elif decision == "REJECTED":
+                if after is not None:
+                    raise ContractViolation(f"{path} rejected Replan cannot mutate graph")
+            else:
+                if not operations or before is None or after is None:
+                    raise ContractViolation(
+                        f"{path} approved Replan requires operations and versions"
+                    )
+                if after != before + 1:
+                    raise ContractViolation(f"{path} approved Replan must advance graph once")
+                if change_kind == "ADD_TASK" and not any(
+                    operation.get("operation") == "add_node" for operation in operations
+                ):
+                    raise ContractViolation(f"{path} ADD_TASK requires an add_node operation")
+
+    activity = _list(body.get("activity"), "projection.activity")
+    activity_ids: set[str] = set()
+    activity_sequences: list[int] = []
+    for index, raw_activity in enumerate(activity):
+        activity_path = f"projection.activity[{index}]"
+        item = _mapping(raw_activity, activity_path)
+        _required_approved_fields(
+            item,
+            ACTIVITY_FIELDS,
+            ACTIVITY_PROJECTION_OPTIONAL_FIELDS,
+            activity_path,
+        )
+        event_id = _text(item.get("event_id"), f"{activity_path}.event_id")
+        if event_id in activity_ids:
+            raise ContractViolation("projection.activity contains duplicate Event identities")
+        activity_ids.add(event_id)
+        _text(item.get("type"), f"{activity_path}.type")
+        activity_sequence = _integer(item.get("sequence"), f"{activity_path}.sequence", minimum=1)
+        if activity_sequence > sequence:
+            raise ContractViolation(f"{activity_path}.sequence exceeds projection watermark")
+        activity_sequences.append(activity_sequence)
+        _timestamp(item.get("timestamp"), f"{activity_path}.timestamp")
+        activity_task_id = item.get("task_id")
+        if activity_task_id is not None and activity_task_id not in task_ids:
+            raise ContractViolation(f"{activity_path}.task_id is a foreign Task")
+        _text(item.get("message_code"), f"{activity_path}.message_code")
+        status_field = item.get("status")
+        if status_field is not None:
+            _text(status_field, f"{activity_path}.status")
+        actor_id = item.get("actor_id")
+        actor_type = item.get("actor_type")
+        if (actor_id is None) != (actor_type is None):
+            raise ContractViolation(f"{activity_path} actor identity/type must be jointly present")
+        if actor_id is not None:
+            _text(actor_id, f"{activity_path}.actor_id")
+            _text(actor_type, f"{activity_path}.actor_type")
+        duration_ms = item.get("duration_ms")
+        if duration_ms is not None:
+            _integer(duration_ms, f"{activity_path}.duration_ms", minimum=0)
+        for refs_name in (
+            "input_refs",
+            "output_refs",
+            "evidence_refs",
+            "calculation_refs",
+            "claim_refs",
+            "judgment_refs",
+            "review_refs",
+            "proof_refs",
+            "artifact_refs",
+            "trace_bundle_refs",
+        ):
+            if refs_name not in item:
+                continue
+            refs = _list(item.get(refs_name), f"{activity_path}.{refs_name}")
+            if not all(isinstance(ref, str) and ref.strip() for ref in refs):
+                raise ContractViolation(f"{activity_path}.{refs_name} contains an invalid identity")
+            if len(refs) != len(set(refs)):
+                raise ContractViolation(f"{activity_path}.{refs_name} contains duplicates")
+        _assert_safe_public_json(item, activity_path)
+    if activity_sequences != sorted(activity_sequences) or len(activity_sequences) != len(
+        set(activity_sequences)
+    ):
+        raise ContractViolation("projection.activity sequences must be unique and ascending")
     lifecycle = _mapping(body.get("lifecycle"), "projection.lifecycle")
     _expect(lifecycle.get("status"), status, "projection.lifecycle.status")
     _expect(lifecycle.get("stage"), RUN_STAGE[status], "projection.lifecycle.stage")
-    _validate_progress(lifecycle.get("progress"), "projection.lifecycle.progress")
+    completed_tasks, total_tasks, fraction = _validate_progress(
+        lifecycle.get("progress"), "projection.lifecycle.progress"
+    )
+    _expect(total_tasks, len(task_records), "projection.lifecycle.progress.total_tasks")
+    _expect(
+        completed_tasks,
+        sum(task["status"] == "COMPLETED" for task in task_records.values()),
+        "projection.lifecycle.progress.completed_tasks",
+    )
+    all_tasks_terminal = all(
+        task["status"] in TERMINAL_TASK_STATUSES for task in task_records.values()
+    )
+    if status == "RELEASED" or (status in {"FAILED", "CANCELLED"} and all_tasks_terminal):
+        expected_fraction = 1.0
+    elif not task_records:
+        expected_fraction = 0.0
+    else:
+        expected_fraction = sum(task["progress"] for task in task_records.values()) / len(
+            task_records
+        )
+    if not math.isclose(fraction, expected_fraction, rel_tol=0.0, abs_tol=1e-12):
+        raise ContractViolation(
+            "projection.lifecycle.progress.fraction is not the unweighted actual Task mean"
+        )
     expected_terminal = status in TERMINAL_RUN_STATUSES
     _expect(lifecycle.get("terminal"), expected_terminal, "projection.lifecycle.terminal")
+    _exact_fields(
+        lifecycle,
+        {"status", "stage", "progress", "terminal", "terminal_outcome", "safe_failure"},
+        "projection.lifecycle",
+    )
+    expected_outcome = {
+        "RELEASED": "SUCCESS",
+        "FAILED": "FAILURE",
+        "CANCELLED": "CANCELLED",
+    }.get(status)
+    _expect(
+        lifecycle.get("terminal_outcome"), expected_outcome, "projection.lifecycle.terminal_outcome"
+    )
+    safe_failure = lifecycle.get("safe_failure")
+    if status in {"FAILED", "CANCELLED"}:
+        failure = _mapping(safe_failure, "projection.lifecycle.safe_failure")
+        _exact_fields(
+            failure,
+            {"status", "failure_stage", "failure_code", "safe_message"},
+            "projection.lifecycle.safe_failure",
+        )
+        _expect(failure.get("status"), status, "projection.lifecycle.safe_failure.status")
+        failure_stage = _text(
+            failure.get("failure_stage"), "projection.lifecycle.safe_failure.failure_stage"
+        )
+        failure_code = _text(
+            failure.get("failure_code"), "projection.lifecycle.safe_failure.failure_code"
+        )
+        if status == "CANCELLED":
+            _expect(
+                failure_stage,
+                "CANCELLATION",
+                "projection.lifecycle.safe_failure.failure_stage",
+            )
+            _expect(
+                failure_code,
+                "RUN_CANCELLED",
+                "projection.lifecycle.safe_failure.failure_code",
+            )
+        elif (
+            failure_stage not in FAILURE_STAGE_CODES
+            or failure_code not in FAILURE_STAGE_CODES[failure_stage]
+        ):
+            raise ContractViolation(
+                "projection.lifecycle.safe_failure has an unsupported failure stage/code pair"
+            )
+        safe_message = failure.get("safe_message")
+        if safe_message is not None:
+            _text(safe_message, "projection.lifecycle.safe_failure.safe_message")
+    elif safe_failure is not None:
+        raise ContractViolation(
+            "projection.lifecycle.safe_failure requires FAILED or CANCELLED status"
+        )
 
-    for name in ("review", "result", "artifacts", "execution"):
+    summary_fields = {
+        "review": {"availability", "review_id", "status"},
+        "result": {"availability", "released_result_id", "canonical_record_id", "released_at"},
+        "artifacts": {"availability", "report_id", "representation_ids"},
+        "execution": {"availability", "canonical_record_id"},
+    }
+    for name, fields in summary_fields.items():
         summary = _mapping(body.get(name), f"projection.{name}")
-        validate_availability(summary.get("availability"), f"projection.{name}.availability")
+        _exact_fields(summary, fields, f"projection.{name}")
+        availability = validate_availability(
+            summary.get("availability"), f"projection.{name}.availability"
+        )
+        for field_name in fields - {
+            "availability",
+            "status",
+            "released_at",
+            "representation_ids",
+        }:
+            reference = summary.get(field_name)
+            if reference is not None and (not isinstance(reference, str) or not reference):
+                raise ContractViolation(f"projection.{name}.{field_name} must be null or non-empty")
+        if availability["status"] == "AVAILABLE":
+            required_reference = {
+                "review": "review_id",
+                "result": "released_result_id",
+                "artifacts": "report_id",
+                "execution": "canonical_record_id",
+            }[name]
+            if summary.get(required_reference) is None:
+                raise ContractViolation(
+                    f"projection.{name}.{required_reference} is required when AVAILABLE"
+                )
+        if name == "review":
+            review_status = summary.get("status")
+            if review_status is not None and review_status not in REVIEW_STATUS_VALUES:
+                raise ContractViolation("projection.review.status is unsupported")
+            review_tuple = (summary.get("review_id"), review_status)
+            if (review_tuple[0] is None) != (review_tuple[1] is None):
+                raise ContractViolation("projection.review identity/status must be jointly present")
+            if availability["status"] == "AVAILABLE" and any(item is None for item in review_tuple):
+                raise ContractViolation("projection.review AVAILABLE requires identity and status")
+        elif name == "result":
+            released_at = summary.get("released_at")
+            if released_at is not None:
+                _timestamp(released_at, "projection.result.released_at")
+            result_tuple = (
+                summary.get("released_result_id"),
+                summary.get("canonical_record_id"),
+                released_at,
+            )
+            present = sum(item is not None for item in result_tuple)
+            if present not in {0, 3}:
+                raise ContractViolation("projection.result identity/time tuple is partial")
+            if availability["status"] == "AVAILABLE" and present != 3:
+                raise ContractViolation("projection.result AVAILABLE requires full identity/time")
+        elif name == "artifacts":
+            representations = _list(
+                summary.get("representation_ids"),
+                "projection.artifacts.representation_ids",
+            )
+            if not all(isinstance(item, str) and item.strip() for item in representations):
+                raise ContractViolation("projection.artifacts.representation_ids are invalid")
+            if len(representations) != len(set(representations)):
+                raise ContractViolation(
+                    "projection.artifacts.representation_ids contain duplicates"
+                )
+            if availability["status"] == "AVAILABLE" and (
+                summary.get("report_id") is None or not representations
+            ):
+                raise ContractViolation(
+                    "projection.artifacts AVAILABLE requires report and representation identities"
+                )
     proof = _mapping(body.get("proof"), "projection.proof")
+    _exact_fields(proof, {"availability", "policy", "status", "proof_refs"}, "projection.proof")
     validate_availability(proof.get("availability"), "projection.proof.availability")
-    _list(proof.get("proof_refs"), "projection.proof.proof_refs")
+    if proof.get("policy") not in PROOF_POLICY_VALUES:
+        raise ContractViolation("projection.proof.policy is unsupported")
+    proof_status = proof.get("status")
+    if proof_status is not None and proof_status not in PROOF_STATUS_VALUES:
+        raise ContractViolation("projection.proof.status is unsupported")
+    proof_refs = _list(proof.get("proof_refs"), "projection.proof.proof_refs")
+    if not all(isinstance(item, str) and item.strip() for item in proof_refs):
+        raise ContractViolation("projection.proof.proof_refs contain invalid identities")
+    if len(proof_refs) != len(set(proof_refs)):
+        raise ContractViolation("projection.proof.proof_refs contain duplicates")
+    proof_availability = validate_availability(
+        proof.get("availability"), "projection.proof.availability"
+    )
+    if proof_availability["status"] == "AVAILABLE" and proof_status is None:
+        raise ContractViolation("projection.proof AVAILABLE requires an explicit status")
+    if proof.get("policy") == "NOT_REQUIRED" and (
+        proof_status not in {None, "NOT_REQUIRED"} or proof_refs
+    ):
+        raise ContractViolation("projection.proof NOT_REQUIRED policy has proof output")
+
+    result = _mapping(body.get("result"), "projection.result")
+    execution = _mapping(body.get("execution"), "projection.execution")
+    if (
+        result.get("canonical_record_id") is not None
+        and execution.get("canonical_record_id") is not None
+    ):
+        _expect(
+            execution.get("canonical_record_id"),
+            result.get("canonical_record_id"),
+            "projection.execution.canonical_record_id",
+        )
+    if expected_terminal:
+        for name in ("review", "result", "artifacts", "proof", "execution"):
+            summary = _mapping(body.get(name), f"projection.{name}")
+            availability = validate_availability(
+                summary.get("availability"), f"projection.{name}.availability"
+            )
+            if availability["status"] == "PENDING":
+                raise ContractViolation(f"terminal Run retains PENDING {name} availability")
+    if status == "RELEASED":
+        for name in ("review", "result", "artifacts", "execution"):
+            summary = _mapping(body.get(name), f"projection.{name}")
+            availability = validate_availability(
+                summary.get("availability"), f"projection.{name}.availability"
+            )
+            if availability["status"] != "AVAILABLE":
+                raise ContractViolation(f"RELEASED Run requires AVAILABLE {name}")
+        if _mapping(body.get("review"), "projection.review").get("status") != "PASS":
+            raise ContractViolation("RELEASED Run requires PASS Review status")
+        policy = proof.get("policy")
+        if policy == "UNKNOWN" or proof_status in {None, "PENDING", "PROVING"}:
+            raise ContractViolation("RELEASED Run requires a resolved Proof disposition")
+        if policy == "MUST_PROVE" and (proof_status != "VERIFIED" or not proof_refs):
+            raise ContractViolation("MUST_PROVE release requires VERIFIED proof references")
+    elif (
+        validate_availability(result.get("availability"), "projection.result.availability")[
+            "status"
+        ]
+        == "AVAILABLE"
+    ):
+        raise ContractViolation("non-RELEASED Run cannot expose an AVAILABLE result")
 
     terminal = _mapping(body.get("terminal"), "projection.terminal")
+    _exact_fields(
+        terminal, {"is_terminal", "outcome", "event_id", "sequence"}, "projection.terminal"
+    )
     _expect(terminal.get("is_terminal"), expected_terminal, "projection.terminal.is_terminal")
     if not expected_terminal:
         for name in ("outcome", "event_id", "sequence"):
             _expect(terminal.get(name), None, f"projection.terminal.{name}")
     else:
-        _text(terminal.get("outcome"), "projection.terminal.outcome")
-        _text(terminal.get("event_id"), "projection.terminal.event_id", prefix="EVT-")
-        _integer(terminal.get("sequence"), "projection.terminal.sequence", minimum=1)
+        _expect(terminal.get("outcome"), expected_outcome, "projection.terminal.outcome")
+        terminal_event_id = _text(terminal.get("event_id"), "projection.terminal.event_id")
+        terminal_sequence = _integer(
+            terminal.get("sequence"), "projection.terminal.sequence", minimum=1
+        )
+        _expect(terminal_sequence, sequence, "projection.terminal.sequence")
+        if not activity or activity[-1].get("event_id") != terminal_event_id:
+            raise ContractViolation("projection terminal Event must be final in activity")
     return revision, sequence, status
 
 
@@ -932,11 +2166,18 @@ def validate_error_envelope(
     if not media_type.startswith("application/json"):
         raise ContractViolation("error response has the wrong Content-Type")
     body = observation.json_object()
+    _exact_fields(body, {"schema_version", "error"}, "error response")
     _expect(body.get("schema_version"), "phase4-error/v1", "error.schema_version")
     _absent(body, {"admission", "run_id", "result", "success"}, "error response")
     error = _mapping(body.get("error"), "error.error")
+    _exact_fields(
+        error,
+        {"code", "message", "retryable", "recovery", "request_id", "resource", "details"},
+        "error.error",
+    )
     _expect(error.get("code"), expected_code, "error.error.code")
-    _text(error.get("message"), "error.error.message")
+    message = _text(error.get("message"), "error.error.message")
+    _assert_safe_public_json(message, "error.error.message")
     _expect(error.get("retryable"), expected_retryable, "error.error.retryable")
     _expect(error.get("recovery"), expected_recovery, "error.error.recovery")
     request_id = error.get("request_id")
@@ -945,15 +2186,18 @@ def validate_error_envelope(
     resource = error.get("resource")
     if expected_resource_type is not None or expected_resource_id is not None:
         resource_body = _mapping(resource, "error.error.resource")
+        _exact_fields(resource_body, {"type", "id"}, "error.error.resource")
         if expected_resource_type is not None:
             _expect(resource_body.get("type"), expected_resource_type, "error.error.resource.type")
         if expected_resource_id is not None:
             _expect(resource_body.get("id"), expected_resource_id, "error.error.resource.id")
     elif resource is not None:
         resource_body = _mapping(resource, "error.error.resource")
+        _exact_fields(resource_body, {"type", "id"}, "error.error.resource")
         _text(resource_body.get("type"), "error.error.resource.type")
         _text(resource_body.get("id"), "error.error.resource.id")
     details = _mapping(error.get("details"), "error.error.details")
+    _assert_safe_public_json(details, "error.error.details")
     if expected_reason_code is not None:
         _expect(details.get("reason_code"), expected_reason_code, "error.error.details.reason_code")
     return body
@@ -976,6 +2220,25 @@ def check_object_and_initial_runs(
     transport: JsonTransport,
     config: BackendHarnessConfig,
 ) -> ObjectEvidence:
+    invalid = transport.request(
+        "POST",
+        "/api/objects",
+        headers=_contract_headers(idempotency_key=f"{config.object_idempotency_key}-invalid"),
+        json_body={**config.object_request, "symbol": ""},
+    )
+    validate_error_envelope(invalid, expected_code="REQUEST_VALIDATION_ERROR")
+    missing_object_id = f"OBJ-MISSING-{secrets.token_hex(12).upper()}"
+    missing = transport.request(
+        "GET",
+        f"/api/objects/{_path_id(missing_object_id)}",
+        headers=_contract_headers(),
+    )
+    validate_error_envelope(
+        missing,
+        expected_code="NOT_FOUND",
+        expected_resource_type="research_object",
+        expected_resource_id=missing_object_id,
+    )
     create = transport.request(
         "POST",
         "/api/objects",
@@ -1030,6 +2293,21 @@ def check_prepare_goal_scheme(
         "preferences": dict(config.preferences),
     }
     headers = _contract_headers(idempotency_key=config.prepare_idempotency_key)
+    missing_object_id = f"OBJ-MISSING-{secrets.token_hex(12).upper()}"
+    missing_object = transport.request(
+        "POST",
+        "/api/research-runs/prepare",
+        headers=_contract_headers(
+            idempotency_key=f"{config.prepare_idempotency_key}-missing-object"
+        ),
+        json_body={**prepare_body, "research_object_id": missing_object_id},
+    )
+    validate_error_envelope(
+        missing_object,
+        expected_code="NOT_FOUND",
+        expected_resource_type="research_object",
+        expected_resource_id=missing_object_id,
+    )
     first = transport.request(
         "POST",
         "/api/research-runs/prepare",
@@ -1099,6 +2377,24 @@ def check_confirm_admission_and_replay(
         "confirm_scheme": True,
     }
     headers = _contract_headers(idempotency_key=config.confirm_idempotency_key)
+    version_mismatch = transport.request(
+        "POST",
+        "/api/research-runs",
+        headers=_contract_headers(
+            idempotency_key=f"{config.confirm_idempotency_key}-version-negative"
+        ),
+        json_body={**confirm_body, "draft_version": draft.draft_version + 1},
+    )
+    validate_error_envelope(
+        version_mismatch,
+        expected_code="CONFLICT",
+        expected_reason_code="DRAFT_VERSION_MISMATCH",
+    )
+    _expect(
+        _object_runs(transport, object_evidence.object_id),
+        draft.run_ids_before_confirm,
+        "version-mismatched Confirm must not create a Run",
+    )
     first = transport.request(
         "POST",
         "/api/research-runs",
@@ -1135,6 +2431,25 @@ def check_confirm_admission_and_replay(
     _expect(replay_admission, admission, "confirm immutable admission replay")
     after_replay = _object_runs(transport, object_evidence.object_id)
     _expect(after_replay, after_first, "confirm replay Run cardinality")
+
+    consumed = transport.request(
+        "POST",
+        "/api/research-runs",
+        headers=_contract_headers(
+            idempotency_key=f"{config.confirm_idempotency_key}-consumed-negative"
+        ),
+        json_body=confirm_body,
+    )
+    validate_error_envelope(
+        consumed,
+        expected_code="CONFLICT",
+        expected_reason_code="DRAFT_CONSUMED",
+    )
+    _expect(
+        _object_runs(transport, object_evidence.object_id),
+        after_first,
+        "new-key consumed-draft Confirm must not create a Run",
+    )
 
     changed_body = {**confirm_body, "research_object_id": f"{object_evidence.object_id}-FOREIGN"}
     mismatch = transport.request(
@@ -1183,7 +2498,7 @@ def check_exact_run_and_projection(
         headers=_contract_headers(),
     )
     detail = _success_json(detail_response, allowed_statuses=frozenset({200}))
-    validate_run_detail(
+    validate_standalone_run_detail(
         detail,
         object_id=object_evidence.object_id,
         goal_id=draft.goal_id,
@@ -1291,7 +2606,7 @@ def run_backend_vs01(
         controls.append(
             _pass(
                 current,
-                "Research Object create/read uses one exact canonical identity",
+                "invalid/missing Objects fail closed; valid create/read uses one exact identity",
                 evidence={"object_id": object_evidence.object_id},
             )
         )
@@ -1337,14 +2652,14 @@ def run_backend_vs01(
         controls.append(
             _pass(
                 "VS01-BE-005",
-                "same-key replay returns the same admission and creates no second Run",
+                "same-key replay and new-key consumed-draft conflict create no second Run",
                 evidence={"run_id": admitted.run_id},
             )
         )
         controls.append(
             _pass(
                 "VS01-BE-009",
-                "same-key changed Confirm fails with typed idempotency conflict",
+                "version, consumed-draft and changed same-key Confirm conflicts are typed",
             )
         )
 
@@ -1492,7 +2807,7 @@ def verify_restart_checkpoint(
             headers=_contract_headers(),
         )
         run_body = _success_json(run_response, allowed_statuses=frozenset({200}))
-        validate_run_detail(
+        validate_standalone_run_detail(
             run_body,
             object_id=checkpoint.object_id,
             goal_id=checkpoint.goal_id,
@@ -1607,5 +2922,6 @@ __all__ = [
     "validate_research_run_draft",
     "validate_run_collection",
     "validate_run_detail",
+    "validate_standalone_run_detail",
     "verify_restart_checkpoint",
 ]
