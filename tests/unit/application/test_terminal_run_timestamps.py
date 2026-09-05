@@ -134,6 +134,12 @@ async def test_post_scheduler_failure_uses_one_timestamp_for_event_and_lifecycle
     aggregate = await service.get_run(run_id)
     terminal_event = (await service.event_store.replay(run_id))[-1]
     assert terminal_event.type is RuntimeEventType.RUN_FAILED
+    assert terminal_event.payload == {
+        "status": "FAILED",
+        "failure_stage": "POST_SCHEDULER",
+        "failure_code": "POST_SCHEDULER_FAILED",
+        "safe_message": "The Run could not complete its release checks.",
+    }
     assert aggregate.run.status is RunStatus.FAILED
     assert aggregate.run.completed_at == terminal_event.timestamp
     assert aggregate.run.started_at is not None

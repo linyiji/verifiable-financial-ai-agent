@@ -41,6 +41,7 @@ from src.phase4_product.artifacts import (
     verify_artifact_bytes,
 )
 from src.phase4_product.contracts import (
+    ArtifactSummaryV1,
     AtomicRunProjectionV1,
     AvailabilityStatus,
     AvailabilityV1,
@@ -49,6 +50,7 @@ from src.phase4_product.contracts import (
     ErrorCodeV1,
     EvidenceAvailabilityRefV1,
     ExecutionProjectionV1,
+    ExecutionSummaryV1,
     FinancialReviewCheckProjectionV1,
     FinancialReviewProjectionV1,
     GoalProjectionV1,
@@ -58,22 +60,20 @@ from src.phase4_product.contracts import (
     MethodParameterV1,
     MetricProofProjectionV1,
     ObjectIdentityV1,
-    ArtifactSummaryV1,
-    ExecutionSummaryV1,
     PathChangeProjectionV1,
     ProofSummaryV1,
     ProofTraceRefV1,
     ReleasedFinancialMetricProjectionV1,
     ReleasedObjectCoreV1,
     ReleasedResultProjectionV1,
-    ResultSummaryV1,
-    ReviewSummaryV1,
     ReportArtifactGroupV1,
     ResearchRunCollectionV1,
     ResearchRunDetailV1,
+    ResultSummaryV1,
     ReviewAvailabilityRefV1,
     ReviewCorrectionRefV1,
     ReviewSubjectV1,
+    ReviewSummaryV1,
     RunCollectionActivityV1,
     RunCollectionItemV1,
     RunCollectionObjectV1,
@@ -298,6 +298,19 @@ _SAFE_FAILURE_ALLOWLIST: JsonAllowlist = {
     "failure_stage": None,
     "failure_code": None,
     "safe_message": None,
+}
+
+_SAFE_FAILURE_CODES_BY_STAGE: dict[str, frozenset[str]] = {
+    "PLANNING": frozenset({"PLANNING_FAILED"}),
+    "DATA_EVIDENCE": frozenset({"DATA_EVIDENCE_FAILED"}),
+    "TASK_EXECUTION": frozenset({"TASK_EXECUTION_FAILED"}),
+    "GENERATED_CAPABILITY": frozenset({"GENERATED_CAPABILITY_FAILED"}),
+    "FINANCIAL_REVIEW": frozenset({"FINANCIAL_REVIEW_BLOCKED", "FINANCIAL_REVIEW_FAILED"}),
+    "PROOF": frozenset({"PROOF_INVALID", "PROOF_FAILED"}),
+    "ARTIFACT_GENERATION": frozenset({"REQUIRED_ARTIFACT_GENERATION_FAILED"}),
+    "RELEASE": frozenset({"RELEASE_GATE_BLOCKED", "RELEASE_FAILED"}),
+    "POST_SCHEDULER": frozenset({"POST_SCHEDULER_FAILED"}),
+    "PERSISTENCE": frozenset({"PERSISTENCE_FINALIZATION_FAILED"}),
 }
 
 _EVENT_PAYLOAD_KEYS: dict[str, frozenset[str]] = {
@@ -2636,16 +2649,7 @@ def build_atomic_run_projection(
         release_closure_valid=release_closure_valid,
     )
 
-    safe_failure_projection: SafeJsonObject | None = None
-    if safe_failure is not None:
-        try:
-            safe_failure_projection = safe_json_object(
-                safe_failure,
-                allowed_keys=_SAFE_FAILURE_ALLOWLIST,
-                context="TerminalFailure",
-            )
-        except UnsafeProjectionData as exc:
-            raise ProjectionIntegrityError(str(exc)) from exc
+    safe_failure_projection = None if safe_failure is None else _project_safe_failure(safe_failure)
     terminal = _terminal_state(
         status=status,
         terminal_event=terminal_event,
@@ -5018,6 +5022,52 @@ def _validate_public_availability(
         )
 
 
+def _project_safe_failure(value: Mapping[str, object]) -> SafeJsonObject:
+    try:
+        copied = safe_json_object(
+            value,
+            allowed_keys=_SAFE_FAILURE_ALLOWLIST,
+            context="TerminalFailure",
+        )
+    except UnsafeProjectionData as exc:
+        raise ProjectionIntegrityError(str(exc)) from exc
+    required = {"status", "failure_stage", "failure_code"}
+    missing = required - set(copied)
+    if missing:
+        raise ProjectionIntegrityError(
+            f"TerminalFailure is missing required fields: {sorted(missing)}"
+        )
+    status = _enum_text(copied["status"], context="TerminalFailure.status")
+    failure_stage = _enum_text(copied["failure_stage"], context="TerminalFailure.failure_stage")
+    failure_code = _required_nonblank(copied["failure_code"], "TerminalFailure.failure_code")
+    if status not in {"FAILED", "CANCELLED"}:
+        raise ProjectionIntegrityError("TerminalFailure.status must be FAILED or CANCELLED")
+    if status == "CANCELLED":
+        if failure_stage != "CANCELLATION" or failure_code != "RUN_CANCELLED":
+            raise ProjectionIntegrityError("CANCELLED TerminalFailure tuple is invalid")
+    elif (
+        failure_stage not in _SAFE_FAILURE_CODES_BY_STAGE
+        or failure_code not in _SAFE_FAILURE_CODES_BY_STAGE[failure_stage]
+    ):
+        raise ProjectionIntegrityError("FAILED TerminalFailure tuple is invalid")
+    safe_message = copied.get("safe_message")
+    if safe_message is not None:
+        try:
+            safe_message = safe_text(
+                safe_message,
+                context="TerminalFailure.safe_message",
+                max_length=4096,
+            )
+        except UnsafeProjectionData as exc:
+            raise ProjectionIntegrityError(str(exc)) from exc
+    return {
+        "status": status,
+        "failure_stage": failure_stage,
+        "failure_code": failure_code,
+        "safe_message": safe_message,
+    }
+
+
 def _terminal_state(
     *,
     status: RunStatusProjection,
@@ -5061,9 +5111,13 @@ def _terminal_state(
     else:
         if event_type != "run.failed" or payload_status != status.status or safe_failure is None:
             raise ProjectionIntegrityError("unsuccessful terminal event closure failed")
-        if safe_failure.get("status") != status.status or safe_failure.get(
-            "failure_code"
-        ) != payload.get("failure_code"):
+        expected_safe_failure = {
+            "status": payload_status,
+            "failure_stage": payload.get("failure_stage"),
+            "failure_code": payload.get("failure_code"),
+            "safe_message": payload.get("safe_message"),
+        }
+        if safe_failure != expected_safe_failure:
             raise ProjectionIntegrityError("TerminalFailure and run.failed payload disagree")
     return TerminalStateV1(
         is_terminal=True,

@@ -474,6 +474,78 @@ def test_build_atomic_run_projection_composes_one_coherent_nonreleased_snapshot(
     assert projection.terminal.is_terminal is False
 
 
+@pytest.mark.parametrize(
+    ("status", "failure_stage", "failure_code"),
+    [
+        (RunStatus.FAILED, "TASK_EXECUTION", "TASK_EXECUTION_FAILED"),
+        (RunStatus.CANCELLED, "CANCELLATION", "RUN_CANCELLED"),
+    ],
+)
+def test_unsuccessful_atomic_projection_closes_safe_failure_shape(
+    status: RunStatus,
+    failure_stage: str,
+    failure_code: str,
+) -> None:
+    kwargs = _unsuccessful_atomic_kwargs(
+        status=status,
+        failure_stage=failure_stage,
+        failure_code=failure_code,
+    )
+
+    projection = build_atomic_run_projection(**kwargs)
+    safe_failure = projection.model_dump(mode="json")["lifecycle"]["safe_failure"]
+
+    assert set(safe_failure) == {
+        "status",
+        "failure_stage",
+        "failure_code",
+        "safe_message",
+    }
+    assert safe_failure == {
+        "status": status.value,
+        "failure_stage": failure_stage,
+        "failure_code": failure_code,
+        "safe_message": None,
+    }
+
+
+def test_atomic_projection_preserves_explicit_null_safe_message() -> None:
+    kwargs = _unsuccessful_atomic_kwargs(
+        status=RunStatus.FAILED,
+        failure_stage="TASK_EXECUTION",
+        failure_code="TASK_EXECUTION_FAILED",
+        safe_message=None,
+    )
+
+    projection = build_atomic_run_projection(**kwargs)
+
+    assert projection.lifecycle.safe_failure is not None
+    assert projection.lifecycle.safe_failure["safe_message"] is None
+
+
+@pytest.mark.parametrize(
+    ("status", "failure_stage", "failure_code", "match"),
+    [
+        (RunStatus.CANCELLED, "TASK_EXECUTION", "TASK_EXECUTION_FAILED", "CANCELLED"),
+        (RunStatus.FAILED, "CANCELLATION", "RUN_CANCELLED", "FAILED"),
+    ],
+)
+def test_atomic_projection_rejects_invalid_safe_failure_tuple(
+    status: RunStatus,
+    failure_stage: str,
+    failure_code: str,
+    match: str,
+) -> None:
+    kwargs = _unsuccessful_atomic_kwargs(
+        status=status,
+        failure_stage=failure_stage,
+        failure_code=failure_code,
+    )
+
+    with pytest.raises(ProjectionIntegrityError, match=match):
+        build_atomic_run_projection(**kwargs)
+
+
 def test_build_atomic_run_projection_rejects_cross_object_identity() -> None:
     kwargs = _atomic_kwargs()
     kwargs["research_object"] = ResearchObject(
@@ -512,3 +584,61 @@ def test_build_atomic_run_projection_rejects_torn_execution_revision() -> None:
 
     with pytest.raises(ProjectionIntegrityError, match="Execution projection is torn"):
         build_atomic_run_projection(**kwargs)
+
+
+_SAFE_MESSAGE_OMITTED = object()
+
+
+def _unsuccessful_atomic_kwargs(
+    *,
+    status: RunStatus,
+    failure_stage: str,
+    failure_code: str,
+    safe_message: object = _SAFE_MESSAGE_OMITTED,
+) -> dict[str, Any]:
+    kwargs = _atomic_kwargs()
+    terminal_task_status = TaskStatus.FAILED if status is RunStatus.FAILED else TaskStatus.CANCELLED
+    for graph_name in ("planned_graph", "actual_graph"):
+        graph = kwargs[graph_name]
+        assert isinstance(graph, PlannedTaskGraph | ActualRuntimeGraph)
+        task = graph.tasks[0].model_copy(update={"status": terminal_task_status, "progress": 1.0})
+        kwargs[graph_name] = graph.model_copy(update={"tasks": [task]})
+    run = dict(kwargs["run"])
+    run.update(status=status, completed_at=NOW, updated_at=NOW)
+    payload: dict[str, object] = {
+        "status": status.value,
+        "failure_stage": failure_stage,
+        "failure_code": failure_code,
+    }
+    if safe_message is not _SAFE_MESSAGE_OMITTED:
+        payload["safe_message"] = safe_message
+    not_generated = AvailabilityV1.unavailable(
+        AvailabilityStatus.NOT_GENERATED,
+        "NOT_GENERATED",
+    )
+    terminal_event = {
+        "event_id": "EVENT-TERMINAL-A",
+        "run_id": "RUN-A",
+        "task_id": None,
+        "type": "run.failed",
+        "timestamp": NOW,
+        "sequence": 1,
+        "payload": payload,
+    }
+    kwargs.update(
+        run=run,
+        projection_sequence=1,
+        events=(terminal_event,),
+        terminal_event=terminal_event,
+        safe_failure=payload,
+        proof_summary=ProofSummaryV1(
+            availability=not_generated,
+            policy="UNKNOWN",
+            status=None,
+        ),
+        review_availability=not_generated,
+        result_availability=not_generated,
+        artifact_availability=not_generated,
+        execution_availability=not_generated,
+    )
+    return kwargs

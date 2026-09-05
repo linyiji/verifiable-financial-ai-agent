@@ -367,6 +367,14 @@ def test_terminal_scheduler_event_and_run_watermark_are_http_atomic_across_resta
             "reason_code": "RUN_TERMINAL_WITHOUT_RELEASE",
             "retryable": False,
         }
+        projection = client.get(f"/api/research-runs/{run_id}/projection", headers=headers)
+        assert projection.status_code == 200, projection.text
+        assert projection.json()["lifecycle"]["safe_failure"] == {
+            "status": "FAILED",
+            "failure_stage": "TASK_EXECUTION",
+            "failure_code": "TASK_EXECUTION_FAILED",
+            "safe_message": None,
+        }
 
     reopened = create_app()
     with TestClient(reopened) as client:
@@ -378,6 +386,9 @@ def test_terminal_scheduler_event_and_run_watermark_are_http_atomic_across_resta
         assert validate_run_collection(object_runs.json(), expected_object_id=object_id) == (
             run_id,
         )
+        projection = client.get(f"/api/research-runs/{run_id}/projection", headers=headers)
+        assert projection.status_code == 200, projection.text
+        assert projection.json()["lifecycle"]["safe_failure"]["safe_message"] is None
 
 
 def test_production_execution_preserves_scheduler_start_during_event_publish(
