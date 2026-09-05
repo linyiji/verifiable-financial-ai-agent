@@ -687,9 +687,7 @@ def test_trace_audit_eventually_reaches_the_exact_expected_identity_set() -> Non
 
 def test_trace_audit_reports_the_exact_missing_identity() -> None:
     sdk = SimpleNamespace(
-        api=SimpleNamespace(
-            trace=SimpleNamespace(get=lambda trace_id: _trace_payload("root"))
-        )
+        api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: _trace_payload("root")))
     )
 
     audit = LangfuseTraceAuditReader(sdk, named_sensitive_values={}).audit(
@@ -725,9 +723,7 @@ def test_duplicate_identity_cannot_satisfy_a_missing_identity() -> None:
 def test_exact_identity_audit_rejects_observations_from_another_root_trace() -> None:
     payload = _trace_payload("root", "tool")
     payload["observations"][1]["traceId"] = "another-trace"
-    sdk = SimpleNamespace(
-        api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: payload))
-    )
+    sdk = SimpleNamespace(api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: payload)))
 
     audit = LangfuseTraceAuditReader(sdk, named_sensitive_values={}).audit(
         "trace-id",

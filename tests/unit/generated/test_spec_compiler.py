@@ -47,10 +47,7 @@ def test_valid_spec_decodes_and_canonicalizes() -> None:
 
 def _reverse_object_members(value: object) -> object:
     if isinstance(value, dict):
-        return {
-            key: _reverse_object_members(item)
-            for key, item in reversed(tuple(value.items()))
-        }
+        return {key: _reverse_object_members(item) for key, item in reversed(tuple(value.items()))}
     if isinstance(value, list):
         return [_reverse_object_members(item) for item in value]
     return value
