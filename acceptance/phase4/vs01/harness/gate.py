@@ -525,6 +525,24 @@ def redact_url(url: str) -> str:
     return f"postgresql://<redacted>@{host}{port}/{database}"
 
 
+_LIBPQ_UNSET_IF_BLANK = frozenset(
+    {
+        "PGCHANNELBINDING",
+        "PGCONNECT_TIMEOUT",
+        "PGGSSENCMODE",
+        "PGSERVICE",
+        "PGSERVICEFILE",
+        "PGSSLMODE",
+        "PGTARGETSESSIONATTRS",
+    }
+)
+
+
+def _preserve_nonblank_parent_env(name: str) -> str | None:
+    value = os.environ.get(name)
+    return value if value is not None and value.strip() else None
+
+
 def _libpq_env(url: str) -> dict[str, str | None]:
     parsed, database = _postgres_parts(url)
     # The supplied admin URL is the sole connection authority for this run.  Clear
@@ -534,10 +552,7 @@ def _libpq_env(url: str) -> dict[str, str | None]:
         name: ""
         for name in (
             "PGAPPNAME",
-            "PGCHANNELBINDING",
-            "PGCONNECT_TIMEOUT",
             "PGDATABASE",
-            "PGGSSENCMODE",
             "PGHOST",
             "PGHOSTADDR",
             "PGKRBSRVNAME",
@@ -550,17 +565,15 @@ def _libpq_env(url: str) -> dict[str, str | None]:
             "PGSSLCRL",
             "PGSSLCRLDIR",
             "PGSSLKEY",
-            "PGSSLMODE",
             "PGSSLROOTCERT",
-            "PGTARGETSESSIONATTRS",
             "PGUSER",
         )
     }
-    # libpq treats empty-but-present service settings as explicit configuration.
+    # libpq treats these empty-but-present settings as explicit configuration.
     # Use ``None`` as the harness's child-environment deletion marker while
-    # retaining explicitly configured non-empty values.
-    for name in ("PGSERVICE", "PGSERVICEFILE"):
-        result[name] = os.environ.get(name) or None
+    # retaining explicitly configured non-whitespace values exactly.
+    for name in _LIBPQ_UNSET_IF_BLANK:
+        result[name] = _preserve_nonblank_parent_env(name)
     result.update(
         {
             "PGHOST": parsed.hostname or "",
@@ -576,7 +589,7 @@ def _libpq_env(url: str) -> dict[str, str | None]:
         result["PGPASSWORD"] = unquote(parsed.password)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     ssl_mode = query.get("sslmode", query.get("ssl"))
-    if ssl_mode is not None:
+    if ssl_mode is not None and ssl_mode.strip():
         result["PGSSLMODE"] = ssl_mode
     return result
 

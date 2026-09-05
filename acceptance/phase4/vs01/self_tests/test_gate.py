@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -316,13 +317,20 @@ def test_postgresql_urls_are_driver_normalized_and_redacted() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "parent_value", "expected_present"),
+    "name",
     [
-        ("PGSERVICE", "", False),
-        ("PGSERVICEFILE", "", False),
-        ("PGSERVICE", "vfas-explicit-service", True),
-        ("PGSERVICEFILE", "/local/explicit-service.conf", True),
+        "PGCHANNELBINDING",
+        "PGCONNECT_TIMEOUT",
+        "PGGSSENCMODE",
+        "PGSERVICE",
+        "PGSERVICEFILE",
+        "PGSSLMODE",
+        "PGTARGETSESSIONATTRS",
     ],
+)
+@pytest.mark.parametrize(
+    ("parent_value", "expected_present"),
+    [("", False), (" \t ", False), ("explicit-value", True)],
 )
 def test_libpq_service_environment_is_normalized_for_child(
     monkeypatch: pytest.MonkeyPatch,
@@ -351,6 +359,43 @@ def test_libpq_service_environment_is_normalized_for_child(
         env=libpq_env,
     )
     assert observation.returncode == 0
+    assert os.environ[name] == parent_value
+
+
+def test_libpq_normalization_preserves_unrelated_sensitive_and_unknown_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VS01_UNRELATED_ENV", "unchanged")
+    monkeypatch.setenv("PGPASSFILE", "")
+    monkeypatch.setenv("PGSSLNEGOTIATION", "preserve-unknown")
+    monkeypatch.setenv("PGPASSWORD", "parent-sensitive-fixture")
+    libpq_env = _libpq_env(
+        "postgresql://user:url-sensitive-fixture@localhost/postgres?sslmode="
+    )
+    observation = gate_module.run_command(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import os, sys; "
+                "expected = {'VS01_UNRELATED_ENV': 'unchanged', "
+                "'PGPASSFILE': '', 'PGSSLNEGOTIATION': 'preserve-unknown', "
+                "'PGPASSWORD': 'url-sensitive-fixture'}; "
+                "sys.exit(0 if all(os.environ.get(k) == v "
+                "for k, v in expected.items()) else 1)"
+            ),
+        ],
+        cwd=Path(__file__).parent,
+        env=libpq_env,
+    )
+    assert observation.returncode == 0
+    assert observation.stdout == ""
+    assert observation.stderr == ""
+    assert "url-sensitive-fixture" not in observation.stdout + observation.stderr
+    assert os.environ["VS01_UNRELATED_ENV"] == "unchanged"
+    assert os.environ["PGPASSFILE"] == ""
+    assert os.environ["PGSSLNEGOTIATION"] == "preserve-unknown"
+    assert os.environ["PGPASSWORD"] == "parent-sensitive-fixture"
 
 
 def test_postgresql_connection_block_is_verified_and_recoverable(
