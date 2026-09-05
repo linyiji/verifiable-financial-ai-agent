@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import tempfile
 from collections.abc import Iterable
@@ -26,6 +27,11 @@ class ReconstructedGeneratedBuildInput:
     source_bytes: bytes
     test_bytes: bytes
     runtime_image_identity: str
+    spec_bytes: bytes | None = None
+    spec_sha256: str | None = None
+    compiler_id: str | None = None
+    compiler_version: str | None = None
+    compiler_runtime_policy: str | None = None
 
     @property
     def source_code(self) -> str:
@@ -76,6 +82,8 @@ class GeneratedCapabilityArtifactStore:
             raise GeneratedArtifactRetentionError("generated artifact root must be a directory")
         self._blob_root = self.root / "blobs" / "sha256"
         self._blob_root.mkdir(parents=True, exist_ok=True)
+        self._manifest_root = self.root / "manifests" / "sha256"
+        self._manifest_root.mkdir(parents=True, exist_ok=True)
         self._forbidden_values = tuple(
             value.encode("utf-8") if isinstance(value, str) else bytes(value)
             for value in forbidden_values
@@ -109,7 +117,11 @@ class GeneratedCapabilityArtifactStore:
 
         source_bytes = exact_generated_bytes(candidate.output.source_code)
         test_bytes = exact_generated_bytes(candidate.output.unit_tests)
-        self._reject_sensitive_content(source_bytes, test_bytes)
+        retained_inputs = [source_bytes, test_bytes]
+        if candidate.spec_bytes is not None:
+            retained_inputs.append(candidate.spec_bytes)
+        self._reject_sensitive_content(*retained_inputs)
+        self._validate_spec_preimage(candidate)
         source_sha256 = content_sha256(source_bytes)
         test_sha256 = content_sha256(test_bytes)
         if candidate.implementation_hash != source_sha256:
@@ -123,7 +135,7 @@ class GeneratedCapabilityArtifactStore:
 
         source_ref = self._put(source_sha256, source_bytes)
         test_ref = self._put(test_sha256, test_bytes)
-        return GeneratedCapabilityArtifactRecord(
+        record = GeneratedCapabilityArtifactRecord(
             run_id=run_id,
             build_id=candidate.build_id,
             generated_capability_id=generated.generated_capability_id,
@@ -140,6 +152,8 @@ class GeneratedCapabilityArtifactStore:
             implementation_hash=candidate.implementation_hash,
             runtime_image_identity=runtime_image_identity,
         )
+        self._retain_spec_manifest(record, candidate)
+        return record
 
     def reconstruct(
         self,
@@ -161,11 +175,226 @@ class GeneratedCapabilityArtifactStore:
             raise GeneratedArtifactRetentionError(
                 "retained source no longer matches implementation hash"
             )
+        manifest = self._read_spec_manifest(record)
+        spec_bytes: bytes | None = None
+        if manifest is not None:
+            spec_bytes = self._read_verified(
+                artifact_ref=str(manifest["spec_artifact_ref"]),
+                artifact_id=str(manifest["spec_sha256"]),
+                expected_hash=str(manifest["spec_sha256"]),
+                expected_size=int(manifest["spec_size_bytes"]),
+            )
         return ReconstructedGeneratedBuildInput(
             source_bytes=source,
             test_bytes=tests,
             runtime_image_identity=record.runtime_image_identity,
+            spec_bytes=spec_bytes,
+            spec_sha256=str(manifest["spec_sha256"]) if manifest else None,
+            compiler_id=str(manifest["compiler_id"]) if manifest else None,
+            compiler_version=str(manifest["compiler_version"]) if manifest else None,
+            compiler_runtime_policy=(
+                str(manifest["compiler_runtime_policy"]) if manifest else None
+            ),
         )
+
+    def reconstruct_from_spec(
+        self,
+        record: GeneratedCapabilityArtifactRecord,
+        request: object,
+    ) -> ReconstructedGeneratedBuildInput:
+        """Independently recompile a retained canonical Spec and verify exact bytes."""
+
+        from src.capabilities.generated.contract import GeneratedCapabilityRequestV1
+        from src.capabilities.generated.spec import (
+            GENERATED_CAPABILITY_COMPILER_ID,
+            GENERATED_CAPABILITY_COMPILER_VERSION,
+            GENERATED_CAPABILITY_RUNTIME_POLICY,
+            GeneratedCapabilityCompilerV1,
+            canonical_spec_bytes,
+            decode_generated_capability_spec,
+        )
+
+        if not isinstance(request, GeneratedCapabilityRequestV1):
+            raise GeneratedArtifactRetentionError("owned request is required for reconstruction")
+        reconstructed = self.reconstruct(record)
+        if reconstructed.spec_bytes is None:
+            raise GeneratedArtifactRetentionError("retained generated build has no Spec preimage")
+        if (
+            reconstructed.compiler_id != GENERATED_CAPABILITY_COMPILER_ID
+            or reconstructed.compiler_version != GENERATED_CAPABILITY_COMPILER_VERSION
+            or reconstructed.compiler_runtime_policy != GENERATED_CAPABILITY_RUNTIME_POLICY
+        ):
+            raise GeneratedArtifactRetentionError("retained compiler identity is unsupported")
+        try:
+            raw = json.loads(reconstructed.spec_bytes.decode("utf-8", errors="strict"))
+            spec = decode_generated_capability_spec(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise GeneratedArtifactRetentionError(
+                "retained Spec is not canonical and valid"
+            ) from exc
+        if canonical_spec_bytes(spec) != reconstructed.spec_bytes:
+            raise GeneratedArtifactRetentionError("retained Spec bytes are not canonical")
+        compiled = GeneratedCapabilityCompilerV1().compile(request, spec)
+        if (
+            exact_generated_bytes(compiled.output.source_code) != reconstructed.source_bytes
+            or exact_generated_bytes(compiled.output.unit_tests) != reconstructed.test_bytes
+            or compiled.spec_sha256 != reconstructed.spec_sha256
+        ):
+            raise GeneratedArtifactRetentionError(
+                "retained Spec/compiler reconstruction differs from accepted bytes"
+            )
+        return reconstructed
+
+    def _retain_spec_manifest(
+        self,
+        record: GeneratedCapabilityArtifactRecord,
+        candidate: GeneratedCapabilityCandidate,
+    ) -> None:
+        values = (
+            candidate.spec_bytes,
+            candidate.spec_sha256,
+            candidate.compiler_id,
+            candidate.compiler_version,
+            candidate.compiler_runtime_policy,
+        )
+        if all(value is None for value in values):
+            return
+        assert candidate.spec_bytes is not None
+        assert candidate.spec_sha256 is not None
+        spec_ref = self._put(candidate.spec_sha256, candidate.spec_bytes)
+        manifest = {
+            "schema_version": "generated-capability-reconstruction/v1",
+            "run_id": record.run_id,
+            "build_id": record.build_id,
+            "implementation_hash": record.implementation_hash,
+            "source_sha256": record.source_sha256,
+            "test_sha256": record.test_sha256,
+            "runtime_image_identity": record.runtime_image_identity,
+            "spec_artifact_ref": spec_ref,
+            "spec_sha256": candidate.spec_sha256,
+            "spec_size_bytes": len(candidate.spec_bytes),
+            "compiler_id": candidate.compiler_id,
+            "compiler_version": candidate.compiler_version,
+            "compiler_runtime_policy": candidate.compiler_runtime_policy,
+        }
+        manifest_bytes = json.dumps(
+            manifest,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        self._put_immutable_path(
+            self._manifest_path(record.run_id, record.build_id), manifest_bytes
+        )
+
+    @staticmethod
+    def _validate_spec_preimage(candidate: GeneratedCapabilityCandidate) -> None:
+        values = (
+            candidate.spec_bytes,
+            candidate.spec_sha256,
+            candidate.compiler_id,
+            candidate.compiler_version,
+            candidate.compiler_runtime_policy,
+        )
+        if all(value is None for value in values):
+            return
+        if any(value is None for value in values):
+            raise GeneratedArtifactRetentionError("generated Spec/compiler identity is incomplete")
+        assert candidate.spec_bytes is not None
+        assert candidate.spec_sha256 is not None
+        if content_sha256(candidate.spec_bytes) != candidate.spec_sha256:
+            raise GeneratedArtifactRetentionError("generated Spec hash does not match exact bytes")
+        try:
+            decoded = json.loads(candidate.spec_bytes.decode("utf-8", errors="strict"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GeneratedArtifactRetentionError(
+                "generated Spec bytes are not canonical JSON"
+            ) from exc
+        canonical = json.dumps(
+            decoded,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        if not isinstance(decoded, dict) or canonical != candidate.spec_bytes:
+            raise GeneratedArtifactRetentionError("generated Spec bytes are not canonical JSON")
+
+    def _read_spec_manifest(
+        self,
+        record: GeneratedCapabilityArtifactRecord,
+    ) -> JsonObject | None:
+        target = self._manifest_path(record.run_id, record.build_id)
+        if not target.exists():
+            return None
+        raw = self._read_path(target)
+        try:
+            manifest = json.loads(raw.decode("utf-8", errors="strict"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GeneratedArtifactRetentionError(
+                "generated reconstruction manifest is invalid"
+            ) from exc
+        if not isinstance(manifest, dict):
+            raise GeneratedArtifactRetentionError("generated reconstruction manifest is invalid")
+        expected = {
+            "run_id": record.run_id,
+            "build_id": record.build_id,
+            "implementation_hash": record.implementation_hash,
+            "source_sha256": record.source_sha256,
+            "test_sha256": record.test_sha256,
+            "runtime_image_identity": record.runtime_image_identity,
+        }
+        if manifest.get("schema_version") != "generated-capability-reconstruction/v1" or any(
+            manifest.get(key) != value for key, value in expected.items()
+        ):
+            raise GeneratedArtifactRetentionError(
+                "generated reconstruction manifest identity mismatch"
+            )
+        required = {
+            "spec_artifact_ref",
+            "spec_sha256",
+            "spec_size_bytes",
+            "compiler_id",
+            "compiler_version",
+            "compiler_runtime_policy",
+        }
+        if not required.issubset(manifest):
+            raise GeneratedArtifactRetentionError("generated reconstruction manifest is incomplete")
+        return manifest
+
+    def _manifest_path(self, run_id: str, build_id: str) -> Path:
+        digest = hashlib.sha256(f"{run_id}\0{build_id}".encode()).hexdigest()
+        target = self._manifest_root / digest
+        self._assert_safe_blob_path(target)
+        return target
+
+    def _put_immutable_path(self, target: Path, content: bytes) -> None:
+        if target.exists():
+            if self._read_path(target) != content:
+                raise GeneratedArtifactRetentionError(
+                    "immutable generated reconstruction manifest differs"
+                )
+            return
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.chmod(temporary, 0o400)
+            try:
+                os.link(temporary, target)
+                _fsync_directory(target.parent)
+            except FileExistsError:
+                if self._read_path(target) != content:
+                    raise GeneratedArtifactRetentionError(
+                        "immutable generated reconstruction manifest differs"
+                    ) from None
+        finally:
+            if temporary.exists():
+                temporary.unlink()
 
     def _put(self, content_hash: str, content: bytes) -> str:
         if not content:
@@ -252,10 +481,10 @@ class GeneratedCapabilityArtifactStore:
                     "symlinks are forbidden inside generated artifact root"
                 )
 
-    def _reject_sensitive_content(self, source: bytes, tests: bytes) -> None:
-        if any(value in content for value in self._forbidden_values for content in (source, tests)):
+    def _reject_sensitive_content(self, *contents: bytes) -> None:
+        if any(value in content for value in self._forbidden_values for content in contents):
             raise GeneratedArtifactRetentionError(
-                "generated source or tests contain configured credential bytes"
+                "generated Spec, source, or tests contain configured credential bytes"
             )
 
 

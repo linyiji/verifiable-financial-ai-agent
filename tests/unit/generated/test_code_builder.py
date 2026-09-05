@@ -12,13 +12,15 @@ from src.capabilities.generated.builder import (
     GeneratedCapabilityDeadlineExceededError,
     TeamoRouterCodeBuilder,
 )
-from src.capabilities.generated.contract import (
-    GeneratedCapabilityBundleV1,
-    GeneratedCapabilityBundleValidationError,
-)
+from src.capabilities.generated.contract import GeneratedCapabilityRequestV1
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
     ResearchLeadCapabilityApproval,
+)
+from src.capabilities.generated.spec import (
+    GeneratedCapabilitySpecV1,
+    GeneratedCapabilitySpecValidationError,
+    expected_spec,
 )
 from src.capabilities.generated.telemetry import GeneratedCapabilityTrace
 from src.domain.capability import CapabilityGapRecord, CapabilityRequirement
@@ -67,39 +69,9 @@ def build_request() -> CapabilityBuildRequest:
     )
 
 
-def bundle_output(**updates: object) -> dict[str, object]:
-    output: dict[str, object] = {
-        "schema_version": "generated-capability-bundle/v1",
-        "capability_id": "gross_margin",
-        "formula_id": "gross_margin_v1",
-        "entrypoint": "execute",
-        "source": (
-            "from decimal import Decimal\n\n"
-            "def execute(inputs):\n"
-            "    gross_profit = Decimal(str(inputs['gross_profit']))\n"
-            "    revenue = Decimal(str(inputs['revenue']))\n"
-            "    return {'value': str(gross_profit / revenue), 'unit': 'ratio'}\n"
-        ),
-        "tests": (
-            "def run_tests(execute, fixture):\n"
-            "    result = execute(fixture)\n"
-            "    expected = Decimal(str(fixture['gross_profit'])) / "
-            "Decimal(str(fixture['revenue']))\n"
-            "    assert Decimal(str(result['value'])) == expected\n"
-            "    assert result['unit'] == 'ratio'\n"
-            "    return True\n"
-        ),
-        "input_schema": [
-            {"name": "gross_profit", "type": "decimal"},
-            {"name": "revenue", "type": "decimal"},
-        ],
-        "output_schema": [
-            {"name": "value", "type": "decimal"},
-            {"name": "unit", "type": "ratio"},
-        ],
-        "methodology": "gross_profit / revenue using Decimal",
-        "declared_dependencies": ["decimal"],
-    }
+def spec_output(**updates: object) -> dict[str, object]:
+    owned = GeneratedCapabilityRequestV1.from_build_request(build_request())
+    output = expected_spec(owned).model_dump(mode="json")
     output.update(updates)
     return output
 
@@ -129,12 +101,12 @@ class FakeProvider:
 
     async def complete_structured(self, **kwargs: object) -> LLMStructuredResponse:
         self.calls.append(kwargs)
-        assert kwargs["response_model"] is GeneratedCapabilityBundleV1
+        assert kwargs["response_model"] is GeneratedCapabilitySpecV1
         if self.delay:
             await asyncio.sleep(self.delay)
         output = self.outputs[min(len(self.calls) - 1, len(self.outputs) - 1)]
         return LLMStructuredResponse(
-            output=GeneratedCapabilityBundleV1.model_validate(output),
+            output=GeneratedCapabilitySpecV1.model_validate(output),
             provider=self.provider_name,
             requested_model=self.model_name,
             actual_model=self.model_name,
@@ -177,7 +149,7 @@ class TraceSpy:
 
 @pytest.mark.asyncio
 async def test_builder_accepts_strict_owned_bundle_and_records_only_safe_metadata() -> None:
-    provider = FakeProvider([bundle_output()])
+    provider = FakeProvider([spec_output()])
     trace_spy = TraceSpy()
     builder = TeamoRouterCodeBuilder(provider, trace=GeneratedCapabilityTrace(trace_spy))
 
@@ -188,10 +160,14 @@ async def test_builder_accepts_strict_owned_bundle_and_records_only_safe_metadat
     assert candidate.implementation_hash.startswith("sha256:")
     assert candidate.output.purpose == requirement().purpose
     assert candidate.output.financial_invariants == requirement().financial_invariants
-    assert provider.calls[0]["schema_name"] == "generated_capability_bundle_v1"
+    assert provider.calls[0]["schema_name"] == "generated_capability_spec_v1"
     prompt = provider.calls[0]["messages"]
     assert "Do not include reasoning" in prompt[0].content
-    assert json.loads(prompt[1].content)["schema_version"] == "generated-capability-request/v1"
+    assert json.loads(prompt[1].content)["owned_request"]["schema_version"] == (
+        "generated-capability-request/v1"
+    )
+    assert candidate.spec_sha256 is not None
+    assert candidate.compiler_version == "1"
 
     trace_dump = str([trace_spy.generations, trace_spy.updates, trace_spy.events])
     assert "gross_profit / revenue" not in trace_dump
@@ -213,7 +189,7 @@ def test_provider_wire_schema_contains_no_free_form_objects() -> None:
             for child in value:
                 yield from object_schemas(child)
 
-    schema = GeneratedCapabilityBundleV1.model_json_schema()
+    schema = GeneratedCapabilitySpecV1.model_json_schema()
     objects = list(object_schemas(schema))
     assert objects
     assert all(item.get("additionalProperties") is False for item in objects)
@@ -222,10 +198,11 @@ def test_provider_wire_schema_contains_no_free_form_objects() -> None:
 
 @pytest.mark.asyncio
 async def test_invalid_formula_gets_one_same_model_full_bundle_repair() -> None:
-    invalid_source = str(bundle_output()["source"]).replace(
-        "gross_profit / revenue", "gross_profit - revenue"
-    )
-    provider = FakeProvider([bundle_output(source=invalid_source), bundle_output()])
+    invalid = spec_output()
+    formula = list(invalid["formula"])
+    formula[-1] = {**formula[-1], "operation": "SUBTRACT"}
+    invalid["formula"] = formula
+    provider = FakeProvider([invalid, spec_output()])
     trace_spy = TraceSpy()
     builder = TeamoRouterCodeBuilder(provider, trace=GeneratedCapabilityTrace(trace_spy))
 
@@ -235,31 +212,31 @@ async def test_invalid_formula_gets_one_same_model_full_bundle_repair() -> None:
     assert len(provider.calls) == 2
     assert provider.locked_models == ["gpt-5.6-sol"]
     repair = json.loads(provider.calls[1]["messages"][1].content)
-    assert repair["previous_bundle"]["source"] == invalid_source
+    assert repair["previous_spec"]["formula"][-1]["operation"] == "SUBTRACT"
     assert repair["deterministic_validation_findings"] == [
         {
-            "code": "GC_FINANCIAL_FORMULA_MISMATCH",
+            "code": "GC_SPEC_FORMULA_MISMATCH",
             "description": "deterministic generated-capability requirement not satisfied",
-            "field": "source",
-            "expected_rule": "exact owned formula semantics",
+            "field": "formula",
+            "expected_rule": "exact owned closed formula IR",
         }
     ]
     trace_dump = str(trace_spy.events)
-    assert "GC_FINANCIAL_FORMULA_MISMATCH" in trace_dump
-    assert invalid_source not in trace_dump
+    assert "GC_SPEC_FORMULA_MISMATCH" in trace_dump
+    assert "SUBTRACT" not in trace_dump
     assert candidate.input_tokens == 202
     assert candidate.output_tokens == 106
 
 
 @pytest.mark.asyncio
-async def test_final_invalid_bundle_returns_machine_codes_without_provider_switch() -> None:
-    bad = bundle_output(declared_dependencies=["decimal", "os"])
+async def test_final_invalid_spec_returns_machine_codes_without_provider_switch() -> None:
+    bad = spec_output(allowed_dependencies=["decimal", "os"])
     provider = FakeProvider([bad, bad])
 
-    with pytest.raises(GeneratedCapabilityBundleValidationError) as captured:
+    with pytest.raises(GeneratedCapabilitySpecValidationError) as captured:
         await TeamoRouterCodeBuilder(provider).generate(build_request())
 
-    assert "GC_SCHEMA_DEPENDENCY_FORBIDDEN" in captured.value.codes
+    assert "GC_SPEC_DEPENDENCY_MISMATCH" in captured.value.codes
     assert len(provider.calls) == 2
     assert provider.locked_models == ["gpt-5.6-sol"]
 
@@ -276,7 +253,7 @@ async def test_absolute_deadline_covers_generation_and_prevents_repair_reset() -
         per_attempt_deadline_seconds=0.02,
         overall_workload_deadline_seconds=0.03,
     )
-    provider = FakeProvider([bundle_output()], delay=0.1, policy=policy)
+    provider = FakeProvider([spec_output()], delay=0.1, policy=policy)
 
     with pytest.raises(GeneratedCapabilityDeadlineExceededError):
         await TeamoRouterCodeBuilder(provider).generate(build_request())
@@ -289,15 +266,15 @@ def test_builder_rejects_a_new_direct_provider_route() -> None:
         provider_name = "openai"
 
     with pytest.raises(ValueError, match="registered planner provider"):
-        TeamoRouterCodeBuilder(DirectProvider([bundle_output()]))
+        TeamoRouterCodeBuilder(DirectProvider([spec_output()]))
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("provider", "expected_provider"),
     (
-        (FakeProvider([bundle_output()]), "teamorouter"),
-        (FakeMimoProvider([bundle_output()]), "mimo"),
+        (FakeProvider([spec_output()]), "teamorouter"),
+        (FakeMimoProvider([spec_output()]), "mimo"),
     ),
 )
 async def test_same_contract_accepts_each_registered_provider(

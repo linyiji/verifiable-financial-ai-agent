@@ -103,6 +103,11 @@ from src.capabilities.generated import (
     ResearchLeadCapabilityApproval,
     ScopedCapabilityRegistry,
 )
+from src.capabilities.generated.contract import GeneratedCapabilityRequestV1
+from src.capabilities.generated.spec import (
+    GENERATED_CAPABILITY_COMPILER_ID,
+    GENERATED_CAPABILITY_COMPILER_VERSION,
+)
 from src.domain.capability import (
     CapabilityBuildRecord,
     CapabilityGapRecord,
@@ -216,6 +221,22 @@ class CountingLLMProvider:
         if isinstance(schema_name, str):
             self.schemas[schema_name] += 1
         return await self._delegate.complete_structured(**kwargs)
+
+
+class _PreflightValidationProgress:
+    """Non-persisted progress sink for candidate-bound GC qualification."""
+
+    async def static_validated(self, implementation_hash: str) -> None:
+        del implementation_hash
+
+    async def sandbox_started(self, implementation_hash: str) -> None:
+        del implementation_hash
+
+    async def tests_passed(self, implementation_hash: str) -> None:
+        del implementation_hash
+
+    async def financial_validated(self, implementation_hash: str) -> None:
+        del implementation_hash
 
 
 async def _planner_provider_preflight(provider: LLMProvider) -> PlannerProviderHealth:
@@ -513,6 +534,10 @@ async def _generated_capability_provider_preflight(
         summary="Safe controlled Generated Capability provider qualification.",
     )
     builder = PlannerProviderCodeBuilder(provider)
+    validator = GeneratedCapabilityValidator(
+        sandbox=DockerSandboxBackend(image=DEFAULT_SANDBOX_IMAGE),
+        plans=FreeCashFlowMarginValidationPlanProvider(),
+    )
     actual_models: list[str] = []
     for probe in range(1, 3):
         request = CapabilityBuildRequest(
@@ -526,6 +551,16 @@ async def _generated_capability_provider_preflight(
             candidate = await builder.generate(request)
             if candidate.provider != provider_name or not candidate.actual_model:
                 raise ValueError("owned Code Builder provider identity drifted")
+            if (
+                candidate.compiler_id != GENERATED_CAPABILITY_COMPILER_ID
+                or candidate.compiler_version != GENERATED_CAPABILITY_COMPILER_VERSION
+            ):
+                raise ValueError("owned Generated Capability compiler identity drifted")
+            handoff = await validator.validate(
+                candidate,
+                progress=_PreflightValidationProgress(),
+            )
+            handoff.assert_ready_for_task_approval(candidate)
             actual_models.append(candidate.actual_model)
         except Exception as exc:
             return _failed_workload_health(provider, workload, exc, attempt=probe, started=started)
@@ -1698,6 +1733,7 @@ def _audit_generated_artifact_retention(
     store: GeneratedCapabilityArtifactStore,
     expected_provider: str,
     expected_model: str,
+    gaps: list[CapabilityGapRecord],
     records: list[GeneratedCapabilityArtifactRecord],
     builds: list[CapabilityBuildRecord],
     generated: list[GeneratedCapabilityRecord],
@@ -1716,8 +1752,15 @@ def _audit_generated_artifact_retention(
     validation = validations[0]
     sandbox = sandboxes[0]
     retained_builds = [item for item in builds if item.build_id == record.build_id]
+    retained_gaps = [item for item in gaps if item.gap_id == generated_record.gap_id]
     try:
-        reconstructed = store.reconstruct(record)
+        if len(retained_gaps) != 1:
+            raise ValueError("accepted Generated Capability gap identity is unavailable")
+        owned_request = GeneratedCapabilityRequestV1.from_requirement(
+            retained_gaps[0].gap_id,
+            retained_gaps[0].requirement,
+        )
+        reconstructed = store.reconstruct_from_spec(record, owned_request)
         sandbox_input = reconstructed.sandbox_request({"audit_reconstruction": "1"})
     except (OSError, UnicodeError, ValueError):
         return {
@@ -1736,6 +1779,10 @@ def _audit_generated_artifact_retention(
         len(retained_builds) == 1
         and retained_builds[0].provider == expected_provider
         and retained_builds[0].actual_model == expected_model
+        and reconstructed.compiler_id == GENERATED_CAPABILITY_COMPILER_ID
+        and reconstructed.compiler_version == GENERATED_CAPABILITY_COMPILER_VERSION
+        and reconstructed.spec_bytes is not None
+        and reconstructed.spec_sha256 is not None
         and record.generated_capability_id == generated_record.generated_capability_id
         and record.capability_id == generated_record.capability_id
         and record.capability_version == generated_record.capability_version
@@ -1763,6 +1810,12 @@ def _audit_generated_artifact_retention(
         "test_size_bytes": record.test_size_bytes,
         "implementation_hash": record.implementation_hash,
         "runtime_image_identity": record.runtime_image_identity,
+        "spec_sha256": reconstructed.spec_sha256,
+        "spec_size_bytes": len(reconstructed.spec_bytes or b""),
+        "compiler_id": reconstructed.compiler_id,
+        "compiler_version": reconstructed.compiler_version,
+        "compiler_runtime_policy": reconstructed.compiler_runtime_policy,
+        "spec_compiler_reconstruction_verified": True,
         "build_provider_verified": len(retained_builds) == 1
         and retained_builds[0].provider == expected_provider
         and retained_builds[0].actual_model == expected_model,
@@ -2418,6 +2471,12 @@ async def _run_authoritative(
         audit_state["planner_provider_selection"] = audit_state["run_provider_bindings"]
         raise
     provider_bindings_evidence = provider_bindings.safe_evidence()
+    provider_bindings_evidence["generated_capability_compiler_id"] = (
+        GENERATED_CAPABILITY_COMPILER_ID
+    )
+    provider_bindings_evidence["generated_capability_compiler_version"] = (
+        GENERATED_CAPABILITY_COMPILER_VERSION
+    )
     audit_state["run_provider_bindings"] = provider_bindings_evidence
     audit_state["planner_provider_selection"] = provider_bindings_evidence
     _write_json(
@@ -2477,6 +2536,8 @@ async def _run_authoritative(
                 "lead_planner_model": lead_binding.model_name,
                 "generated_capability_provider": generated_binding.provider_name,
                 "generated_capability_model": generated_binding.model_name,
+                "generated_capability_compiler_id": GENERATED_CAPABILITY_COMPILER_ID,
+                "generated_capability_compiler_version": (GENERATED_CAPABILITY_COMPILER_VERSION),
                 "mid_run_failover_enabled": False,
             },
         ) as trace:
@@ -2858,6 +2919,7 @@ async def _run_authoritative(
             store=generated_artifact_store,
             expected_provider=generated_binding.provider_name,
             expected_model=generated_binding.model_name,
+            gaps=gaps,
             records=generated_artifacts,
             builds=builds,
             generated=generated,

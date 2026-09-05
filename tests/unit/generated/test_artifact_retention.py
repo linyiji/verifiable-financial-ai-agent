@@ -10,8 +10,11 @@ from src.capabilities.generated.artifacts import (
     GeneratedCapabilityArtifactStore,
     generated_text_sha256,
 )
+from src.capabilities.generated.contract import GeneratedCapabilityRequestV1
 from src.capabilities.generated.models import CodeBuilderOutput, GeneratedCapabilityCandidate
+from src.capabilities.generated.spec import GeneratedCapabilityCompilerV1, expected_spec
 from src.domain.capability import GeneratedCapabilityRecord
+from tests.unit.generated.test_contract import build_request
 
 SOURCE = "# exact UTF-8: π\r\ndef execute(inputs):\r\n    return {'value': inputs['value']}"
 TESTS = "# exact test: 雪\ndef run_tests(execute, fixture):\n    assert execute(fixture)"
@@ -193,4 +196,84 @@ def test_configured_credentials_are_rejected_before_any_blob_is_written(tmp_path
             candidate=candidate,
             runtime_image_identity=RUNTIME_IMAGE,
         )
+    assert list((store.root / "blobs" / "sha256").iterdir()) == []
+
+
+def test_spec_compiler_preimage_reconstructs_exact_accepted_source_and_tests(tmp_path) -> None:
+    request = GeneratedCapabilityRequestV1.from_build_request(build_request())
+    compiled = GeneratedCapabilityCompilerV1().compile(request, expected_spec(request))
+    candidate = GeneratedCapabilityCandidate(
+        build_id=build_request().build_id,
+        output=compiled.output,
+        implementation_hash=generated_text_sha256(compiled.output.source_code),
+        provider="mimo",
+        requested_model="mimo-v2.5",
+        actual_model="mimo-v2.5",
+        attempted_models=("mimo-v2.5",),
+        input_tokens=1,
+        output_tokens=1,
+        latency_ms=1.0,
+        spec_bytes=compiled.spec_bytes,
+        spec_sha256=compiled.spec_sha256,
+        compiler_id=compiled.compiler_id,
+        compiler_version=compiled.compiler_version,
+        compiler_runtime_policy=compiled.runtime_policy,
+    )
+    generated = _generated(candidate).model_copy(
+        update={"run_id": "RUN-EXACT", "task_id": "TASK-EXACT"}
+    )
+    store = GeneratedCapabilityArtifactStore(tmp_path / "generated")
+
+    record = store.retain(
+        run_id="RUN-EXACT",
+        generated=generated,
+        candidate=candidate,
+        runtime_image_identity=RUNTIME_IMAGE,
+    )
+    reconstructed = store.reconstruct_from_spec(record, request)
+
+    assert reconstructed.spec_bytes == compiled.spec_bytes
+    assert reconstructed.spec_sha256 == compiled.spec_sha256
+    assert reconstructed.compiler_id == compiled.compiler_id
+    assert reconstructed.compiler_version == compiled.compiler_version
+    assert reconstructed.compiler_runtime_policy == compiled.runtime_policy
+    assert reconstructed.source_bytes == compiled.output.source_code.encode("utf-8")
+    assert reconstructed.test_bytes == compiled.output.unit_tests.encode("utf-8")
+    assert len(list((store.root / "blobs" / "sha256").iterdir())) == 3
+
+
+def test_configured_credential_is_rejected_from_spec_preimage(tmp_path) -> None:
+    secret = b"credential-that-must-not-enter-spec"
+    original = _candidate()
+    candidate = GeneratedCapabilityCandidate(
+        build_id=original.build_id,
+        output=original.output,
+        implementation_hash=original.implementation_hash,
+        provider=original.provider,
+        requested_model=original.requested_model,
+        actual_model=original.actual_model,
+        attempted_models=original.attempted_models,
+        input_tokens=original.input_tokens,
+        output_tokens=original.output_tokens,
+        latency_ms=original.latency_ms,
+        spec_bytes=secret,
+        spec_sha256="sha256:" + hashlib.sha256(secret).hexdigest(),
+        compiler_id="vfas-generated-capability-compiler",
+        compiler_version="1",
+        compiler_runtime_policy="python3.11-decimal-sandbox-v1",
+    )
+    generated = _generated(candidate)
+    store = GeneratedCapabilityArtifactStore(
+        tmp_path / "generated",
+        forbidden_values=(secret,),
+    )
+
+    with pytest.raises(GeneratedArtifactRetentionError, match="credential bytes"):
+        store.retain(
+            run_id=generated.run_id,
+            generated=generated,
+            candidate=candidate,
+            runtime_image_identity=RUNTIME_IMAGE,
+        )
+
     assert list((store.root / "blobs" / "sha256").iterdir()) == []

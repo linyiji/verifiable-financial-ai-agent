@@ -12,12 +12,16 @@ from src.adapters.llm.router import SUPPORTED_PLANNER_PROVIDERS
 from src.capabilities.generated.artifacts import generated_text_sha256
 from src.capabilities.generated.contract import (
     GCValidationFinding,
-    GeneratedCapabilityBundleV1,
     GeneratedCapabilityBundleValidationError,
-    GeneratedCapabilityBundleValidator,
     GeneratedCapabilityRequestV1,
 )
 from src.capabilities.generated.models import CapabilityBuildRequest, GeneratedCapabilityCandidate
+from src.capabilities.generated.spec import (
+    GeneratedCapabilityCompilerV1,
+    GeneratedCapabilitySpecV1,
+    GeneratedCapabilitySpecValidationError,
+    expected_spec,
+)
 from src.capabilities.generated.telemetry import GeneratedCapabilityTrace
 
 
@@ -36,23 +40,23 @@ class PlannerProviderCodeBuilder:
     complete deterministic contract can become a ``GeneratedCapabilityCandidate``.
     """
 
-    schema_name = "generated_capability_bundle_v1"
+    schema_name = "generated_capability_spec_v1"
 
     def __init__(
         self,
         provider: LLMProvider,
         *,
         trace: GeneratedCapabilityTrace | None = None,
-        validator: GeneratedCapabilityBundleValidator | None = None,
+        compiler: GeneratedCapabilityCompilerV1 | None = None,
     ) -> None:
         provider_name = getattr(provider, "provider_name", None)
         if provider_name not in SUPPORTED_PLANNER_PROVIDERS:
             raise ValueError("Code Builder requires a registered planner provider")
         self._provider = provider
         self._provider_name = provider_name
-        self.builder_id = f"{provider_name}-code-builder-v2"
+        self.builder_id = f"{provider_name}-spec-compiler-builder-v1"
         self._trace = trace or GeneratedCapabilityTrace()
-        self._validator = validator or GeneratedCapabilityBundleValidator()
+        self._compiler = compiler or GeneratedCapabilityCompilerV1()
 
     @property
     def provider_name(self) -> str:
@@ -73,7 +77,7 @@ class PlannerProviderCodeBuilder:
         started = perf_counter()
         loop = asyncio.get_running_loop()
         absolute_deadline = loop.time() + policy.overall_workload_deadline_seconds
-        previous_bundle: GeneratedCapabilityBundleV1 | None = None
+        previous_spec: GeneratedCapabilitySpecV1 | None = None
         previous_findings: tuple[GCValidationFinding, ...] = ()
         locked_provider: LLMProvider = self._provider
         locked_model: str | None = None
@@ -99,15 +103,15 @@ class PlannerProviderCodeBuilder:
                         )
                     messages = (
                         _initial_messages(owned_request)
-                        if previous_bundle is None
-                        else _repair_messages(owned_request, previous_bundle, previous_findings)
+                        if previous_spec is None
+                        else _repair_messages(owned_request, previous_spec, previous_findings)
                     )
-                    bundle: GeneratedCapabilityBundleV1 | None = None
+                    spec: GeneratedCapabilitySpecV1 | None = None
                     try:
                         async with asyncio.timeout(remaining):
                             response = await locked_provider.complete_structured(
                                 messages=messages,
-                                response_model=GeneratedCapabilityBundleV1,
+                                response_model=GeneratedCapabilitySpecV1,
                                 schema_name=self.schema_name,
                                 workload_type="GENERATED_CAPABILITY",
                             )
@@ -135,23 +139,26 @@ class PlannerProviderCodeBuilder:
                                     )
                                 ]
                             )
-                        if not isinstance(response.output, GeneratedCapabilityBundleV1):
-                            raise GeneratedCapabilityBundleValidationError(
+                        if not isinstance(response.output, GeneratedCapabilitySpecV1):
+                            raise GeneratedCapabilitySpecValidationError(
                                 [
                                     GCValidationFinding(
-                                        "GC_SCHEMA_INVALID",
-                                        "bundle",
-                                        "GeneratedCapabilityBundleV1",
+                                        "GC_SPEC_SCHEMA_INVALID",
+                                        "spec",
+                                        "GeneratedCapabilitySpecV1",
                                     )
                                 ]
                             )
-                        bundle = response.output
-                        output = self._validator.validate(owned_request, bundle)
+                        spec = response.output
+                        compiled = self._compiler.compile(owned_request, spec)
                     except TimeoutError as exc:
                         raise GeneratedCapabilityDeadlineExceededError(
                             "generated-capability absolute deadline exceeded"
                         ) from exc
-                    except GeneratedCapabilityBundleValidationError as exc:
+                    except (
+                        GeneratedCapabilityBundleValidationError,
+                        GeneratedCapabilitySpecValidationError,
+                    ) as exc:
                         await self._attempt_event(
                             request,
                             generation_attempt,
@@ -160,9 +167,9 @@ class PlannerProviderCodeBuilder:
                             exc.codes,
                             attempt_started,
                         )
-                        if generation_attempt >= policy.max_attempts or bundle is None:
+                        if generation_attempt >= policy.max_attempts or spec is None:
                             raise
-                        previous_bundle = bundle
+                        previous_spec = spec
                         previous_findings = exc.findings
                         backoff = min(
                             policy.backoff_seconds(generation_attempt),
@@ -197,6 +204,7 @@ class PlannerProviderCodeBuilder:
                         (),
                         attempt_started,
                     )
+                    output = compiled.output
                     implementation_hash = _source_hash(output.source_code)
                     latency_ms = (perf_counter() - started) * 1000
                     input_tokens = _sum_optional(response.input_tokens for response in responses)
@@ -228,6 +236,11 @@ class PlannerProviderCodeBuilder:
                         input_tokens=input_tokens,
                         output_tokens=output_tokens,
                         latency_ms=latency_ms,
+                        spec_bytes=compiled.spec_bytes,
+                        spec_sha256=compiled.spec_sha256,
+                        compiler_id=compiled.compiler_id,
+                        compiler_version=compiled.compiler_version,
+                        compiler_runtime_policy=compiled.runtime_policy,
                     )
                 raise AssertionError("generated capability attempt loop exited unexpectedly")
             except asyncio.CancelledError:
@@ -310,23 +323,21 @@ def _initial_messages(request: GeneratedCapabilityRequestV1) -> list[LLMMessage]
         LLMMessage(
             role="system",
             content=(
-                "Return only one strict GeneratedCapabilityBundleV1 JSON object. Copy "
-                "identifiers, entrypoint, and schemas exactly from the owned request. "
-                "Implement the exact formula using Decimal(str(input)) throughout, "
-                "including signed capital expenditure. Never use float, round, quantize, "
-                "network, filesystem, process, environment, dynamic import, eval, or exec. "
-                "Source must define synchronous execute(inputs) and return exactly value as "
-                "a decimal string and the requested unit. Tests must define synchronous "
-                "run_tests(execute, fixture), derive the expected value from every supplied "
-                "fixture, and assert formula value and unit without a framework. Declare only "
-                "imports actually used and permitted by the request. Do not include reasoning "
-                "or hidden chain-of-thought."
+                "Return only one strict GeneratedCapabilitySpecV1 JSON object. Copy the "
+                "required Spec exactly. It is a closed Formula IR, not executable source. "
+                "Do not add operations, fields, prose, Python, tests, or Markdown. Do not "
+                "include reasoning or hidden chain-of-thought."
             ),
         ),
         LLMMessage(
             role="user",
             content=json.dumps(
-                request.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+                {
+                    "owned_request": request.model_dump(mode="json"),
+                    "required_spec": expected_spec(request).model_dump(mode="json"),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
             ),
         ),
     ]
@@ -334,22 +345,22 @@ def _initial_messages(request: GeneratedCapabilityRequestV1) -> list[LLMMessage]
 
 def _repair_messages(
     request: GeneratedCapabilityRequestV1,
-    previous_bundle: GeneratedCapabilityBundleV1,
+    previous_spec: GeneratedCapabilitySpecV1,
     findings: tuple[GCValidationFinding, ...],
 ) -> list[LLMMessage]:
     repair = {
         "request": request.model_dump(mode="json"),
-        "previous_bundle": previous_bundle.model_dump(mode="json"),
+        "previous_spec": previous_spec.model_dump(mode="json"),
         "deterministic_validation_findings": [finding.as_dict() for finding in findings],
     }
     return [
         LLMMessage(
             role="system",
             content=(
-                "Repair the prior generated-capability bundle using only the machine-readable "
-                "corrective facts. Return one complete replacement GeneratedCapabilityBundleV1 "
-                "JSON object, not a patch. Preserve exact request identifiers and schemas. Do "
-                "not include reasoning or hidden chain-of-thought."
+                "Repair the prior Generated Capability Spec using only the machine-readable "
+                "corrective facts. Return one complete replacement GeneratedCapabilitySpecV1 "
+                "JSON object, not a patch. Return no source, tests, prose, reasoning, or hidden "
+                "chain-of-thought."
             ),
         ),
         LLMMessage(

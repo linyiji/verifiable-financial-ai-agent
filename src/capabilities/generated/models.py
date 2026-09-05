@@ -176,6 +176,11 @@ class GeneratedCapabilityCandidate:
     input_tokens: int | None
     output_tokens: int | None
     latency_ms: float
+    spec_bytes: bytes | None = None
+    spec_sha256: str | None = None
+    compiler_id: str | None = None
+    compiler_version: str | None = None
+    compiler_runtime_policy: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

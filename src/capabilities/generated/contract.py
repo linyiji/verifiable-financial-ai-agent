@@ -19,6 +19,7 @@ from src.capabilities.generated.models import (
     CodeBuilderSchemaField,
 )
 from src.domain.base import DomainModel
+from src.domain.capability import CapabilityRequirement
 from src.tooling.generated_sandbox import GeneratedCodeASTPreflight
 
 GENERATED_CAPABILITY_REQUEST_SCHEMA_VERSION = "generated-capability-request/v1"
@@ -69,10 +70,17 @@ class GeneratedCapabilityRequestV1(DomainModel):
 
     @classmethod
     def from_build_request(cls, request: CapabilityBuildRequest) -> GeneratedCapabilityRequestV1:
-        requirement = request.gap.requirement
+        return cls.from_requirement(request.gap.gap_id, request.gap.requirement)
+
+    @classmethod
+    def from_requirement(
+        cls,
+        gap_id: str,
+        requirement: CapabilityRequirement,
+    ) -> GeneratedCapabilityRequestV1:
         formula = _owned_formula(requirement.formula_id)
         return cls(
-            gap_id=request.gap.gap_id,
+            gap_id=gap_id,
             capability_id=requirement.capability_id,
             formula_id=requirement.formula_id,
             formula=formula,
@@ -625,7 +633,8 @@ def _execute_return_expression(tree: ast.Module, entrypoint: str) -> tuple[Any, 
     if function is None:
         return None
     assignments: dict[str, ast.expr] = {}
-    for statement in function.body:
+    returned_value: ast.expr | None = None
+    for statement in ast.walk(function):
         if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
             target = statement.targets[0]
             if isinstance(target, ast.Name):
@@ -635,8 +644,8 @@ def _execute_return_expression(tree: ast.Module, entrypoint: str) -> tuple[Any, 
         elif isinstance(statement, ast.Return) and isinstance(statement.value, ast.Dict):
             for key, value in zip(statement.value.keys, statement.value.values, strict=True):
                 if isinstance(key, ast.Constant) and key.value == "value":
-                    return _symbolic(value, assignments, set())
-    return None
+                    returned_value = value
+    return _symbolic(returned_value, assignments, set())
 
 
 def _symbolic(
