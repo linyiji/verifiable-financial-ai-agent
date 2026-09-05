@@ -116,7 +116,6 @@ The capture index has this exact root and scenario inventory:
     "sparse_graph_refresh": {"before_projection": "CAP-...", "stream": "CAP-...", "after_projection": "CAP-..."},
     "self_correction": {"before_projection": "CAP-...", "stream": "CAP-...", "after_projection": "CAP-..."},
     "replan_pending": {"before_projection": "CAP-...", "stream": "CAP-...", "after_projection": "CAP-..."},
-    "replan_rejected": {"before_projection": "CAP-...", "stream": "CAP-...", "after_projection": "CAP-..."},
     "replan_approved": {"before_projection": "CAP-...", "stream": "CAP-...", "after_projection": "CAP-..."}
   }
 }

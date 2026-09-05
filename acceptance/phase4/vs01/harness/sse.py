@@ -922,7 +922,7 @@ def _validate_operation(value: Any, index: int) -> Mapping[str, Any]:
     required = (
         {"operation", "task_id"}
         if kind == "add_node"
-        else {"operation", "source_task_id", "target_task_id"}
+        else {"operation", "task_id", "dependency_task_id"}
     )
     if set(operation) != required:
         _fail("SCHEMA_INCOMPATIBLE", f"graph operation {kind} has non-contract fields")
@@ -1644,14 +1644,14 @@ def _apply_operations(
                 _fail("INTEGRITY_FAILURE", "replan add_node duplicates an existing Task")
             topology[task_id] = set()
         elif kind == "add_edge":
-            source = operation["source_task_id"]
-            target = operation["target_task_id"]
+            source = operation["dependency_task_id"]
+            target = operation["task_id"]
             if source not in topology or target not in topology:
                 _fail("INTEGRITY_FAILURE", "replan add_edge references an unknown Task")
             topology[target].add(source)
         else:
-            source = operation["source_task_id"]
-            target = operation["target_task_id"]
+            source = operation["dependency_task_id"]
+            target = operation["task_id"]
             if target not in topology or source not in topology[target]:
                 _fail("INTEGRITY_FAILURE", "replan remove_edge references a missing edge")
             topology[target].remove(source)

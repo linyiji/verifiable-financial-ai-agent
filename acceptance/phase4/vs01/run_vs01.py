@@ -19,6 +19,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -120,7 +121,6 @@ EVIDENCE_SCENARIOS = frozenset(
         "sparse_graph_refresh",
         "self_correction",
         "replan_pending",
-        "replan_rejected",
         "replan_approved",
     }
 )
@@ -486,7 +486,6 @@ def _load_driver_capture_index(path: Path) -> tuple[JsonObject, str, dict[str, s
         "sparse_graph_refresh": {"before_projection", "stream", "after_projection"},
         "self_correction": {"before_projection", "stream", "after_projection"},
         "replan_pending": {"before_projection", "stream", "after_projection"},
-        "replan_rejected": {"before_projection", "stream", "after_projection"},
         "replan_approved": {"before_projection", "stream", "after_projection"},
     }
     for scenario_name, fields in field_sets.items():
@@ -668,7 +667,6 @@ def _reconstruct_sse_evidence(
         "sparse_graph_refresh",
         "self_correction",
         "replan_pending",
-        "replan_rejected",
         "replan_approved",
     ):
         reconstructed[name] = {
@@ -1383,7 +1381,6 @@ def _evaluate_external_sse_evidence(
     dynamic_controls = (
         ("self_correction", "VS01-DYN-003", None),
         ("replan_pending", "VS01-DYN-004", "PENDING"),
-        ("replan_rejected", "VS01-DYN-005", "REJECTED"),
         ("replan_approved", "VS01-DYN-006", "APPROVED"),
     )
     dynamic_evidence: dict[str, JsonObject] = {}
@@ -1429,7 +1426,7 @@ def _evaluate_external_sse_evidence(
         outcomes[control_id] = _pass(summary, item_evidence)
         dynamic_evidence[control_id] = item_evidence
     outcomes["VS01-DYN-007"] = _pass(
-        "real correction and pending/rejected/approved Replan captures proved "
+        "real correction and pending/approved Replan captures proved "
         "exclusive graph authority",
         {"validated_controls": sorted(dynamic_evidence)},
     )
@@ -2256,6 +2253,7 @@ def _browser_scenario(
     checkpoint_b: Any,
     projection_b: Mapping[str, Any],
     alternate: Mapping[str, Any],
+    financial: Mapping[str, Any],
 ) -> JsonObject:
     object_request = config["object_a"]
     tasks = projection_b.get("tasks")
@@ -2285,10 +2283,55 @@ def _browser_scenario(
             ],
         },
         "alternate": dict(alternate),
+        "financial": dict(financial),
         "backendUnavailableFrontendUrl": config["frontend_unavailable"]["url"],
         "primaryApiBaseUrl": config["frontend_api_base_url"],
         "unavailableApiBaseUrl": config["frontend_unavailable_api_base_url"],
     }
+
+
+def _browser_financial_scenario(
+    transport: UrllibJsonTransport,
+    *,
+    object_id: str,
+    run_id: str,
+) -> JsonObject:
+    response = transport.request(
+        "GET",
+        f"/api/research-runs/{quote(run_id, safe='')}/result",
+        headers={"X-Phase4-Contract-Version": CORE_CONTRACT_VERSION},
+    )
+    if response.status_code != 200:
+        raise GateError("released financial Run is unavailable for browser evidence")
+    body = response.json_object()
+    metrics = body.get("metrics")
+    if not isinstance(metrics, list):
+        raise GateError("released result omitted its financial metrics")
+    for metric in metrics:
+        if not isinstance(metric, dict):
+            continue
+        metric_id = metric.get("metric_id")
+        metric_run_id = metric.get("run_id")
+        canonical = metric.get("canonical_value")
+        if (
+            isinstance(metric_id, str)
+            and metric_id
+            and metric_run_id == run_id
+            and isinstance(canonical, str)
+            and canonical
+        ):
+            try:
+                numeric = float(canonical)
+            except ValueError:
+                continue
+            if math.isfinite(numeric) and str(numeric) != canonical:
+                return {
+                    "objectId": object_id,
+                    "runId": run_id,
+                    "metricId": metric_id,
+                    "adversarialProperty": "NUMBER_STRING_ROUNDTRIP_CHANGES",
+                }
+    raise GateError("released result lacks an adversarial canonical decimal")
 
 
 def _playwright_control_evidence(path: Path) -> dict[str, JsonObject]:
@@ -2756,12 +2799,18 @@ def _run_integrated(
             config_a,
             report_a.checkpoint.object_id,
         )
+        browser_financial = _browser_financial_scenario(
+            transport,
+            object_id=report_a.checkpoint.object_id,
+            run_id=report_a.checkpoint.run_id,
+        )
         scenario = _browser_scenario(
             config,
             report_a.checkpoint,
             report_b.checkpoint,
             projection_b,
             browser_alternate,
+            browser_financial,
         )
         scenario_path = execution_root / "browser-scenario.json"
         write_json(scenario_path, scenario)

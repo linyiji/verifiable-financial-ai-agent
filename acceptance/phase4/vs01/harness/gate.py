@@ -1225,7 +1225,7 @@ def _named_readiness(manifest: Mapping[str, Any], harness_ready: bool) -> dict[s
         "STALE_STREAM_TEST": ready("VS01-REC-008"),
         "SELF_CORRECTION_INVARIANT_TEST": ready("VS01-DYN-003"),
         "CONTROLLED_REPLAN_TEST": ready(
-            "VS01-DYN-004", "VS01-DYN-005", "VS01-DYN-006", "VS01-DYN-007"
+            "VS01-DYN-004", "VS01-DYN-006", "VS01-DYN-007"
         ),
     }
 

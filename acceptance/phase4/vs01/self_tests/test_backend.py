@@ -1017,8 +1017,20 @@ def test_projection_rejects_invalid_path_change_and_release_summary_combinations
             "resolved_at": NOW,
         }
     ]
-    with pytest.raises(ContractViolation, match="wire fields are not frozen"):
+    with pytest.raises(ContractViolation, match="fields differ"):
         _validate_projection_fixture(unfrozen_edge)
+
+    promoted_edge = copy.deepcopy(unfrozen_edge)
+    promoted_edge["path_changes"][0]["operations"] = [
+        {
+            "operation": "add_edge",
+            "task_id": "TASK-VS01",
+            "dependency_task_id": "TASK-VS01",
+        }
+    ]
+    promoted_edge["graph_version"] = 2
+    promoted_edge["actual_graph"]["version"] = 2
+    _validate_projection_fixture(promoted_edge)
 
     released = _terminal_projection("RELEASED")
     released["review"]["status"] = "BLOCK"
