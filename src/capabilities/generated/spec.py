@@ -25,6 +25,7 @@ GENERATED_CAPABILITY_SPEC_VERSION = "GeneratedCapabilitySpecV1"
 GENERATED_CAPABILITY_COMPILER_ID = "vfas-generated-capability-compiler"
 GENERATED_CAPABILITY_COMPILER_VERSION = "1"
 GENERATED_CAPABILITY_RUNTIME_POLICY = "python3.11-decimal-sandbox-v1"
+GENERATED_CAPABILITY_SPEC_CANONICAL_PROFILE = "GC_SPEC_CANONICAL_JSON_V1"
 DECIMAL_PROFILE_ID = "DECIMAL_STR_EXACT_V1"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
@@ -87,6 +88,17 @@ class GeneratedCapabilitySpecV1(DomainModel):
     methodology: GeneratedMethodologyMetadataV1
     allowed_dependencies: list[str]
 
+    @field_validator("input_fields")
+    @classmethod
+    def reject_duplicate_input_fields(
+        cls,
+        values: list[CodeBuilderSchemaField],
+    ) -> list[CodeBuilderSchemaField]:
+        names = [item.name for item in values]
+        if len(names) != len(set(names)):
+            raise ValueError("input field names must be unique")
+        return values
+
 
 class GeneratedCapabilitySpecValidationError(ValueError):
     def __init__(self, findings: list[GCValidationFinding]):
@@ -131,11 +143,11 @@ class GeneratedCapabilitySpecValidator:
                 )
         comparisons = (
             (
-                spec.input_fields,
-                expected.input_fields,
+                _schema_field_mapping(spec.input_fields),
+                _schema_field_mapping(expected.input_fields),
                 "GC_SPEC_INPUT_SCHEMA_MISMATCH",
                 "input_fields",
-                "exact owned input fields",
+                "exact owned named input fields",
             ),
             (
                 spec.output.value_type,
@@ -250,7 +262,18 @@ class GeneratedCapabilityCompilerV1:
             methodology=spec.methodology.methodology_id,
             declared_dependencies=list(spec.allowed_dependencies),
         )
-        output = self._output_validator.validate(request, bundle)
+        # The persisted requirement represents schemas as JSON objects, whose
+        # member order PostgreSQL JSONB is free to change. After semantic Spec
+        # validation, compile/validate against the Spec's explicit input list
+        # and the compiler-owned output list. This leaves one byte-order
+        # authority and does not relax any name/type constraint.
+        compiler_request = request.model_copy(
+            update={
+                "input_schema": list(spec.input_fields),
+                "output_schema": list(bundle.output_schema),
+            }
+        )
+        output = self._output_validator.validate(compiler_request, bundle)
         return CompiledGeneratedCapabilityV1(
             output=output,
             spec_bytes=spec_bytes,
@@ -259,12 +282,32 @@ class GeneratedCapabilityCompilerV1:
 
 
 def canonical_spec_bytes(spec: GeneratedCapabilitySpecV1) -> bytes:
+    """Serialize ``spec`` under ``GC_SPEC_CANONICAL_JSON_V1``.
+
+    JSON object member order is non-semantic and is recursively sorted by the
+    encoder. Array order is retained exactly, as required for ordered Formula
+    IR and every other Spec list. Pydantic's JSON-mode representation remains
+    the sole authority for the existing owned numeric representation.
+    """
+
     return json.dumps(
         spec.model_dump(mode="json"),
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
+
+
+def _schema_field_mapping(fields: list[CodeBuilderSchemaField]) -> dict[str, str]:
+    """Compare named-object schemas without inheriting JSON object key order.
+
+    Generated functions accept one ``inputs`` mapping rather than positional
+    arguments. The Spec's explicit list remains the sole compiler ordering
+    authority; a request reconstructed from a JSONB object is only an owned
+    name/type constraint and must not introduce a second ordering authority.
+    """
+
+    return {field.name: field.type for field in fields}
 
 
 def expected_spec(request: GeneratedCapabilityRequestV1) -> GeneratedCapabilitySpecV1:

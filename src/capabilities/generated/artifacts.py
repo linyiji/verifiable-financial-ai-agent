@@ -209,6 +209,7 @@ class GeneratedCapabilityArtifactStore:
             GENERATED_CAPABILITY_COMPILER_ID,
             GENERATED_CAPABILITY_COMPILER_VERSION,
             GENERATED_CAPABILITY_RUNTIME_POLICY,
+            GENERATED_CAPABILITY_SPEC_CANONICAL_PROFILE,
             GeneratedCapabilityCompilerV1,
             canonical_spec_bytes,
             decode_generated_capability_spec,
@@ -225,6 +226,15 @@ class GeneratedCapabilityArtifactStore:
             or reconstructed.compiler_runtime_policy != GENERATED_CAPABILITY_RUNTIME_POLICY
         ):
             raise GeneratedArtifactRetentionError("retained compiler identity is unsupported")
+        manifest = self._read_spec_manifest(record)
+        if (
+            manifest is None
+            or manifest.get("canonicalization_profile")
+            != GENERATED_CAPABILITY_SPEC_CANONICAL_PROFILE
+        ):
+            raise GeneratedArtifactRetentionError(
+                "retained Spec canonicalization profile is unsupported"
+            )
         try:
             raw = json.loads(reconstructed.spec_bytes.decode("utf-8", errors="strict"))
             spec = decode_generated_capability_spec(raw)
@@ -250,6 +260,10 @@ class GeneratedCapabilityArtifactStore:
         record: GeneratedCapabilityArtifactRecord,
         candidate: GeneratedCapabilityCandidate,
     ) -> None:
+        from src.capabilities.generated.spec import (
+            GENERATED_CAPABILITY_SPEC_CANONICAL_PROFILE,
+        )
+
         values = (
             candidate.spec_bytes,
             candidate.spec_sha256,
@@ -264,6 +278,7 @@ class GeneratedCapabilityArtifactStore:
         spec_ref = self._put(candidate.spec_sha256, candidate.spec_bytes)
         manifest = {
             "schema_version": "generated-capability-reconstruction/v1",
+            "canonicalization_profile": GENERATED_CAPABILITY_SPEC_CANONICAL_PROFILE,
             "run_id": record.run_id,
             "build_id": record.build_id,
             "implementation_hash": record.implementation_hash,
@@ -289,6 +304,11 @@ class GeneratedCapabilityArtifactStore:
 
     @staticmethod
     def _validate_spec_preimage(candidate: GeneratedCapabilityCandidate) -> None:
+        from src.capabilities.generated.spec import (
+            canonical_spec_bytes,
+            decode_generated_capability_spec,
+        )
+
         values = (
             candidate.spec_bytes,
             candidate.spec_sha256,
@@ -306,16 +326,12 @@ class GeneratedCapabilityArtifactStore:
             raise GeneratedArtifactRetentionError("generated Spec hash does not match exact bytes")
         try:
             decoded = json.loads(candidate.spec_bytes.decode("utf-8", errors="strict"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            spec = decode_generated_capability_spec(decoded)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             raise GeneratedArtifactRetentionError(
                 "generated Spec bytes are not canonical JSON"
             ) from exc
-        canonical = json.dumps(
-            decoded,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
+        canonical = canonical_spec_bytes(spec)
         if not isinstance(decoded, dict) or canonical != candidate.spec_bytes:
             raise GeneratedArtifactRetentionError("generated Spec bytes are not canonical JSON")
 
@@ -350,6 +366,7 @@ class GeneratedCapabilityArtifactStore:
                 "generated reconstruction manifest identity mismatch"
             )
         required = {
+            "canonicalization_profile",
             "spec_artifact_ref",
             "spec_sha256",
             "spec_size_bytes",

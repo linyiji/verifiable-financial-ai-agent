@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 
 import pytest
@@ -239,7 +240,88 @@ def test_spec_compiler_preimage_reconstructs_exact_accepted_source_and_tests(tmp
     assert reconstructed.compiler_runtime_policy == compiled.runtime_policy
     assert reconstructed.source_bytes == compiled.output.source_code.encode("utf-8")
     assert reconstructed.test_bytes == compiled.output.unit_tests.encode("utf-8")
+    sandbox_request = reconstructed.sandbox_request({"audit_reconstruction": "1"})
+    assert sandbox_request.source.encode("utf-8") == reconstructed.source_bytes
+    assert sandbox_request.test_source.encode("utf-8") == reconstructed.test_bytes
+    assert sandbox_request.fixture == {"audit_reconstruction": "1"}
     assert len(list((store.root / "blobs" / "sha256").iterdir())) == 3
+
+
+def test_spec_reconstruction_accepts_jsonb_reordered_owned_input_mapping(tmp_path) -> None:
+    request = GeneratedCapabilityRequestV1.from_build_request(build_request())
+    compiled = GeneratedCapabilityCompilerV1().compile(request, expected_spec(request))
+    candidate = GeneratedCapabilityCandidate(
+        build_id=build_request().build_id,
+        output=compiled.output,
+        implementation_hash=generated_text_sha256(compiled.output.source_code),
+        provider="mimo",
+        requested_model="mimo-v2.5",
+        actual_model="mimo-v2.5",
+        attempted_models=("mimo-v2.5",),
+        input_tokens=1,
+        output_tokens=1,
+        latency_ms=1.0,
+        spec_bytes=compiled.spec_bytes,
+        spec_sha256=compiled.spec_sha256,
+        compiler_id=compiled.compiler_id,
+        compiler_version=compiled.compiler_version,
+        compiler_runtime_policy=compiled.runtime_policy,
+    )
+    store = GeneratedCapabilityArtifactStore(tmp_path / "generated")
+    record = store.retain(
+        run_id="RUN-EXACT",
+        generated=_generated(candidate),
+        candidate=candidate,
+        runtime_image_identity=RUNTIME_IMAGE,
+    )
+    reordered_request = request.model_copy(
+        update={"input_schema": list(reversed(request.input_schema))}
+    )
+
+    reconstructed = store.reconstruct_from_spec(record, reordered_request)
+
+    assert reconstructed.source_bytes == compiled.output.source_code.encode("utf-8")
+    assert reconstructed.test_bytes == compiled.output.unit_tests.encode("utf-8")
+
+
+def test_spec_reconstruction_rejects_changed_compiler_version(tmp_path) -> None:
+    request = GeneratedCapabilityRequestV1.from_build_request(build_request())
+    compiled = GeneratedCapabilityCompilerV1().compile(request, expected_spec(request))
+    candidate = GeneratedCapabilityCandidate(
+        build_id=build_request().build_id,
+        output=compiled.output,
+        implementation_hash=generated_text_sha256(compiled.output.source_code),
+        provider="mimo",
+        requested_model="mimo-v2.5",
+        actual_model="mimo-v2.5",
+        attempted_models=("mimo-v2.5",),
+        input_tokens=1,
+        output_tokens=1,
+        latency_ms=1.0,
+        spec_bytes=compiled.spec_bytes,
+        spec_sha256=compiled.spec_sha256,
+        compiler_id=compiled.compiler_id,
+        compiler_version=compiled.compiler_version,
+        compiler_runtime_policy=compiled.runtime_policy,
+    )
+    store = GeneratedCapabilityArtifactStore(tmp_path / "generated")
+    record = store.retain(
+        run_id="RUN-EXACT",
+        generated=_generated(candidate),
+        candidate=candidate,
+        runtime_image_identity=RUNTIME_IMAGE,
+    )
+    manifest_path = store._manifest_path(record.run_id, record.build_id)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["compiler_version"] = "2"
+    os.chmod(manifest_path, 0o600)
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GeneratedArtifactRetentionError, match="compiler identity"):
+        store.reconstruct_from_spec(record, request)
 
 
 def test_configured_credential_is_rejected_from_spec_preimage(tmp_path) -> None:

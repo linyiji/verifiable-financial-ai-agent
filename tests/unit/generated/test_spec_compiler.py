@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 import pytest
 
@@ -8,6 +9,7 @@ from src.capabilities.generated.contract import GeneratedCapabilityRequestV1
 from src.capabilities.generated.spec import (
     GENERATED_CAPABILITY_COMPILER_ID,
     GENERATED_CAPABILITY_COMPILER_VERSION,
+    GENERATED_CAPABILITY_SPEC_CANONICAL_PROFILE,
     GeneratedCapabilityCompilerV1,
     GeneratedCapabilitySpecValidationError,
     GeneratedCapabilitySpecValidator,
@@ -41,6 +43,92 @@ def test_valid_spec_decodes_and_canonicalizes() -> None:
     assert spec.schema_version == "generated-capability-spec/v1"
     assert spec.capability_id == "free_cash_flow_margin"
     assert canonical_spec_bytes(spec) == canonical_spec_bytes(spec)
+
+
+def _reverse_object_members(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: _reverse_object_members(item)
+            for key, item in reversed(tuple(value.items()))
+        }
+    if isinstance(value, list):
+        return [_reverse_object_members(item) for item in value]
+    return value
+
+
+def test_canonical_profile_ignores_recursive_object_member_order() -> None:
+    original_value = spec_dict()
+    reordered_value = _reverse_object_members(original_value)
+    assert original_value == reordered_value
+
+    original = decode_generated_capability_spec(original_value)
+    reordered = decode_generated_capability_spec(reordered_value)
+    original_compiled = GeneratedCapabilityCompilerV1().compile(owned_request(), original)
+    reordered_compiled = GeneratedCapabilityCompilerV1().compile(owned_request(), reordered)
+
+    assert GENERATED_CAPABILITY_SPEC_CANONICAL_PROFILE == "GC_SPEC_CANONICAL_JSON_V1"
+    assert canonical_spec_bytes(original) == canonical_spec_bytes(reordered)
+    assert json.loads(canonical_spec_bytes(original)) == original_value
+    assert original_compiled.output.source_code.encode("utf-8") == (
+        reordered_compiled.output.source_code.encode("utf-8")
+    )
+    assert original_compiled.output.unit_tests.encode("utf-8") == (
+        reordered_compiled.output.unit_tests.encode("utf-8")
+    )
+
+
+def test_jsonb_request_object_reordering_does_not_create_input_order_semantics() -> None:
+    request = owned_request()
+    accepted_spec = expected_spec(request)
+    reordered_request = request.model_copy(
+        update={"input_schema": list(reversed(request.input_schema))}
+    )
+
+    original = GeneratedCapabilityCompilerV1().compile(request, accepted_spec)
+    reconstructed = GeneratedCapabilityCompilerV1().compile(
+        reordered_request,
+        accepted_spec,
+    )
+
+    assert original.spec_bytes == reconstructed.spec_bytes
+    assert original.output.source_code.encode("utf-8") == (
+        reconstructed.output.source_code.encode("utf-8")
+    )
+    assert original.output.unit_tests.encode("utf-8") == (
+        reconstructed.output.unit_tests.encode("utf-8")
+    )
+
+
+def test_ordered_formula_array_reordering_is_semantic_and_rejected() -> None:
+    value = spec_dict()
+    value["formula"] = list(reversed(value["formula"]))
+    reordered = decode_generated_capability_spec(value)
+
+    assert canonical_spec_bytes(reordered) != canonical_spec_bytes(expected_spec(owned_request()))
+    with pytest.raises(GeneratedCapabilitySpecValidationError) as captured:
+        GeneratedCapabilitySpecValidator().validate(owned_request(), reordered)
+
+    assert "GC_SPEC_FORMULA_MISMATCH" in captured.value.codes
+
+
+def test_changed_formula_operation_is_rejected() -> None:
+    value = spec_dict()
+    formula = list(value["formula"])
+    formula[-1] = {**formula[-1], "operation": "MULTIPLY"}
+    value["formula"] = formula
+
+    assert "GC_SPEC_FORMULA_MISMATCH" in validation_codes(formula=formula)
+
+
+def test_duplicate_input_names_fail_schema_decode() -> None:
+    value = spec_dict()
+    inputs = list(value["input_fields"])
+    value["input_fields"] = [*inputs, inputs[0]]
+
+    with pytest.raises(GeneratedCapabilitySpecValidationError) as captured:
+        decode_generated_capability_spec(value)
+
+    assert captured.value.codes == ("GC_SPEC_SCHEMA_INVALID",)
 
 
 @pytest.mark.parametrize(
