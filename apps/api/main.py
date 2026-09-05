@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -10,13 +12,18 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from apps.api.routes import router
+from src.adapters.fmp import FinancialProviderMode, FMPProvider, select_financial_provider
 from src.application.errors import ApplicationError
+from src.application.evidence_collection import LiveFMPEvidenceCollector
 from src.application.persistence import (
     SessionFactoryEvidenceRepository,
     SQLAlchemyApplicationRepository,
 )
 from src.application.service import ResearchApplicationService
+from src.infrastructure.config.settings import get_settings
 from src.infrastructure.database.base import Base
+from src.infrastructure.database.composition import create_postgresql_persistence
+from src.phase4_product.api import install_phase4_error_handlers
 
 
 def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
@@ -25,6 +32,34 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
         if service is not None:
             app.state.research_service = service
             yield
+            return
+        settings = get_settings()
+        if settings.database_url.startswith("postgresql"):
+            selection = select_financial_provider(
+                mode=FinancialProviderMode.FMP,
+                fmp_settings=settings.fmp,
+                fixture_path=Path("tests/fixtures/nvda_financials.json"),
+            )
+            if not isinstance(selection.provider, FMPProvider) or not selection.live:
+                raise RuntimeError("Phase 4 production composition requires live FMP evidence")
+            persistence = create_postgresql_persistence(settings.database)
+            evidence_collector = LiveFMPEvidenceCollector.with_local_artifacts(
+                provider=selection.provider,
+                repository=persistence.evidence_repository,
+                artifact_root=Path(settings.artifact_root) / "phase4-raw",
+            )
+            app.state.postgresql_persistence = persistence
+            app.state.research_service = ResearchApplicationService(
+                repository=persistence.application_repository,
+                evidence_repository=persistence.evidence_repository,
+                evidence_collector=evidence_collector,
+                event_store=persistence.event_store,
+                checkpoint_store=persistence.checkpoint_store,
+            )
+            try:
+                yield
+            finally:
+                await persistence.close()
             return
         engine = create_async_engine(
             "sqlite+aiosqlite:///:memory:",
@@ -51,6 +86,11 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.middleware("http")
+    async def issue_request_id(request: Request, call_next):
+        request.state.request_id = f"REQ-{uuid4()}"
+        return await call_next(request)
 
     @app.exception_handler(ApplicationError)
     async def application_error(request: Request, exc: ApplicationError) -> JSONResponse:
@@ -81,6 +121,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
         )
 
     app.include_router(router)
+    install_phase4_error_handlers(app)
 
     return app
 

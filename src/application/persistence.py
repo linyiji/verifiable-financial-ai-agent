@@ -4,10 +4,10 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
-    Integer,
     String,
     UniqueConstraint,
     delete,
@@ -98,7 +98,7 @@ class RuntimeEventRow(Base):
 
     event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     run_id: Mapped[str] = mapped_column(String(128), index=True)
-    sequence: Mapped[int] = mapped_column(Integer)
+    sequence: Mapped[int] = mapped_column(BigInteger)
     payload: Mapped[dict] = mapped_column(JSON)
 
 

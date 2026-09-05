@@ -205,6 +205,57 @@ export interface SafeRuntimeActivity {
   readonly traceBundleRefs?: readonly string[];
 }
 
+export interface NormalizedRuntimeEventV1 {
+  readonly eventContractVersion: "phase4-runtime-event/v1";
+  readonly eventId: string;
+  readonly runId: string;
+  readonly taskId: string | null;
+  readonly type: string;
+  readonly timestamp: string;
+  readonly sequence: number;
+  readonly payloadSchemaVersion: 1;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly graphVersion: number | null;
+  readonly effect: "PATCH_PROJECTION" | "REFRESH_PROJECTION" | "OBSERVATION_ONLY" | "TERMINAL";
+  readonly projectionRefreshRequired: boolean;
+}
+
+export type ConnectionState =
+  | Readonly<{ kind: "IDLE"; runId: string; lastSequence: number }>
+  | Readonly<{ kind: "CONNECTING"; runId: string; lastSequence: number; attempt: number }>
+  | Readonly<{
+      kind: "OPEN";
+      runId: string;
+      lastSequence: number;
+      lastHeartbeatAt: string | null;
+    }>
+  | Readonly<{
+      kind: "BACKOFF";
+      runId: string;
+      lastSequence: number;
+      attempt: number;
+      retryAt: string;
+      error: ErrorEnvelope;
+    }>
+  | Readonly<{
+      kind: "RECOVERING";
+      runId: string;
+      lastSequence: number;
+      reason:
+        | "CURSOR_REJECTED"
+        | "SEQUENCE_GAP"
+        | "UNKNOWN_EVENT"
+        | "SCHEMA_INCOMPATIBLE"
+        | "PROJECTION_MISMATCH";
+    }>
+  | Readonly<{ kind: "FAILED"; runId: string; lastSequence: number; error: ErrorEnvelope }>
+  | Readonly<{
+      kind: "TERMINAL";
+      runId: string;
+      lastSequence: number;
+      outcome: "SUCCESS" | "FAILURE" | "CANCELLED";
+    }>;
+
 export interface Phase4ResearchObjectDetail {
   readonly object: NormalizedObjectIdentity;
   readonly latestReleasedRunId: string | null;
@@ -339,7 +390,7 @@ export interface ResearchRunDetailV1 {
 /** Frozen 14-field Run record embedded in an atomic Run projection. */
 export type EmbeddedResearchRunV1 = Omit<
   ResearchRunDetailV1,
-  "terminal" | "projectionRevision" | "projectionSequence"
+  "projectionRevision" | "projectionSequence"
 >;
 
 export interface RunTaskProjection {
@@ -896,7 +947,8 @@ function decodeSafeJsonValue(
 ): SafeJsonValue {
   if (depth > limits.maxDepth) return fail(path, "safe JSON exceeds maximum nesting depth");
   consumeSafeJsonBudget(budget, limits, path);
-  if (value === null || typeof value === "boolean") return value;
+  if (value === null) return null;
+  if (typeof value === "boolean") return value;
   if (typeof value === "string") {
     return decodePublicText(value, path, true, limits.maxStringLength);
   }
@@ -2040,7 +2092,6 @@ function decodeEmbeddedResearchRunAt(value: unknown, path: string): EmbeddedRese
   ) {
     return fail(path, "Run timestamps contradict lifecycle order");
   }
-  const { terminal: _terminal, ...embeddedStatus } = statusFields;
   return freezeDeep({
     runId: decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`),
     researchObjectId: decodeOpaqueId(
@@ -2049,7 +2100,7 @@ function decodeEmbeddedResearchRunAt(value: unknown, path: string): EmbeddedRese
     ),
     goalId: decodeOpaqueId(field(input, "goal_id", path), `${path}.goal_id`),
     schemeId: decodeOpaqueId(field(input, "scheme_id", path), `${path}.scheme_id`),
-    ...embeddedStatus,
+    ...statusFields,
     asOf: decodeDate(field(input, "as_of", path), `${path}.as_of`),
     plannedGraphId: decodeNullableOpaqueId(
       field(input, "planned_graph_id", path),

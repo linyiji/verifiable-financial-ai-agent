@@ -343,7 +343,11 @@ function eventIdentity(record: UnknownRecord): SafeRuntimeEventIdentity {
   return {
     eventId: typeof record.event_id === "string" ? record.event_id : undefined,
     runId: typeof record.run_id === "string" ? record.run_id : undefined,
-    taskId: typeof record.task_id === "string" || record.task_id === null ? record.task_id : undefined,
+    taskId: typeof record.task_id === "string"
+      ? record.task_id
+      : record.task_id === null
+        ? null
+        : undefined,
     type: typeof record.type === "string" ? record.type : undefined,
     sequence: typeof record.sequence === "number" && Number.isSafeInteger(record.sequence)
       ? record.sequence

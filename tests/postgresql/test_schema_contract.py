@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import CheckConstraint, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, UniqueConstraint
 
 from src.application import persistence as application_persistence  # noqa: F401
 from src.data import persistence as data_persistence  # noqa: F401
@@ -48,6 +48,7 @@ def test_durable_metadata_contains_every_required_record_table() -> None:
 
 def test_runtime_event_metadata_and_trigger_enforce_sequence_contract() -> None:
     table = Base.metadata.tables["runtime_events"]
+    counter = Base.metadata.tables["runtime_event_counters"]
     unique_columns = {
         tuple(column.name for column in constraint.columns)
         for constraint in table.constraints
@@ -60,6 +61,8 @@ def test_runtime_event_metadata_and_trigger_enforce_sequence_contract() -> None:
     }
 
     assert ("run_id", "sequence") in unique_columns
+    assert isinstance(table.c.sequence.type, BigInteger)
+    assert isinstance(counter.c.last_sequence.type, BigInteger)
     assert "sequence > 0" in checks
     assert "ON CONFLICT (run_id) DO UPDATE" in POSTGRES_EVENT_SEQUENCE_FUNCTION_SQL
     assert "last_sequence = runtime_event_counters.last_sequence + 1" in (

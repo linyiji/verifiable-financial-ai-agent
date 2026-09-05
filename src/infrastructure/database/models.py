@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -46,7 +47,7 @@ class RuntimeEventCounterRow(Base):
     __tablename__ = "runtime_event_counters"
 
     run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    last_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    last_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class TaskDependencyRow(Base):
