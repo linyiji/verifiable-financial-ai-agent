@@ -25,6 +25,7 @@ from src.application.service import ResearchApplicationService
 from src.domain.enums import EvidenceStatus, ProofStatus, ReplanDecision, RunStatus, TaskOrigin
 from src.domain.runtime_event import RuntimeEventType
 from src.infrastructure.database.base import Base
+from src.phase4_product.projections import project_path_change
 
 
 async def completed_service() -> tuple[ResearchApplicationService, str]:
@@ -65,7 +66,12 @@ async def test_offline_vertical_slice_uses_every_frozen_boundary() -> None:
     }
     assert all(item.input_evidence_ids for item in aggregate.artifacts.calculations)
     assert len(aggregate.artifacts.corrections) == 1
-    assert aggregate.artifacts.corrections[0].task_id.endswith(":fundamentals")
+    correction = aggregate.artifacts.corrections[0]
+    assert correction.task_id.endswith(":fundamentals")
+    assert correction.resolved_at is not None
+    assert correction.created_at == correction.resolved_at
+    projected_correction = project_path_change(correction, expected_run_id=run_id)
+    assert projected_correction.created_at == projected_correction.resolved_at
     assert len(aggregate.artifacts.replans) == 1
     assert aggregate.artifacts.replans[0].decision is ReplanDecision.APPROVED
     child = next(

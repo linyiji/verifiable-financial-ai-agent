@@ -212,6 +212,7 @@ class IntegratedTaskExecutor:
                     event_type=RuntimeEventType.TASK_SELF_CORRECTING,
                     payload={"problem_code": "PERIOD_MISMATCH", "error": type(exc).__name__},
                 )
+                correction_timestamp = datetime.now(UTC)
                 correction = CorrectionRecord(
                     correction_id=correction_id,
                     run_id=task.run_id,
@@ -223,7 +224,8 @@ class IntegratedTaskExecutor:
                     input_refs=[ebitda.evidence_id, mismatch.evidence_id],
                     output_refs=[current.evidence_id],
                     status=CorrectionStatus.RESOLVED,
-                    resolved_at=datetime.now(UTC),
+                    created_at=correction_timestamp,
+                    resolved_at=correction_timestamp,
                 )
                 self._aggregate.artifacts.corrections.append(correction)
                 await self._service.event_store.emit(
