@@ -10,6 +10,7 @@ import {
   decodeResearchObjectCollection,
   decodeResearchObjectDetail,
   decodeResearchRunDetail,
+  decodeReleasedResultProjection,
   decodeRunCollection,
   decodeRunProjection,
   decodeSafeJsonObject,
@@ -19,6 +20,7 @@ import {
   type PreparedResearchDraft,
   type ResearchObjectCollection,
   type ResearchRunDetailV1,
+  type ReleasedResultProjectionV1,
   type RunProjection
 } from "../types/domain";
 import type {
@@ -285,6 +287,21 @@ export class HttpFrontendDataSource implements Phase4FrontendDataSource {
           );
         }
       }
+    });
+  }
+
+  getReleasedResult(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ReleasedResultProjectionV1> {
+    const expectedRunId = requiredText(runId, "runId");
+    return this.client.requestJson({
+      method: "GET",
+      path: phase4ApiRoutes.runResult(expectedRunId),
+      expectedStatuses: [200],
+      signal: options?.signal,
+      decode: (value) => decodeReleasedResultProjection(value, expectedRunId, expectedObjectId)
     });
   }
 

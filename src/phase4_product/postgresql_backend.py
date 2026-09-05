@@ -60,9 +60,12 @@ from src.phase4_product.contracts import (
     ConfirmResearchRunRequestV1,
     ConfirmRunResponseV1,
     CreateResearchObjectRequestV1,
-    OwnedAvailabilityRefV1,
+    ArtifactSummaryV1,
+    ExecutionSummaryV1,
     PrepareResearchRunRequestV1,
     ProofSummaryV1,
+    ResultSummaryV1,
+    ReviewSummaryV1,
     ResearchObjectCollectionV1,
     ResearchObjectDetailV1,
     ResearchRunCollectionV1,
@@ -759,18 +762,18 @@ class PostgreSQLPhase4ProductBackend:
                 terminal_outcome="SUCCESS",
                 safe_failure=None,
             ),
-            review=OwnedAvailabilityRefV1(
+            review=ReviewSummaryV1(
                 availability=available,
                 review_id=review.review_id,
                 status=review.status.value,
             ),
-            result=OwnedAvailabilityRefV1(
+            result=ResultSummaryV1(
                 availability=available,
                 released_result_id=released.result_id,
                 canonical_record_id=canonical.record_id,
                 released_at=released.released_at,
             ),
-            artifacts=OwnedAvailabilityRefV1(
+            artifacts=ArtifactSummaryV1(
                 availability=available,
                 report_id=released.result_id,
                 representation_ids=(f"REPORT-{run.run_id}-HTML",),
@@ -780,7 +783,7 @@ class PostgreSQLPhase4ProductBackend:
                 policy="NOT_REQUIRED",
                 status="NOT_REQUIRED",
             ),
-            execution=OwnedAvailabilityRefV1(
+            execution=ExecutionSummaryV1(
                 availability=available,
                 canonical_record_id=canonical.record_id,
             ),

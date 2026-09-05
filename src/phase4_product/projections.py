@@ -58,13 +58,16 @@ from src.phase4_product.contracts import (
     MethodParameterV1,
     MetricProofProjectionV1,
     ObjectIdentityV1,
-    OwnedAvailabilityRefV1,
+    ArtifactSummaryV1,
+    ExecutionSummaryV1,
     PathChangeProjectionV1,
     ProofSummaryV1,
     ProofTraceRefV1,
     ReleasedFinancialMetricProjectionV1,
     ReleasedObjectCoreV1,
     ReleasedResultProjectionV1,
+    ResultSummaryV1,
+    ReviewSummaryV1,
     ReportArtifactGroupV1,
     ResearchRunCollectionV1,
     ResearchRunDetailV1,
@@ -2653,12 +2656,12 @@ def build_atomic_run_projection(
     if status.terminal != (run_projection.completed_at is not None):
         raise ProjectionIntegrityError("Run terminal state and completed_at disagree")
 
-    review_summary = OwnedAvailabilityRefV1(
+    review_summary = ReviewSummaryV1(
         availability=review_availability,
         review_id=review_projection.review_id if review_projection is not None else None,
         status=review_projection.status if review_projection is not None else None,
     )
-    result_summary = OwnedAvailabilityRefV1(
+    result_summary = ResultSummaryV1(
         availability=result_availability,
         released_result_id=(
             released_result_projection.released_result_id
@@ -2676,7 +2679,7 @@ def build_atomic_run_projection(
             else None
         ),
     )
-    artifact_summary = OwnedAvailabilityRefV1(
+    artifact_summary = ArtifactSummaryV1(
         availability=artifact_availability,
         report_id=artifact_group.report_id if artifact_group is not None else None,
         representation_ids=tuple(
@@ -2687,7 +2690,7 @@ def build_atomic_run_projection(
         if artifact_group is not None
         else (),
     )
-    execution_summary = OwnedAvailabilityRefV1(
+    execution_summary = ExecutionSummaryV1(
         availability=execution_availability,
         canonical_record_id=(
             execution_projection.canonical_record_id if execution_projection is not None else None

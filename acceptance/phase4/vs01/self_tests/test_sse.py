@@ -191,6 +191,12 @@ def _task(
         "skill_id": "fundamental-analysis-v1",
         "origin": "PLAN",
         "reason_code": None,
+        "attempt_count": 1,
+        "task_input_evidence_ids": [],
+        "task_output_evidence_ids": [],
+        "evidence_acquisition_status": None,
+        "evidence_source_coverage": {},
+        "created_at": NOW,
     }
 
 

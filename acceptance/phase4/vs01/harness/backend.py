@@ -92,10 +92,6 @@ TASK_REQUIRED_FIELDS = frozenset(
         "reason_code",
         "status",
         "progress",
-    }
-)
-TASK_APPROVED_OPTIONAL_FIELDS = frozenset(
-    {
         "attempt_count",
         "task_input_evidence_ids",
         "task_output_evidence_ids",
@@ -104,6 +100,7 @@ TASK_APPROVED_OPTIONAL_FIELDS = frozenset(
         "created_at",
     }
 )
+TASK_APPROVED_OPTIONAL_FIELDS = frozenset()
 ACTIVITY_FIELDS = frozenset(
     {"event_id", "type", "sequence", "timestamp", "task_id", "message_code"}
 )
@@ -123,6 +120,30 @@ ACTIVITY_PROJECTION_OPTIONAL_FIELDS = frozenset(
         "proof_refs",
         "artifact_refs",
         "trace_bundle_refs",
+    }
+)
+RELEASED_RESULT_FIELDS = frozenset(
+    {
+        "object_id",
+        "run_id",
+        "released_result_id",
+        "canonical_record_id",
+        "released_at",
+        "metrics",
+        "claims",
+        "material_calculation_dispositions",
+        "research_source_coverage",
+        "limitations",
+        "availability",
+    }
+)
+RELEASED_METRIC_FIELDS = frozenset(
+    {
+        "run_id", "metric_id", "name", "canonical_value", "canonical_unit",
+        "display_value", "display_unit", "period", "period_basis", "actuality", "as_of",
+        "currency", "formula_id", "capability_id", "calculation_id", "evidence_refs",
+        "claim_refs", "proof", "method_metadata", "technical_price_basis",
+        "corporate_action_status", "corporate_action_guard_refs", "limitations",
     }
 )
 TERMINAL_TASK_STATUSES = frozenset({"COMPLETED", "FAILED", "CAPABILITY_BUILD_FAILED", "CANCELLED"})
@@ -760,6 +781,42 @@ def validate_availability(value: Any, path: str) -> JsonObject:
     return availability
 
 
+def validate_released_result_projection(
+    body: JsonObject,
+    *,
+    expected_object_id: str,
+    expected_run_id: str,
+) -> tuple[JsonObject, ...]:
+    _exact_fields(body, set(RELEASED_RESULT_FIELDS), "released result")
+    _expect(body.get("object_id"), expected_object_id, "released result.object_id")
+    _expect(body.get("run_id"), expected_run_id, "released result.run_id")
+    _text(body.get("released_result_id"), "released result.released_result_id")
+    _text(body.get("canonical_record_id"), "released result.canonical_record_id")
+    _timestamp(body.get("released_at"), "released result.released_at")
+    availability = validate_availability(body.get("availability"), "released result.availability")
+    _expect(availability.get("status"), "AVAILABLE", "released result.availability.status")
+    metrics: list[JsonObject] = []
+    for index, value in enumerate(_list(body.get("metrics"), "released result.metrics")):
+        path = f"released result.metrics[{index}]"
+        metric = _mapping(value, path)
+        _exact_fields(metric, set(RELEASED_METRIC_FIELDS), path)
+        _expect(metric.get("run_id"), expected_run_id, f"{path}.run_id")
+        _text(metric.get("metric_id"), f"{path}.metric_id")
+        _text(metric.get("canonical_value"), f"{path}.canonical_value")
+        _assert_safe_public_json(metric, path)
+        metrics.append(metric)
+    for name in ("claims", "material_calculation_dispositions", "limitations"):
+        values = _list(body.get(name), f"released result.{name}")
+        _assert_safe_public_json(values, f"released result.{name}")
+    coverage = body.get("research_source_coverage")
+    if coverage is not None:
+        _assert_safe_public_json(
+            _mapping(coverage, "released result.research_source_coverage"),
+            "released result.research_source_coverage",
+        )
+    return tuple(metrics)
+
+
 def validate_research_object_detail(
     body: JsonObject,
     *,
@@ -769,35 +826,73 @@ def validate_research_object_detail(
     _exact_fields(
         body,
         {
-            "object_id",
-            "object_type",
-            "symbol",
-            "company_name",
-            "exchange",
-            "sector",
-            "currency",
-            "identity_version",
+            "object",
+            "latest_released_run_id",
+            "released_result_availability",
+            "run_count",
+            "last_activity",
             "created_at",
             "updated_at",
         },
-        "object",
+        "object detail",
     )
-    object_id = _text(body.get("object_id"), "object.object_id")
+    object_body = _mapping(body.get("object"), "object detail.object")
+    _validate_projection_object(
+        object_body,
+        expected_object_id=(
+            expected_object_id
+            if expected_object_id is not None
+            else _text(object_body.get("object_id"), "object detail.object.object_id")
+        ),
+    )
+    object_id = _text(object_body.get("object_id"), "object detail.object.object_id")
     if expected_object_id is not None:
-        _expect(object_id, expected_object_id, "object.object_id")
-    _expect(body.get("object_type"), "public_company", "object.object_type")
-    _text(body.get("symbol"), "object.symbol")
-    _text(body.get("company_name"), "object.company_name")
-    _text(body.get("exchange"), "object.exchange")
-    sector = body.get("sector")
-    if sector is not None and (not isinstance(sector, str) or not sector.strip()):
-        raise ContractViolation("object.sector must be null or a non-empty string")
-    _text(body.get("currency"), "object.currency")
-    _integer(body.get("identity_version"), "object.identity_version", minimum=1)
-    created_at = _timestamp(body.get("created_at"), "object.created_at")
-    updated_at = _timestamp(body.get("updated_at"), "object.updated_at")
+        _expect(object_id, expected_object_id, "object detail.object.object_id")
+    created_at = _timestamp(body.get("created_at"), "object detail.created_at")
+    updated_at = _timestamp(body.get("updated_at"), "object detail.updated_at")
     if updated_at < created_at:
-        raise ContractViolation("object.updated_at precedes object.created_at")
+        raise ContractViolation("object detail.updated_at precedes created_at")
+    run_count = _integer(body.get("run_count"), "object detail.run_count", minimum=0)
+    latest_run_id = body.get("latest_released_run_id")
+    if latest_run_id is not None:
+        _text(latest_run_id, "object detail.latest_released_run_id")
+    availability = validate_availability(
+        body.get("released_result_availability"),
+        "object detail.released_result_availability",
+    )
+    expected_release = (
+        ("NOT_RELEASED", "NO_RELEASED_RUN", False)
+        if latest_run_id is None
+        else ("AVAILABLE", None, False)
+    )
+    actual_release = (
+        availability.get("status"),
+        availability.get("reason_code"),
+        availability.get("retryable"),
+    )
+    if actual_release != expected_release:
+        raise ContractViolation(
+            "object detail released availability does not close to latest_released_run_id"
+        )
+    activity = body.get("last_activity")
+    if activity is not None:
+        activity_body = _mapping(activity, "object detail.last_activity")
+        _required_approved_fields(
+            activity_body,
+            ACTIVITY_FIELDS,
+            ACTIVITY_PROJECTION_OPTIONAL_FIELDS,
+            "object detail.last_activity",
+        )
+        _text(activity_body.get("event_id"), "object detail.last_activity.event_id")
+        _text(activity_body.get("type"), "object detail.last_activity.type")
+        _integer(activity_body.get("sequence"), "object detail.last_activity.sequence", minimum=1)
+        _timestamp(activity_body.get("timestamp"), "object detail.last_activity.timestamp")
+        if activity_body.get("task_id") is not None:
+            _text(activity_body.get("task_id"), "object detail.last_activity.task_id")
+        _text(activity_body.get("message_code"), "object detail.last_activity.message_code")
+        _assert_safe_public_json(activity_body, "object detail.last_activity")
+    if run_count == 0 and activity is not None:
+        raise ContractViolation("object detail without Runs cannot carry last_activity")
     _absent(
         body,
         {
@@ -807,13 +902,25 @@ def validate_research_object_detail(
             "comparison_dataset",
             "incremental_research_seed",
         },
-        "object",
+        "object detail",
     )
     if expected_request is not None:
-        _expect(body["symbol"], str(expected_request["symbol"]).strip().upper(), "object.symbol")
+        _expect(
+            object_body["symbol"],
+            str(expected_request["symbol"]).strip().upper(),
+            "object detail.object.symbol",
+        )
         for name in ("company_name", "exchange", "currency"):
-            _expect(body.get(name), expected_request[name], f"object.{name}")
-        _expect(body.get("sector"), expected_request.get("sector"), "object.sector")
+            _expect(
+                object_body.get(name),
+                expected_request[name],
+                f"object detail.object.{name}",
+            )
+        _expect(
+            object_body.get("sector"),
+            expected_request.get("sector"),
+            "object detail.object.sector",
+        )
     return object_id
 
 
@@ -907,12 +1014,16 @@ def validate_run_collection(body: JsonObject, *, expected_object_id: str) -> tup
         total = _integer(progress.get("total_tasks"), f"{path}.progress.total_tasks", minimum=0)
         if completed > total:
             raise ContractViolation(f"{path}.progress.completed_tasks exceeds total_tasks")
-        _number(progress.get("fraction"), f"{path}.progress.fraction", minimum=0, maximum=1)
+        fraction = _number(
+            progress.get("fraction"), f"{path}.progress.fraction", minimum=0, maximum=1
+        )
         graph_version = item.get("graph_version")
         if graph_version is not None:
             _integer(graph_version, f"{path}.graph_version", minimum=1)
         _integer(item.get("projection_revision"), f"{path}.projection_revision", minimum=1)
-        _integer(item.get("projection_sequence"), f"{path}.projection_sequence", minimum=0)
+        projection_sequence = _integer(
+            item.get("projection_sequence"), f"{path}.projection_sequence", minimum=0
+        )
         terminal = item.get("terminal")
         if not isinstance(terminal, bool) or terminal != (status in TERMINAL_RUN_STATUSES):
             raise ContractViolation(f"{path}.terminal is inconsistent with status")
@@ -935,7 +1046,15 @@ def validate_run_collection(body: JsonObject, *, expected_object_id: str) -> tup
             completed_at = _timestamp(completed_at, f"{path}.completed_at")
         if terminal != (completed_at is not None):
             raise ContractViolation(f"{path}.completed_at nullability disagrees with terminal")
+        if started_at is not None and started_at > updated_at:
+            raise ContractViolation(f"{path}.started_at follows updated_at")
+        if completed_at is not None and (
+            completed_at < (started_at or created_at) or completed_at > updated_at
+        ):
+            raise ContractViolation(f"{path}.completed_at is outside Run time bounds")
         activity = item.get("activity")
+        if (projection_sequence == 0) != (activity is None):
+            raise ContractViolation(f"{path}.activity presence disagrees with projection watermark")
         if activity is not None:
             activity_body = _mapping(activity, f"{path}.activity")
             _exact_fields(activity_body, set(ACTIVITY_FIELDS), f"{path}.activity")
@@ -944,13 +1063,45 @@ def validate_run_collection(body: JsonObject, *, expected_object_id: str) -> tup
             activity_sequence = _integer(
                 activity_body.get("sequence"), f"{path}.activity.sequence", minimum=1
             )
-            if activity_sequence > item["projection_sequence"]:
-                raise ContractViolation(f"{path}.activity.sequence exceeds projection watermark")
-            _timestamp(activity_body.get("timestamp"), f"{path}.activity.timestamp")
+            if activity_sequence != projection_sequence:
+                raise ContractViolation(f"{path}.activity.sequence must equal projection watermark")
+            activity_timestamp = _timestamp(
+                activity_body.get("timestamp"), f"{path}.activity.timestamp"
+            )
+            if activity_timestamp < created_at or activity_timestamp > updated_at:
+                raise ContractViolation(f"{path}.activity.timestamp is outside Run time bounds")
             if activity_body.get("task_id") is not None:
                 _text(activity_body.get("task_id"), f"{path}.activity.task_id")
             _text(activity_body.get("message_code"), f"{path}.activity.message_code")
-        validate_availability(item.get("result_availability"), f"{path}.result_availability")
+            activity_type = activity_body.get("type")
+            if status == "RELEASED":
+                _expect(activity_type, "run.completed", f"{path}.activity.type")
+            elif status in {"FAILED", "CANCELLED"}:
+                _expect(activity_type, "run.failed", f"{path}.activity.type")
+            elif activity_type in {"run.completed", "run.failed"}:
+                raise ContractViolation(f"{path}.activity.type contradicts nonterminal status")
+            if activity_type == "run.started" and (
+                status != "RUNNING" or started_at is None or activity_timestamp != started_at
+            ):
+                raise ContractViolation(f"{path}.activity run.started does not close to Run state")
+        if status != "RELEASED" and total == 0 and fraction != 0:
+            raise ContractViolation(f"{path}.progress.fraction must be zero without Tasks")
+        if status in {"FAILED", "CANCELLED"} and total > 0 and completed == total and fraction != 1:
+            raise ContractViolation(f"{path}.progress.fraction must be complete when all Tasks completed")
+        if not terminal and fraction == 1:
+            raise ContractViolation(f"{path}.progress.fraction cannot be complete for nonterminal Run")
+        if status == "RELEASED" and fraction != 1:
+            raise ContractViolation(f"{path}.progress.fraction must be complete for RELEASED Run")
+        availability = validate_availability(
+            item.get("result_availability"), f"{path}.result_availability"
+        )
+        availability_status = availability.get("status")
+        if terminal and availability_status == "PENDING":
+            raise ContractViolation(f"{path}.result_availability cannot remain PENDING when terminal")
+        if not terminal and availability_status != "PENDING":
+            raise ContractViolation(f"{path}.result_availability must remain PENDING when nonterminal")
+        if (status == "RELEASED") != (availability_status == "AVAILABLE"):
+            raise ContractViolation(f"{path}.result_availability must match RELEASED status exactly")
         run_ids.append(run_id)
         sort_keys.append((updated_at, run_id))
     if len(run_ids) != len(set(run_ids)):
@@ -2028,6 +2179,10 @@ def validate_atomic_run_projection(
                 raise ContractViolation("projection.review identity/status must be jointly present")
             if availability["status"] == "AVAILABLE" and any(item is None for item in review_tuple):
                 raise ContractViolation("projection.review AVAILABLE requires identity and status")
+            if (availability["status"] == "AVAILABLE") != (review_tuple[0] is not None):
+                raise ContractViolation(
+                    "projection.review identity/status must be present exactly when AVAILABLE"
+                )
         elif name == "result":
             released_at = summary.get("released_at")
             if released_at is not None:
@@ -2042,6 +2197,10 @@ def validate_atomic_run_projection(
                 raise ContractViolation("projection.result identity/time tuple is partial")
             if availability["status"] == "AVAILABLE" and present != 3:
                 raise ContractViolation("projection.result AVAILABLE requires full identity/time")
+            if (availability["status"] == "AVAILABLE") != (present == 3):
+                raise ContractViolation(
+                    "projection.result identity/time must be present exactly when AVAILABLE"
+                )
         elif name == "artifacts":
             representations = _list(
                 summary.get("representation_ids"),
@@ -2059,6 +2218,22 @@ def validate_atomic_run_projection(
                 raise ContractViolation(
                     "projection.artifacts AVAILABLE requires report and representation identities"
                 )
+            if (summary.get("report_id") is None) != (not representations):
+                raise ContractViolation(
+                    "projection.artifacts report and representation identities are partial"
+                )
+            if (availability["status"] == "AVAILABLE") != (
+                summary.get("report_id") is not None
+            ):
+                raise ContractViolation(
+                    "projection.artifacts identities must be present exactly when AVAILABLE"
+                )
+        elif name == "execution" and (availability["status"] == "AVAILABLE") != (
+            summary.get("canonical_record_id") is not None
+        ):
+            raise ContractViolation(
+                "projection.execution identity must be present exactly when AVAILABLE"
+            )
     proof = _mapping(body.get("proof"), "projection.proof")
     _exact_fields(proof, {"availability", "policy", "status", "proof_refs"}, "projection.proof")
     validate_availability(proof.get("availability"), "projection.proof.availability")
@@ -2242,7 +2417,7 @@ def check_object_and_initial_runs(
         headers=_contract_headers(idempotency_key=config.object_idempotency_key),
         json_body=config.object_request,
     )
-    created_body = _success_json(create, allowed_statuses=frozenset({200, 201}))
+    created_body = _success_json(create, allowed_statuses=frozenset({201}))
     object_id = validate_research_object_detail(
         created_body,
         expected_request=config.object_request,
@@ -2267,10 +2442,12 @@ def check_object_and_initial_runs(
         "sector",
         "currency",
         "identity_version",
-        "created_at",
     )
+    created_object = _mapping(created_body.get("object"), "created object detail.object")
+    exact_object = _mapping(exact_body.get("object"), "exact object detail.object")
     for name in immutable_names:
-        _expect(exact_body.get(name), created_body.get(name), f"object round trip.{name}")
+        _expect(exact_object.get(name), created_object.get(name), f"object round trip.{name}")
+    _expect(exact_body.get("created_at"), created_body.get("created_at"), "object round trip.created_at")
     return ObjectEvidence(
         object_id=object_id,
         object_body=exact_body,
@@ -2311,7 +2488,7 @@ def check_prepare_goal_scheme(
         headers=headers,
         json_body=prepare_body,
     )
-    first_body = _success_json(first, allowed_statuses=frozenset({200, 201}))
+    first_body = _success_json(first, allowed_statuses=frozenset({201}))
     draft = validate_research_run_draft(
         first_body,
         expected_object_id=object_evidence.object_id,
@@ -2325,7 +2502,7 @@ def check_prepare_goal_scheme(
         headers=headers,
         json_body=prepare_body,
     )
-    replay_body = _success_json(replay, allowed_statuses=frozenset({200, 201}))
+    replay_body = _success_json(replay, allowed_statuses=frozenset({201}))
     validate_research_run_draft(
         replay_body,
         expected_object_id=object_evidence.object_id,
@@ -2712,7 +2889,11 @@ def run_backend_vs01(
     checkpoint = RestartCheckpoint(
         object_id=object_evidence.object_id,
         object_identity={
-            name: object_evidence.object_body.get(name)
+            name: (
+                object_evidence.object_body.get("created_at")
+                if name == "created_at"
+                else _mapping(object_evidence.object_body.get("object"), "checkpoint.object").get(name)
+            )
             for name in (
                 "object_id",
                 "object_type",
@@ -2795,8 +2976,10 @@ def verify_restart_checkpoint(
         )
         object_body = _success_json(object_response, allowed_statuses=frozenset({200}))
         validate_research_object_detail(object_body, expected_object_id=checkpoint.object_id)
+        restart_object = _mapping(object_body.get("object"), "restart.object detail.object")
         for name, expected in checkpoint.object_identity.items():
-            _expect(object_body.get(name), expected, f"restart.object.{name}")
+            actual = object_body.get("created_at") if name == "created_at" else restart_object.get(name)
+            _expect(actual, expected, f"restart.object.{name}")
 
         run_response = active_transport.request(
             "GET",

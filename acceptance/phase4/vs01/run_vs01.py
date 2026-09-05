@@ -43,6 +43,7 @@ from acceptance.phase4.vs01.harness.backend import (
     run_backend_vs01,
     validate_confirm_response,
     validate_research_run_draft,
+    validate_released_result_projection,
     validate_run_collection,
     validate_standalone_run_detail,
     verify_restart_checkpoint,
@@ -2305,9 +2306,11 @@ def _browser_financial_scenario(
     if response.status_code != 200:
         raise GateError("released financial Run is unavailable for browser evidence")
     body = response.json_object()
-    metrics = body.get("metrics")
-    if not isinstance(metrics, list):
-        raise GateError("released result omitted its financial metrics")
+    metrics = validate_released_result_projection(
+        body,
+        expected_object_id=object_id,
+        expected_run_id=run_id,
+    )
     for metric in metrics:
         if not isinstance(metric, dict):
             continue

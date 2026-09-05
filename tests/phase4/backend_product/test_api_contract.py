@@ -25,9 +25,12 @@ from src.phase4_product.contracts import (
     GoalProjectionV1,
     GraphProjectionV1,
     ObjectIdentityV1,
-    OwnedAvailabilityRefV1,
+    ArtifactSummaryV1,
+    ExecutionSummaryV1,
     PrepareResearchRunRequestV1,
     ProofSummaryV1,
+    ResultSummaryV1,
+    ReviewSummaryV1,
     ResearchObjectDetailV1,
     ResearchRunDetailV1,
     ResponseMetaV1,
@@ -120,11 +123,9 @@ def _admission() -> RunAdmissionV1:
 
 
 def _projection() -> AtomicRunProjectionV1:
-    pending = OwnedAvailabilityRefV1(
-        availability=AvailabilityV1.unavailable(
-            AvailabilityStatus.PENDING,
-            "RUN_NONTERMINAL",
-        )
+    pending = AvailabilityV1.unavailable(
+        AvailabilityStatus.PENDING,
+        "RUN_NONTERMINAL",
     )
     progress = RunProgressV1(completed_tasks=0, total_tasks=0, fraction=0.0)
     return AtomicRunProjectionV1(
@@ -177,9 +178,9 @@ def _projection() -> AtomicRunProjectionV1:
             terminal_outcome=None,
             safe_failure=None,
         ),
-        review=pending,
-        result=pending,
-        artifacts=pending,
+        review=ReviewSummaryV1(availability=pending),
+        result=ResultSummaryV1(availability=pending),
+        artifacts=ArtifactSummaryV1(availability=pending),
         proof=ProofSummaryV1(
             availability=AvailabilityV1.unavailable(
                 AvailabilityStatus.PENDING,
@@ -188,7 +189,7 @@ def _projection() -> AtomicRunProjectionV1:
             policy="UNKNOWN",
             status=None,
         ),
-        execution=pending,
+        execution=ExecutionSummaryV1(availability=pending),
         terminal=TerminalStateV1(
             is_terminal=False,
             outcome=None,

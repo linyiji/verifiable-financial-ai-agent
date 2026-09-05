@@ -4,11 +4,11 @@ import { createPhase4Mutation } from "./data/FrontendDataSource";
 import { HttpFrontendDataSource } from "./data/HttpFrontendDataSource";
 import { SSERuntimeTransport } from "./runtime/SSERuntimeTransport";
 import {
-  PHASE4_CONTRACT_VERSION,
   type ConnectionState,
   type ErrorEnvelope,
   type NormalizedObjectIdentity,
   type PreparedResearchDraft,
+  type ReleasedFinancialMetricProjectionV1,
   type RunProjection
 } from "./types/domain";
 
@@ -25,7 +25,6 @@ type Lifecycle = {
   consumed?: { runId: string; requestEpoch: number; revision: number; sequence: number };
   discarded?: { runId: string; requestEpoch: number; revision: number; sequence: number; reason: string };
 };
-type MetricWire = { metric_id: string; run_id: string; canonical_value: string; name?: string };
 
 function pathRunId(): string | null {
   const match = /^\/runs\/([^/]+)$/u.exec(window.location.pathname);
@@ -70,7 +69,7 @@ export function Phase4Application() {
   const [error, setError] = useState<ErrorEnvelope | null>(null);
   const [quarantine, setQuarantine] = useState<string | null>(null);
   const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null);
-  const [results, setResults] = useState<readonly MetricWire[] | null>(null);
+  const [results, setResults] = useState<readonly ReleasedFinancialMetricProjectionV1[] | null>(null);
   const [resultTab, setResultTab] = useState(false);
   const epoch = useRef(0);
   const activeRun = useRef<string | null>(null);
@@ -257,23 +256,16 @@ export function Phase4Application() {
   const loadResults = async () => {
     if (!projection) return;
     setResultTab(true);
-    const response = await fetch(`${apiBase}/research-runs/${encodeURIComponent(projection.run.runId)}/result`, {
-      headers: { Accept: "application/json", "X-Phase4-Contract-Version": PHASE4_CONTRACT_VERSION }
-    });
-    if (!response.ok) return;
-    const body: unknown = await response.json();
-    if (typeof body !== "object" || body === null) return;
-    const raw = (body as { metrics?: unknown }).metrics;
-    if (!Array.isArray(raw)) return;
-    const admitted = raw.filter((item): item is MetricWire => {
-      if (typeof item !== "object" || item === null) return false;
-      const metric = item as Record<string, unknown>;
-      return typeof metric.metric_id === "string"
-        && typeof metric.run_id === "string"
-        && typeof metric.canonical_value === "string"
-        && metric.run_id === projection.run.runId;
-    });
-    setResults(admitted);
+    try {
+      const result = await source.getReleasedResult(
+        projection.run.runId,
+        projection.object.objectId
+      );
+      setResults(result.metrics);
+    } catch (caught) {
+      setResults(null);
+      setError(safeEnvelope(caught, projection.run.runId));
+    }
   };
 
   if (pathRunId() !== null || projection !== null || error?.error.resource?.type === "research_run") {
@@ -342,7 +334,7 @@ function Workspace({ projection, runIds, connection, lifecycle, resultTab, resul
   connection: ConnectionState;
   lifecycle: Lifecycle | null;
   resultTab: boolean;
-  results: readonly MetricWire[] | null;
+  results: readonly ReleasedFinancialMetricProjectionV1[] | null;
   onNavigate(runId: string): void;
   onResults(): void;
 }) {
@@ -364,7 +356,7 @@ function Workspace({ projection, runIds, connection, lifecycle, resultTab, resul
       <div className="tabs" role="tablist"><button type="button" role="tab" aria-selected={!resultTab}>Research Path</button><button type="button" role="tab" aria-selected={resultTab} data-testid="result-tab" onClick={onResults}>Results</button></div>
       {!resultTab ? <section data-testid="research-path" data-run-id={runId}>
         <h2>Research Path</h2><div className="task-grid">{projection.tasks.map((task) => <article className="task" key={task.taskId} data-testid="research-task" data-run-id={runId} data-task-id={task.taskId} data-task-status={task.backendStatus} data-task-progress={String(task.progress)} data-parent-task-id={task.parentTaskId ?? ""} data-dependency-ids={JSON.stringify(task.dependencies)}><strong>{task.taskType}</strong><div>{task.backendStatus}</div><div className="muted">{task.taskId}</div></article>)}</div>
-      </section> : <section className="metric-list">{results?.map((metric) => <article className="metric" key={metric.metric_id} data-testid="released-financial-metric" data-metric-id={metric.metric_id} data-run-id={metric.run_id} data-canonical-value={metric.canonical_value}><strong>{metric.name ?? metric.metric_id}</strong><span data-testid="canonical-financial-value">{metric.canonical_value}</span></article>)}</section>}
+      </section> : <section className="metric-list">{results?.map((metric) => <article className="metric" key={metric.metricId} data-testid="released-financial-metric" data-metric-id={metric.metricId} data-run-id={metric.runId} data-canonical-value={metric.canonicalValue}><strong>{metric.name}</strong><span data-testid="canonical-financial-value">{metric.canonicalValue}</span></article>)}</section>}
     </section>
   </div>;
 }

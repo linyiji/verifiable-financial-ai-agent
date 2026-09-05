@@ -12,8 +12,11 @@ from src.phase4_product.contracts import (
     GoalProjectionV1,
     GraphProjectionV1,
     ObjectIdentityV1,
-    OwnedAvailabilityRefV1,
+    ArtifactSummaryV1,
+    ExecutionSummaryV1,
     ProofSummaryV1,
+    ResultSummaryV1,
+    ReviewSummaryV1,
     ResearchRunDetailV1,
     ResearchRunDraftV1,
     RunAdmissionV1,
@@ -73,17 +76,15 @@ def _task(*, run_id: str = "RUN-A") -> TaskProjectionV1:
 
 
 def _projection_payload() -> dict[str, object]:
-    pending_review = OwnedAvailabilityRefV1(
+    pending_review = ReviewSummaryV1(
         availability=AvailabilityV1.unavailable(
             AvailabilityStatus.PENDING,
             "REVIEW_PENDING",
         )
     )
-    not_generated = OwnedAvailabilityRefV1(
-        availability=AvailabilityV1.unavailable(
-            AvailabilityStatus.NOT_GENERATED,
-            "NOT_GENERATED",
-        )
+    not_generated = AvailabilityV1.unavailable(
+        AvailabilityStatus.NOT_GENERATED,
+        "NOT_GENERATED",
     )
     progress = RunProgressV1(completed_tasks=0, total_tasks=1, fraction=0.25)
     task = _task()
@@ -143,8 +144,8 @@ def _projection_payload() -> dict[str, object]:
             safe_failure=None,
         ),
         "review": pending_review,
-        "result": not_generated,
-        "artifacts": not_generated,
+        "result": ResultSummaryV1(availability=not_generated),
+        "artifacts": ArtifactSummaryV1(availability=not_generated),
         "proof": ProofSummaryV1(
             availability=AvailabilityV1.unavailable(
                 AvailabilityStatus.NOT_GENERATED,
@@ -153,7 +154,7 @@ def _projection_payload() -> dict[str, object]:
             policy="UNKNOWN",
             status=None,
         ),
-        "execution": not_generated,
+        "execution": ExecutionSummaryV1(availability=not_generated),
         "terminal": TerminalStateV1(
             is_terminal=False,
             outcome=None,
@@ -171,6 +172,183 @@ def test_atomic_projection_accepts_one_exact_object_goal_scheme_run_tuple() -> N
         projection.goal.goal_id,
         projection.confirmed_scheme.scheme_id,
     ) == ("OBJ-A", "RUN-A", "GOAL-A", "SCHEME-A")
+
+
+def test_atomic_projection_summaries_serialize_exact_per_kind_wire_shapes() -> None:
+    payload = AtomicRunProjectionV1.model_validate(_projection_payload()).model_dump(mode="json")
+    assert set(payload["review"]) == {"availability", "review_id", "status"}
+    assert set(payload["result"]) == {
+        "availability",
+        "released_result_id",
+        "canonical_record_id",
+        "released_at",
+    }
+    assert set(payload["artifacts"]) == {"availability", "report_id", "representation_ids"}
+    assert set(payload["execution"]) == {"availability", "canonical_record_id"}
+
+
+@pytest.mark.parametrize(
+    ("model", "payload", "expected_fields"),
+    [
+        (
+            ReviewSummaryV1,
+            {
+                "availability": AvailabilityV1.available(),
+                "review_id": "REVIEW-A",
+                "status": "PASS",
+            },
+            {"availability", "review_id", "status"},
+        ),
+        (
+            ResultSummaryV1,
+            {
+                "availability": AvailabilityV1.available(),
+                "released_result_id": "RESULT-A",
+                "canonical_record_id": "CANONICAL-A",
+                "released_at": NOW,
+            },
+            {"availability", "released_result_id", "canonical_record_id", "released_at"},
+        ),
+        (
+            ArtifactSummaryV1,
+            {
+                "availability": AvailabilityV1.available(),
+                "report_id": "REPORT-A",
+                "representation_ids": ("REPRESENTATION-A",),
+            },
+            {"availability", "report_id", "representation_ids"},
+        ),
+        (
+            ExecutionSummaryV1,
+            {
+                "availability": AvailabilityV1.available(),
+                "canonical_record_id": "CANONICAL-A",
+            },
+            {"availability", "canonical_record_id"},
+        ),
+    ],
+)
+def test_atomic_projection_summary_accepts_each_exact_available_shape(
+    model: type[object], payload: dict[str, object], expected_fields: set[str]
+) -> None:
+    summary = model.model_validate(payload)  # type: ignore[attr-defined]
+    assert set(summary.model_dump(mode="json")) == expected_fields  # type: ignore[attr-defined]
+
+
+def test_atomic_projection_summary_rejects_obsolete_generic_eight_field_superset() -> None:
+    with pytest.raises(ValidationError):
+        ReviewSummaryV1.model_validate(
+            {
+                "availability": AvailabilityV1.available(),
+                "review_id": "REVIEW-A",
+                "status": "PASS",
+                "released_result_id": "RESULT-A",
+                "canonical_record_id": "CANONICAL-A",
+                "released_at": NOW,
+                "report_id": "REPORT-A",
+                "representation_ids": ("REPRESENTATION-A",),
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (
+            ReviewSummaryV1,
+            {"availability": AvailabilityV1.available(), "review_id": "REVIEW-A"},
+        ),
+        (
+            ResultSummaryV1,
+            {
+                "availability": AvailabilityV1.available(),
+                "released_result_id": "RESULT-A",
+                "canonical_record_id": None,
+                "released_at": None,
+            },
+        ),
+        (
+            ArtifactSummaryV1,
+            {
+                "availability": AvailabilityV1.available(),
+                "report_id": "REPORT-A",
+                "representation_ids": (),
+            },
+        ),
+        (
+            ExecutionSummaryV1,
+            {"availability": AvailabilityV1.available(), "canonical_record_id": None},
+        ),
+        (
+            ReviewSummaryV1,
+            {
+                "availability": AvailabilityV1.unavailable(
+                    AvailabilityStatus.PENDING, "REVIEW_PENDING"
+                ),
+                "review_id": None,
+                "status": None,
+                "released_result_id": None,
+            },
+        ),
+    ],
+)
+def test_atomic_projection_summary_rejects_missing_owned_or_cross_kind_fields(
+    model: type[object], payload: dict[str, object]
+) -> None:
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (
+            ReviewSummaryV1,
+            {
+                "availability": AvailabilityV1.unavailable(
+                    AvailabilityStatus.PENDING, "REVIEW_PENDING"
+                ),
+                "review_id": "REVIEW-A",
+                "status": "PASS",
+            },
+        ),
+        (
+            ResultSummaryV1,
+            {
+                "availability": AvailabilityV1.unavailable(
+                    AvailabilityStatus.PENDING, "RESULT_PENDING"
+                ),
+                "released_result_id": "RESULT-A",
+                "canonical_record_id": "CANONICAL-A",
+                "released_at": NOW,
+            },
+        ),
+        (
+            ArtifactSummaryV1,
+            {
+                "availability": AvailabilityV1.unavailable(
+                    AvailabilityStatus.PENDING, "ARTIFACT_PENDING"
+                ),
+                "report_id": "REPORT-A",
+                "representation_ids": ("REPRESENTATION-A",),
+            },
+        ),
+        (
+            ExecutionSummaryV1,
+            {
+                "availability": AvailabilityV1.unavailable(
+                    AvailabilityStatus.PENDING, "EXECUTION_PENDING"
+                ),
+                "canonical_record_id": "CANONICAL-A",
+            },
+        ),
+    ],
+)
+def test_atomic_projection_summary_rejects_availability_identity_mismatch(
+    model: type[object], payload: dict[str, object]
+) -> None:
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(

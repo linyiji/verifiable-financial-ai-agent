@@ -479,15 +479,28 @@ export interface NormalizedRunLifecycle {
   readonly safeFailure: TerminalFailureV1 | null;
 }
 
-export interface OwnedAvailabilityRef {
+export interface ReviewSummary {
   readonly availability: Availability;
   readonly reviewId: string | null;
-  readonly status: string | null;
+  readonly status: Phase4ReviewStatus | null;
+}
+
+export interface ResultSummary {
+  readonly availability: Availability;
   readonly releasedResultId: string | null;
   readonly canonicalRecordId: string | null;
   readonly releasedAt: string | null;
+}
+
+export interface ArtifactSummary {
+  readonly availability: Availability;
   readonly reportId: string | null;
   readonly representationIds: readonly string[];
+}
+
+export interface ExecutionSummary {
+  readonly availability: Availability;
+  readonly canonicalRecordId: string | null;
 }
 
 export interface NormalizedProofSummary {
@@ -520,12 +533,57 @@ export interface RunProjection {
   readonly pathChanges: readonly PathChangeProjectionV1[];
   readonly activity: readonly SafeRuntimeActivity[];
   readonly lifecycle: NormalizedRunLifecycle;
-  readonly review: OwnedAvailabilityRef;
-  readonly result: OwnedAvailabilityRef;
-  readonly artifacts: OwnedAvailabilityRef;
+  readonly review: ReviewSummary;
+  readonly result: ResultSummary;
+  readonly artifacts: ArtifactSummary;
   readonly proof: NormalizedProofSummary;
-  readonly execution: OwnedAvailabilityRef;
+  readonly execution: ExecutionSummary;
   readonly terminal: NormalizedTerminalState;
+}
+
+export interface ReleasedFinancialMetricProjectionV1 {
+  readonly runId: string;
+  readonly metricId: string;
+  readonly name: string;
+  readonly canonicalValue: string;
+  readonly canonicalUnit: string;
+  readonly displayValue: string;
+  readonly displayUnit: string;
+  readonly period: string;
+  readonly periodBasis: string;
+  readonly actuality: string;
+  readonly asOf: string;
+  readonly currency: string | null;
+  readonly formulaId: string;
+  readonly capabilityId: string;
+  readonly calculationId: string;
+  readonly evidenceRefs: readonly string[];
+  readonly claimRefs: readonly string[];
+  readonly proof: Readonly<{
+    policyId: string;
+    requirement: "NOT_REQUIRED" | "MUST_PROVE";
+    status: Phase4ProofStatus;
+    proofRefs: readonly string[];
+  }>;
+  readonly methodMetadata: SafeJsonObject | null;
+  readonly technicalPriceBasis: "ADJUSTED_CLOSE" | "RAW_CLOSE" | null;
+  readonly corporateActionStatus: "NONE_DETECTED" | "RESOLVED" | "UNRESOLVED" | "UNASSESSED" | null;
+  readonly corporateActionGuardRefs: readonly string[];
+  readonly limitations: readonly string[];
+}
+
+export interface ReleasedResultProjectionV1 {
+  readonly objectId: string;
+  readonly runId: string;
+  readonly releasedResultId: string;
+  readonly canonicalRecordId: string;
+  readonly releasedAt: string;
+  readonly metrics: readonly ReleasedFinancialMetricProjectionV1[];
+  readonly claims: readonly SafeJsonObject[];
+  readonly materialCalculationDispositions: readonly SafeJsonObject[];
+  readonly researchSourceCoverage: SafeJsonObject | null;
+  readonly limitations: readonly string[];
+  readonly availability: Availability;
 }
 
 export interface ConfirmAdmissionExpectation {
@@ -2487,95 +2545,92 @@ function decodeLifecycle(value: unknown, path: string): NormalizedRunLifecycle {
   });
 }
 
-type OwnedAvailabilityKind = "review" | "result" | "artifacts" | "execution";
+function decodeReviewSummary(value: unknown, path: string): ReviewSummary {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["availability", "review_id", "status"], path);
+  const rawStatus = field(input, "status", path);
+  const summary = {
+    availability: decodeAvailability(field(input, "availability", path), `${path}.availability`),
+    reviewId: decodeNullableOpaqueId(field(input, "review_id", path), `${path}.review_id`),
+    status: rawStatus === null
+      ? null
+      : decodeEnum(rawStatus, ["PASS", "REVIEW", "BLOCK"] as const, `${path}.status`)
+  };
+  if ((summary.reviewId === null) !== (summary.status === null)) {
+    return fail(path, "Review summary identity/status must be jointly present");
+  }
+  if ((summary.availability.status === "AVAILABLE") !== (summary.reviewId !== null)) {
+    return fail(path, "Review summary identity/status must be present exactly when AVAILABLE");
+  }
+  return freezeDeep(summary);
+}
 
-function decodeOwnedAvailabilityRef(
-  value: unknown,
-  path: string,
-  kind: OwnedAvailabilityKind
-): OwnedAvailabilityRef {
+function decodeResultSummary(value: unknown, path: string): ResultSummary {
   const input = decodeObject(value, path);
   assertOnlyKeys(
     input,
-    [
-      "availability",
-      "review_id",
-      "status",
-      "released_result_id",
-      "canonical_record_id",
-      "released_at",
-      "report_id",
-      "representation_ids"
-    ],
+    ["availability", "released_result_id", "canonical_record_id", "released_at"],
     path
   );
-  const requiredByKind: Readonly<Record<OwnedAvailabilityKind, readonly string[]>> = {
-    review: ["availability", "review_id", "status"],
-    result: ["availability", "released_result_id", "canonical_record_id", "released_at"],
-    artifacts: ["availability", "report_id", "representation_ids"],
-    execution: ["availability", "canonical_record_id"]
-  };
-  for (const key of requiredByKind[kind]) field(input, key, path);
-  const normalized = {
+  const summary = {
     availability: decodeAvailability(field(input, "availability", path), `${path}.availability`),
-    reviewId: decodeNullableOpaqueId(
-      hasOwn(input, "review_id") ? input.review_id : null,
-      `${path}.review_id`
-    ),
-    status: decodeOptionalString(
-      hasOwn(input, "status") ? input.status : null,
-      `${path}.status`
-    ),
     releasedResultId: decodeNullableOpaqueId(
-      hasOwn(input, "released_result_id") ? input.released_result_id : null,
+      field(input, "released_result_id", path),
       `${path}.released_result_id`
     ),
     canonicalRecordId: decodeNullableOpaqueId(
-      hasOwn(input, "canonical_record_id") ? input.canonical_record_id : null,
+      field(input, "canonical_record_id", path),
       `${path}.canonical_record_id`
     ),
     releasedAt: decodeNullable(
-      hasOwn(input, "released_at") ? input.released_at : null,
+      field(input, "released_at", path),
       decodeRfc3339Utc,
       `${path}.released_at`
-    ),
-    reportId: decodeNullableOpaqueId(
-      hasOwn(input, "report_id") ? input.report_id : null,
-      `${path}.report_id`
-    ),
+    )
+  };
+  const present = [summary.releasedResultId, summary.canonicalRecordId, summary.releasedAt]
+    .filter((item) => item !== null).length;
+  if (present !== 0 && present !== 3) return fail(path, "Result summary identity/time tuple is partial");
+  if ((summary.availability.status === "AVAILABLE") !== (present === 3)) {
+    return fail(path, "Result summary identity/time must be present exactly when AVAILABLE");
+  }
+  return freezeDeep(summary);
+}
+
+function decodeArtifactSummary(value: unknown, path: string): ArtifactSummary {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["availability", "report_id", "representation_ids"], path);
+  const summary = {
+    availability: decodeAvailability(field(input, "availability", path), `${path}.availability`),
+    reportId: decodeNullableOpaqueId(field(input, "report_id", path), `${path}.report_id`),
     representationIds: decodeStringArray(
-      hasOwn(input, "representation_ids") ? input.representation_ids : [],
+      field(input, "representation_ids", path),
       `${path}.representation_ids`
     )
   };
-  const irrelevantFieldsClose =
-    kind === "review"
-      ? normalized.releasedResultId === null &&
-        normalized.canonicalRecordId === null &&
-        normalized.releasedAt === null &&
-        normalized.reportId === null &&
-        normalized.representationIds.length === 0
-      : kind === "result"
-        ? normalized.reviewId === null &&
-          normalized.status === null &&
-          normalized.reportId === null &&
-          normalized.representationIds.length === 0
-        : kind === "artifacts"
-          ? normalized.reviewId === null &&
-            normalized.status === null &&
-            normalized.releasedResultId === null &&
-            normalized.canonicalRecordId === null &&
-            normalized.releasedAt === null
-          : normalized.reviewId === null &&
-            normalized.status === null &&
-            normalized.releasedResultId === null &&
-            normalized.releasedAt === null &&
-            normalized.reportId === null &&
-            normalized.representationIds.length === 0;
-  if (!irrelevantFieldsClose) {
-    return fail(path, `${kind} summary carries fields owned by another projection component`);
+  if ((summary.reportId === null) !== (summary.representationIds.length === 0)) {
+    return fail(path, "Artifact summary report and representation identities are partial");
   }
-  return freezeDeep(normalized);
+  if ((summary.availability.status === "AVAILABLE") !== (summary.reportId !== null)) {
+    return fail(path, "Artifact summary identities must be present exactly when AVAILABLE");
+  }
+  return freezeDeep(summary);
+}
+
+function decodeExecutionSummary(value: unknown, path: string): ExecutionSummary {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["availability", "canonical_record_id"], path);
+  const summary = {
+    availability: decodeAvailability(field(input, "availability", path), `${path}.availability`),
+    canonicalRecordId: decodeNullableOpaqueId(
+      field(input, "canonical_record_id", path),
+      `${path}.canonical_record_id`
+    )
+  };
+  if ((summary.availability.status === "AVAILABLE") !== (summary.canonicalRecordId !== null)) {
+    return fail(path, "Execution identity must be present exactly when AVAILABLE");
+  }
+  return freezeDeep(summary);
 }
 
 const PROOF_POLICIES = ["NOT_REQUIRED", "MUST_PROVE", "MIXED", "UNKNOWN"] as const;
@@ -2623,7 +2678,7 @@ function decodeTerminalState(value: unknown, path: string): NormalizedTerminalSt
 }
 
 function requireAvailableIdentity(
-  ref: OwnedAvailabilityRef,
+  ref: Readonly<{ availability: Availability }>,
   identity: string | null,
   path: string,
   label: string
@@ -2833,19 +2888,11 @@ export function decodeRunProjection(
   ) {
     return fail("$.lifecycle", "lifecycle contradicts canonical Run record");
   }
-  const review = decodeOwnedAvailabilityRef(field(input, "review", "$" ), "$.review", "review");
-  const result = decodeOwnedAvailabilityRef(field(input, "result", "$" ), "$.result", "result");
-  const artifacts = decodeOwnedAvailabilityRef(
-    field(input, "artifacts", "$" ),
-    "$.artifacts",
-    "artifacts"
-  );
+  const review = decodeReviewSummary(field(input, "review", "$" ), "$.review");
+  const result = decodeResultSummary(field(input, "result", "$" ), "$.result");
+  const artifacts = decodeArtifactSummary(field(input, "artifacts", "$" ), "$.artifacts");
   const proof = decodeProofSummary(field(input, "proof", "$" ), "$.proof");
-  const execution = decodeOwnedAvailabilityRef(
-    field(input, "execution", "$" ),
-    "$.execution",
-    "execution"
-  );
+  const execution = decodeExecutionSummary(field(input, "execution", "$" ), "$.execution");
   const terminal = decodeTerminalState(field(input, "terminal", "$" ), "$.terminal");
   if (
     review.status !== null &&
@@ -3002,6 +3049,166 @@ export function decodeRunProjection(
     proof,
     execution,
     terminal
+  });
+}
+
+const FINANCIAL_UNITS = ["RATIO", "PERCENT", "CURRENCY", "COUNT", "SHARES", "INDEX", "MULTIPLE"] as const;
+const FINANCIAL_PERIOD_BASES = ["FY", "QUARTER", "TTM", "LTM", "CURRENT", "DAILY"] as const;
+const FINANCIAL_ACTUALITIES = ["UNKNOWN", "ACTUAL", "ESTIMATE"] as const;
+const TECHNICAL_PRICE_BASES = ["ADJUSTED_CLOSE", "RAW_CLOSE"] as const;
+const CORPORATE_ACTION_STATUSES = ["NONE_DETECTED", "RESOLVED", "UNRESOLVED", "UNASSESSED"] as const;
+
+function decodeMethodMetadata(value: unknown, path: string): SafeJsonObject {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "method", "parameters", "observation_count", "warmup_required", "warmup_satisfied",
+    "first_as_of", "last_as_of", "is_wilder", "ema_adjust"
+  ], path);
+  decodeNonBlankString(field(input, "method", path), `${path}.method`);
+  decodeArray(field(input, "parameters", path), `${path}.parameters`).forEach((item, index) => {
+    const parameterPath = `${path}.parameters[${index}]`;
+    const parameter = decodeObject(item, parameterPath);
+    assertOnlyKeys(parameter, ["name", "value"], parameterPath);
+    decodeNonBlankString(field(parameter, "name", parameterPath), `${parameterPath}.name`);
+    decodeNonBlankString(field(parameter, "value", parameterPath), `${parameterPath}.value`);
+  });
+  for (const key of ["observation_count", "warmup_required"] as const) {
+    const raw = field(input, key, path);
+    if (raw !== null) decodeInteger(raw, 1, `${path}.${key}`);
+  }
+  for (const key of ["warmup_satisfied", "is_wilder", "ema_adjust"] as const) {
+    const raw = field(input, key, path);
+    if (raw !== null) decodeBoolean(raw, `${path}.${key}`);
+  }
+  for (const key of ["first_as_of", "last_as_of"] as const) {
+    const raw = field(input, key, path);
+    if (raw !== null) decodeDate(raw, `${path}.${key}`);
+  }
+  return decodeSafeJsonObject(input, path);
+}
+
+function decodeReleasedMetric(
+  value: unknown,
+  path: string,
+  expectedRunId: string
+): ReleasedFinancialMetricProjectionV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "run_id", "metric_id", "name", "canonical_value", "canonical_unit", "display_value",
+    "display_unit", "period", "period_basis", "actuality", "as_of", "currency", "formula_id",
+    "capability_id", "calculation_id", "evidence_refs", "claim_refs", "proof", "method_metadata",
+    "technical_price_basis", "corporate_action_status", "corporate_action_guard_refs", "limitations"
+  ], path);
+  const runId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
+  if (runId !== expectedRunId) return fail(`${path}.run_id`, "metric belongs to another Run");
+  const proofPath = `${path}.proof`;
+  const proofInput = decodeObject(field(input, "proof", path), proofPath);
+  assertOnlyKeys(proofInput, ["policy_id", "requirement", "status", "proof_refs"], proofPath);
+  const rawMethodMetadata = field(input, "method_metadata", path);
+  const rawTechnicalPriceBasis = field(input, "technical_price_basis", path);
+  const rawCorporateActionStatus = field(input, "corporate_action_status", path);
+  const rawCurrency = field(input, "currency", path);
+  return freezeDeep({
+    runId,
+    metricId: decodeOpaqueId(field(input, "metric_id", path), `${path}.metric_id`),
+    name: decodeNonBlankString(field(input, "name", path), `${path}.name`),
+    canonicalValue: decodeNonBlankString(field(input, "canonical_value", path), `${path}.canonical_value`),
+    canonicalUnit: decodeEnum(field(input, "canonical_unit", path), FINANCIAL_UNITS, `${path}.canonical_unit`),
+    displayValue: decodeNonBlankString(field(input, "display_value", path), `${path}.display_value`),
+    displayUnit: decodeNonBlankString(field(input, "display_unit", path), `${path}.display_unit`),
+    period: decodeNonBlankString(field(input, "period", path), `${path}.period`),
+    periodBasis: decodeEnum(field(input, "period_basis", path), FINANCIAL_PERIOD_BASES, `${path}.period_basis`),
+    actuality: decodeEnum(field(input, "actuality", path), FINANCIAL_ACTUALITIES, `${path}.actuality`),
+    asOf: decodeDate(field(input, "as_of", path), `${path}.as_of`),
+    currency: rawCurrency === null ? null : decodeNonBlankString(rawCurrency, `${path}.currency`),
+    formulaId: decodeOpaqueId(field(input, "formula_id", path), `${path}.formula_id`),
+    capabilityId: decodeOpaqueId(field(input, "capability_id", path), `${path}.capability_id`),
+    calculationId: decodeOpaqueId(field(input, "calculation_id", path), `${path}.calculation_id`),
+    evidenceRefs: decodeStringArray(field(input, "evidence_refs", path), `${path}.evidence_refs`),
+    claimRefs: decodeStringArray(field(input, "claim_refs", path), `${path}.claim_refs`),
+    proof: freezeDeep({
+      policyId: decodeOpaqueId(field(proofInput, "policy_id", proofPath), `${proofPath}.policy_id`),
+      requirement: decodeEnum(field(proofInput, "requirement", proofPath), ["NOT_REQUIRED", "MUST_PROVE"] as const, `${proofPath}.requirement`),
+      status: decodeEnum(field(proofInput, "status", proofPath), PROOF_STATUSES, `${proofPath}.status`),
+      proofRefs: decodeStringArray(field(proofInput, "proof_refs", proofPath), `${proofPath}.proof_refs`)
+    }),
+    methodMetadata: rawMethodMetadata === null ? null : decodeMethodMetadata(rawMethodMetadata, `${path}.method_metadata`),
+    technicalPriceBasis: rawTechnicalPriceBasis === null ? null : decodeEnum(rawTechnicalPriceBasis, TECHNICAL_PRICE_BASES, `${path}.technical_price_basis`),
+    corporateActionStatus: rawCorporateActionStatus === null ? null : decodeEnum(rawCorporateActionStatus, CORPORATE_ACTION_STATUSES, `${path}.corporate_action_status`),
+    corporateActionGuardRefs: decodeStringArray(field(input, "corporate_action_guard_refs", path), `${path}.corporate_action_guard_refs`),
+    limitations: decodePublicTextArray(field(input, "limitations", path), `${path}.limitations`)
+  });
+}
+
+function decodeReleasedClaim(value: unknown, path: string, expectedRunId: string): SafeJsonObject {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "claim_id", "run_id", "claim_type", "statement", "metric_id", "value", "unit", "period",
+    "period_basis", "actuality", "as_of", "currency", "calculation_refs", "evidence_refs", "judgment_refs"
+  ], path);
+  const runId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
+  if (runId !== expectedRunId) return fail(`${path}.run_id`, "claim belongs to another Run");
+  for (const key of ["claim_id", "claim_type", "statement", "metric_id", "value", "period"] as const) {
+    decodeNonBlankString(field(input, key, path), `${path}.${key}`);
+  }
+  decodeEnum(field(input, "unit", path), FINANCIAL_UNITS, `${path}.unit`);
+  decodeEnum(field(input, "period_basis", path), FINANCIAL_PERIOD_BASES, `${path}.period_basis`);
+  decodeEnum(field(input, "actuality", path), FINANCIAL_ACTUALITIES, `${path}.actuality`);
+  decodeDate(field(input, "as_of", path), `${path}.as_of`);
+  const currency = field(input, "currency", path);
+  if (currency !== null) decodeNonBlankString(currency, `${path}.currency`);
+  for (const key of ["calculation_refs", "evidence_refs", "judgment_refs"] as const) {
+    decodeStringArray(field(input, key, path), `${path}.${key}`);
+  }
+  return decodeSafeJsonObject(input, path);
+}
+
+export function decodeReleasedResultProjection(
+  value: unknown,
+  expectedRunId: string,
+  expectedObjectId?: string
+): ReleasedResultProjectionV1 {
+  const path = "$";
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "object_id", "run_id", "released_result_id", "canonical_record_id", "released_at", "metrics",
+    "claims", "material_calculation_dispositions", "research_source_coverage", "limitations", "availability"
+  ], path);
+  const runId = decodeOpaqueId(field(input, "run_id", path), "$.run_id");
+  if (runId !== decodeOpaqueId(expectedRunId, "expectedRunId")) {
+    return fail("$.run_id", "released result belongs to another Run");
+  }
+  const objectId = decodeOpaqueId(field(input, "object_id", path), "$.object_id");
+  if (expectedObjectId !== undefined && objectId !== decodeOpaqueId(expectedObjectId, "expectedObjectId")) {
+    return fail("$.object_id", "released result belongs to another Research Object");
+  }
+  const metrics = decodeArray(field(input, "metrics", path), "$.metrics").map((item, index) =>
+    decodeReleasedMetric(item, `$.metrics[${index}]`, runId)
+  );
+  const claims = decodeArray(field(input, "claims", path), "$.claims").map((item, index) =>
+    decodeReleasedClaim(item, `$.claims[${index}]`, runId)
+  );
+  const dispositions = decodeArray(
+    field(input, "material_calculation_dispositions", path),
+    "$.material_calculation_dispositions"
+  ).map((item, index) => decodeSafeJsonObject(item, `$.material_calculation_dispositions[${index}]`));
+  const rawCoverage = field(input, "research_source_coverage", path);
+  const availability = decodeAvailability(field(input, "availability", path), "$.availability");
+  if (availability.status !== "AVAILABLE") {
+    return fail("$.availability.status", "released result body requires AVAILABLE");
+  }
+  return freezeDeep({
+    objectId,
+    runId,
+    releasedResultId: decodeOpaqueId(field(input, "released_result_id", path), "$.released_result_id"),
+    canonicalRecordId: decodeOpaqueId(field(input, "canonical_record_id", path), "$.canonical_record_id"),
+    releasedAt: decodeRfc3339Utc(field(input, "released_at", path), "$.released_at"),
+    metrics,
+    claims,
+    materialCalculationDispositions: dispositions,
+    researchSourceCoverage: rawCoverage === null ? null : decodeSafeJsonObject(rawCoverage, "$.research_source_coverage"),
+    limitations: decodePublicTextArray(field(input, "limitations", path), "$.limitations"),
+    availability
   });
 }
 

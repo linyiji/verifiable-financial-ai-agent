@@ -523,15 +523,68 @@ class RunLifecycleV1(FrozenWireModel):
     safe_failure: SafeJsonObject | None
 
 
-class OwnedAvailabilityRefV1(FrozenWireModel):
+class ReviewSummaryV1(FrozenWireModel):
     availability: AvailabilityV1
-    review_id: str | None = None
-    status: str | None = None
-    released_result_id: str | None = None
-    canonical_record_id: str | None = None
+    review_id: NonBlank | None = None
+    status: Literal["PASS", "REVIEW", "BLOCK"] | None = None
+
+    @model_validator(mode="after")
+    def identity_closes(self) -> ReviewSummaryV1:
+        if (self.review_id is None) != (self.status is None):
+            raise ValueError("Review summary identity/status must be jointly present")
+        available = self.availability.status is AvailabilityStatus.AVAILABLE
+        if available != (self.review_id is not None):
+            raise ValueError("Review summary identity/status must be present exactly when AVAILABLE")
+        return self
+
+
+class ResultSummaryV1(FrozenWireModel):
+    availability: AvailabilityV1
+    released_result_id: NonBlank | None = None
+    canonical_record_id: NonBlank | None = None
     released_at: datetime | None = None
-    report_id: str | None = None
-    representation_ids: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def identity_closes(self) -> ResultSummaryV1:
+        present = sum(
+            value is not None
+            for value in (self.released_result_id, self.canonical_record_id, self.released_at)
+        )
+        if present not in {0, 3}:
+            raise ValueError("Result summary identity/time tuple is partial")
+        available = self.availability.status is AvailabilityStatus.AVAILABLE
+        if available != (present == 3):
+            raise ValueError("Result summary identity/time must be present exactly when AVAILABLE")
+        return self
+
+
+class ArtifactSummaryV1(FrozenWireModel):
+    availability: AvailabilityV1
+    report_id: NonBlank | None = None
+    representation_ids: tuple[NonBlank, ...] = ()
+
+    @model_validator(mode="after")
+    def identity_closes(self) -> ArtifactSummaryV1:
+        if len(set(self.representation_ids)) != len(self.representation_ids):
+            raise ValueError("Artifact summary representation identities must be unique")
+        if (self.report_id is None) != (not self.representation_ids):
+            raise ValueError("Artifact summary report and representation identities are partial")
+        available = self.availability.status is AvailabilityStatus.AVAILABLE
+        if available != (self.report_id is not None):
+            raise ValueError("Artifact summary identities must be present exactly when AVAILABLE")
+        return self
+
+
+class ExecutionSummaryV1(FrozenWireModel):
+    availability: AvailabilityV1
+    canonical_record_id: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def identity_closes(self) -> ExecutionSummaryV1:
+        available = self.availability.status is AvailabilityStatus.AVAILABLE
+        if available != (self.canonical_record_id is not None):
+            raise ValueError("Execution identity must be present exactly when AVAILABLE")
+        return self
 
 
 class ProofSummaryV1(FrozenWireModel):
@@ -564,11 +617,11 @@ class AtomicRunProjectionV1(FrozenWireModel):
     path_changes: tuple[PathChangeProjectionV1, ...]
     activity: tuple[SafeRuntimeActivityV1, ...]
     lifecycle: RunLifecycleV1
-    review: OwnedAvailabilityRefV1
-    result: OwnedAvailabilityRefV1
-    artifacts: OwnedAvailabilityRefV1
+    review: ReviewSummaryV1
+    result: ResultSummaryV1
+    artifacts: ArtifactSummaryV1
     proof: ProofSummaryV1
-    execution: OwnedAvailabilityRefV1
+    execution: ExecutionSummaryV1
     terminal: TerminalStateV1
 
     @field_serializer("run")

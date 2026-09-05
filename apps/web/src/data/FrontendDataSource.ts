@@ -14,6 +14,7 @@ import type {
   ResearchPlan,
   ResearchRun,
   ResearchRunDetailV1,
+  ReleasedResultProjectionV1,
   RunProjection,
   RuntimeEvent,
   RuntimeProjection,
@@ -223,6 +224,11 @@ export interface Phase4FrontendDataSource {
     expectedObjectId?: string,
     options?: Phase4RequestOptions
   ): Promise<RunProjection>;
+  getReleasedResult(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ReleasedResultProjectionV1>;
 
   prepareResearchRun(
     mutation: Phase4Mutation<Phase4PrepareResearchRunInput>,
