@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -312,6 +313,28 @@ def test_postgresql_urls_are_driver_normalized_and_redacted() -> None:
         application_scheme="postgresql+psycopg",
     )
     assert driver_specific.startswith("postgresql+psycopg://")
+
+
+def test_blank_pgservicefile_is_unset_for_libpq_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PGSERVICEFILE", "")
+    libpq_env = _libpq_env("postgresql://user:password@localhost/postgres")
+    observation = gate_module.run_command(
+        [
+            sys.executable,
+            "-c",
+            "import os, sys; sys.exit(0 if 'PGSERVICEFILE' not in os.environ else 1)",
+        ],
+        cwd=Path(__file__).parent,
+        env=libpq_env,
+    )
+    assert observation.returncode == 0
+
+    monkeypatch.setenv("PGSERVICEFILE", "/local/explicit-service.conf")
+    assert _libpq_env("postgresql://user:password@localhost/postgres")[
+        "PGSERVICEFILE"
+    ] == "/local/explicit-service.conf"
 
 
 def test_postgresql_connection_block_is_verified_and_recoverable(

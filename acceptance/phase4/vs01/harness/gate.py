@@ -525,12 +525,12 @@ def redact_url(url: str) -> str:
     return f"postgresql://<redacted>@{host}{port}/{database}"
 
 
-def _libpq_env(url: str) -> dict[str, str]:
+def _libpq_env(url: str) -> dict[str, str | None]:
     parsed, database = _postgres_parts(url)
     # The supplied admin URL is the sole connection authority for this run.  Clear
     # libpq variables that could otherwise be inherited by ``run_command`` and
     # silently redirect psql to a service, host, database, user, or credential.
-    result = {
+    result: dict[str, str | None] = {
         name: ""
         for name in (
             "PGAPPNAME",
@@ -547,7 +547,6 @@ def _libpq_env(url: str) -> dict[str, str]:
             "PGPORT",
             "PGREQUIREPEER",
             "PGSERVICE",
-            "PGSERVICEFILE",
             "PGSSLCERT",
             "PGSSLCRL",
             "PGSSLCRLDIR",
@@ -558,6 +557,10 @@ def _libpq_env(url: str) -> dict[str, str]:
             "PGUSER",
         )
     }
+    # libpq treats an empty-but-present PGSERVICEFILE as an explicit path.  Use
+    # ``None`` as the harness's child-environment deletion marker while retaining
+    # an explicitly configured non-empty service file.
+    result["PGSERVICEFILE"] = os.environ.get("PGSERVICEFILE") or None
     result.update(
         {
             "PGHOST": parsed.hostname or "",
@@ -607,7 +610,7 @@ def run_command(
     command: Sequence[str],
     *,
     cwd: Path,
-    env: Mapping[str, str] | None = None,
+    env: Mapping[str, str | None] | None = None,
     timeout_seconds: float = 120.0,
     inherit_environment: bool = True,
 ) -> CommandObservation:
@@ -621,11 +624,17 @@ def run_command(
             if name in os.environ
         }
     )
+    child_environment = base_environment
+    for name, value in dict(env or {}).items():
+        if value is None:
+            child_environment.pop(name, None)
+        else:
+            child_environment[name] = value
     try:
         process = subprocess.run(
             list(command),
             cwd=cwd,
-            env={**base_environment, **dict(env or {})},
+            env=child_environment,
             check=False,
             capture_output=True,
             text=True,
