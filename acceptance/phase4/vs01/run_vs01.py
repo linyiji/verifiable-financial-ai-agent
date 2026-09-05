@@ -76,6 +76,7 @@ from acceptance.phase4.vs01.harness.gate import (
     run_command,
     scan_public_surface,
     sha256_json,
+    sqlalchemy_async_database_url,
     write_json,
     write_result_bundle,
 )
@@ -2612,7 +2613,8 @@ def _run_integrated(
             psql_binary=str(postgres_config.get("psql_binary", "psql")),
         )
         pg_evidence = isolation.preflight()
-        database_url = isolation.create()
+        libpq_database_url = isolation.create()
+        database_url = sqlalchemy_async_database_url(libpq_database_url)
         environment["real_postgresql_16"] = True
         migration = run_command(
             postgres_config["migration_command"],
