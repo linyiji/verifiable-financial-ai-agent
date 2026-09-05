@@ -1,0 +1,68 @@
+{
+  "schema_version": "phase4-vs01-contract-authority/v1",
+  "contract_revision": "764d76132cfac13d47125e031b280b7894eb249f",
+  "approved_source": {
+    "commit": "4b6721b6db433aae300f94750e1a405b6b450501",
+    "tree": "35c47508ed65220c26620f5ec4bdd14cb798480d"
+  },
+  "promotion": {
+    "path": "docs/integration/FINAL_CONTRACT_FREEZE_PROMOTION.json",
+    "byte_sha256": "5dc5c912db8604bcdae3dc3e5eb6d8a2d46d9bc8a66e79e8f09bee93100e26aa",
+    "decision": "PASS"
+  },
+  "v17_r2": {
+    "path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.json",
+    "byte_sha256": "3822211ce66d392bcf7bc5fb5a5d0ebfa8a19df264b18acef08ddfda6ba98394",
+    "canonical_sha256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19"
+  },
+  "phase4_contract_set": {
+    "path": "docs/integration/PHASE4_BACKEND_FINAL_CONTRACT_MANIFEST.json",
+    "byte_sha256": "1886ef831ebff461afcabd936deaadbb10afcaf0d3bd3a037e0f3a7de995657d",
+    "canonical_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+    "component_count": 14
+  },
+  "exact_byte_components": [
+    {
+      "id": "api_schema_contract",
+      "path": "docs/integration/PHASE4_BACKEND_API_SCHEMA_DRAFT.md",
+      "sha256": "2a1265753c1b7b6e0756ea9c40886dcbcbdf4773e81e467b7df8fddd92763048"
+    },
+    {
+      "id": "runtime_event_contract",
+      "path": "docs/integration/PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md",
+      "sha256": "f6bbca7123051c90d3321781b3e47d4028a457f2ee8a0f51a37acf836b38cf2e"
+    },
+    {
+      "id": "access_mode_decision",
+      "path": "docs/integration/PHASE4_ACCESS_MODE_DECISION_V1.json",
+      "sha256": "c32ac85f7930ab151fbb769350bed270549bdb132489c5c769ec7ef1e042415d"
+    },
+    {
+      "id": "uac_register",
+      "path": "docs/integration/PHASE4_BACKEND_FINAL_UAC_DISPOSITION.md",
+      "sha256": "226a586e696f92fe6249f7c043ea005291858e7c1bcf46d5a825d1ecf595146c"
+    },
+    {
+      "id": "bd_uac_crosswalk",
+      "path": "docs/integration/PHASE4_BACKEND_BD_UAC_CROSSWALK.md",
+      "sha256": "a3e76d8a9eda32ffa85be9e2d744dd2a26a22554ad30676e50ddce4d97941b59"
+    },
+    {
+      "id": "field_ownership_matrix",
+      "path": "docs/integration/PHASE4_BACKEND_FRONTEND_FIELD_OWNERSHIP_MATRIX.md",
+      "sha256": "e91ed0321a96067f93eb0b1a284c7374b1919688e2db52c9e4e9cda360d93569"
+    }
+  ],
+  "wire": {
+    "contract_family": "phase4-core/v1",
+    "event_contract_family": "phase4-runtime-event/v1",
+    "request_header": "X-Phase4-Contract-Version",
+    "event_response_header": "X-Phase4-Event-Contract-Version",
+    "error_schema": "phase4-error/v1",
+    "projection_schema": "phase4-run-projection/v1",
+    "draft_schema": "phase4-run-draft/v1",
+    "confirm_schema": "phase4-confirm-response/v1",
+    "admission_schema": "phase4-run-admission/v1",
+    "response_meta_schema": "phase4-response-meta/v1"
+  }
+}
