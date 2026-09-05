@@ -913,6 +913,7 @@ def _candidate_preflight(repository_root: Path, expected_head: str) -> dict[str,
         "docs/PHASE3_PLANNER_PROVIDER_ROUTER_REMEDIATION.md",
         "docs/PHASE3_PROVIDER_RELIABILITY_REMEDIATION.md",
         "tests/unit/generated/test_artifact_retention.py",
+        "tests/unit/observability/test_langfuse_acceptance_drain_policy.py",
         "tests/unit/observability/test_langfuse_identity_evidence.py",
         "tests/unit/observability/test_trace_reference_ledger.py",
         "tests/unit/output/test_calculation_taxonomy.py",
@@ -2944,6 +2945,7 @@ async def _run_authoritative(
             trace_build.drain_barrier.audit,
             trace_id,
             expected_observation_identities=expected_observation_identities,
+            expected_run_id=run_id,
         )
         identity_set_evidence = build_langfuse_identity_set_evidence(
             run_id=run_id,
@@ -3192,8 +3194,34 @@ async def _run_authoritative(
                 langfuse_redaction_audit.unexpected_duplicate_identities
             ),
             "one_root_trace": langfuse_redaction_audit.one_root_trace,
+            "run_metadata_closure": langfuse_redaction_audit.run_metadata_closure,
+            "trace_metadata_closure": langfuse_redaction_audit.trace_metadata_closure,
             "force_flush_succeeded": langfuse_redaction_audit.force_flush_succeeded,
+            "attempts": langfuse_redaction_audit.attempts,
+            "elapsed_seconds": langfuse_redaction_audit.elapsed_seconds,
             "drain_elapsed_seconds": langfuse_redaction_audit.elapsed_seconds,
+            "readback_attempts": [
+                {
+                    "attempt_number": item.attempt_number,
+                    "timestamp": item.timestamp,
+                    "elapsed_seconds": item.elapsed_seconds,
+                    "expected_count": item.expected_count,
+                    "observed_count": item.observed_count,
+                    "unique_observed_count": item.unique_observed_count,
+                    "missing_observation_identities": list(item.missing_observation_identities),
+                    "unexpected_observation_identities": list(
+                        item.unexpected_observation_identities
+                    ),
+                    "duplicate_observation_identities": list(item.duplicate_observation_identities),
+                    "root_trace_count": item.root_trace_count,
+                    "trace_id": item.trace_id,
+                    "run_id": item.run_id,
+                    "run_metadata_closure": item.run_metadata_closure,
+                    "trace_metadata_closure": item.trace_metadata_closure,
+                    "read_succeeded": item.read_succeeded,
+                }
+                for item in langfuse_redaction_audit.readback_attempts
+            ],
             **identity_set_evidence,
             "trace_reference_ledger": {
                 "total_reference_count": trace_reference_ledger.total_reference_count,
@@ -3225,6 +3253,8 @@ async def _run_authoritative(
                     langfuse_redaction_audit.unexpected_duplicate_identities
                 ),
                 "one_root_trace": langfuse_redaction_audit.one_root_trace,
+                "run_metadata_closure": langfuse_redaction_audit.run_metadata_closure,
+                "trace_metadata_closure": langfuse_redaction_audit.trace_metadata_closure,
                 "force_flush_succeeded": langfuse_redaction_audit.force_flush_succeeded,
                 "elapsed_seconds": langfuse_redaction_audit.elapsed_seconds,
             },

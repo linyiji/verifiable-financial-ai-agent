@@ -92,9 +92,13 @@ credential values from scope, resource, span, event, link, status, provider, too
 embedded JSON payload surfaces. The delegate exporter and its authentication headers are
 unchanged.
 
-The existing Phase 3 `P3-INT-005` gate performs a post-flush Langfuse API read-back. Its
-evidence contains only the policy identifier, inspected field names, occurrence counts,
-structural counts, and status; trace payloads and configured values are never persisted.
+The existing Phase 3 `P3-INT-005` gate performs a post-flush Langfuse API read-back. The
+acceptance-only drain barrier polls the exact trace on the bounded monotonic schedule
+`0/2/5/10/20/40/60` seconds and fails closed unless the exact local and remote observation
+identity sets converge by the 60-second deadline. It also requires one root trace and exact
+Run/trace metadata closure. Every attempt retains its timestamp, elapsed time, counts, and
+identity differences; final evidence retains the complete canonical expected and observed
+identity collections. Trace payloads and configured credential values are never persisted.
 Each of `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `FMP_API_KEY`, and
 `TEAMOROUTER_API_KEY` must have zero occurrences. A missing/failed read-back fails the
 acceptance gate without changing fail-open behavior for ordinary business execution.

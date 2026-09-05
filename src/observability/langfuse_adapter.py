@@ -5,8 +5,10 @@ from collections import Counter
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import import_module
+from math import isfinite
 from typing import Any, Protocol
 
 from src.domain.base import JsonObject
@@ -20,6 +22,8 @@ LANGFUSE_EXPORT_RETRY_DELAY_SECONDS = 0.1
 LANGFUSE_FORCE_FLUSH_TIMEOUT_MILLIS = 30_000
 LANGFUSE_READBACK_MAX_ATTEMPTS = 10
 LANGFUSE_READBACK_MAX_RETRY_DELAY_SECONDS = 2.0
+LANGFUSE_ACCEPTANCE_READBACK_TIMEOUT_SECONDS = 60.0
+LANGFUSE_ACCEPTANCE_READBACK_SCHEDULE_SECONDS = (0.0, 2.0, 5.0, 10.0, 20.0, 40.0, 60.0)
 
 
 class LangfuseClientBoundary(Protocol):
@@ -351,6 +355,25 @@ def create_langfuse_trace_adapter(
 
 
 @dataclass(frozen=True, slots=True)
+class LangfuseReadbackAttempt:
+    attempt_number: int
+    timestamp: str
+    elapsed_seconds: float
+    expected_count: int | None
+    observed_count: int
+    unique_observed_count: int
+    missing_observation_identities: tuple[str, ...]
+    unexpected_observation_identities: tuple[str, ...]
+    duplicate_observation_identities: tuple[str, ...]
+    root_trace_count: int | None
+    trace_id: str
+    run_id: str | None
+    run_metadata_closure: bool | None
+    trace_metadata_closure: bool | None
+    read_succeeded: bool
+
+
+@dataclass(frozen=True, slots=True)
 class LangfuseTraceRedactionAudit:
     policy_id: str
     passed: bool
@@ -369,8 +392,11 @@ class LangfuseTraceRedactionAudit:
     unexpected_duplicate_identities: tuple[str, ...] = ()
     root_trace_count: int | None = None
     one_root_trace: bool | None = None
+    run_metadata_closure: bool | None = None
+    trace_metadata_closure: bool | None = None
     force_flush_succeeded: bool | None = None
     elapsed_seconds: float = 0.0
+    readback_attempts: tuple[LangfuseReadbackAttempt, ...] = ()
 
 
 class LangfuseTraceAuditReader:
@@ -381,11 +407,17 @@ class LangfuseTraceAuditReader:
         sdk_client: Any,
         *,
         named_sensitive_values: Mapping[str, str],
+        monotonic_clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], datetime] | None = None,
+        sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self._sdk_client = sdk_client
         self._named_sensitive_values = tuple(
             sorted((name, value) for name, value in named_sensitive_values.items() if value)
         )
+        self._monotonic_clock = monotonic_clock
+        self._wall_clock = wall_clock or (lambda: datetime.now(UTC))
+        self._sleeper = sleeper
 
     def __repr__(self) -> str:
         return "LangfuseTraceAuditReader(configured=True)"
@@ -398,13 +430,22 @@ class LangfuseTraceAuditReader:
         retry_delay_seconds: float = 1.0,
         expected_observation_count: int | None = None,
         expected_observation_identities: Sequence[str] | None = None,
+        expected_run_id: str | None = None,
         force_flush_succeeded: bool | None = None,
+        readback_timeout_seconds: float | None = None,
+        readback_schedule_seconds: Sequence[float] | None = None,
     ) -> LangfuseTraceRedactionAudit:
-        started = time.monotonic()
+        started = self._monotonic_clock()
         bounded_attempts = min(max(int(attempts), 1), LANGFUSE_READBACK_MAX_ATTEMPTS)
         bounded_delay = min(
             max(float(retry_delay_seconds), 0.0),
             LANGFUSE_READBACK_MAX_RETRY_DELAY_SECONDS,
+        )
+        poll_offsets = _readback_poll_offsets(
+            attempts=bounded_attempts,
+            retry_delay_seconds=bounded_delay,
+            timeout_seconds=readback_timeout_seconds,
+            schedule_seconds=readback_schedule_seconds,
         )
         expected_identities = (
             _canonical_expected_identities(expected_observation_identities)
@@ -420,13 +461,35 @@ class LangfuseTraceAuditReader:
                 )
         used_attempts = 0
         last_read: LangfuseTraceRedactionAudit | None = None
-        for attempt in range(1, bounded_attempts + 1):
+        attempt_evidence: list[LangfuseReadbackAttempt] = []
+        for attempt, poll_offset in enumerate(poll_offsets, start=1):
             used_attempts = attempt
+            delay = poll_offset - (self._monotonic_clock() - started)
+            if delay > 0:
+                self._sleeper(delay)
             try:
                 payload = _model_payload(self._sdk_client.api.trace.get(trace_id))
             except Exception:
-                if attempt < bounded_attempts:
-                    time.sleep(bounded_delay)
+                elapsed_seconds = max(0.0, self._monotonic_clock() - started)
+                attempt_evidence.append(
+                    LangfuseReadbackAttempt(
+                        attempt_number=attempt,
+                        timestamp=_isoformat_utc(self._wall_clock()),
+                        elapsed_seconds=elapsed_seconds,
+                        expected_count=expected_observation_count,
+                        observed_count=0,
+                        unique_observed_count=0,
+                        missing_observation_identities=expected_identities or (),
+                        unexpected_observation_identities=(),
+                        duplicate_observation_identities=(),
+                        root_trace_count=0 if expected_identities is not None else None,
+                        trace_id=trace_id,
+                        run_id=expected_run_id,
+                        run_metadata_closure=False if expected_run_id is not None else None,
+                        trace_metadata_closure=False if expected_identities is not None else None,
+                        read_succeeded=False,
+                    )
+                )
                 continue
             named_counts = tuple(
                 (name, _sensitive_occurrence_count(payload, (value,)))
@@ -455,6 +518,12 @@ class LangfuseTraceAuditReader:
                 if expected_identities is not None
                 else None
             )
+            run_metadata_closure = (
+                _all_observations_bind_run(payload, expected_run_id)
+                if expected_run_id is not None
+                else None
+            )
+            trace_metadata_closure = one_root_trace
             if expected_identities is not None:
                 observation_set_complete = (
                     not missing_identities
@@ -462,12 +531,33 @@ class LangfuseTraceAuditReader:
                     and not duplicate_identities
                     and observation_count == expected_observation_count
                     and one_root_trace is True
+                    and run_metadata_closure is not False
                 )
             else:
                 observation_set_complete = (
                     expected_observation_count is None
                     or observation_count == expected_observation_count
                 )
+            elapsed_seconds = max(0.0, self._monotonic_clock() - started)
+            attempt_evidence.append(
+                LangfuseReadbackAttempt(
+                    attempt_number=attempt,
+                    timestamp=_isoformat_utc(self._wall_clock()),
+                    elapsed_seconds=elapsed_seconds,
+                    expected_count=expected_observation_count,
+                    observed_count=observation_count,
+                    unique_observed_count=len(set(observed_identities)),
+                    missing_observation_identities=missing_identities,
+                    unexpected_observation_identities=unexpected_identities,
+                    duplicate_observation_identities=duplicate_identities,
+                    root_trace_count=root_trace_count,
+                    trace_id=trace_id,
+                    run_id=expected_run_id,
+                    run_metadata_closure=run_metadata_closure,
+                    trace_metadata_closure=trace_metadata_closure,
+                    read_succeeded=True,
+                )
+            )
             last_read = LangfuseTraceRedactionAudit(
                 policy_id=LANGFUSE_OTLP_REDACTION_POLICY,
                 passed=(
@@ -489,15 +579,21 @@ class LangfuseTraceAuditReader:
                 unexpected_duplicate_identities=duplicate_identities,
                 root_trace_count=root_trace_count,
                 one_root_trace=one_root_trace,
+                run_metadata_closure=run_metadata_closure,
+                trace_metadata_closure=trace_metadata_closure,
                 force_flush_succeeded=force_flush_succeeded,
-                elapsed_seconds=time.monotonic() - started,
+                elapsed_seconds=elapsed_seconds,
+                readback_attempts=tuple(attempt_evidence),
             )
             if observation_set_complete:
                 return last_read
-            if attempt < bounded_attempts:
-                time.sleep(bounded_delay)
         if last_read is not None:
-            return last_read
+            return replace(
+                last_read,
+                attempts=used_attempts,
+                elapsed_seconds=max(0.0, self._monotonic_clock() - started),
+                readback_attempts=tuple(attempt_evidence),
+            )
         return LangfuseTraceRedactionAudit(
             policy_id=LANGFUSE_OTLP_REDACTION_POLICY,
             passed=False,
@@ -512,8 +608,11 @@ class LangfuseTraceAuditReader:
             missing_observation_identities=expected_identities or (),
             root_trace_count=0 if expected_identities is not None else None,
             one_root_trace=False if expected_identities is not None else None,
+            run_metadata_closure=False if expected_run_id is not None else None,
+            trace_metadata_closure=False if expected_identities is not None else None,
             force_flush_succeeded=force_flush_succeeded,
-            elapsed_seconds=time.monotonic() - started,
+            elapsed_seconds=max(0.0, self._monotonic_clock() - started),
+            readback_attempts=tuple(attempt_evidence),
         )
 
 
@@ -532,22 +631,36 @@ class LangfuseTelemetryDrainBarrier:
         trace_id: str,
         *,
         expected_observation_identities: Sequence[str],
+        expected_run_id: str | None = None,
         flush_timeout_millis: int = LANGFUSE_FORCE_FLUSH_TIMEOUT_MILLIS,
-        readback_attempts: int = 6,
+        readback_attempts: int | None = None,
         retry_delay_seconds: float = 1.0,
+        readback_timeout_seconds: float = LANGFUSE_ACCEPTANCE_READBACK_TIMEOUT_SECONDS,
+        readback_schedule_seconds: Sequence[float] = (
+            LANGFUSE_ACCEPTANCE_READBACK_SCHEDULE_SECONDS
+        ),
     ) -> LangfuseTraceRedactionAudit:
         started = time.monotonic()
         flush_succeeded = _force_flush_trace_provider(
             self._sdk_client,
             timeout_millis=min(max(int(flush_timeout_millis), 1), 60_000),
         )
-        audit = self._audit_reader.audit(
-            trace_id,
-            attempts=readback_attempts,
-            retry_delay_seconds=retry_delay_seconds,
-            expected_observation_identities=expected_observation_identities,
-            force_flush_succeeded=flush_succeeded,
-        )
+        reader_options: dict[str, Any] = {
+            "expected_observation_identities": expected_observation_identities,
+            "expected_run_id": expected_run_id,
+            "force_flush_succeeded": flush_succeeded,
+        }
+        if readback_attempts is None:
+            reader_options.update(
+                readback_timeout_seconds=readback_timeout_seconds,
+                readback_schedule_seconds=readback_schedule_seconds,
+            )
+        else:
+            reader_options.update(
+                attempts=readback_attempts,
+                retry_delay_seconds=retry_delay_seconds,
+            )
+        audit = self._audit_reader.audit(trace_id, **reader_options)
         return replace(
             audit,
             passed=audit.passed and flush_succeeded,
@@ -785,6 +898,62 @@ def _canonical_expected_identities(identities: Sequence[str]) -> tuple[str, ...]
     if duplicates:
         raise ValueError("expected observation identities must be unique")
     return canonical
+
+
+def _readback_poll_offsets(
+    *,
+    attempts: int,
+    retry_delay_seconds: float,
+    timeout_seconds: float | None,
+    schedule_seconds: Sequence[float] | None,
+) -> tuple[float, ...]:
+    if timeout_seconds is None and schedule_seconds is None:
+        return tuple(index * retry_delay_seconds for index in range(attempts))
+    timeout = (
+        LANGFUSE_ACCEPTANCE_READBACK_TIMEOUT_SECONDS
+        if timeout_seconds is None
+        else float(timeout_seconds)
+    )
+    if not isfinite(timeout) or timeout < 0:
+        raise ValueError("readback timeout must be finite and non-negative")
+    timeout = min(timeout, LANGFUSE_ACCEPTANCE_READBACK_TIMEOUT_SECONDS)
+    configured = (
+        LANGFUSE_ACCEPTANCE_READBACK_SCHEDULE_SECONDS
+        if schedule_seconds is None
+        else tuple(float(offset) for offset in schedule_seconds)
+    )
+    if any(not isfinite(offset) or offset < 0 for offset in configured):
+        raise ValueError("readback schedule offsets must be finite and non-negative")
+    offsets = sorted({offset for offset in configured if offset <= timeout})
+    if not offsets or offsets[0] != 0.0:
+        offsets.insert(0, 0.0)
+    if offsets[-1] != timeout:
+        offsets.append(timeout)
+    return tuple(offsets)
+
+
+def _isoformat_utc(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _all_observations_bind_run(value: Any, expected_run_id: str) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    observations = value.get("observations")
+    if not isinstance(observations, (list, tuple)) or not observations:
+        return False
+    for observation in observations:
+        if not isinstance(observation, Mapping):
+            return False
+        metadata = observation.get("metadata")
+        if not isinstance(metadata, Mapping):
+            return False
+        run_id = metadata.get("run_id") or metadata.get("runId")
+        if run_id != expected_run_id:
+            return False
+    return True
 
 
 def _root_trace_count(value: Any) -> int:

@@ -77,8 +77,12 @@ End-to-end offline controlled flow.
 
 Phase 3 remediation strengthens the existing Langfuse acceptance oracle in
 `P3-INT-005`; it does not add a gate. After flush, the authoritative trace and all
-observations are read back and recursively checked for zero configured-credential
-occurrences. Persisted audit evidence is counts-only.
+observations are read back with a bounded acceptance-only `0/2/5/10/20/40/60`-second
+reconciliation schedule. PASS requires exact observation-identity equality, no missing,
+unexpected, or duplicate identities, one root trace, exact Run/trace metadata closure, and
+zero configured-credential occurrences. The retained machine evidence includes every
+readback attempt and the complete final canonical identity collections; it never includes
+configured credential values or raw trace payloads.
 
 ## 4. Phase 1 minimum acceptance
 

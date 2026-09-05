@@ -392,6 +392,7 @@ def test_candidate_preflight_binds_clean_full_commit(
         "docs/PHASE3_PLANNER_PROVIDER_ROUTER_REMEDIATION.md",
         "docs/PHASE3_PROVIDER_RELIABILITY_REMEDIATION.md",
         "tests/unit/generated/test_artifact_retention.py",
+        "tests/unit/observability/test_langfuse_acceptance_drain_policy.py",
         "tests/unit/observability/test_langfuse_identity_evidence.py",
         "tests/unit/observability/test_trace_reference_ledger.py",
         "tests/unit/output/test_calculation_taxonomy.py",
