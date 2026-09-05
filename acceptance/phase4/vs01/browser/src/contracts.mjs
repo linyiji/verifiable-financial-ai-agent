@@ -710,11 +710,23 @@ function readPathChanges(value, tasks, graphVersion) {
         return { operation: kind, taskId };
       }
       if (kind === "add_edge" || kind === "remove_edge") {
-        violation(
-          "SCHEMA_INCOMPATIBLE",
-          operationPath,
-          "edge-operation endpoint wire encoding is not frozen; candidate review is required"
+        exactKeysAt(operation, ["operation", "task_id", "dependency_task_id"], operationPath);
+        const taskId = idAt(operation.task_id, `${operationPath}.task_id`);
+        const dependencyTaskId = idAt(
+          operation.dependency_task_id,
+          `${operationPath}.dependency_task_id`
         );
+        if (
+          !knownTaskIds.has(taskId) || !knownTaskIds.has(dependencyTaskId) ||
+          !taskRefs.includes(taskId) || !taskRefs.includes(dependencyTaskId)
+        ) {
+          violation(
+            "IDENTITY_MISMATCH",
+            operationPath,
+            "edge-operation Tasks must be in the same Run and PathChange refs"
+          );
+        }
+        return { operation: kind, taskId, dependencyTaskId };
       }
       violation("SCHEMA_INCOMPATIBLE", `${operationPath}.operation`, "unsupported graph operation");
     });

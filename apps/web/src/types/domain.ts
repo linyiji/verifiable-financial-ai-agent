@@ -336,6 +336,12 @@ export interface ResearchRunDetailV1 {
   readonly projectionSequence: number;
 }
 
+/** Frozen 14-field Run record embedded in an atomic Run projection. */
+export type EmbeddedResearchRunV1 = Omit<
+  ResearchRunDetailV1,
+  "terminal" | "projectionRevision" | "projectionSequence"
+>;
+
 export interface RunTaskProjection {
   readonly taskId: string;
   readonly runId: string;
@@ -453,7 +459,7 @@ export interface RunProjection {
   readonly projectionSequence: number;
   readonly generatedAt: string;
   readonly object: NormalizedObjectIdentity;
-  readonly run: ResearchRunDetailV1;
+  readonly run: EmbeddedResearchRunV1;
   readonly goal: NormalizedGoal;
   readonly confirmedScheme: NormalizedScheme & Readonly<{ confirmedAt: string }>;
   readonly plannedGraph: NormalizedGraph;
@@ -1983,6 +1989,87 @@ function decodeResearchRunDetailAt(value: unknown, path: string): ResearchRunDet
   });
 }
 
+function decodeEmbeddedResearchRunAt(value: unknown, path: string): EmbeddedResearchRunV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(
+    input,
+    [
+      "run_id",
+      "research_object_id",
+      "goal_id",
+      "scheme_id",
+      "status",
+      "stage",
+      "as_of",
+      "planned_graph_id",
+      "actual_graph_id",
+      "execution_target",
+      "created_at",
+      "updated_at",
+      "started_at",
+      "completed_at"
+    ],
+    path
+  );
+  const statusFields = decodeRunStatusFields(
+    { ...input, terminal: field(input, "completed_at", path) !== null },
+    path
+  );
+  const createdAt = decodeRfc3339Utc(field(input, "created_at", path), `${path}.created_at`);
+  const updatedAt = decodeRfc3339Utc(field(input, "updated_at", path), `${path}.updated_at`);
+  const startedAt = decodeNullable(
+    field(input, "started_at", path),
+    decodeRfc3339Utc,
+    `${path}.started_at`
+  );
+  const completedAt = decodeNullable(
+    field(input, "completed_at", path),
+    decodeRfc3339Utc,
+    `${path}.completed_at`
+  );
+  if (statusFields.terminal !== (completedAt !== null)) {
+    return fail(`${path}.completed_at`, "completion time must be present exactly for terminal Runs");
+  }
+  if (
+    Date.parse(createdAt) > Date.parse(updatedAt) ||
+    (startedAt !== null && Date.parse(startedAt) < Date.parse(createdAt)) ||
+    (startedAt !== null && Date.parse(startedAt) > Date.parse(updatedAt)) ||
+    (completedAt !== null &&
+      (Date.parse(completedAt) < Date.parse(startedAt ?? createdAt) ||
+        Date.parse(completedAt) > Date.parse(updatedAt)))
+  ) {
+    return fail(path, "Run timestamps contradict lifecycle order");
+  }
+  const { terminal: _terminal, ...embeddedStatus } = statusFields;
+  return freezeDeep({
+    runId: decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`),
+    researchObjectId: decodeOpaqueId(
+      field(input, "research_object_id", path),
+      `${path}.research_object_id`
+    ),
+    goalId: decodeOpaqueId(field(input, "goal_id", path), `${path}.goal_id`),
+    schemeId: decodeOpaqueId(field(input, "scheme_id", path), `${path}.scheme_id`),
+    ...embeddedStatus,
+    asOf: decodeDate(field(input, "as_of", path), `${path}.as_of`),
+    plannedGraphId: decodeNullableOpaqueId(
+      field(input, "planned_graph_id", path),
+      `${path}.planned_graph_id`
+    ),
+    actualGraphId: decodeNullableOpaqueId(
+      field(input, "actual_graph_id", path),
+      `${path}.actual_graph_id`
+    ),
+    executionTarget: decodeNonBlankString(
+      field(input, "execution_target", path),
+      `${path}.execution_target`
+    ),
+    createdAt,
+    updatedAt,
+    startedAt,
+    completedAt
+  });
+}
+
 export function decodeResearchRunDetail(
   value: unknown,
   expectedRunId: string,
@@ -2572,7 +2659,7 @@ export function decodeRunProjection(
     "$.projection_sequence"
   );
   const object = decodeObjectIdentity(field(input, "object", "$" ), "$.object");
-  const run = decodeResearchRunDetailAt(field(input, "run", "$" ), "$.run");
+  const run = decodeEmbeddedResearchRunAt(field(input, "run", "$" ), "$.run");
   const expectedRun = decodeOpaqueId(expectedRunId, "expectedRunId");
   if (run.runId !== expectedRun) return fail("$.run.run_id", "projection belongs to another Run");
   if (run.researchObjectId !== object.objectId) {
@@ -2583,12 +2670,6 @@ export function decodeRunProjection(
     object.objectId !== decodeOpaqueId(expectedObjectId, "expectedObjectId")
   ) {
     return fail("$.object.object_id", "projection belongs to another Research Object");
-  }
-  if (
-    run.projectionRevision !== projectionRevision ||
-    run.projectionSequence !== projectionSequence
-  ) {
-    return fail("$.run", "Run watermarks are torn from projection watermarks");
   }
   const goal = decodeGoal(field(input, "goal", "$" ), "$.goal");
   if (goal.goalId !== run.goalId || goal.researchObjectId !== object.objectId) {

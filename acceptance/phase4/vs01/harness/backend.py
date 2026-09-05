@@ -1781,10 +1781,7 @@ def validate_atomic_run_projection(
             if operation_kind == "add_node":
                 required = {"operation", "task_id"}
             elif operation_kind in {"add_edge", "remove_edge"}:
-                raise ContractViolation(
-                    f"{operation_path} edge-operation wire fields are not frozen; "
-                    "Parent contract clarification is required"
-                )
+                required = {"operation", "task_id", "dependency_task_id"}
             else:
                 raise ContractViolation(f"{operation_path}.operation is unsupported")
             _exact_fields(operation, required, operation_path)

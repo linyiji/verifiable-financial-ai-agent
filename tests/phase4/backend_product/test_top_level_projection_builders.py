@@ -452,6 +452,22 @@ def test_build_atomic_run_projection_composes_one_coherent_nonreleased_snapshot(
     assert projection.run.run_id == "RUN-A"
     assert projection.run.projection_revision == projection.projection_revision == 7
     assert projection.run.projection_sequence == projection.projection_sequence == 0
+    assert set(projection.model_dump(mode="json")["run"]) == {
+        "run_id",
+        "research_object_id",
+        "goal_id",
+        "scheme_id",
+        "status",
+        "stage",
+        "as_of",
+        "planned_graph_id",
+        "actual_graph_id",
+        "execution_target",
+        "created_at",
+        "updated_at",
+        "started_at",
+        "completed_at",
+    }
     assert projection.lifecycle.status == "RUNNING"
     assert projection.lifecycle.progress.fraction == 0.25
     assert tuple(task.task_id for task in projection.tasks) == ("TASK-A",)

@@ -17,6 +17,7 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    field_serializer,
     field_validator,
     model_validator,
 )
@@ -401,6 +402,17 @@ class SafeRuntimeActivityV1(FrozenWireModel):
     trace_bundle_refs: tuple[str, ...] = ()
 
 
+class RunCollectionActivityV1(FrozenWireModel):
+    """Frozen compact activity shape used only by Run collection rows."""
+
+    event_id: NonBlank
+    type: NonBlank
+    sequence: int = Field(ge=1)
+    timestamp: datetime
+    task_id: str | None = None
+    message_code: NonBlank
+
+
 class RunCollectionObjectV1(FrozenWireModel):
     object_id: NonBlank
     symbol: NonBlank
@@ -413,7 +425,7 @@ class RunCollectionItemV1(FrozenWireModel):
     status: RunStatusV1
     stage: RunStageV1
     progress: RunProgressV1
-    activity: SafeRuntimeActivityV1 | None
+    activity: RunCollectionActivityV1 | None
     graph_version: int | None = Field(default=None, ge=1)
     projection_revision: int = Field(ge=1)
     projection_sequence: int = Field(ge=0)
@@ -559,6 +571,15 @@ class AtomicRunProjectionV1(FrozenWireModel):
     execution: OwnedAvailabilityRefV1
     terminal: TerminalStateV1
 
+    @field_serializer("run")
+    def serialize_embedded_run(self, run: ResearchRunDetailV1) -> dict[str, object]:
+        """The embedded Run is the frozen 14-field record, not standalone GET Run."""
+
+        return run.model_dump(
+            mode="json",
+            exclude={"terminal", "projection_revision", "projection_sequence"},
+        )
+
     @model_validator(mode="after")
     def exact_identity(self) -> AtomicRunProjectionV1:
         run_id = self.run.run_id
@@ -581,10 +602,6 @@ class AtomicRunProjectionV1(FrozenWireModel):
             raise ValueError("graph belongs to another run")
         if any(task.run_id != run_id for task in self.tasks):
             raise ValueError("task belongs to another run")
-        if self.projection_revision != self.run.projection_revision:
-            raise ValueError("run projection revision is torn")
-        if self.projection_sequence != self.run.projection_sequence:
-            raise ValueError("run projection sequence is torn")
         return self
 
 

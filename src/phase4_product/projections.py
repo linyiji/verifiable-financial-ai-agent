@@ -71,6 +71,7 @@ from src.phase4_product.contracts import (
     ReviewAvailabilityRefV1,
     ReviewCorrectionRefV1,
     ReviewSubjectV1,
+    RunCollectionActivityV1,
     RunCollectionItemV1,
     RunCollectionObjectV1,
     RunLifecycleV1,
@@ -888,7 +889,18 @@ def project_run_collection_item(source: RunCollectionSource) -> RunCollectionIte
         status=detail.status,
         stage=detail.stage,
         progress=progress,
-        activity=activity,
+        activity=(
+            None
+            if activity is None
+            else RunCollectionActivityV1(
+                event_id=activity.event_id,
+                type=activity.type,
+                sequence=activity.sequence,
+                timestamp=activity.timestamp,
+                task_id=activity.task_id,
+                message_code=activity.message_code,
+            )
+        ),
         graph_version=None if graph is None else graph.version,
         projection_revision=detail.projection_revision,
         projection_sequence=detail.projection_sequence,

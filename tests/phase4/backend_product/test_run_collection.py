@@ -167,6 +167,14 @@ def test_item_uses_exact_safe_projection_primitives() -> None:
     assert item.graph_version == 2
     assert item.activity is not None
     assert (item.activity.event_id, item.activity.sequence) == ("EVT-RUN-A", 9)
+    assert set(item.activity.model_dump(mode="json")) == {
+        "event_id",
+        "type",
+        "sequence",
+        "timestamp",
+        "task_id",
+        "message_code",
+    }
     assert item.result_availability.status is AvailabilityStatus.PENDING
 
 
