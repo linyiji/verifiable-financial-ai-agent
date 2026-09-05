@@ -52,11 +52,17 @@ class InMemoryTraceReferenceRepository:
         self._references: dict[str, TraceReference] = {}
 
     async def add(self, reference: TraceReference) -> None:
-        self._references.setdefault(reference.reference_id, reference.model_copy(deep=True))
+        retained = reference.model_copy(deep=True)
+        existing = self._references.get(retained.reference_id)
+        if existing is not None:
+            if existing.model_dump(mode="json") != retained.model_dump(mode="json"):
+                raise ValueError(f"conflicting TraceReference identity: {retained.reference_id}")
+            return
+        self._references[retained.reference_id] = retained
 
     async def list_by_run(self, run_id: str) -> list[TraceReference]:
         return [
             reference.model_copy(deep=True)
-            for reference in self._references.values()
+            for reference in sorted(self._references.values(), key=lambda item: item.reference_id)
             if reference.run_id == run_id
         ]

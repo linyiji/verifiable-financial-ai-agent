@@ -52,6 +52,7 @@ from src.output import (
     WritebackTarget,
     build_canonical_record_projections,
 )
+from src.output.calculation_taxonomy import partition_material_calculation_refs
 from src.output.financial_metrics import (
     MATERIAL_FORMULAS,
     build_material_financial_release,
@@ -516,6 +517,20 @@ class ResearchApplicationService:
                 proof for proof in proof_outcome.proofs.values() if isinstance(proof, ProofRecord)
             ],
         )
+        fundamental_calculation_refs = list(record.calculation_refs)
+        technical_calculation_refs: list[str] = []
+        if strict_financial_release:
+            (
+                fundamental_calculation_refs,
+                technical_calculation_refs,
+            ) = partition_material_calculation_refs(aggregate.artifacts.calculations)
+            if set(fundamental_calculation_refs) | set(technical_calculation_refs) != set(
+                record.calculation_refs
+            ):
+                raise ApplicationError(
+                    "MATERIAL_CALCULATION_TAXONOMY_MISMATCH",
+                    "structured report calculation taxonomy does not close to the canonical record",
+                )
         calculations = {item.capability_id: item for item in aggregate.artifacts.calculations}
         live_evidence = any(item.provider == "fmp" for item in aggregate.artifacts.evidence)
         risk_result = next(
@@ -532,7 +547,7 @@ class ResearchApplicationService:
                 "revenue_growth": str(calculations["revenue_growth"].output_value),
                 "ebitda_margin": str(calculations["ebitda_margin"].output_value),
             },
-            "fundamental_result": {"calculation_refs": record.calculation_refs},
+            "fundamental_result": {"calculation_refs": fundamental_calculation_refs},
             "peer_result": next(
                 (
                     output
@@ -545,6 +560,10 @@ class ResearchApplicationService:
             "valuation_result": {"status": "not_quantified_in_current_scope"},
             "investment_thesis": {"status": "reviewed_execution"},
         }
+        if strict_financial_release:
+            structured["technical_result"] = {
+                "calculation_refs": technical_calculation_refs,
+            }
         limitations = list(proof_outcome.limitations)
         if not live_evidence:
             limitations.insert(0, "Offline controlled fixture only.")

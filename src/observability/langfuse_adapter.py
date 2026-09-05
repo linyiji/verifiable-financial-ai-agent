@@ -367,6 +367,7 @@ class LangfuseTraceRedactionAudit:
     missing_observation_identities: tuple[str, ...] = ()
     unexpected_observation_identities: tuple[str, ...] = ()
     unexpected_duplicate_identities: tuple[str, ...] = ()
+    root_trace_count: int | None = None
     one_root_trace: bool | None = None
     force_flush_succeeded: bool | None = None
     elapsed_seconds: float = 0.0
@@ -406,14 +407,9 @@ class LangfuseTraceAuditReader:
             LANGFUSE_READBACK_MAX_RETRY_DELAY_SECONDS,
         )
         expected_identities = (
-            tuple(sorted({str(item) for item in expected_observation_identities if str(item)}))
+            _canonical_expected_identities(expected_observation_identities)
             if expected_observation_identities is not None
             else None
-        )
-        expected_identity_duplicates = (
-            _duplicate_identities(tuple(str(item) for item in expected_observation_identities))
-            if expected_observation_identities is not None
-            else ()
         )
         if expected_identities is not None:
             if expected_observation_count is None:
@@ -439,10 +435,8 @@ class LangfuseTraceAuditReader:
             occurrence_count = sum(count for _, count in named_counts)
             observation_count = _observation_count(payload)
             observed_sequence = _observation_identities(payload)
-            observed_identities = tuple(sorted(set(observed_sequence)))
-            duplicate_identities = tuple(
-                sorted({*expected_identity_duplicates, *_duplicate_identities(observed_sequence)})
-            )
+            observed_identities = tuple(sorted(observed_sequence))
+            duplicate_identities = _duplicate_identities(observed_sequence)
             missing_identities = (
                 tuple(sorted(set(expected_identities) - set(observed_identities)))
                 if expected_identities is not None
@@ -452,6 +446,9 @@ class LangfuseTraceAuditReader:
                 tuple(sorted(set(observed_identities) - set(expected_identities)))
                 if expected_identities is not None
                 else ()
+            )
+            root_trace_count = (
+                _root_trace_count(payload) if expected_identities is not None else None
             )
             one_root_trace = (
                 _one_exact_root_trace(payload, trace_id)
@@ -490,6 +487,7 @@ class LangfuseTraceAuditReader:
                 missing_observation_identities=missing_identities,
                 unexpected_observation_identities=unexpected_identities,
                 unexpected_duplicate_identities=duplicate_identities,
+                root_trace_count=root_trace_count,
                 one_root_trace=one_root_trace,
                 force_flush_succeeded=force_flush_succeeded,
                 elapsed_seconds=time.monotonic() - started,
@@ -512,7 +510,7 @@ class LangfuseTraceAuditReader:
             attempts=used_attempts,
             expected_observation_identities=expected_identities,
             missing_observation_identities=expected_identities or (),
-            unexpected_duplicate_identities=expected_identity_duplicates,
+            root_trace_count=0 if expected_identities is not None else None,
             one_root_trace=False if expected_identities is not None else None,
             force_flush_succeeded=force_flush_succeeded,
             elapsed_seconds=time.monotonic() - started,
@@ -777,6 +775,32 @@ def _observation_identities(value: Any) -> tuple[str, ...]:
 
 def _duplicate_identities(identities: Sequence[str]) -> tuple[str, ...]:
     return tuple(sorted(identity for identity, count in Counter(identities).items() if count > 1))
+
+
+def _canonical_expected_identities(identities: Sequence[str]) -> tuple[str, ...]:
+    canonical = tuple(sorted(str(identity) for identity in identities))
+    if any(not identity for identity in canonical):
+        raise ValueError("expected observation identities must not be blank")
+    duplicates = _duplicate_identities(canonical)
+    if duplicates:
+        raise ValueError("expected observation identities must be unique")
+    return canonical
+
+
+def _root_trace_count(value: Any) -> int:
+    if not isinstance(value, Mapping):
+        return 0
+    observations = value.get("observations")
+    if not isinstance(observations, (list, tuple)):
+        return 0
+    trace_ids: set[str] = set()
+    for observation in observations:
+        if not isinstance(observation, Mapping):
+            continue
+        trace_id = observation.get("traceId") or observation.get("trace_id")
+        if isinstance(trace_id, (str, int)):
+            trace_ids.add(_format_identifier(trace_id, kind="trace"))
+    return len(trace_ids)
 
 
 def _one_exact_root_trace(value: Any, expected_trace_id: str) -> bool:

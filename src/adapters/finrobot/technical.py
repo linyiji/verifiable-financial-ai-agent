@@ -533,7 +533,6 @@ class VolumeRatio20Capability:
                 "average_includes_latest_observation": True,
                 "first_as_of": points[-window].as_of.isoformat(),
                 "last_as_of": points[-1].as_of.isoformat(),
-                **_technical_input_metadata(points[-window:]),
             },
             output=value,
             unit="RATIO",

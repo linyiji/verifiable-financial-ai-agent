@@ -167,6 +167,9 @@ from src.observability import (
     TraceRuntimeStatus,
     create_langfuse_trace_adapter,
 )
+from src.observability.identity_evidence import build_langfuse_identity_set_evidence
+from src.observability.reference_ledger import build_trace_reference_ledger
+from src.output.calculation_taxonomy import FUNDAMENTAL_FORMULAS, TECHNICAL_FORMULAS
 from src.output.financial_metrics import MATERIAL_FORMULAS, build_research_source_coverage
 from src.runtime.sse import encode_sse_event, encode_sse_heartbeat, runtime_event_stream
 from src.tooling.generated_sandbox import DEFAULT_SANDBOX_IMAGE, DockerSandboxBackend
@@ -900,11 +903,20 @@ def _candidate_preflight(repository_root: Path, expected_head: str) -> dict[str,
         "src/domain/financial_validation.py",
         "src/domain/macd_policy.py",
         "src/infrastructure/database/generated_workflow.py",
+        "src/adapters/finrobot/technical.py",
+        "src/application/service.py",
+        "src/observability/identity_evidence.py",
         "src/observability/langfuse_adapter.py",
+        "src/observability/reference_ledger.py",
+        "src/output/calculation_taxonomy.py",
         "docs/PHASE3_INDEPENDENT_AUDIT_REMEDIATION.md",
         "docs/PHASE3_PLANNER_PROVIDER_ROUTER_REMEDIATION.md",
         "docs/PHASE3_PROVIDER_RELIABILITY_REMEDIATION.md",
         "tests/unit/generated/test_artifact_retention.py",
+        "tests/unit/observability/test_langfuse_identity_evidence.py",
+        "tests/unit/observability/test_trace_reference_ledger.py",
+        "tests/unit/output/test_calculation_taxonomy.py",
+        "tests/financial/test_volume_ratio_provenance_metadata.py",
         "src/adapters/risc0/release_manifest.py",
         "tests/test_phase3_acceptance_runner.py",
         "tests/unit/llm/test_planner_provider_router.py",
@@ -1397,7 +1409,7 @@ def _financial_semantic_matrix(
     calculations = list(aggregate.artifacts.calculations)
     calculation_by_id = {item.calculation_id: item for item in calculations}
     metric_by_id = {item.metric_id: item for item in metrics}
-    percent_formulas = set(MATERIAL_FORMULAS[:3])
+    percent_formulas = set(FUNDAMENTAL_FORMULAS)
     percent_rendering = all(
         item.display_unit == "%"
         and item.display_value
@@ -1418,12 +1430,38 @@ def _financial_semantic_matrix(
         item.model_dump(mode="json") for item in metrics
     ]
     dispositions = list(released.material_calculation_dispositions)
+    calculation_id_by_formula = {item.formula_id: item.calculation_id for item in calculations}
+    expected_fundamental_refs = [
+        calculation_id_by_formula[formula_id] for formula_id in FUNDAMENTAL_FORMULAS
+    ]
+    expected_technical_refs = [
+        calculation_id_by_formula[formula_id] for formula_id in TECHNICAL_FORMULAS
+    ]
+    fundamental_section = dto.structured_financial_results.get("fundamental_result")
+    technical_section = dto.structured_financial_results.get("technical_result")
+    fundamental_refs = (
+        fundamental_section.get("calculation_refs")
+        if isinstance(fundamental_section, Mapping)
+        else None
+    )
+    technical_refs = (
+        technical_section.get("calculation_refs")
+        if isinstance(technical_section, Mapping)
+        else None
+    )
+    report_taxonomy = (
+        fundamental_refs == expected_fundamental_refs
+        and technical_refs == expected_technical_refs
+        and set(fundamental_refs).isdisjoint(technical_refs)
+        and set(fundamental_refs) | set(technical_refs) == set(dto.calculation_refs)
+    )
     material_closure = (
         len(calculations) == len(metrics) == len(dispositions) == len(MATERIAL_FORMULAS)
         and {item.formula_id for item in calculations} == set(MATERIAL_FORMULAS)
         and {item.calculation_id for item in dispositions}
         == {item.calculation_id for item in calculations}
         and all(item.status.value == "REPORTABLE" for item in dispositions)
+        and report_taxonomy
     )
     claim_closure = (
         len(claims) == len(metrics)
@@ -1465,7 +1503,7 @@ def _financial_semantic_matrix(
         and oracle == runtime_result
         and _same_canonical_decimal(oracle.get("value"), generated_calculation.output_value)
     )
-    technical = [item for item in metrics if item.formula_id in MATERIAL_FORMULAS[3:]]
+    technical = [item for item in metrics if item.formula_id in TECHNICAL_FORMULAS]
     macd_determinism = _macd_ambient_context_check(
         calculations=calculations,
         evidence=aggregate.artifacts.evidence,
@@ -1584,7 +1622,18 @@ def _financial_semantic_matrix(
     return {
         "FS-001": _gate(percent_rendering, {"percent_formula_count": 3}),
         "FS-002": _gate(decimal_preserved, {"decimal_boundary": "string"}),
-        "FS-003": _gate(material_closure, {"material_calculation_count": len(calculations)}),
+        "FS-003": _gate(
+            material_closure,
+            {
+                "material_calculation_count": len(calculations),
+                "fundamental_calculation_ref_count": (
+                    len(fundamental_refs) if fundamental_refs is not None else 0
+                ),
+                "technical_calculation_ref_count": (
+                    len(technical_refs) if technical_refs is not None else 0
+                ),
+            },
+        ),
         "FS-004": _gate(claim_closure, {"typed_claim_count": len(claims)}),
         "FS-005": _gate(
             reviewer_passed and revenue_semantics_passed,
@@ -2203,7 +2252,7 @@ def _acceptance_matrix(
         ),
         "P3-FIN-004": _gate(
             len(technical) == 7
-            and {item.formula_id for item in technical} == set(MATERIAL_FORMULAS[3:])
+            and {item.formula_id for item in technical} == set(TECHNICAL_FORMULAS)
             and all(
                 item.output_value is not None and item.status.value == "PASS" for item in technical
             ),
@@ -2896,6 +2945,11 @@ async def _run_authoritative(
             trace_id,
             expected_observation_identities=expected_observation_identities,
         )
+        identity_set_evidence = build_langfuse_identity_set_evidence(
+            run_id=run_id,
+            trace_id=trace_id,
+            audit=langfuse_redaction_audit,
+        )
         events = list(await persistence.event_store.replay(run_id))
         event_sequences = [item.sequence for item in events]
         events_integrity_passed = (
@@ -3024,6 +3078,13 @@ async def _run_authoritative(
         trace_stages = {item.stage for item in all_references}
         canonical_trace_refs = set(aggregate.artifacts.canonical_record.trace_refs)
         persisted_reference_ids = {item.reference_id for item in all_references}
+        trace_reference_ledger = build_trace_reference_ledger(
+            run_id=run_id,
+            trace_id=trace_id,
+            authoritative_reference_ids=[item.reference_id for item in all_references],
+            cer_reference_ids=aggregate.artifacts.canonical_record.trace_refs,
+            records=all_references,
+        )
         audit_state["failed_stage"] = "langfuse_trace_evaluation"
         trace_passed = (
             instrumentation.status is TraceRuntimeStatus.TRACE_HEALTHY
@@ -3042,6 +3103,15 @@ async def _run_authoritative(
             }.issubset(trace_stages)
             and bool(canonical_trace_refs)
             and canonical_trace_refs.issubset(persisted_reference_ids)
+            and trace_reference_ledger.unresolved_count == 0
+            and trace_reference_ledger.mapped_reference_count
+            == trace_reference_ledger.total_reference_count
+            and trace_reference_ledger.same_run_count
+            == trace_reference_ledger.total_reference_count
+            and trace_reference_ledger.same_trace_count
+            == trace_reference_ledger.total_reference_count
+            and trace_reference_ledger.cer_resolved_count
+            == trace_reference_ledger.cer_reference_count
         )
         event_types = {event.type.value for event in events}
         required_trace_events = {
@@ -3124,6 +3194,16 @@ async def _run_authoritative(
             "one_root_trace": langfuse_redaction_audit.one_root_trace,
             "force_flush_succeeded": langfuse_redaction_audit.force_flush_succeeded,
             "drain_elapsed_seconds": langfuse_redaction_audit.elapsed_seconds,
+            **identity_set_evidence,
+            "trace_reference_ledger": {
+                "total_reference_count": trace_reference_ledger.total_reference_count,
+                "mapped_reference_count": trace_reference_ledger.mapped_reference_count,
+                "same_run_count": trace_reference_ledger.same_run_count,
+                "same_trace_count": trace_reference_ledger.same_trace_count,
+                "unresolved_count": trace_reference_ledger.unresolved_count,
+                "cer_reference_count": trace_reference_ledger.cer_reference_count,
+                "cer_resolved_count": trace_reference_ledger.cer_resolved_count,
+            },
             "credential_redaction": {
                 "policy_id": langfuse_redaction_audit.policy_id,
                 "passed": langfuse_redaction_audit.passed,
@@ -3559,6 +3639,10 @@ async def _run_authoritative(
         _write_json(output / "candidate_identity.json", candidate)
         _write_json(output / "regression_evidence.json", regressions)
         _write_json(output / "langfuse_trace_summary.json", langfuse_evidence)
+        _write_json(
+            output / "trace_reference_ledger.json",
+            trace_reference_ledger.model_dump(mode="json"),
+        )
         _write_json(output / "secret_scan_summary.json", secret_scan)
         _write_json(
             output / "review_record.json", aggregate.artifacts.review.model_dump(mode="json")
