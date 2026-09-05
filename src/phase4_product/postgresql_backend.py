@@ -18,6 +18,7 @@ from src.application.persistence import (
     ResearchObjectRow,
     ResearchRunAggregateRow,
     RuntimeEventRow,
+    SQLAlchemyApplicationRepository,
 )
 from src.application.service import ResearchApplicationService
 from src.domain.enums import ReplanDecision, RunStatus
@@ -934,8 +935,26 @@ class PostgreSQLPhase4ProductBackend:
             aggregate = await self.service.repository.get_run(event.run_id)
             if aggregate is None:
                 return
+            if event.type is RuntimeEventType.RUN_FAILED:
+                terminal_status = RunStatus(str(event.payload.get("status", "")))
+                if terminal_status not in {RunStatus.FAILED, RunStatus.CANCELLED}:
+                    raise ValueError("run.failed requires a failed or cancelled Run status")
+                aggregate.run.status = terminal_status
+                aggregate.run.completed_at = event.timestamp
+                aggregate.runtime.run_status = terminal_status
             if event.timestamp > aggregate.run.updated_at:
                 aggregate.run.updated_at = event.timestamp
+            if event.type is RuntimeEventType.RUN_FAILED:
+                repository = self.service.repository
+                if not isinstance(repository, SQLAlchemyApplicationRepository):
+                    raise RuntimeError(
+                        "PostgreSQL Product event publication requires its SQLAlchemy repository"
+                    )
+                await repository.save_run_with_projection_watermark(
+                    aggregate,
+                    projection_sequence=event.sequence,
+                )
+                return
             await self.service.repository.save_run(aggregate)
             async with self.sessions() as session, session.begin():
                 row = await session.scalar(

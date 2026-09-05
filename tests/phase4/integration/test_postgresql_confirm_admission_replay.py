@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Iterator
 
@@ -7,8 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from acceptance.phase4.vs01.harness.backend import validate_run_collection
 from apps.api.main import create_app
 from src.application.persistence import ResearchRunAggregateRow, RuntimeEventRow, TaskRow
+from src.domain.runtime_event import RuntimeEventType
 from src.infrastructure.config.settings import get_settings
 from src.infrastructure.database.phase4_product import (
     Phase4ActualGraphRow,
@@ -174,3 +177,97 @@ def test_confirm_admission_replay_and_immediate_run_collection_are_exactly_once(
             "scheduler_admissions",
         ):
             assert restart_counts[name] == counts[name]
+
+
+async def _hold_started_run(_run_id: str) -> None:
+    await asyncio.Event().wait()
+
+
+async def _emit_scheduler_failure(backend, run_id: str) -> None:
+    await backend.service.event_store.emit(
+        run_id=run_id,
+        event_type=RuntimeEventType.RUN_FAILED,
+        payload={
+            "status": "FAILED",
+            "failure_stage": "TASK_EXECUTION",
+            "failure_code": "TASK_EXECUTION_FAILED",
+        },
+    )
+
+
+def test_terminal_scheduler_event_and_run_watermark_are_http_atomic_across_restart() -> None:
+    headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
+    confirm_headers = {**headers, "Idempotency-Key": "be004-terminal-confirm"}
+    app = create_app()
+    with TestClient(app) as client:
+        backend = app.state.phase4_product_backend
+        backend._execute_started_run = _hold_started_run
+        created = client.post(
+            "/api/objects",
+            headers={**headers, "Idempotency-Key": "be004-terminal-object"},
+            json={
+                "symbol": "AAPL",
+                "company_name": "Apple Inc.",
+                "exchange": "NASDAQ",
+                "currency": "USD",
+            },
+        )
+        assert created.status_code == 201, created.text
+        object_id = created.json()["object"]["object_id"]
+        prepared = client.post(
+            "/api/research-runs/prepare",
+            headers={**headers, "Idempotency-Key": "be004-terminal-prepare"},
+            json={
+                "research_object_id": object_id,
+                "research_goal": "Produce a verifiable full-company research report.",
+                "as_of": "2026-09-05",
+                "preferences": {},
+            },
+        )
+        assert prepared.status_code == 201, prepared.text
+        body = _confirm_body(prepared.json(), object_id)
+        confirmed = client.post("/api/research-runs", headers=confirm_headers, json=body)
+        assert confirmed.status_code == 201, confirmed.text
+        admission = confirmed.json()["admission"]
+        run_id = admission["run_id"]
+
+        for _ in range(100):
+            run = client.get(f"/api/research-runs/{run_id}", headers=headers)
+            assert run.status_code == 200, run.text
+            if run.json()["status"] == "RUNNING":
+                break
+        assert run.json()["status"] == "RUNNING"
+
+        replayed = client.post("/api/research-runs", headers=confirm_headers, json=body)
+        assert replayed.status_code == 200, replayed.text
+        assert replayed.json()["admission"] == admission
+
+        client.portal.call(_emit_scheduler_failure, backend, run_id)
+        object_runs = client.get(f"/api/objects/{object_id}/runs", headers=headers)
+        assert object_runs.status_code == 200, object_runs.text
+        assert validate_run_collection(object_runs.json(), expected_object_id=object_id) == (
+            run_id,
+        )
+        item = object_runs.json()["items"][0]
+        assert (item["status"], item["stage"], item["terminal"]) == (
+            "FAILED",
+            "FAILED",
+            True,
+        )
+        assert item["activity"]["type"] == "run.failed"
+        assert item["result_availability"] == {
+            "status": "FAILED",
+            "reason_code": "RUN_TERMINAL_WITHOUT_RELEASE",
+            "retryable": False,
+        }
+
+    reopened = create_app()
+    with TestClient(reopened) as client:
+        restart_replay = client.post("/api/research-runs", headers=confirm_headers, json=body)
+        assert restart_replay.status_code == 200, restart_replay.text
+        assert restart_replay.json()["admission"] == admission
+        object_runs = client.get(f"/api/objects/{object_id}/runs", headers=headers)
+        assert object_runs.status_code == 200, object_runs.text
+        assert validate_run_collection(object_runs.json(), expected_object_id=object_id) == (
+            run_id,
+        )

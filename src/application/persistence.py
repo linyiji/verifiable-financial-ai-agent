@@ -270,6 +270,34 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             await self._persist_children(session, aggregate)
             await session.commit()
 
+    async def save_run_with_projection_watermark(
+        self,
+        aggregate: RunAggregate,
+        *,
+        projection_sequence: int,
+    ) -> None:
+        """Persist one aggregate and its public event watermark atomically."""
+
+        if projection_sequence < 1:
+            raise ValueError("projection_sequence must be positive")
+        await super().save_run(aggregate)
+        async with self._sessions() as session, session.begin():
+            row = await session.scalar(
+                select(ResearchRunAggregateRow)
+                .where(ResearchRunAggregateRow.run_id == aggregate.run.run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise KeyError(aggregate.run.run_id)
+            if projection_sequence <= row.projection_sequence:
+                return
+            row.status = aggregate.run.status.value
+            row.payload = self._payload(aggregate)
+            row.updated_at = aggregate.run.completed_at or aggregate.run.created_at
+            row.projection_sequence = projection_sequence
+            row.projection_revision += 1
+            await self._persist_children(session, aggregate)
+
     async def save_runtime_events(self, events: list[RuntimeEvent]) -> None:
         async with self._sessions() as session:
             for event in events:
