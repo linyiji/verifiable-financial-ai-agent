@@ -108,7 +108,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                         Path(settings.artifact_root) / "phase4-generated",
                         forbidden_values=tuple(
                             secret.get_secret_value()
-                            for secret in (settings.fmp.api_key, settings.llm.api_key)
+                            for secret in (*settings.fmp.credentials, settings.llm.api_key)
                             if secret is not None
                         ),
                     ),

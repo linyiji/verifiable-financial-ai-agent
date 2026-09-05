@@ -1,3 +1,4 @@
+from src.adapters.fmp.credentials import FMPKeyPool
 from src.adapters.fmp.models import (
     FMPAccessError,
     FMPAccessStatus,
@@ -17,6 +18,7 @@ __all__ = [
     "FMPAccessStatus",
     "FMPEndpoint",
     "FMPFetchResult",
+    "FMPKeyPool",
     "FMPProvider",
     "FMPResponseEnvelope",
     "FMPTransport",

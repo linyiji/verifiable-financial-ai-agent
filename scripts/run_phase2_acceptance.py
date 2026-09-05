@@ -55,7 +55,10 @@ async def run(output: Path) -> dict[str, Any]:
     trace_build = create_langfuse_trace_adapter(
         settings.langfuse,
         additional_sensitive_values={
-            "FMP_API_KEY": settings.fmp.api_key.get_secret_value(),
+            **{
+                f"FMP_API_KEY_SLOT_{index}": secret.get_secret_value()
+                for index, secret in enumerate(settings.fmp.credentials, start=1)
+            },
             "TEAMOROUTER_API_KEY": settings.llm.api_key.get_secret_value(),
         },
     )

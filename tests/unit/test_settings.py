@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.infrastructure.config import Settings
+from src.infrastructure.config import Settings, load_numbered_fmp_credentials
 
 
 def test_unified_settings_load_env_local_and_redact_secrets(tmp_path: Path) -> None:
@@ -34,6 +34,7 @@ def test_unified_settings_load_env_local_and_redact_secrets(tmp_path: Path) -> N
     settings = Settings(_env_file=(base, local))
 
     assert settings.fmp.enabled is True
+    assert len(settings.fmp.credentials) == 1
     assert settings.llm.enabled is True
     assert settings.llm.provider == "teamorouter"
     assert settings.llm.primary_model == "gpt-5.6-sol"
@@ -49,20 +50,40 @@ def test_unified_settings_load_env_local_and_redact_secrets(tmp_path: Path) -> N
     assert "mimo-test-secret" not in str(settings.safe_summary())
 
 
-def test_safe_summary_contains_presence_only() -> None:
+def test_safe_summary_contains_numbered_pool_presence_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FMP_API_KEY_1", "secret-a")
+    monkeypatch.setenv("FMP_API_KEY_2", "secret-d")
     settings = Settings(
-        fmp_api_key="secret-a",
+        fmp_api_key="legacy-secret",
         teamorouter_api_key="secret-b",
         mimo_api_key="secret-c",
         _env_file=None,
     )
 
     assert settings.safe_summary()["fmp_api_key_is_set"] is True
+    assert settings.safe_summary()["fmp_key_pool_size"] == 2
     assert settings.safe_summary()["teamorouter_api_key_is_set"] is True
     assert settings.safe_summary()["mimo_api_key_is_set"] is True
     assert "secret-a" not in str(settings.safe_summary())
+    assert "secret-d" not in repr(settings.fmp)
+    assert "secret-d" not in str(settings.safe_summary())
+    assert "legacy-secret" not in repr(settings)
     assert "secret-b" not in str(settings.safe_summary())
     assert "secret-c" not in str(settings.safe_summary())
+
+
+def test_numbered_fmp_pool_requires_contiguous_distinct_slots() -> None:
+    credentials = load_numbered_fmp_credentials(
+        {"FMP_API_KEY_1": "secret-a", "FMP_API_KEY_2": "secret-b"}
+    )
+    assert [secret.get_secret_value() for secret in credentials] == ["secret-a", "secret-b"]
+
+    with pytest.raises(ValueError, match="contiguous"):
+        load_numbered_fmp_credentials({"FMP_API_KEY_1": "secret-a", "FMP_API_KEY_3": "secret-c"})
+    with pytest.raises(ValueError, match="distinct"):
+        load_numbered_fmp_credentials({"FMP_API_KEY_1": "secret-a", "FMP_API_KEY_2": "secret-a"})
 
 
 def test_unknown_planner_provider_policy_fails_closed() -> None:

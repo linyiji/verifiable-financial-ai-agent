@@ -14,8 +14,9 @@ from sqlalchemy import func, select
 from acceptance.phase4.vs01.harness.backend import validate_run_collection
 from apps.api.main import create_app
 from src.application.persistence import ResearchRunAggregateRow, RuntimeEventRow, TaskRow
-from src.domain.enums import RunStatus
+from src.domain.enums import ReplanDecision, RunStatus
 from src.domain.runtime_event import RuntimeEventType
+from src.domain.task import ReplanRequest
 from src.infrastructure.config.settings import get_settings
 from src.infrastructure.database.phase4_product import (
     Phase4ActualGraphRow,
@@ -302,6 +303,19 @@ async def _emit_scheduler_failure(backend, run_id: str) -> None:
     )
 
 
+async def _emit_pending_replan(backend, run_id: str, task_id: str, replan_id: str):
+    return await backend.service.event_store.emit(
+        run_id=run_id,
+        task_id=task_id,
+        event_type=RuntimeEventType.REPLAN_REQUESTED,
+        payload={"replan_id": replan_id, "decision": ReplanDecision.PENDING.value},
+    )
+
+
+async def _replay_after(backend, run_id: str, sequence: int):
+    return await backend.service.event_store.replay(run_id, after_sequence=sequence)
+
+
 def test_terminal_scheduler_event_and_run_watermark_are_http_atomic_across_restart() -> None:
     headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
     confirm_headers = {**headers, "Idempotency-Key": "be004-terminal-confirm"}
@@ -395,7 +409,7 @@ def test_production_execution_preserves_scheduler_start_during_event_publish(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
-    payload_committed = Event()
+    event_staged = Event()
     allow_watermark = asyncio.Event()
 
     async def publish_one_task_event_then_hold(
@@ -420,18 +434,18 @@ def test_production_execution_preserves_scheduler_start_during_event_publish(
     with TestClient(app) as client:
         backend = app.state.phase4_product_backend
         repository = backend.service.repository
-        original_save_run = repository.save_run
+        original_publish = repository.save_run_with_projection_watermark
         blocked_once = False
 
-        async def save_run_before_watermark(aggregate) -> None:
+        async def publish_after_barrier(aggregate, *, projection_sequence: int) -> None:
             nonlocal blocked_once
-            await original_save_run(aggregate)
             if not blocked_once:
                 blocked_once = True
-                payload_committed.set()
+                event_staged.set()
                 await allow_watermark.wait()
+            await original_publish(aggregate, projection_sequence=projection_sequence)
 
-        repository.save_run = save_run_before_watermark
+        repository.save_run_with_projection_watermark = publish_after_barrier
         object_id = _create_object(client, symbol="ORCL", key="start-owner-object")
         draft = _prepare(
             client,
@@ -446,7 +460,7 @@ def test_production_execution_preserves_scheduler_start_during_event_publish(
         )
         assert confirmed.status_code == 201, confirmed.text
         run_id = confirmed.json()["admission"]["run_id"]
-        assert payload_committed.wait(timeout=10), "event payload was not committed"
+        assert event_staged.wait(timeout=10), "event was not staged before publication"
 
         object_runs = client.get(f"/api/objects/{object_id}/runs", headers=headers)
         assert object_runs.status_code == 200, object_runs.text
@@ -457,6 +471,174 @@ def test_production_execution_preserves_scheduler_start_during_event_publish(
         assert item["activity"]["type"] == "run.started"
         assert item["started_at"] == item["activity"]["timestamp"]
         client.portal.call(allow_watermark.set)
+
+
+def test_replan_requested_projection_and_replay_publish_at_one_public_watermark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
+    publication_entered = Event()
+    allow_publication = asyncio.Event()
+    replan_id = "REPLAN-ATOMIC-PENDING"
+    app = create_app()
+    with TestClient(app) as client:
+        backend = app.state.phase4_product_backend
+        backend._execute_started_run = _hold_started_run
+        object_id = _create_object(client, symbol="INTC", key="replan-watermark-object")
+        draft = _prepare(
+            client,
+            object_id=object_id,
+            key="replan-watermark-prepare",
+            goal="Verify atomic pending Replan publication.",
+        )
+        confirmed = client.post(
+            "/api/research-runs",
+            headers={**headers, "Idempotency-Key": "replan-watermark-confirm"},
+            json=_confirm_body(draft, object_id),
+        )
+        assert confirmed.status_code == 201, confirmed.text
+        run_id = confirmed.json()["admission"]["run_id"]
+        _wait_until_started(client, run_id)
+
+        baseline = client.get(f"/api/research-runs/{run_id}/projection", headers=headers)
+        assert baseline.status_code == 200, baseline.text
+        baseline_projection = baseline.json()
+        baseline_sequence = baseline_projection["projection_sequence"]
+        baseline_revision = baseline_projection["projection_revision"]
+        baseline_graph_version = baseline_projection["graph_version"]
+        assert all(
+            change["source_id"] != replan_id for change in baseline_projection["path_changes"]
+        )
+
+        aggregate = client.portal.call(backend.service.repository.get_run, run_id)
+        assert aggregate is not None
+        requesting_task = aggregate.runtime.actual_graph.tasks[0]
+        aggregate.artifacts.replans.append(
+            ReplanRequest(
+                replan_id=replan_id,
+                run_id=run_id,
+                requesting_task_id=requesting_task.task_id,
+                requested_by=requesting_task.assigned_agent,
+                reason_code="ATOMIC_WATERMARK_PROBE",
+                reason_detail="Prove pending Replan state and event publish together.",
+                proposed_graph_change={"operation": "add_task"},
+            )
+        )
+
+        repository = backend.service.repository
+        original_publish = repository.save_run_with_projection_watermark
+
+        async def publish_after_barrier(aggregate, *, projection_sequence: int) -> None:
+            publication_entered.set()
+            await allow_publication.wait()
+            await original_publish(aggregate, projection_sequence=projection_sequence)
+
+        monkeypatch.setattr(
+            repository,
+            "save_run_with_projection_watermark",
+            publish_after_barrier,
+        )
+        event_future = client.portal.start_task_soon(
+            _emit_pending_replan,
+            backend,
+            run_id,
+            requesting_task.task_id,
+            replan_id,
+        )
+        assert publication_entered.wait(timeout=10), "event was not staged before publication"
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            before = [
+                future.result(timeout=10)
+                for future in (
+                    pool.submit(
+                        client.get,
+                        f"/api/research-runs/{run_id}/projection",
+                        headers=headers,
+                    ),
+                    pool.submit(
+                        client.get,
+                        f"/api/research-runs/{run_id}/projection",
+                        headers=headers,
+                    ),
+                )
+            ]
+        assert all(response.status_code == 200 for response in before)
+        before_projections = [response.json() for response in before]
+        assert all(
+            projection["projection_sequence"] == baseline_sequence
+            and projection["projection_revision"] == baseline_revision
+            and projection["graph_version"] == baseline_graph_version
+            and projection["run"]["run_id"] == run_id
+            and all(change["source_id"] != replan_id for change in projection["path_changes"])
+            for projection in before_projections
+        )
+        assert client.portal.call(_replay_after, backend, run_id, baseline_sequence) == []
+
+        client.portal.call(allow_publication.set)
+        requested_event = event_future.result(timeout=10)
+        assert requested_event.sequence == baseline_sequence + 1
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            after = [
+                future.result(timeout=10)
+                for future in (
+                    pool.submit(
+                        client.get,
+                        f"/api/research-runs/{run_id}/projection",
+                        headers=headers,
+                    ),
+                    pool.submit(
+                        client.get,
+                        f"/api/research-runs/{run_id}/projection",
+                        headers=headers,
+                    ),
+                )
+            ]
+        assert all(response.status_code == 200 for response in after)
+        after_projections = [response.json() for response in after]
+        assert all(
+            projection["projection_sequence"] == requested_event.sequence
+            and projection["projection_revision"] == baseline_revision + 1
+            and projection["graph_version"] == baseline_graph_version
+            and projection["run"]["run_id"] == run_id
+            for projection in after_projections
+        )
+        pending_changes = [
+            [
+                change
+                for change in projection["path_changes"]
+                if change["source_kind"] == "REPLAN" and change["source_id"] == replan_id
+            ]
+            for projection in after_projections
+        ]
+        assert all(
+            len(changes) == 1
+            and changes[0]["status"] == ReplanDecision.PENDING.value
+            and changes[0]["decision"] == ReplanDecision.PENDING.value
+            for changes in pending_changes
+        )
+        replay = client.portal.call(_replay_after, backend, run_id, baseline_sequence)
+        assert [(event.type, event.sequence, event.payload["replan_id"]) for event in replay] == [
+            (RuntimeEventType.REPLAN_REQUESTED, requested_event.sequence, replan_id)
+        ]
+        expected_projection = after_projections[0]
+
+    reopened = create_app()
+    with TestClient(reopened) as client:
+        projection = client.get(f"/api/research-runs/{run_id}/projection", headers=headers)
+        assert projection.status_code == 200, projection.text
+        value = projection.json()
+        assert value["projection_sequence"] == expected_projection["projection_sequence"]
+        assert value["projection_revision"] == expected_projection["projection_revision"]
+        assert value["graph_version"] == expected_projection["graph_version"]
+        assert value["run"]["run_id"] == run_id
+        assert [
+            change["source_id"]
+            for change in value["path_changes"]
+            if change["source_kind"] == "REPLAN"
+        ] == [replan_id]
+        client.portal.call(_emit_scheduler_failure, reopened.state.phase4_product_backend, run_id)
 
 
 @pytest.mark.parametrize(

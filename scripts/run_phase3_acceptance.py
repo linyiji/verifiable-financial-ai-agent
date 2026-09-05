@@ -767,7 +767,7 @@ def _resolve_safe_path(path: Path, *, label: str, must_exist: bool = False) -> P
 def _credential_needles(settings: Settings) -> tuple[bytes, ...]:
     values: list[str] = []
     for secret in (
-        settings.fmp.api_key,
+        *settings.fmp.credentials,
         settings.llm.api_key,
         settings.mimo.api_key,
         settings.langfuse.public_key,
@@ -1945,6 +1945,10 @@ def _acceptance_matrix(
     attestation = sandboxes[0].security_attestation if len(sandboxes) == 1 else {}
     forbidden_environment_names = {
         "FMP_API_KEY",
+        "FMP_API_KEY_1",
+        "FMP_API_KEY_2",
+        "FMP_API_KEY_3",
+        "FMP_API_KEY_4",
         "TEAMOROUTER_API_KEY",
         "MIMO_API_KEY",
         "LANGFUSE_PUBLIC_KEY",
@@ -2469,13 +2473,18 @@ async def _run_authoritative(
         raise RuntimeError("PostgreSQL migration current revision does not match Alembic head")
     references = InMemoryTraceReferenceRepository()
     sensitive_values = {
-        name: secret.get_secret_value()
-        for name, secret in {
-            "FMP_API_KEY": settings.fmp.api_key,
-            "TEAMOROUTER_API_KEY": settings.llm.api_key,
-            "MIMO_API_KEY": settings.mimo.api_key,
-        }.items()
-        if secret is not None and secret.get_secret_value()
+        **{
+            f"FMP_API_KEY_SLOT_{index}": secret.get_secret_value()
+            for index, secret in enumerate(settings.fmp.credentials, start=1)
+        },
+        **{
+            name: secret.get_secret_value()
+            for name, secret in {
+                "TEAMOROUTER_API_KEY": settings.llm.api_key,
+                "MIMO_API_KEY": settings.mimo.api_key,
+            }.items()
+            if secret is not None and secret.get_secret_value()
+        },
     }
     trace_build = create_langfuse_trace_adapter(
         settings.langfuse,

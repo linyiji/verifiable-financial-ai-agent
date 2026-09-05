@@ -1,7 +1,34 @@
+import os
+import re
+from collections.abc import Mapping
 from functools import lru_cache
 
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_FMP_NUMBERED_KEY = re.compile(r"FMP_API_KEY_([1-9][0-9]*)")
+
+
+def load_numbered_fmp_credentials(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[SecretStr, ...]:
+    """Load a contiguous FMP_API_KEY_1..N pool without exposing its values."""
+
+    source = os.environ if environment is None else environment
+    indexed = sorted(
+        (int(match.group(1)), value.strip())
+        for name, value in source.items()
+        if (match := _FMP_NUMBERED_KEY.fullmatch(name)) is not None and value.strip()
+    )
+    if not indexed:
+        return ()
+    indexes = [index for index, _ in indexed]
+    if indexes != list(range(1, indexes[-1] + 1)):
+        raise ValueError("FMP credential slots must be contiguous from FMP_API_KEY_1")
+    values = [value for _, value in indexed]
+    if len(set(values)) != len(values):
+        raise ValueError("FMP credential slots must contain distinct values")
+    return tuple(SecretStr(value) for value in values)
 
 
 class DatabaseSettings(BaseModel):
@@ -9,12 +36,29 @@ class DatabaseSettings(BaseModel):
 
 
 class FMPSettings(BaseModel):
-    api_key: SecretStr | None
+    api_key: SecretStr | None = None
+    api_keys: tuple[SecretStr, ...] = ()
     base_url: str
 
     @property
     def enabled(self) -> bool:
-        return self.api_key is not None and bool(self.api_key.get_secret_value())
+        return bool(self.credentials)
+
+    @property
+    def credentials(self) -> tuple[SecretStr, ...]:
+        """Return the finite, ordered FMP credential pool with duplicates removed."""
+
+        result: list[SecretStr] = []
+        seen: set[str] = set()
+        for secret in (self.api_key, *self.api_keys):
+            if secret is None:
+                continue
+            value = secret.get_secret_value().strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            result.append(SecretStr(value))
+        return tuple(result)
 
 
 class LLMSettings(BaseModel):
@@ -85,7 +129,12 @@ class Settings(BaseSettings):
 
     @property
     def fmp(self) -> FMPSettings:
-        return FMPSettings(api_key=self.fmp_api_key, base_url=self.fmp_base_url)
+        configured_pool = load_numbered_fmp_credentials()
+        return FMPSettings(
+            api_key=None if configured_pool else self.fmp_api_key,
+            api_keys=configured_pool,
+            base_url=self.fmp_base_url,
+        )
 
     @property
     def llm(self) -> LLMSettings:
@@ -135,11 +184,12 @@ class Settings(BaseSettings):
             workspace_root=self.workspace_root,
         )
 
-    def safe_summary(self) -> dict[str, str | bool]:
+    def safe_summary(self) -> dict[str, str | bool | int]:
         """Return only non-secret values and credential presence flags."""
 
         return {
             "fmp_api_key_is_set": self.fmp.enabled,
+            "fmp_key_pool_size": len(self.fmp.credentials),
             "teamorouter_api_key_is_set": self.llm.enabled,
             "llm_provider": self.llm.provider,
             "teamorouter_base_url": self.llm.base_url,

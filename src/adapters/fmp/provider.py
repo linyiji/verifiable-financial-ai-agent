@@ -5,7 +5,9 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
+from pydantic import SecretStr
 
+from src.adapters.fmp.credentials import FMPKeyPool
 from src.adapters.fmp.models import (
     FMPAccessError,
     FMPAccessStatus,
@@ -37,7 +39,7 @@ class LegacyFMPTransport(Protocol):
 
 
 class HttpxFMPTransport:
-    """Secret-safe FMP HTTP transport configured only through dependency injection."""
+    """Secret-safe FMP HTTP transport with a finite per-process credential pool."""
 
     def __init__(
         self,
@@ -46,12 +48,34 @@ class HttpxFMPTransport:
         timeout_seconds: float = 20.0,
         http_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        if not settings.enabled or settings.api_key is None:
+        if not settings.enabled:
             raise ValueError("FMP credentials are not configured")
-        self._api_key = settings.api_key
+        self._key_pool = FMPKeyPool.from_credentials(settings.credentials)
         self._base_url = settings.base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._http_transport = http_transport
+        self._pool_lock = asyncio.Lock()
+
+    @property
+    def key_count(self) -> int:
+        return self._key_pool.key_count
+
+    @property
+    def rate_limited_key_count(self) -> int:
+        return self._key_pool.rate_limited_key_count
+
+    @property
+    def invalid_key_count(self) -> int:
+        return self._key_pool.invalid_key_count
+
+    @property
+    def pool_exhausted(self) -> bool:
+        return self._key_pool.pool_exhausted
+
+    def safe_pool_status(self) -> dict[str, str | int | bool | None]:
+        """Return only slot-level status; credential material never leaves the transport."""
+
+        return self._key_pool.safe_status()
 
     async def request(
         self,
@@ -60,7 +84,38 @@ class HttpxFMPTransport:
         path: str,
         params: dict[str, str | int],
     ) -> FMPResponseEnvelope:
-        request_params = {**params, "apikey": self._api_key.get_secret_value()}
+        async with self._pool_lock:
+            attempted_slots: set[int] = set()
+            last_envelope: FMPResponseEnvelope | None = None
+            while slot := self._key_pool.select(attempted_slots):
+                slot_index, api_key = slot
+                attempted_slots.add(slot_index)
+                envelope = await self._request_with_key(
+                    api_key=api_key,
+                    endpoint=endpoint,
+                    path=path,
+                    params=params,
+                )
+                last_envelope = envelope
+                if self._key_pool.record(slot_index, envelope):
+                    continue
+                return envelope
+
+            if self.pool_exhausted:
+                return self._exhausted_envelope(endpoint)
+            if last_envelope is not None:
+                return last_envelope
+            return self._exhausted_envelope(endpoint)
+
+    async def _request_with_key(
+        self,
+        *,
+        api_key: SecretStr,
+        endpoint: FMPEndpoint,
+        path: str,
+        params: dict[str, str | int],
+    ) -> FMPResponseEnvelope:
+        request_params = {**params, "apikey": api_key.get_secret_value()}
         retrieved_at = datetime.now(UTC)
         try:
             async with httpx.AsyncClient(
@@ -95,8 +150,26 @@ class HttpxFMPTransport:
             status=status,
             http_status=response.status_code,
             retrieved_at=retrieved_at,
-            payload=payload,
+            payload=(
+                payload if status in {FMPAccessStatus.AVAILABLE, FMPAccessStatus.NO_DATA} else None
+            ),
             error_code=error_code,
+        )
+
+    def _exhausted_envelope(self, endpoint: FMPEndpoint) -> FMPResponseEnvelope:
+        all_rate_limited = self._key_pool.all_keys_rate_limited
+        status = (
+            FMPAccessStatus.RATE_LIMITED
+            if all_rate_limited
+            else FMPAccessStatus.AUTHENTICATION_FAILED
+        )
+        return FMPResponseEnvelope(
+            endpoint=endpoint,
+            status=status,
+            http_status=429 if all_rate_limited else 401,
+            retrieved_at=datetime.now(UTC),
+            payload=None,
+            error_code="FMP_KEY_POOL_EXHAUSTED",
         )
 
 

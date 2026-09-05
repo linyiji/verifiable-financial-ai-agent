@@ -6,6 +6,7 @@ from src.infrastructure.config.settings import (
     RuntimeSettings,
     Settings,
     get_settings,
+    load_numbered_fmp_credentials,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "RuntimeSettings",
     "Settings",
     "get_settings",
+    "load_numbered_fmp_credentials",
 ]

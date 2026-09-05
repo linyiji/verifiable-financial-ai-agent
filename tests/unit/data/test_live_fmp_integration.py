@@ -415,8 +415,208 @@ async def test_http_transport_injects_key_but_envelope_and_repr_do_not_expose_it
 
     assert observed_key_presence is True
     assert envelope.status is FMPAccessStatus.AVAILABLE
+    assert transport.safe_pool_status()["selected_key_slot"] == "KEY_1"
+    assert transport.safe_pool_status()["rotation_occurred"] is False
     assert "unit-test-token" not in repr(transport)
     assert "unit-test-token" not in repr(envelope)
+
+
+@pytest.mark.asyncio
+async def test_http_transport_rotates_to_next_pool_slot_only_after_429() -> None:
+    observed_slots: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        slot = request.url.params["apikey"]
+        observed_slots.append(slot)
+        if slot == "rate-limited-token":
+            return httpx.Response(429, json={"error": "rate limited"})
+        return httpx.Response(200, json=[{"symbol": "NVDA"}])
+
+    settings = FMPSettings(
+        api_keys=(SecretStr("rate-limited-token"), SecretStr("usable-token")),
+        base_url="https://example.invalid",
+    )
+    transport = HttpxFMPTransport(settings, http_transport=httpx.MockTransport(handler))
+
+    envelope = await transport.request(
+        endpoint=FMPEndpoint.QUOTE,
+        path="/stable/quote",
+        params={"symbol": "NVDA"},
+    )
+
+    assert envelope.status is FMPAccessStatus.AVAILABLE
+    assert observed_slots == ["rate-limited-token", "usable-token"]
+    assert transport.safe_pool_status() == {
+        "provider": "FMP",
+        "configured_keys": 2,
+        "rate_limited_keys": 1,
+        "invalid_keys": 0,
+        "attempt_count": 2,
+        "selected_key_slot": "KEY_2",
+        "status_classification": "AVAILABLE",
+        "rotation_occurred": True,
+        "rotation_reason": "RATE_LIMIT_429",
+        "pool_exhausted": False,
+    }
+    assert "rate-limited-token" not in repr(transport.safe_pool_status())
+    assert "usable-token" not in repr(transport.safe_pool_status())
+
+
+@pytest.mark.asyncio
+async def test_http_transport_rotates_across_two_429_slots_then_retains_third() -> None:
+    observed_slots: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        slot = request.url.params["apikey"]
+        observed_slots.append(slot)
+        if slot in {"limited-one", "limited-two"}:
+            return httpx.Response(429, json={"error": "rate limited"})
+        return httpx.Response(200, json=[{"symbol": "NVDA"}])
+
+    settings = FMPSettings(
+        api_keys=(
+            SecretStr("limited-one"),
+            SecretStr("limited-two"),
+            SecretStr("usable-three"),
+        ),
+        base_url="https://example.invalid",
+    )
+    transport = HttpxFMPTransport(settings, http_transport=httpx.MockTransport(handler))
+
+    first = await transport.request(
+        endpoint=FMPEndpoint.QUOTE,
+        path="/stable/quote",
+        params={"symbol": "NVDA"},
+    )
+    second = await transport.request(
+        endpoint=FMPEndpoint.PROFILE,
+        path="/stable/profile",
+        params={"symbol": "NVDA"},
+    )
+
+    assert first.status is FMPAccessStatus.AVAILABLE
+    assert second.status is FMPAccessStatus.AVAILABLE
+    assert observed_slots == ["limited-one", "limited-two", "usable-three", "usable-three"]
+    assert transport.safe_pool_status()["selected_key_slot"] == "KEY_3"
+    assert transport.safe_pool_status()["rate_limited_keys"] == 2
+
+
+@pytest.mark.asyncio
+async def test_http_transport_exhausts_rate_limited_pool_without_retry_loop() -> None:
+    request_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        assert request.url.params.get("apikey") in {"limited-a", "limited-b"}
+        request_count += 1
+        return httpx.Response(429, json={"error": "rate limited"})
+
+    settings = FMPSettings(
+        api_keys=(SecretStr("limited-a"), SecretStr("limited-b")),
+        base_url="https://example.invalid",
+    )
+    transport = HttpxFMPTransport(settings, http_transport=httpx.MockTransport(handler))
+    provider = FMPProvider(transport, transient_retry_delays=(0, 0))
+
+    result = await provider.probe(_request("market_price"))
+
+    assert result.status is FMPAccessStatus.RATE_LIMITED
+    assert result.error_code == "FMP_KEY_POOL_EXHAUSTED"
+    assert request_count == 2
+    assert transport.rate_limited_key_count == 2
+    assert transport.pool_exhausted is True
+
+
+@pytest.mark.parametrize("credential_status", [401, 403])
+@pytest.mark.asyncio
+async def test_http_transport_skips_http_credential_failure(credential_status: int) -> None:
+    invalid_calls: list[str] = []
+
+    async def invalid_handler(request: httpx.Request) -> httpx.Response:
+        slot = request.url.params["apikey"]
+        invalid_calls.append(slot)
+        if slot == "invalid-token":
+            return httpx.Response(credential_status, json={"error": "credential rejected"})
+        return httpx.Response(200, json=[{"symbol": "NVDA"}])
+
+    settings = FMPSettings(
+        api_keys=(SecretStr("invalid-token"), SecretStr("usable-token")),
+        base_url="https://example.invalid",
+    )
+    invalid_transport = HttpxFMPTransport(
+        settings, http_transport=httpx.MockTransport(invalid_handler)
+    )
+    recovered = await invalid_transport.request(
+        endpoint=FMPEndpoint.QUOTE,
+        path="/stable/quote",
+        params={"symbol": "NVDA"},
+    )
+    assert recovered.status is FMPAccessStatus.AVAILABLE
+    assert invalid_calls == ["invalid-token", "usable-token"]
+    assert invalid_transport.invalid_key_count == 1
+
+
+@pytest.mark.asyncio
+async def test_http_transport_does_not_rotate_on_unrelated_provider_error() -> None:
+    settings = FMPSettings(
+        api_keys=(SecretStr("first-token"), SecretStr("unused-token")),
+        base_url="https://example.invalid",
+    )
+
+    provider_error_calls = 0
+
+    async def provider_error_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal provider_error_calls
+        del request
+        provider_error_calls += 1
+        return httpx.Response(503, json={"error": "provider unavailable"})
+
+    provider_error_transport = HttpxFMPTransport(
+        settings, http_transport=httpx.MockTransport(provider_error_handler)
+    )
+    failed = await provider_error_transport.request(
+        endpoint=FMPEndpoint.QUOTE,
+        path="/stable/quote",
+        params={"symbol": "NVDA"},
+    )
+    assert failed.status is FMPAccessStatus.PROVIDER_ERROR
+    assert provider_error_calls == 1
+    assert provider_error_transport.rate_limited_key_count == 0
+    assert provider_error_transport.invalid_key_count == 0
+
+
+@pytest.mark.asyncio
+async def test_fmp_pool_secrets_are_absent_from_safe_errors_and_observability(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secrets = ("private-fmp-key-one", "private-fmp-key-two")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        echoed_secret = request.url.params["apikey"]
+        return httpx.Response(429, json={"error": echoed_secret})
+
+    settings = FMPSettings(
+        api_keys=tuple(SecretStr(value) for value in secrets),
+        base_url="https://example.invalid",
+    )
+    transport = HttpxFMPTransport(settings, http_transport=httpx.MockTransport(handler))
+    provider = FMPProvider(transport, transient_retry_delays=())
+
+    with pytest.raises(FMPAccessError) as raised:
+        await provider.fetch(_request("market_price"))
+
+    public_surfaces = "\n".join(
+        (
+            repr(transport),
+            repr(transport.safe_pool_status()),
+            str(raised.value),
+            repr(raised.value),
+            caplog.text,
+        )
+    )
+    assert raised.value.error_code == "FMP_KEY_POOL_EXHAUSTED"
+    assert transport.safe_pool_status()["pool_exhausted"] is True
+    assert all(secret not in public_surfaces for secret in secrets)
 
 
 def test_adapter_has_no_direct_environment_reads() -> None:

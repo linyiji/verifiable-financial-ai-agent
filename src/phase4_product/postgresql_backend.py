@@ -6,6 +6,7 @@ import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -56,23 +57,23 @@ from src.phase4_product.admission import (
     validate_confirm_request,
 )
 from src.phase4_product.contracts import (
+    ArtifactSummaryV1,
     AtomicRunProjectionV1,
     AvailabilityStatus,
     AvailabilityV1,
     ConfirmResearchRunRequestV1,
     ConfirmRunResponseV1,
     CreateResearchObjectRequestV1,
-    ArtifactSummaryV1,
     ExecutionSummaryV1,
     PrepareResearchRunRequestV1,
     ProofSummaryV1,
-    ResultSummaryV1,
-    ReviewSummaryV1,
     ResearchObjectCollectionV1,
     ResearchObjectDetailV1,
     ResearchRunCollectionV1,
     ResearchRunDetailV1,
     ResearchRunDraftV1,
+    ResultSummaryV1,
+    ReviewSummaryV1,
     RunLifecycleV1,
     TerminalStateV1,
 )
@@ -106,6 +107,7 @@ from src.phase4_product.projections import (
     project_run_status,
     project_scheme,
 )
+from src.runtime.events import CursorPreflight, build_cursor_preflight
 from src.runtime.state import RuntimeState
 
 _CURSOR_SIGNING_KEY = b"phase4-vs01-local-run-collection-v1"
@@ -118,9 +120,11 @@ class _ProjectionPublishingEventStore:
         self,
         delegate: object,
         publish: Callable[[RuntimeEvent], Awaitable[None]],
+        published_sequence: Callable[[str], Awaitable[int]],
     ) -> None:
         self._delegate = delegate
         self._publish = publish
+        self._published_sequence = published_sequence
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._delegate, name)
@@ -129,6 +133,45 @@ class _ProjectionPublishingEventStore:
         event = await self._delegate.emit(**kwargs)
         await self._publish(event)
         return event
+
+    async def replay(self, run_id: str, *, after_sequence: int = 0) -> list[RuntimeEvent]:
+        events = await self._delegate.replay(run_id, after_sequence=after_sequence)
+        published_sequence = await self._published_sequence(run_id)
+        return [event for event in events if event.sequence <= published_sequence]
+
+    async def wait_for_events(
+        self,
+        run_id: str,
+        *,
+        after_sequence: int,
+        timeout_seconds: float,
+    ) -> list[RuntimeEvent]:
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        deadline = monotonic() + timeout_seconds
+        while True:
+            events = await self.replay(run_id, after_sequence=after_sequence)
+            if events:
+                return events
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                return []
+            await asyncio.sleep(min(0.05, remaining))
+
+    async def preflight_cursor(
+        self,
+        run_id: str,
+        last_event_id: str | None,
+    ) -> CursorPreflight:
+        events = await self.replay(run_id)
+        return build_cursor_preflight(
+            run_id=run_id,
+            last_event_id=last_event_id,
+            events=events,
+        )
+
+    async def resolve_resume_sequence(self, run_id: str, last_event_id: str | None) -> int:
+        return (await self.preflight_cursor(run_id, last_event_id)).sequence
 
 
 class PostgreSQLPhase4ProductBackend:
@@ -151,6 +194,7 @@ class PostgreSQLPhase4ProductBackend:
         service.event_store = _ProjectionPublishingEventStore(
             service.event_store,
             self._publish_runtime_event,
+            self._published_projection_sequence,
         )
         self._worker_id = f"phase4-worker-{uuid4()}"
         self._worker: asyncio.Task[None] | None = None
@@ -956,28 +1000,24 @@ class PostgreSQLPhase4ProductBackend:
                 aggregate.runtime.run_status = terminal_status
             if event.timestamp > aggregate.run.updated_at:
                 aggregate.run.updated_at = event.timestamp
-            if event.type is RuntimeEventType.RUN_FAILED:
-                repository = self.service.repository
-                if not isinstance(repository, SQLAlchemyApplicationRepository):
-                    raise RuntimeError(
-                        "PostgreSQL Product event publication requires its SQLAlchemy repository"
-                    )
-                await repository.save_run_with_projection_watermark(
-                    aggregate,
-                    projection_sequence=event.sequence,
+            repository = self.service.repository
+            if not isinstance(repository, SQLAlchemyApplicationRepository):
+                raise RuntimeError(
+                    "PostgreSQL Product event publication requires its SQLAlchemy repository"
                 )
-                return
-            await self.service.repository.save_run(aggregate)
-            async with self.sessions() as session, session.begin():
-                row = await session.scalar(
-                    select(ResearchRunAggregateRow)
-                    .where(ResearchRunAggregateRow.run_id == event.run_id)
-                    .with_for_update()
+            await repository.save_run_with_projection_watermark(
+                aggregate,
+                projection_sequence=event.sequence,
+            )
+
+    async def _published_projection_sequence(self, run_id: str) -> int:
+        async with self.sessions() as session:
+            sequence = await session.scalar(
+                select(ResearchRunAggregateRow.projection_sequence).where(
+                    ResearchRunAggregateRow.run_id == run_id
                 )
-                if row is None or event.sequence <= row.projection_sequence:
-                    return
-                row.projection_sequence = event.sequence
-                row.projection_revision += 1
+            )
+        return int(sequence or 0)
 
     async def _scheduler_loop(self) -> None:
         while True:

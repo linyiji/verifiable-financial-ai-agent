@@ -37,6 +37,7 @@ def test_real_docker_executes_generated_capability_with_security_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FMP_API_KEY", "must-not-enter-sandbox")
+    monkeypatch.setenv("FMP_API_KEY_1", "must-not-enter-sandbox")
     monkeypatch.setenv("TEAMOROUTER_API_KEY", "must-not-enter-sandbox")
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "must-not-enter-sandbox")
     backend = DockerSandboxBackend(
@@ -65,6 +66,7 @@ def test_real_docker_executes_generated_capability_with_security_profile(
     assert probe["cpu_max"] == "50000 100000"
     assert probe["pids_max"] == "32"
     assert "FMP_API_KEY" not in probe["environment_names"]
+    assert "FMP_API_KEY_1" not in probe["environment_names"]
     assert "TEAMOROUTER_API_KEY" not in probe["environment_names"]
     assert "LANGFUSE_SECRET_KEY" not in probe["environment_names"]
     assert result.security["host_mounts"] == []
