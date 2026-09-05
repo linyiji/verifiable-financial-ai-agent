@@ -595,6 +595,8 @@ class PostgreSQLPhase4ProductBackend:
             sources: list[RunCollectionSource] = []
             for row in rows:
                 obj = await session.get(ResearchObjectRow, row.object_id)
+                run = ResearchRun.model_validate(row.payload["run"])
+                artifacts = CompletedRunArtifacts.model_validate(row.payload["artifacts"])
                 latest = await session.scalar(
                     select(RuntimeEventRow)
                     .where(
@@ -606,22 +608,50 @@ class PostgreSQLPhase4ProductBackend:
                 )
                 sources.append(
                     RunCollectionSource(
-                        run=ResearchRun.model_validate(row.payload["run"]),
+                        run=run,
                         research_object=ResearchObject.model_validate(obj.payload),
                         actual_graph=ActualRuntimeGraph.model_validate(
                             row.payload["runtime"]["actual_graph"]
                         ),
                         latest_event=(
-                            None if latest is None else RuntimeEvent.model_validate(latest.payload)
+                            None
+                            if latest is None
+                            else normalize_runtime_event_v1(
+                                RuntimeEvent.model_validate(latest.payload)
+                            )
                         ),
                         projection_revision=row.projection_revision,
                         projection_sequence=row.projection_sequence,
                         result_availability=(
                             AvailabilityV1.available()
-                            if row.status == RunStatus.RELEASED.value
+                            if run.status is RunStatus.RELEASED
                             else AvailabilityV1.unavailable(
-                                AvailabilityStatus.NOT_GENERATED, "NOT_GENERATED"
+                                AvailabilityStatus.FAILED,
+                                "RUN_TERMINAL_WITHOUT_RELEASE",
                             )
+                            if run.status in {RunStatus.FAILED, RunStatus.CANCELLED}
+                            else AvailabilityV1.unavailable(
+                                AvailabilityStatus.PENDING,
+                                "RUN_NONTERMINAL",
+                            )
+                        ),
+                        release_closure_valid=(
+                            run.status is RunStatus.RELEASED
+                            and artifacts.review is not None
+                            and artifacts.review.run_id == run.run_id
+                            and artifacts.review.status.value == "PASS"
+                            and artifacts.canonical_record is not None
+                            and artifacts.canonical_record.run_id == run.run_id
+                            and artifacts.canonical_record.runtime_outcome
+                            == RunStatus.RELEASED.value
+                            and artifacts.released_result is not None
+                            and artifacts.released_result.run_id == run.run_id
+                            and artifacts.released_result.canonical_record_id
+                            == artifacts.canonical_record.record_id
+                            and artifacts.projections is not None
+                            and artifacts.projections.canonical_record_id
+                            == artifacts.canonical_record.record_id
+                            and artifacts.report is not None
                         ),
                     )
                 )
