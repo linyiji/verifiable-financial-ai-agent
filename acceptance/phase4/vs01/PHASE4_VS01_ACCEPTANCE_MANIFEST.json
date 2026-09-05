@@ -244,19 +244,6 @@
     },
     {
       "actual_result": null,
-      "contract_section_ref": "API §6 rejected Replan projection; Event §§3,3.1 unsupported replan.rejected",
-      "contract_source": "PHASE4_BACKEND_API_SCHEMA_DRAFT.md + PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md",
-      "control_id": "VS01-DYN-005",
-      "expected_result": "REJECTED is obtained from authoritative projection with no graph mutation; raw replan.rejected remains unsupported in V1 and cannot be invented",
-      "layer": "L3_RUN_SSE_RECOVERY_ACCEPTANCE",
-      "owner_dependency": "C",
-      "positive_negative": "NEGATIVE",
-      "precondition": "Research Lead rejects one durable ReplanRequest",
-      "status": "BLOCKED_BY_C",
-      "test_implementation_path": "acceptance/phase4/vs01/harness/sse.py:assert_controlled_replan"
-    },
-    {
-      "actual_result": null,
       "contract_section_ref": "API §6 approved operations; Event §3 graph lifecycle",
       "contract_source": "PHASE4_BACKEND_API_SCHEMA_DRAFT.md + PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md",
       "control_id": "VS01-DYN-006",
@@ -277,7 +264,7 @@
       "layer": "L3_RUN_SSE_RECOVERY_ACCEPTANCE",
       "owner_dependency": "C",
       "positive_negative": "NEGATIVE",
-      "precondition": "specialist request, rejected/approved decisions and local correction are exercised",
+      "precondition": "specialist request, approved decision and local correction are exercised",
       "status": "BLOCKED_BY_C",
       "test_implementation_path": "acceptance/phase4/vs01/harness/sse.py:assert_controlled_replan,assert_self_correction_same_task_same_graph"
     },
@@ -985,18 +972,18 @@
     "VS01-X3-SSE-RECOVERY",
     "VS01-X4-CROSS-COMPONENT-GATE"
   ],
-  "generated_at": "2026-09-05T10:11:05.856323Z",
+  "generated_at": "2026-09-05T12:20:14.380545Z",
   "schema_version": "phase4-vs01-acceptance-manifest/v1",
   "scope": "VS01_ACCEPTANCE_HARNESS_ONLY",
   "summary": {
     "by_status": {
       "BLOCKED_BY_A": 15,
       "BLOCKED_BY_B": 9,
-      "BLOCKED_BY_C": 34,
+      "BLOCKED_BY_C": 33,
       "BLOCKED_BY_PARENT": 10,
       "READY": 3
     },
-    "integrated_execution_required": 68,
-    "total": 71
+    "integrated_execution_required": 67,
+    "total": 70
   }
 }

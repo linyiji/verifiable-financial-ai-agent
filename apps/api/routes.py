@@ -47,6 +47,7 @@ async def stream_events(
             store=service.event_store,
             run_id=run_id,
             last_event_id=last_event_id,
+            heartbeat_seconds=1.0,
         )
     except CursorPreflightError as exc:
         raise product_error(

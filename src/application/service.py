@@ -303,9 +303,21 @@ class ResearchApplicationService:
                 )
                 aggregate.artifacts.parallel_task_peak = executor.parallel_peak
                 await self._assure_and_release(aggregate)
-        except Exception:
+        except Exception as exc:
             aggregate.run.status = RunStatus.FAILED
             aggregate.run.completed_at = datetime.now(UTC)
+            durable_events = list(await self.event_store.replay(run_id))
+            if not durable_events or durable_events[-1].type is not RuntimeEventType.RUN_FAILED:
+                await self.event_store.emit(
+                    run_id=run_id,
+                    event_type=RuntimeEventType.RUN_FAILED,
+                    payload={
+                        "status": RunStatus.FAILED.value,
+                        "failure_stage": "POST_SCHEDULER",
+                        "failure_code": type(exc).__name__.upper(),
+                        "safe_message": "The Run could not complete its release checks.",
+                    },
+                )
             await self.repository.save_run(aggregate)
             await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
             raise

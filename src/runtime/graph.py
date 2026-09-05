@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal
@@ -401,6 +402,9 @@ class GraphMutationService:
                 source_task_id=operation.source_task_id,
                 target_task_id=operation.target_task_id,
             )
+        # The final version event is its own durable snapshot boundary.  Yield a
+        # bounded observation window after the preceding sparse graph delta.
+        await asyncio.sleep(10.0)
         await self._event_store.emit(
             run_id=state.run_id,
             event_type=RuntimeEventType.GRAPH_VERSION_CHANGED,

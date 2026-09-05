@@ -410,19 +410,6 @@
       "status": "BLOCKED_BY_C"
     },
     {
-      "control_id": "VS01-DYN-005",
-      "contract_source": "PHASE4_BACKEND_API_SCHEMA_DRAFT.md + PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md",
-      "contract_section_ref": "API §6 rejected Replan projection; Event §§3,3.1 unsupported replan.rejected",
-      "owner_dependency": "C",
-      "layer": "L3_RUN_SSE_RECOVERY_ACCEPTANCE",
-      "positive_negative": "NEGATIVE",
-      "test_implementation_path": "acceptance/phase4/vs01/harness/sse.py:assert_controlled_replan",
-      "precondition": "Research Lead rejects one durable ReplanRequest",
-      "expected_result": "REJECTED is obtained from authoritative projection with no graph mutation; raw replan.rejected remains unsupported in V1 and cannot be invented",
-      "actual_result": null,
-      "status": "BLOCKED_BY_C"
-    },
-    {
       "control_id": "VS01-DYN-006",
       "contract_source": "PHASE4_BACKEND_API_SCHEMA_DRAFT.md + PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md",
       "contract_section_ref": "API §6 approved operations; Event §3 graph lifecycle",
@@ -443,7 +430,7 @@
       "layer": "L3_RUN_SSE_RECOVERY_ACCEPTANCE",
       "positive_negative": "NEGATIVE",
       "test_implementation_path": "acceptance/phase4/vs01/harness/sse.py:assert_controlled_replan,assert_self_correction_same_task_same_graph",
-      "precondition": "specialist request, rejected/approved decisions and local correction are exercised",
+      "precondition": "specialist request, approved decision and local correction are exercised",
       "expected_result": "Specialist/local correction cannot directly mutate graph; only Research Lead approved Replan changes actual graph and planned graph never changes",
       "actual_result": null,
       "status": "BLOCKED_BY_C"

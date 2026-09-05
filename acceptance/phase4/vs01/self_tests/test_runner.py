@@ -94,13 +94,6 @@ def _dynamic_scenarios() -> dict[str, Any]:
         decision="PENDING",
         task_refs=["TASK-A"],
     )
-    rejected = _path_change(
-        "REPLAN-A",
-        source_kind="REPLAN",
-        change_kind="ADD_TASK",
-        decision="REJECTED",
-        task_refs=["TASK-A"],
-    )
     operations = [
         {"operation": "add_node", "task_id": "TASK-B"},
     ]
@@ -130,13 +123,6 @@ def _dynamic_scenarios() -> dict[str, Any]:
             "stream": _stream([_frame("replan.requested", 21)], cursor="20"),
             "after_projection": _projection(
                 _snapshot(sequence=21, revision=2, path_changes=[pending])
-            ),
-        },
-        "replan_rejected": {
-            "before_projection": _projection(_snapshot(sequence=20)),
-            "stream": _stream([_frame("replan.requested", 21)], cursor="20"),
-            "after_projection": _projection(
-                _snapshot(sequence=21, revision=2, path_changes=[rejected])
             ),
         },
         "replan_approved": {
@@ -252,7 +238,6 @@ def _capture_index() -> dict[str, Any]:
                     "sparse_graph_refresh",
                     "self_correction",
                     "replan_pending",
-                    "replan_rejected",
                     "replan_approved",
                 )
             },
@@ -316,7 +301,6 @@ def test_reviewed_real_sse_evidence_reaches_every_formerly_unreachable_control()
         "VS01-DYN-002",
         "VS01-DYN-003",
         "VS01-DYN-004",
-        "VS01-DYN-005",
         "VS01-DYN-006",
         "VS01-DYN-007",
     }
@@ -556,7 +540,7 @@ def test_driver_capture_index_accepts_only_unique_gate_receipts(tmp_path: Any) -
     loaded, digest, references = run_vs01._load_driver_capture_index(path)
     assert loaded["schema_version"] == run_vs01.CAPTURE_INDEX_SCHEMA_VERSION
     assert digest == hashlib.sha256(raw).hexdigest()
-    assert len(references) == 28
+    assert len(references) == 25
     assert set(references) == {
         "event_inventory.streams[0]",
         "event_inventory.streams[1]",
@@ -575,7 +559,6 @@ def test_driver_capture_index_accepts_only_unique_gate_receipts(tmp_path: Any) -
                 "sparse_graph_refresh",
                 "self_correction",
                 "replan_pending",
-                "replan_rejected",
                 "replan_approved",
             )
             for field in ("before_projection", "stream", "after_projection")
@@ -614,7 +597,7 @@ def test_capture_driver_receives_only_proxy_origin_and_output_path(
             assert kwargs["upstream_timeout_seconds"] == 30.0
             self.origin = "http://127.0.0.1:54321"
             self.session_id = "SESSION-" + "A" * 48
-            self.session = SimpleNamespace(records=tuple(range(28)))
+            self.session = SimpleNamespace(records=tuple(range(25)))
 
         def __enter__(self) -> Any:
             return self
@@ -635,7 +618,7 @@ def test_capture_driver_receives_only_proxy_origin_and_output_path(
 
     def reconstruct(index: Any, records: Any, *, binding: Any) -> Any:
         assert index == capture_index
-        assert len(records) == 28
+        assert len(records) == 25
         return _evidence_document(binding=dict(binding))
 
     monkeypatch.setattr(run_vs01, "run_command", command)

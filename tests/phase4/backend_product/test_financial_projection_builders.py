@@ -210,6 +210,22 @@ def test_released_metric_preserves_every_financial_and_method_field() -> None:
     }
 
 
+def test_released_metric_accepts_domain_unit_equivalences() -> None:
+    index_projection = _build_metric(
+        calculation={**_calculation(), "output_unit": "INDEX_POINTS"}
+    )
+    assert index_projection.canonical_unit == "INDEX"
+
+    metric = {**_metric(), "canonical_unit": "CURRENCY", "currency": "USD"}
+    claim = {**_claim(), "unit": "CURRENCY", "currency": "USD"}
+    currency_projection = _build_metric(
+        metric=metric,
+        claims=(claim,),
+        calculation={**_calculation(), "output_unit": "USD"},
+    )
+    assert currency_projection.canonical_unit == "CURRENCY"
+
+
 @pytest.mark.parametrize(
     ("field", "bad_value", "message"),
     [

@@ -4,26 +4,36 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.application.models import CompletedRunArtifacts
 from src.application.persistence import (
     ResearchObjectRow,
     ResearchRunAggregateRow,
     RuntimeEventRow,
 )
 from src.application.service import ResearchApplicationService
-from src.domain.enums import RunStatus
+from src.domain.enums import ReplanDecision, RunStatus
+from src.domain.proof import (
+    ProofInputCommitment,
+    ProofPolicyDecision,
+    ProofRecord,
+    ProofVerificationRecord,
+)
 from src.domain.research_goal import ResearchGoal
 from src.domain.research_object import ResearchObject
 from src.domain.research_run import ResearchRun
 from src.domain.research_scheme import ResearchSchemeSnapshot
 from src.domain.runtime_event import RuntimeEvent, RuntimeEventType, normalize_runtime_event_v1
 from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph
+from src.infrastructure.database.phase3_records import SQLAlchemyPhase3RecordRepository
 from src.infrastructure.database.phase4_product import (
     Phase4RunProjectionRow,
     PostgreSQLProductUnitOfWorkFactory,
@@ -44,11 +54,13 @@ from src.phase4_product.admission import (
     validate_confirm_request,
 )
 from src.phase4_product.contracts import (
+    AtomicRunProjectionV1,
     AvailabilityStatus,
     AvailabilityV1,
     ConfirmResearchRunRequestV1,
     ConfirmRunResponseV1,
     CreateResearchObjectRequestV1,
+    OwnedAvailabilityRefV1,
     PrepareResearchRunRequestV1,
     ProofSummaryV1,
     ResearchObjectCollectionV1,
@@ -56,6 +68,8 @@ from src.phase4_product.contracts import (
     ResearchRunCollectionV1,
     ResearchRunDetailV1,
     ResearchRunDraftV1,
+    RunLifecycleV1,
+    TerminalStateV1,
 )
 from src.phase4_product.durability import (
     AtomicConfirmCommit,
@@ -75,15 +89,41 @@ from src.phase4_product.hashing import idempotency_key_digest
 from src.phase4_product.projections import (
     RunCollectionSource,
     build_atomic_run_projection,
+    build_released_result_projection,
     build_run_collection,
+    calculate_run_progress,
+    project_event,
     project_goal,
+    project_graph,
     project_object,
+    project_path_change,
     project_run_detail,
+    project_run_status,
     project_scheme,
 )
 from src.runtime.state import RuntimeState
 
 _CURSOR_SIGNING_KEY = b"phase4-vs01-local-run-collection-v1"
+
+
+class _ProjectionPublishingEventStore:
+    """Delegate durable events and publish the matching aggregate watermark."""
+
+    def __init__(
+        self,
+        delegate: object,
+        publish: Callable[[RuntimeEvent], Awaitable[None]],
+    ) -> None:
+        self._delegate = delegate
+        self._publish = publish
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
+
+    async def emit(self, **kwargs: Any) -> RuntimeEvent:
+        event = await self._delegate.emit(**kwargs)
+        await self._publish(event)
+        return event
 
 
 class PostgreSQLPhase4ProductBackend:
@@ -98,9 +138,15 @@ class PostgreSQLPhase4ProductBackend:
         self.sessions = sessions
         self.service = service
         self.uow_factory = PostgreSQLProductUnitOfWorkFactory(sessions)
+        service.event_store = _ProjectionPublishingEventStore(
+            service.event_store,
+            self._publish_runtime_event,
+        )
         self._worker_id = f"phase4-worker-{uuid4()}"
         self._worker: asyncio.Task[None] | None = None
+        self._executions: set[asyncio.Task[None]] = set()
         self._wake = asyncio.Event()
+        self._projection_lock = asyncio.Lock()
 
     async def start(self) -> None:
         if self._worker is None:
@@ -115,6 +161,11 @@ class PostgreSQLPhase4ProductBackend:
                 await worker
             except asyncio.CancelledError:
                 pass
+        executions = tuple(self._executions)
+        for execution in executions:
+            execution.cancel()
+        if executions:
+            await asyncio.gather(*executions, return_exceptions=True)
 
     async def create_object(
         self,
@@ -443,32 +494,64 @@ class PostgreSQLPhase4ProductBackend:
             scheme = ResearchSchemeSnapshot.model_validate(aggregate["scheme"])
             planned = PlannedTaskGraph.model_validate(aggregate["runtime"]["planned_graph"])
             actual = ActualRuntimeGraph.model_validate(aggregate["runtime"]["actual_graph"])
+            artifacts = CompletedRunArtifacts.model_validate(aggregate["artifacts"])
             events = tuple(RuntimeEvent.model_validate(item.payload) for item in event_rows)
             pending = AvailabilityV1.unavailable(AvailabilityStatus.PENDING, "REVIEW_PENDING")
             not_generated = AvailabilityV1.unavailable(
                 AvailabilityStatus.NOT_GENERATED, "NOT_GENERATED"
             )
-            projection = build_atomic_run_projection(
-                expected_object_id=row.object_id,
-                expected_run_id=run_id,
-                projection_revision=row.projection_revision,
-                projection_sequence=row.projection_sequence,
-                generated_at=datetime.now(UTC),
-                research_object=research_object,
-                run=run,
-                goal=goal,
-                confirmed_scheme=scheme,
-                planned_graph=planned,
-                actual_graph=actual,
-                proof_summary=ProofSummaryV1(
-                    availability=not_generated, policy="UNKNOWN", status=None
-                ),
-                review_availability=pending,
-                result_availability=not_generated,
-                artifact_availability=not_generated,
-                execution_availability=not_generated,
-                events=tuple(normalize_runtime_event_v1(event) for event in events),
-            )
+            normalized_events = tuple(normalize_runtime_event_v1(event) for event in events)
+            path_changes = self._path_change_sources(artifacts, actual)
+            if run.status is RunStatus.RELEASED:
+                projection = self._released_projection(
+                    object_id=row.object_id,
+                    revision=row.projection_revision,
+                    sequence=row.projection_sequence,
+                    research_object=research_object,
+                    run=run,
+                    goal=goal,
+                    scheme=scheme,
+                    planned=planned,
+                    actual=actual,
+                    artifacts=artifacts,
+                    events=normalized_events,
+                    path_changes=path_changes,
+                )
+            else:
+                terminal_event = (
+                    normalized_events[-1]
+                    if run.status in {RunStatus.FAILED, RunStatus.CANCELLED}
+                    else None
+                )
+                safe_failure = terminal_event.payload if terminal_event is not None else None
+                projection = build_atomic_run_projection(
+                    expected_object_id=row.object_id,
+                    expected_run_id=run_id,
+                    projection_revision=row.projection_revision,
+                    projection_sequence=row.projection_sequence,
+                    generated_at=datetime.now(UTC),
+                    research_object=research_object,
+                    run=run,
+                    goal=goal,
+                    confirmed_scheme=scheme,
+                    planned_graph=planned,
+                    actual_graph=actual,
+                    proof_summary=ProofSummaryV1(
+                        availability=not_generated, policy="UNKNOWN", status=None
+                    ),
+                    review_availability=(
+                        pending
+                        if run.status not in {RunStatus.FAILED, RunStatus.CANCELLED}
+                        else not_generated
+                    ),
+                    result_availability=not_generated,
+                    artifact_availability=not_generated,
+                    execution_availability=not_generated,
+                    path_changes=path_changes,
+                    events=normalized_events,
+                    terminal_event=terminal_event,
+                    safe_failure=safe_failure,
+                )
             await session.execute(
                 pg_insert(Phase4RunProjectionRow)
                 .values(
@@ -530,8 +613,12 @@ class PostgreSQLPhase4ProductBackend:
                         ),
                         projection_revision=row.projection_revision,
                         projection_sequence=row.projection_sequence,
-                        result_availability=AvailabilityV1.unavailable(
-                            AvailabilityStatus.NOT_GENERATED, "NOT_GENERATED"
+                        result_availability=(
+                            AvailabilityV1.available()
+                            if row.status == RunStatus.RELEASED.value
+                            else AvailabilityV1.unavailable(
+                                AvailabilityStatus.NOT_GENERATED, "NOT_GENERATED"
+                            )
                         ),
                     )
                 )
@@ -562,8 +649,224 @@ class PostgreSQLPhase4ProductBackend:
         )
 
     async def get_result(self, run_id: str):
-        await self.get_run(run_id)
-        raise self._unavailable("released_result", run_id, "NOT_GENERATED")
+        aggregate = await self.service.get_run(run_id)
+        result = aggregate.artifacts.released_result
+        canonical = aggregate.artifacts.canonical_record
+        if aggregate.run.status is not RunStatus.RELEASED or result is None or canonical is None:
+            raise self._unavailable("released_result", run_id, "NOT_GENERATED")
+        records = SQLAlchemyPhase3RecordRepository(self.sessions)
+        return build_released_result_projection(
+            expected_object_id=aggregate.run.research_object_id,
+            expected_run_id=run_id,
+            run=aggregate.run,
+            canonical_record=canonical,
+            released_result=result,
+            calculations=tuple(aggregate.artifacts.calculations),
+            evidence=tuple(aggregate.artifacts.evidence),
+            proof_policy_decisions=tuple(await records.list(ProofPolicyDecision, run_id)),
+            proof_records=tuple(await records.list(ProofRecord, run_id)),
+            proof_verifications=tuple(await records.list(ProofVerificationRecord, run_id)),
+            proof_commitments=tuple(await records.list(ProofInputCommitment, run_id)),
+        )
+
+    def _released_projection(
+        self,
+        *,
+        object_id: str,
+        revision: int,
+        sequence: int,
+        research_object: ResearchObject,
+        run: ResearchRun,
+        goal: ResearchGoal,
+        scheme: ResearchSchemeSnapshot,
+        planned: PlannedTaskGraph,
+        actual: ActualRuntimeGraph,
+        artifacts: CompletedRunArtifacts,
+        events: tuple[Any, ...],
+        path_changes: tuple[object, ...],
+    ) -> AtomicRunProjectionV1:
+        canonical = artifacts.canonical_record
+        released = artifacts.released_result
+        review = artifacts.review
+        if canonical is None or released is None or review is None or not events:
+            raise product_error(
+                "INTEGRITY_FAILURE",
+                "released Run is missing its authoritative release records",
+            )
+        available = AvailabilityV1.available()
+        run_status = project_run_status(run.status)
+        planned_projection = project_graph(
+            planned,
+            expected_run_id=run.run_id,
+            expected_graph_id=run.planned_graph_id,
+        )
+        actual_projection = project_graph(
+            actual,
+            expected_run_id=run.run_id,
+            expected_graph_id=run.actual_graph_id,
+        )
+        tasks = actual_projection.tasks
+        activity = tuple(
+            project_event(
+                event,
+                expected_run_id=run.run_id,
+                known_task_ids={task.task_id for task in tasks},
+                projection_sequence=sequence,
+            )
+            for event in events
+        )
+        changes = tuple(
+            project_path_change(change, expected_run_id=run.run_id)
+            for change in path_changes
+        )
+        terminal_event = events[-1]
+        if terminal_event.type is not RuntimeEventType.RUN_COMPLETED:
+            raise product_error(
+                "INTEGRITY_FAILURE",
+                "released Run does not close with run.completed",
+            )
+        return AtomicRunProjectionV1(
+            projection_revision=revision,
+            projection_sequence=sequence,
+            generated_at=datetime.now(UTC),
+            object=project_object(research_object),
+            run=project_run_detail(
+                run,
+                projection_revision=revision,
+                projection_sequence=sequence,
+            ),
+            goal=project_goal(goal, expected_object_id=object_id),
+            confirmed_scheme=project_scheme(
+                scheme,
+                expected_object_id=object_id,
+                expected_goal_id=goal.goal_id,
+            ),
+            planned_graph=planned_projection,
+            actual_graph=actual_projection,
+            graph_version=actual_projection.version,
+            tasks=tasks,
+            path_changes=changes,
+            activity=activity,
+            lifecycle=RunLifecycleV1(
+                status=run_status.status,
+                stage=run_status.stage,
+                progress=calculate_run_progress(
+                    tasks,
+                    run_status=run.status,
+                    release_closure_valid=True,
+                ),
+                terminal=True,
+                terminal_outcome="SUCCESS",
+                safe_failure=None,
+            ),
+            review=OwnedAvailabilityRefV1(
+                availability=available,
+                review_id=review.review_id,
+                status=review.status.value,
+            ),
+            result=OwnedAvailabilityRefV1(
+                availability=available,
+                released_result_id=released.result_id,
+                canonical_record_id=canonical.record_id,
+                released_at=released.released_at,
+            ),
+            artifacts=OwnedAvailabilityRefV1(
+                availability=available,
+                report_id=released.result_id,
+                representation_ids=(f"REPORT-{run.run_id}-HTML",),
+            ),
+            proof=ProofSummaryV1(
+                availability=available,
+                policy="NOT_REQUIRED",
+                status="NOT_REQUIRED",
+            ),
+            execution=OwnedAvailabilityRefV1(
+                availability=available,
+                canonical_record_id=canonical.record_id,
+            ),
+            terminal=TerminalStateV1(
+                is_terminal=True,
+                outcome="SUCCESS",
+                event_id=terminal_event.event_id,
+                sequence=terminal_event.sequence,
+            ),
+        )
+
+    @staticmethod
+    def _path_change_sources(
+        artifacts: CompletedRunArtifacts,
+        actual: ActualRuntimeGraph,
+    ) -> tuple[object, ...]:
+        sources: list[object] = list(artifacts.corrections)
+        histories = {
+            item.get("replan_id"): item
+            for item in actual.mutation_history
+            if isinstance(item, dict) and isinstance(item.get("replan_id"), str)
+        }
+        for replan in artifacts.replans:
+            history = histories.get(replan.replan_id)
+            raw_operations = (
+                history.get("operations", []) if isinstance(history, dict) else []
+            )
+            operations: list[dict[str, object]] = []
+            for operation in raw_operations:
+                if not isinstance(operation, dict):
+                    continue
+                kind = operation.get("operation")
+                if kind == "add_node":
+                    operations.append(
+                        {"operation": kind, "task_id": operation.get("task_id")}
+                    )
+                elif kind in {"add_edge", "remove_edge"}:
+                    operations.append(
+                        {
+                            "operation": kind,
+                            "task_id": operation.get("target_task_id"),
+                            "dependency_task_id": operation.get("source_task_id"),
+                        }
+                    )
+            if not operations and replan.decision is not ReplanDecision.PENDING:
+                continue
+            task_refs = tuple(
+                dict.fromkeys(
+                    str(value)
+                    for operation in operations
+                    for value in (
+                        operation.get("task_id"),
+                        operation.get("dependency_task_id"),
+                    )
+                    if isinstance(value, str)
+                )
+            )
+            if not task_refs:
+                task_refs = (replan.requesting_task_id,)
+            sources.append(
+                {
+                    "run_id": replan.run_id,
+                    "source_kind": "REPLAN",
+                    "source_id": replan.replan_id,
+                    "replan_id": replan.replan_id,
+                    "change_kind": "ADD_TASK",
+                    "status": replan.decision.value,
+                    "decision": replan.decision.value,
+                    "reason_code": replan.reason_code,
+                    "task_refs": task_refs,
+                    "operations": operations,
+                    "graph_version_before": (
+                        history.get("version_before") if isinstance(history, dict) else None
+                    ),
+                    "graph_version_after": (
+                        history.get("version_after") if isinstance(history, dict) else None
+                    ),
+                    "created_at": replan.created_at,
+                    "resolved_at": (
+                        None
+                        if replan.decision is ReplanDecision.PENDING
+                        else replan.created_at
+                    ),
+                }
+            )
+        return tuple(sources)
 
     async def get_claim(self, run_id: str, claim_id: str):
         await self.get_run(run_id)
@@ -592,6 +895,25 @@ class PostgreSQLPhase4ProductBackend:
     async def get_released_object(self, object_id: str):
         await self.get_object(object_id)
         raise self._unavailable("released_object", object_id, "NOT_RELEASED")
+
+    async def _publish_runtime_event(self, event: RuntimeEvent) -> None:
+        async with self._projection_lock:
+            aggregate = await self.service.repository.get_run(event.run_id)
+            if aggregate is None:
+                return
+            if event.timestamp > aggregate.run.updated_at:
+                aggregate.run.updated_at = event.timestamp
+            await self.service.repository.save_run(aggregate)
+            async with self.sessions() as session, session.begin():
+                row = await session.scalar(
+                    select(ResearchRunAggregateRow)
+                    .where(ResearchRunAggregateRow.run_id == event.run_id)
+                    .with_for_update()
+                )
+                if row is None or event.sequence <= row.projection_sequence:
+                    return
+                row.projection_sequence = event.sequence
+                row.projection_revision += 1
 
     async def _scheduler_loop(self) -> None:
         while True:
@@ -664,6 +986,43 @@ class PostgreSQLPhase4ProductBackend:
             ):
                 raise product_error("CONFLICT", "scheduler fence was lost")
             await uow.commit()
+        execution = asyncio.create_task(self._execute_started_run(leased.run_id))
+        self._executions.add(execution)
+        execution.add_done_callback(self._executions.discard)
+
+    async def _execute_started_run(self, run_id: str) -> None:
+        try:
+            await self.service.execute_run(run_id, emit_run_started=False)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # The application service has already persisted the FAILED aggregate and
+            # terminal event. The Product worker still has to publish that snapshot.
+            pass
+        await self._publish_latest_projection_watermark(run_id)
+
+    async def _publish_latest_projection_watermark(self, run_id: str) -> None:
+        """Publish the completed aggregate and its durable event tail as one snapshot fence."""
+
+        async with self.sessions() as session, session.begin():
+            row = await session.scalar(
+                select(ResearchRunAggregateRow)
+                .where(ResearchRunAggregateRow.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise self._not_found("research_run", run_id)
+            latest_sequence = await session.scalar(
+                select(func.max(RuntimeEventRow.sequence)).where(RuntimeEventRow.run_id == run_id)
+            )
+            sequence = int(latest_sequence or 0)
+            if sequence < row.projection_sequence:
+                raise product_error(
+                    "INTEGRITY_FAILURE",
+                    "runtime event tail is behind the published projection watermark",
+                )
+            row.projection_sequence = sequence
+            row.projection_revision += 1
 
     @staticmethod
     def _initial_events(*, run, scheme, planned, timestamp: datetime) -> tuple[RuntimeEvent, ...]:

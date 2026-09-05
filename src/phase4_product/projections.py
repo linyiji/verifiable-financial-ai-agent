@@ -1120,8 +1120,11 @@ def project_path_change(source: object, *, expected_run_id: str) -> PathChangePr
         _project_graph_operation(item, expected_run_id=run_id)
         for item in _sequence(_field(source, "operations"), "Replan.operations")
     )
-    if not operations:
-        raise ProjectionIntegrityError("Replan path change requires durable typed operations")
+    decision = _optional_enum_text(_field(source, "decision", None), "Replan.decision")
+    if decision == "APPROVED" and not operations:
+        raise ProjectionIntegrityError("approved Replan requires durable typed operations")
+    if decision != "APPROVED" and operations:
+        raise ProjectionIntegrityError("unapproved Replan cannot carry graph operations")
     task_refs = _unique_string_tuple(_field(source, "task_refs"), "Replan.task_refs")
     operation_tasks = {
         task_id
@@ -1137,7 +1140,7 @@ def project_path_change(source: object, *, expected_run_id: str) -> PathChangePr
         source_id=replan_id,
         change_kind=change_kind,
         status=_enum_text(_field(source, "status"), context="Replan.status"),
-        decision=_optional_enum_text(_field(source, "decision", None), "Replan.decision"),
+        decision=decision,
         reason_code=_optional_string(
             _field(source, "reason_code", None), context="Replan.reason_code"
         ),
@@ -1280,7 +1283,13 @@ def build_released_metric(
     calculation_unit = _enum_text(
         _field(calculation, "output_unit"), context="Calculation.output_unit"
     ).upper()
-    if calculation_unit != canonical_unit.upper():
+    metric_currency = _optional_raw_string(_field(metric, "currency", None))
+    unit_matches = calculation_unit == canonical_unit.upper()
+    if canonical_unit.upper() == "CURRENCY" and metric_currency is not None:
+        unit_matches = calculation_unit == metric_currency.upper()
+    elif canonical_unit.upper() == "INDEX":
+        unit_matches = calculation_unit in {"INDEX", "INDEX_POINTS"}
+    if not unit_matches:
         raise ProjectionIntegrityError("released metric unit differs from its Calculation")
 
     matching_claims = tuple(

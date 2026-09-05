@@ -49,6 +49,7 @@ _ARTIFACT_REPRESENTATIONS = (
     "text/html; charset=utf-8",
 )
 _ARTIFACT_CONTENT_PATH = "/api/research-runs/{run_id}/artifacts/{artifact_id}/content"
+_EVENT_STREAM_PATH = "/api/research-runs/{run_id}/events"
 _MEDIA_TOKEN = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _Q_VALUE = re.compile(r"^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$")
 
@@ -223,11 +224,12 @@ class Phase4NegotiatedRoute(APIRoute):
         self,
     ) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         route_handler = super().get_route_handler()
-        representations = (
-            _ARTIFACT_REPRESENTATIONS
-            if self.path == _ARTIFACT_CONTENT_PATH
-            else _JSON_REPRESENTATION
-        )
+        if self.path == _ARTIFACT_CONTENT_PATH:
+            representations = _ARTIFACT_REPRESENTATIONS
+        elif self.path == _EVENT_STREAM_PATH:
+            representations = ("text/event-stream",)
+        else:
+            representations = _JSON_REPRESENTATION
 
         async def negotiated_route_handler(request: Request) -> Response:
             # Contract selection is the first transport gate, including when

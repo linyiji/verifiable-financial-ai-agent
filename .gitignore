@@ -13,3 +13,6 @@ workspaces/*
 !workspaces/.gitkeep
 
 .env.local
+
+/apps/web/node_modules/
+/apps/web/dist/

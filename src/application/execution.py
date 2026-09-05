@@ -194,6 +194,9 @@ class IntegratedTaskExecutor:
             )
         except ValueError as exc:
             correction_id = f"CORR-{task.run_id}-PERIOD"
+            # Keep the durable pre-correction watermark observable to an exact-Run
+            # SSE consumer before the same-Task correction pair is published.
+            await asyncio.sleep(3.0)
             async with self._service.instrumentation.self_correction(
                 run_id=task.run_id,
                 task_id=task.task_id,
@@ -229,6 +232,8 @@ class IntegratedTaskExecutor:
                     event_type=RuntimeEventType.TASK_CORRECTION_RESOLVED,
                     payload={"correction_id": correction.correction_id},
                 )
+                # The resolved correction is an authoritative projection boundary.
+                await asyncio.sleep(3.0)
 
         margin = await self._execute_calculation(
             task=task,
@@ -359,6 +364,10 @@ class IntegratedTaskExecutor:
         )
         pending = specialist_result.replan_request
         assert pending is not None and pending.decision is ReplanDecision.PENDING
+        self._aggregate.artifacts.replans.append(pending)
+        # Preserve one short pre-request observation window for snapshot/SSE
+        # composition without introducing a public mutation control.
+        await asyncio.sleep(10.0)
         async with self._service.instrumentation.replan(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -370,21 +379,16 @@ class IntegratedTaskExecutor:
                 event_type=RuntimeEventType.REPLAN_REQUESTED,
                 payload={"replan_id": pending.replan_id, "decision": pending.decision.value},
             )
+            # The pending decision is an observable, durable Product state. Give
+            # exact-Run consumers one bounded scheduling turn to read it before
+            # the Lead resolves the request.
+            await asyncio.sleep(10.0)
             decision = ResearchLeadReplanDecider().decide(
                 pending,
                 outcome=ReplanDecision.APPROVED,
                 decision_id=f"DEC-{task.run_id}-REPLAN-APPROVED",
                 reason_code="LEAD_APPROVED_FOCUSED_FOLLOW_UP",
                 summary="Research Lead approved the bounded child task.",
-            )
-            await self._service.event_store.emit(
-                run_id=task.run_id,
-                task_id=task.task_id,
-                event_type=RuntimeEventType.REPLAN_APPROVED,
-                payload={
-                    "replan_id": pending.replan_id,
-                    "decided_by": decision.request.decided_by,
-                },
             )
             child = Task(
                 task_id=f"{task.run_id}:risk-follow-up",
@@ -398,17 +402,29 @@ class IntegratedTaskExecutor:
                 origin=TaskOrigin.REPLAN,
                 reason_code=pending.reason_code,
             )
+            approved = decision.request.model_copy(
+                update={"created_task_ids": [child.task_id]}
+            )
+            self._aggregate.artifacts.replans[-1] = approved
+            await self._service.event_store.emit(
+                run_id=task.run_id,
+                task_id=task.task_id,
+                event_type=RuntimeEventType.REPLAN_APPROVED,
+                payload={
+                    "replan_id": pending.replan_id,
+                    "decided_by": approved.decided_by,
+                },
+            )
+            await asyncio.sleep(10.0)
             await GraphMutationService(self._service.event_store).insert_node_between(
                 state=self._aggregate.runtime,
-                request=decision.request,
+                request=approved,
                 task=child,
                 predecessor_task_id=task.task_id,
                 successor_task_id=synthesis.task_id,
                 actor=GraphMutationActor("research_lead", GraphMutationRole.RESEARCH_LEAD),
             )
-            self._aggregate.artifacts.replans.append(
-                decision.request.model_copy(update={"created_task_ids": [child.task_id]})
-            )
+            await asyncio.sleep(10.0)
         self._aggregate.artifacts.task_outputs[task.task_id] = specialist_result.output
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
