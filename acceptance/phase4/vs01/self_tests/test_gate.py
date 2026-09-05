@@ -315,26 +315,42 @@ def test_postgresql_urls_are_driver_normalized_and_redacted() -> None:
     assert driver_specific.startswith("postgresql+psycopg://")
 
 
-def test_blank_pgservicefile_is_unset_for_libpq_child(
+@pytest.mark.parametrize(
+    ("name", "parent_value", "expected_present"),
+    [
+        ("PGSERVICE", "", False),
+        ("PGSERVICEFILE", "", False),
+        ("PGSERVICE", "vfas-explicit-service", True),
+        ("PGSERVICEFILE", "/local/explicit-service.conf", True),
+    ],
+)
+def test_libpq_service_environment_is_normalized_for_child(
     monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    parent_value: str,
+    expected_present: bool,
 ) -> None:
-    monkeypatch.setenv("PGSERVICEFILE", "")
+    monkeypatch.setenv(name, parent_value)
     libpq_env = _libpq_env("postgresql://user:password@localhost/postgres")
     observation = gate_module.run_command(
         [
             sys.executable,
             "-c",
-            "import os, sys; sys.exit(0 if 'PGSERVICEFILE' not in os.environ else 1)",
+            (
+                "import os, sys; "
+                "name, expected, present = sys.argv[1:]; "
+                "actual = os.environ.get(name); "
+                "sys.exit(0 if ((present == 'yes' and actual == expected) or "
+                "(present == 'no' and actual is None)) else 1)"
+            ),
+            name,
+            parent_value,
+            "yes" if expected_present else "no",
         ],
         cwd=Path(__file__).parent,
         env=libpq_env,
     )
     assert observation.returncode == 0
-
-    monkeypatch.setenv("PGSERVICEFILE", "/local/explicit-service.conf")
-    assert _libpq_env("postgresql://user:password@localhost/postgres")[
-        "PGSERVICEFILE"
-    ] == "/local/explicit-service.conf"
 
 
 def test_postgresql_connection_block_is_verified_and_recoverable(

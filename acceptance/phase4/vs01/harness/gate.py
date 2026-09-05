@@ -546,7 +546,6 @@ def _libpq_env(url: str) -> dict[str, str | None]:
             "PGPASSWORD",
             "PGPORT",
             "PGREQUIREPEER",
-            "PGSERVICE",
             "PGSSLCERT",
             "PGSSLCRL",
             "PGSSLCRLDIR",
@@ -557,10 +556,11 @@ def _libpq_env(url: str) -> dict[str, str | None]:
             "PGUSER",
         )
     }
-    # libpq treats an empty-but-present PGSERVICEFILE as an explicit path.  Use
-    # ``None`` as the harness's child-environment deletion marker while retaining
-    # an explicitly configured non-empty service file.
-    result["PGSERVICEFILE"] = os.environ.get("PGSERVICEFILE") or None
+    # libpq treats empty-but-present service settings as explicit configuration.
+    # Use ``None`` as the harness's child-environment deletion marker while
+    # retaining explicitly configured non-empty values.
+    for name in ("PGSERVICE", "PGSERVICEFILE"):
+        result[name] = os.environ.get(name) or None
     result.update(
         {
             "PGHOST": parsed.hostname or "",
