@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import time
+from collections import Counter
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import import_module
 from typing import Any, Protocol
@@ -14,6 +15,11 @@ from src.observability.noop import FailOpenTraceAdapter, NoopTraceAdapter
 from src.observability.safety import sanitize_trace_attributes, sanitize_trace_value
 
 LANGFUSE_OTLP_REDACTION_POLICY = "langfuse-otel-export-redaction-v1"
+LANGFUSE_EXPORT_MAX_ATTEMPTS = 3
+LANGFUSE_EXPORT_RETRY_DELAY_SECONDS = 0.1
+LANGFUSE_FORCE_FLUSH_TIMEOUT_MILLIS = 30_000
+LANGFUSE_READBACK_MAX_ATTEMPTS = 10
+LANGFUSE_READBACK_MAX_RETRY_DELAY_SECONDS = 2.0
 
 
 class LangfuseClientBoundary(Protocol):
@@ -63,8 +69,8 @@ class LangfuseTraceAdapter:
             if callable(end):
                 end()
 
-    async def event(self, name: str, *, attributes: JsonObject | None = None) -> None:
-        self._client.create_event(
+    async def event(self, name: str, *, attributes: JsonObject | None = None) -> Any:
+        return self._client.create_event(
             name=name,
             attributes=sanitize_trace_attributes(attributes),
         )
@@ -196,6 +202,14 @@ class LangfuseSDKClient:
         update(**kwargs)
 
     def flush(self) -> None:
+        resources = getattr(self._sdk_client, "_resources", None)
+        provider = getattr(resources, "tracer_provider", None)
+        force_flush = getattr(provider, "force_flush", None)
+        if callable(force_flush):
+            result = force_flush(timeout_millis=LANGFUSE_FORCE_FLUSH_TIMEOUT_MILLIS)
+            if result is False:
+                raise TimeoutError("Langfuse span force-flush exceeded its bounded timeout")
+            return
         flush = getattr(self._sdk_client, "flush", None)
         if not callable(flush):
             raise RuntimeError("installed Langfuse SDK has no supported flush API")
@@ -249,6 +263,11 @@ class TraceAdapterBuild:
     classification: TraceAdapterClassification
     provider: str = "langfuse"
     audit_reader: LangfuseTraceAuditReader | None = field(default=None, repr=False, compare=False)
+    drain_barrier: LangfuseTelemetryDrainBarrier | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     @property
     def enabled(self) -> bool:
@@ -309,17 +328,23 @@ def create_langfuse_trace_adapter(
             adapter=NoopTraceAdapter(),
             classification=TraceAdapterClassification.INITIALIZATION_FAILED,
         )
+    audit_reader = (
+        LangfuseTraceAuditReader(
+            sdk_client,
+            named_sensitive_values=named_sensitive_values,
+        )
+        if _has_trace_reader(sdk_client)
+        else None
+    )
     return TraceAdapterBuild(
         adapter=FailOpenTraceAdapter(
             LangfuseTraceAdapter(LangfuseSDKClient(sdk_client, sensitive_values=sensitive_values))
         ),
         classification=TraceAdapterClassification.ENABLED,
-        audit_reader=(
-            LangfuseTraceAuditReader(
-                sdk_client,
-                named_sensitive_values=named_sensitive_values,
-            )
-            if _has_trace_reader(sdk_client)
+        audit_reader=audit_reader,
+        drain_barrier=(
+            LangfuseTelemetryDrainBarrier(sdk_client, audit_reader=audit_reader)
+            if audit_reader is not None
             else None
         ),
     )
@@ -337,6 +362,14 @@ class LangfuseTraceRedactionAudit:
     expected_observation_count: int | None
     attempts: int
     inspected_surfaces: tuple[str, ...] = ("trace", "observations")
+    expected_observation_identities: tuple[str, ...] | None = None
+    observed_observation_identities: tuple[str, ...] = ()
+    missing_observation_identities: tuple[str, ...] = ()
+    unexpected_observation_identities: tuple[str, ...] = ()
+    unexpected_duplicate_identities: tuple[str, ...] = ()
+    one_root_trace: bool | None = None
+    force_flush_succeeded: bool | None = None
+    elapsed_seconds: float = 0.0
 
 
 class LangfuseTraceAuditReader:
@@ -363,16 +396,41 @@ class LangfuseTraceAuditReader:
         attempts: int = 6,
         retry_delay_seconds: float = 1.0,
         expected_observation_count: int | None = None,
+        expected_observation_identities: Sequence[str] | None = None,
+        force_flush_succeeded: bool | None = None,
     ) -> LangfuseTraceRedactionAudit:
+        started = time.monotonic()
+        bounded_attempts = min(max(int(attempts), 1), LANGFUSE_READBACK_MAX_ATTEMPTS)
+        bounded_delay = min(
+            max(float(retry_delay_seconds), 0.0),
+            LANGFUSE_READBACK_MAX_RETRY_DELAY_SECONDS,
+        )
+        expected_identities = (
+            tuple(sorted({str(item) for item in expected_observation_identities if str(item)}))
+            if expected_observation_identities is not None
+            else None
+        )
+        expected_identity_duplicates = (
+            _duplicate_identities(tuple(str(item) for item in expected_observation_identities))
+            if expected_observation_identities is not None
+            else ()
+        )
+        if expected_identities is not None:
+            if expected_observation_count is None:
+                expected_observation_count = len(expected_identities)
+            elif expected_observation_count != len(expected_identities):
+                raise ValueError(
+                    "expected observation count must equal the exact identity set size"
+                )
         used_attempts = 0
         last_read: LangfuseTraceRedactionAudit | None = None
-        for attempt in range(1, max(attempts, 1) + 1):
+        for attempt in range(1, bounded_attempts + 1):
             used_attempts = attempt
             try:
                 payload = _model_payload(self._sdk_client.api.trace.get(trace_id))
             except Exception:
-                if attempt < attempts:
-                    time.sleep(max(retry_delay_seconds, 0))
+                if attempt < bounded_attempts:
+                    time.sleep(bounded_delay)
                 continue
             named_counts = tuple(
                 (name, _sensitive_occurrence_count(payload, (value,)))
@@ -380,13 +438,46 @@ class LangfuseTraceAuditReader:
             )
             occurrence_count = sum(count for _, count in named_counts)
             observation_count = _observation_count(payload)
-            observation_set_complete = (
-                expected_observation_count is None
-                or observation_count == expected_observation_count
+            observed_sequence = _observation_identities(payload)
+            observed_identities = tuple(sorted(set(observed_sequence)))
+            duplicate_identities = tuple(
+                sorted({*expected_identity_duplicates, *_duplicate_identities(observed_sequence)})
             )
+            missing_identities = (
+                tuple(sorted(set(expected_identities) - set(observed_identities)))
+                if expected_identities is not None
+                else ()
+            )
+            unexpected_identities = (
+                tuple(sorted(set(observed_identities) - set(expected_identities)))
+                if expected_identities is not None
+                else ()
+            )
+            one_root_trace = (
+                _one_exact_root_trace(payload, trace_id)
+                if expected_identities is not None
+                else None
+            )
+            if expected_identities is not None:
+                observation_set_complete = (
+                    not missing_identities
+                    and not unexpected_identities
+                    and not duplicate_identities
+                    and observation_count == expected_observation_count
+                    and one_root_trace is True
+                )
+            else:
+                observation_set_complete = (
+                    expected_observation_count is None
+                    or observation_count == expected_observation_count
+                )
             last_read = LangfuseTraceRedactionAudit(
                 policy_id=LANGFUSE_OTLP_REDACTION_POLICY,
-                passed=occurrence_count == 0 and observation_set_complete,
+                passed=(
+                    occurrence_count == 0
+                    and observation_set_complete
+                    and force_flush_succeeded is not False
+                ),
                 read_succeeded=True,
                 occurrence_count=occurrence_count,
                 named_occurrence_counts=named_counts,
@@ -394,11 +485,19 @@ class LangfuseTraceAuditReader:
                 observation_count=observation_count,
                 expected_observation_count=expected_observation_count,
                 attempts=used_attempts,
+                expected_observation_identities=expected_identities,
+                observed_observation_identities=observed_identities,
+                missing_observation_identities=missing_identities,
+                unexpected_observation_identities=unexpected_identities,
+                unexpected_duplicate_identities=duplicate_identities,
+                one_root_trace=one_root_trace,
+                force_flush_succeeded=force_flush_succeeded,
+                elapsed_seconds=time.monotonic() - started,
             )
             if observation_set_complete:
                 return last_read
-            if attempt < attempts:
-                time.sleep(max(retry_delay_seconds, 0))
+            if attempt < bounded_attempts:
+                time.sleep(bounded_delay)
         if last_read is not None:
             return last_read
         return LangfuseTraceRedactionAudit(
@@ -411,15 +510,69 @@ class LangfuseTraceAuditReader:
             observation_count=0,
             expected_observation_count=expected_observation_count,
             attempts=used_attempts,
+            expected_observation_identities=expected_identities,
+            missing_observation_identities=expected_identities or (),
+            unexpected_duplicate_identities=expected_identity_duplicates,
+            one_root_trace=False if expected_identities is not None else None,
+            force_flush_succeeded=force_flush_succeeded,
+            elapsed_seconds=time.monotonic() - started,
+        )
+
+
+class LangfuseTelemetryDrainBarrier:
+    """Bounded force-flush plus exact-identity ingestion/read-back closure."""
+
+    def __init__(self, sdk_client: Any, *, audit_reader: LangfuseTraceAuditReader) -> None:
+        self._sdk_client = sdk_client
+        self._audit_reader = audit_reader
+
+    def __repr__(self) -> str:
+        return "LangfuseTelemetryDrainBarrier(configured=True)"
+
+    def audit(
+        self,
+        trace_id: str,
+        *,
+        expected_observation_identities: Sequence[str],
+        flush_timeout_millis: int = LANGFUSE_FORCE_FLUSH_TIMEOUT_MILLIS,
+        readback_attempts: int = 6,
+        retry_delay_seconds: float = 1.0,
+    ) -> LangfuseTraceRedactionAudit:
+        started = time.monotonic()
+        flush_succeeded = _force_flush_trace_provider(
+            self._sdk_client,
+            timeout_millis=min(max(int(flush_timeout_millis), 1), 60_000),
+        )
+        audit = self._audit_reader.audit(
+            trace_id,
+            attempts=readback_attempts,
+            retry_delay_seconds=retry_delay_seconds,
+            expected_observation_identities=expected_observation_identities,
+            force_flush_succeeded=flush_succeeded,
+        )
+        return replace(
+            audit,
+            passed=audit.passed and flush_succeeded,
+            force_flush_succeeded=flush_succeeded,
+            elapsed_seconds=time.monotonic() - started,
         )
 
 
 class _LangfuseOTLPRedactingExporter:
     """Strip credentials from completed spans at the final OTLP export boundary."""
 
-    def __init__(self, delegate: Any, *, sensitive_values: Sequence[str]) -> None:
+    def __init__(
+        self,
+        delegate: Any,
+        *,
+        sensitive_values: Sequence[str],
+        max_attempts: int = LANGFUSE_EXPORT_MAX_ATTEMPTS,
+        retry_delay_seconds: float = LANGFUSE_EXPORT_RETRY_DELAY_SECONDS,
+    ) -> None:
         self._delegate = delegate
         self._sensitive_values = tuple(value for value in sensitive_values if value)
+        self._max_attempts = min(max(int(max_attempts), 1), LANGFUSE_EXPORT_MAX_ATTEMPTS)
+        self._retry_delay_seconds = min(max(float(retry_delay_seconds), 0.0), 1.0)
 
     def __repr__(self) -> str:
         return f"_LangfuseOTLPRedactingExporter(policy={LANGFUSE_OTLP_REDACTION_POLICY!r})"
@@ -433,7 +586,19 @@ class _LangfuseOTLPRedactingExporter:
         redacted = tuple(
             _redacted_readable_span(span, sensitive_values=self._sensitive_values) for span in spans
         )
-        return self._delegate.export(redacted)
+        last_result: Any = None
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                last_result = self._delegate.export(redacted)
+            except Exception:
+                if attempt == self._max_attempts:
+                    raise
+            else:
+                if _export_succeeded(last_result):
+                    return last_result
+            if attempt < self._max_attempts:
+                time.sleep(self._retry_delay_seconds)
+        return last_result
 
     def shutdown(self) -> Any:
         return self._delegate.shutdown()
@@ -591,6 +756,72 @@ def _observation_count(value: Any) -> int:
     return len(observations) if isinstance(observations, (list, tuple)) else 0
 
 
+def _observation_identities(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, Mapping):
+        return ()
+    observations = value.get("observations")
+    if not isinstance(observations, (list, tuple)):
+        return ()
+    identities: list[str] = []
+    for observation in observations:
+        if isinstance(observation, Mapping):
+            identity = observation.get("id") or observation.get("observationId")
+        else:
+            identity = getattr(observation, "id", None) or getattr(
+                observation, "observation_id", None
+            )
+        if isinstance(identity, (str, int)):
+            identities.append(_format_identifier(identity, kind="span"))
+    return tuple(identities)
+
+
+def _duplicate_identities(identities: Sequence[str]) -> tuple[str, ...]:
+    return tuple(sorted(identity for identity, count in Counter(identities).items() if count > 1))
+
+
+def _one_exact_root_trace(value: Any, expected_trace_id: str) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    top_level_trace_id = value.get("id") or value.get("traceId") or value.get("trace_id")
+    if top_level_trace_id is not None and str(top_level_trace_id) != expected_trace_id:
+        return False
+    observations = value.get("observations")
+    if not isinstance(observations, (list, tuple)) or not observations:
+        return False
+    trace_ids: set[str] = set()
+    for observation in observations:
+        if not isinstance(observation, Mapping):
+            return False
+        trace_id = observation.get("traceId") or observation.get("trace_id")
+        if not isinstance(trace_id, (str, int)):
+            return False
+        trace_ids.add(_format_identifier(trace_id, kind="trace"))
+    return trace_ids == {expected_trace_id}
+
+
+def _force_flush_trace_provider(sdk_client: Any, *, timeout_millis: int) -> bool:
+    resources = getattr(sdk_client, "_resources", None)
+    provider = getattr(resources, "tracer_provider", None)
+    force_flush = getattr(provider, "force_flush", None)
+    if not callable(force_flush):
+        return False
+    try:
+        result = force_flush(timeout_millis=timeout_millis)
+    except Exception:
+        return False
+    return result is not False
+
+
+def _export_succeeded(result: Any) -> bool:
+    if result is None:
+        return True
+    name = getattr(result, "name", None)
+    if isinstance(name, str):
+        return name.casefold() == "success"
+    value = getattr(result, "value", result)
+    return value == 0 or value is True
+
+
 def _load_sdk_factory() -> Callable[..., Any] | None:
     try:
         module = import_module("langfuse")
@@ -607,20 +838,23 @@ def _span_identifier(span: Any, kind: str) -> str | None:
     for name in direct_names:
         direct = getattr(span, name, None)
         if isinstance(direct, (str, int)):
-            return _format_identifier(direct)
+            return _format_identifier(direct, kind=kind)
     getter = getattr(span, f"get_{kind}_id", None)
     if callable(getter):
         value = getter()
         if isinstance(value, (str, int)):
-            return _format_identifier(value)
+            return _format_identifier(value, kind=kind)
     context_getter = getattr(span, "get_span_context", None)
     if callable(context_getter):
         context = context_getter()
         value = getattr(context, f"{kind}_id", None)
         if isinstance(value, (str, int)):
-            return _format_identifier(value)
+            return _format_identifier(value, kind=kind)
     return None
 
 
-def _format_identifier(value: str | int) -> str:
-    return f"{value:032x}" if isinstance(value, int) else value
+def _format_identifier(value: str | int, *, kind: str) -> str:
+    if not isinstance(value, int):
+        return value
+    width = 32 if kind == "trace" else 16
+    return f"{value:0{width}x}"

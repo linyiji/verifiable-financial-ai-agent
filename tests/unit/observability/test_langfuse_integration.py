@@ -24,6 +24,7 @@ from src.observability import (
 from src.observability.langfuse_adapter import (
     LANGFUSE_OTLP_REDACTION_POLICY,
     LangfuseSDKClient,
+    LangfuseTelemetryDrainBarrier,
     LangfuseTraceAuditReader,
     _LangfuseOTLPRedactingExporter,
 )
@@ -86,8 +87,12 @@ class FakeLangfuseSDK:
         self.generations.append((name, metadata, kwargs, manager))
         return manager
 
-    def create_event(self, *, name: str, metadata: dict) -> None:
+    def create_event(self, *, name: str, metadata: dict) -> FakeSpan:
+        index = len(self.spans) + len(self.generations) + len(self.events) + 1
+        trace_id = self.trace_stack[-1] if self.trace_stack else f"trace-{index}"
+        event = FakeSpan(trace_id, f"span-{index}")
         self.events.append((name, metadata))
+        return event
 
     def flush(self) -> None:
         self.flush_count += 1
@@ -331,16 +336,14 @@ async def test_metadata_is_sanitized_for_spans_and_events() -> None:
     }
     async with hooks.run(run_id="RUN-1", attributes=unsafe):
         pass
-    await hooks.emit(
-        ObservationStage.TASK,
-        "started",
-        run_id="RUN-1",
-        task_id="TASK-1",
-        attributes=unsafe,
+    event = await build.adapter.event(
+        "vfas.task.started",
+        attributes={"run_id": "RUN-1", "task_id": "TASK-1", **unsafe},
     )
 
     span_metadata = sdk.spans[0][1]
     event_metadata = sdk.events[0][1]
+    assert event.span_id == "span-2"
     for metadata in (span_metadata, event_metadata):
         assert metadata["api_key"] == "[REDACTED]"
         assert metadata["nested"]["authorization"] == "[REDACTED]"
@@ -371,6 +374,7 @@ async def test_sdk_bridge_redacts_all_configured_credentials_across_keys_and_val
         "nested": {
             "safe_label": "router-sensitive-sentinel",
             "selected_model": "mimo-sensitive-sentinel",
+            "chain_of_thought": "hidden-reasoning-sentinel",
             "publicKey": "unknown-public-value",
             "client-password": "unknown-password-value",
             "sessionTokenField": "unknown-token-value",
@@ -398,6 +402,7 @@ async def test_sdk_bridge_redacts_all_configured_credentials_across_keys_and_val
         "fmp-sensitive-sentinel",
         "router-sensitive-sentinel",
         "mimo-sensitive-sentinel",
+        "hidden-reasoning-sentinel",
         "unknown-public-value",
         "unknown-password-value",
         "unknown-token-value",
@@ -647,6 +652,229 @@ def test_trace_audit_fails_closed_for_an_incomplete_remote_observation_set() -> 
     assert audit.occurrence_count == 0
     assert audit.observation_count == 1
     assert audit.expected_observation_count == 2
+
+
+def _trace_payload(*identities: str, trace_id: str = "trace-id") -> dict:
+    return {
+        "id": trace_id,
+        "observations": [
+            {"id": identity, "traceId": trace_id, "name": f"vfas.{identity}"}
+            for identity in identities
+        ],
+    }
+
+
+def test_trace_audit_eventually_reaches_the_exact_expected_identity_set() -> None:
+    payloads = iter((_trace_payload("root"), _trace_payload("root", "tool")))
+    sdk = SimpleNamespace(
+        api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: next(payloads)))
+    )
+
+    audit = LangfuseTraceAuditReader(sdk, named_sensitive_values={}).audit(
+        "trace-id",
+        attempts=2,
+        retry_delay_seconds=0,
+        expected_observation_identities=("root", "tool"),
+    )
+
+    assert audit.passed is True
+    assert audit.expected_observation_count == 2
+    assert audit.observed_observation_identities == ("root", "tool")
+    assert audit.missing_observation_identities == ()
+    assert audit.unexpected_duplicate_identities == ()
+    assert audit.one_root_trace is True
+
+
+def test_trace_audit_reports_the_exact_missing_identity() -> None:
+    sdk = SimpleNamespace(
+        api=SimpleNamespace(
+            trace=SimpleNamespace(get=lambda trace_id: _trace_payload("root"))
+        )
+    )
+
+    audit = LangfuseTraceAuditReader(sdk, named_sensitive_values={}).audit(
+        "trace-id",
+        attempts=1,
+        expected_observation_identities=("root", "tool"),
+    )
+
+    assert audit.passed is False
+    assert audit.missing_observation_identities == ("tool",)
+    assert audit.observed_observation_identities == ("root",)
+
+
+def test_duplicate_identity_cannot_satisfy_a_missing_identity() -> None:
+    sdk = SimpleNamespace(
+        api=SimpleNamespace(
+            trace=SimpleNamespace(get=lambda trace_id: _trace_payload("root", "root"))
+        )
+    )
+
+    audit = LangfuseTraceAuditReader(sdk, named_sensitive_values={}).audit(
+        "trace-id",
+        attempts=1,
+        expected_observation_identities=("root", "tool"),
+    )
+
+    assert audit.observation_count == 2
+    assert audit.passed is False
+    assert audit.missing_observation_identities == ("tool",)
+    assert audit.unexpected_duplicate_identities == ("root",)
+
+
+def test_exact_identity_audit_rejects_observations_from_another_root_trace() -> None:
+    payload = _trace_payload("root", "tool")
+    payload["observations"][1]["traceId"] = "another-trace"
+    sdk = SimpleNamespace(
+        api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: payload))
+    )
+
+    audit = LangfuseTraceAuditReader(sdk, named_sensitive_values={}).audit(
+        "trace-id",
+        attempts=1,
+        expected_observation_identities=("root", "tool"),
+    )
+
+    assert audit.passed is False
+    assert audit.one_root_trace is False
+
+
+class _FakeTraceProvider:
+    def __init__(self, result: bool) -> None:
+        self.result = result
+        self.timeouts: list[int] = []
+
+    def force_flush(self, *, timeout_millis: int) -> bool:
+        self.timeouts.append(timeout_millis)
+        return self.result
+
+
+def _drain_sdk(provider: _FakeTraceProvider, payload: dict) -> SimpleNamespace:
+    return SimpleNamespace(
+        _resources=SimpleNamespace(tracer_provider=provider),
+        api=SimpleNamespace(trace=SimpleNamespace(get=lambda trace_id: payload)),
+    )
+
+
+def test_drain_barrier_force_flushes_then_closes_the_exact_set() -> None:
+    provider = _FakeTraceProvider(True)
+    sdk = _drain_sdk(provider, _trace_payload("root", "tool"))
+    reader = LangfuseTraceAuditReader(
+        sdk,
+        named_sensitive_values={"LANGFUSE_PUBLIC_KEY": "credential-sentinel"},
+    )
+
+    audit = LangfuseTelemetryDrainBarrier(sdk, audit_reader=reader).audit(
+        "trace-id",
+        expected_observation_identities=("root", "tool"),
+        flush_timeout_millis=25,
+        readback_attempts=1,
+    )
+
+    assert audit.passed is True
+    assert audit.force_flush_succeeded is True
+    assert audit.occurrence_count == 0
+    assert provider.timeouts == [25]
+
+
+def test_drain_barrier_fails_closed_when_force_flush_times_out() -> None:
+    provider = _FakeTraceProvider(False)
+    sdk = _drain_sdk(provider, _trace_payload("root", "tool"))
+    reader = LangfuseTraceAuditReader(sdk, named_sensitive_values={})
+
+    audit = LangfuseTelemetryDrainBarrier(sdk, audit_reader=reader).audit(
+        "trace-id",
+        expected_observation_identities=("root", "tool"),
+        flush_timeout_millis=25,
+        readback_attempts=1,
+    )
+
+    assert audit.passed is False
+    assert audit.force_flush_succeeded is False
+    assert provider.timeouts == [25]
+
+
+def test_readback_polling_has_a_hard_attempt_bound() -> None:
+    calls = 0
+
+    def read(trace_id: str) -> dict:
+        nonlocal calls
+        calls += 1
+        return _trace_payload("root")
+
+    sdk = SimpleNamespace(api=SimpleNamespace(trace=SimpleNamespace(get=read)))
+
+    audit = LangfuseTraceAuditReader(sdk, named_sensitive_values={}).audit(
+        "trace-id",
+        attempts=999,
+        retry_delay_seconds=0,
+        expected_observation_identities=("root", "tool"),
+    )
+
+    assert audit.passed is False
+    assert audit.attempts == 10
+    assert calls == 10
+    assert audit.elapsed_seconds < 1
+
+
+def test_exporter_retries_the_same_redacted_batch_after_bounded_failure(monkeypatch) -> None:
+    failure = SimpleNamespace(name="FAILURE", value=1)
+    success = SimpleNamespace(name="SUCCESS", value=0)
+
+    class Delegate:
+        def __init__(self) -> None:
+            self.calls: list[tuple[object, ...]] = []
+
+        def export(self, spans: tuple[object, ...]) -> object:
+            self.calls.append(spans)
+            return (failure, success)[len(self.calls) - 1]
+
+    monkeypatch.setattr(
+        "src.observability.langfuse_adapter._redacted_readable_span",
+        lambda span, sensitive_values: span,
+    )
+    delegate = Delegate()
+    exporter = _LangfuseOTLPRedactingExporter(
+        delegate,
+        sensitive_values=(),
+        retry_delay_seconds=0,
+    )
+
+    result = exporter.export((object(), object()))
+
+    assert result is success
+    assert len(delegate.calls) == 2
+    assert delegate.calls[0] is delegate.calls[1]
+
+
+def test_exporter_retries_a_transport_timeout_with_a_hard_attempt_bound(monkeypatch) -> None:
+    success = SimpleNamespace(name="SUCCESS", value=0)
+
+    class Delegate:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def export(self, spans: tuple[object, ...]) -> object:
+            del spans
+            self.calls += 1
+            if self.calls < 3:
+                raise TimeoutError("bounded test timeout")
+            return success
+
+    monkeypatch.setattr(
+        "src.observability.langfuse_adapter._redacted_readable_span",
+        lambda span, sensitive_values: span,
+    )
+    delegate = Delegate()
+    exporter = _LangfuseOTLPRedactingExporter(
+        delegate,
+        sensitive_values=(),
+        max_attempts=99,
+        retry_delay_seconds=0,
+    )
+
+    assert exporter.export((object(),)) is success
+    assert delegate.calls == 3
 
 
 class BrokenSDK:

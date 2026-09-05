@@ -95,11 +95,12 @@ class FailOpenTraceAdapter:
             except Exception as exc:
                 self._mark_degraded("span_end", exc)
 
-    async def event(self, name: str, *, attributes: JsonObject | None = None) -> None:
+    async def event(self, name: str, *, attributes: JsonObject | None = None) -> Any:
         try:
-            await self._delegate.event(name, attributes=attributes)
+            return await self._delegate.event(name, attributes=attributes)
         except Exception as exc:
             self._mark_degraded("event", exc)
+            return None
 
     @asynccontextmanager
     async def generation(

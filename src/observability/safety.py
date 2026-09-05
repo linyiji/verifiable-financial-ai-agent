@@ -26,7 +26,17 @@ _SENSITIVE_KEY_PARTS = (
     "normalizedvalue",
 )
 
-_SENSITIVE_EXACT_KEYS = {"content", "input", "output", "rawvalue", "token", "value"}
+_SENSITIVE_EXACT_KEYS = {
+    "chainofthought",
+    "content",
+    "input",
+    "output",
+    "rawvalue",
+    "reasoning",
+    "reasoningcontent",
+    "token",
+    "value",
+}
 
 
 def sanitize_trace_attributes(

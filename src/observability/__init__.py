@@ -8,6 +8,7 @@ from src.observability.instrumentation import (
 from src.observability.langfuse_adapter import (
     LANGFUSE_OTLP_REDACTION_POLICY,
     LangfuseSDKClient,
+    LangfuseTelemetryDrainBarrier,
     LangfuseTraceAdapter,
     LangfuseTraceAuditReader,
     LangfuseTraceRedactionAudit,
@@ -45,6 +46,7 @@ __all__ = [
     "LANGFUSE_OTLP_REDACTION_POLICY",
     "LangfuseConnectivityClassification",
     "LangfuseSDKClient",
+    "LangfuseTelemetryDrainBarrier",
     "LangfuseTraceAuditReader",
     "LangfuseTraceRedactionAudit",
     "LangfuseSmokeResult",
