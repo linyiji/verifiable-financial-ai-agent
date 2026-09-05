@@ -521,11 +521,11 @@ def test_result_contains_required_handoff_schema() -> None:
     assert set(result["harness_components"].values()) == {"YES"}
     assert set(result["named_tests"].values()) == {"READY"}
     assert result["manifest_summary"] == {
-        "total": 71,
+            "total": 70,
         "ready": 3,
         "blocked_by_a": 15,
         "blocked_by_b": 9,
-        "blocked_by_c": 34,
+            "blocked_by_c": 33,
         "blocked_by_parent": 10,
     }
     assert result["harness_self_tests"] == {"passed": 7, "executed": 7}
