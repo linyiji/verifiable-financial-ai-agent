@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
@@ -74,6 +77,34 @@ async def _confirm_write_counts(backend, run_id: str) -> dict[str, int | bool]:
         }
 
 
+async def _business_write_totals(backend) -> dict[str, int]:
+    async with backend.sessions() as session:
+
+        async def count(model, *criteria) -> int:
+            statement = select(func.count()).select_from(model)
+            if criteria:
+                statement = statement.where(*criteria)
+            return int((await session.scalar(statement)) or 0)
+
+        async def run_set_count(model) -> int:
+            return int((await session.scalar(select(func.count(func.distinct(model.run_id))))) or 0)
+
+        scheduler_admissions = await count(Phase4SchedulerAdmissionRow)
+        return {
+            "runs": await count(ResearchRunAggregateRow),
+            "planned_graphs": await count(Phase4PlannedGraphRow),
+            "actual_graphs": await count(Phase4ActualGraphRow),
+            "task_sets": await run_set_count(TaskRow),
+            "initial_event_sets": await run_set_count(RuntimeEventRow),
+            "confirm_outcomes": await count(
+                Phase4IdempotencyOutcomeRow,
+                Phase4IdempotencyOutcomeRow.kind == "CONFIRM",
+            ),
+            "scheduler_admissions": scheduler_admissions,
+            "outbox_records": scheduler_admissions,
+        }
+
+
 def _confirm_body(draft: dict[str, object], object_id: str) -> dict[str, object]:
     return {
         "draft_id": draft["draft_id"],
@@ -84,11 +115,83 @@ def _confirm_body(draft: dict[str, object], object_id: str) -> dict[str, object]
     }
 
 
+def _create_object(client: TestClient, *, symbol: str, key: str) -> str:
+    response = client.post(
+        "/api/objects",
+        headers={
+            "X-Phase4-Contract-Version": "phase4-core/v1",
+            "Idempotency-Key": key,
+        },
+        json={
+            "symbol": symbol,
+            "company_name": f"{symbol} Corporation",
+            "exchange": "NASDAQ",
+            "currency": "USD",
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["object"]["object_id"]
+
+
+def _prepare(
+    client: TestClient,
+    *,
+    object_id: str,
+    key: str,
+    goal: str,
+) -> dict[str, object]:
+    response = client.post(
+        "/api/research-runs/prepare",
+        headers={
+            "X-Phase4-Contract-Version": "phase4-core/v1",
+            "Idempotency-Key": key,
+        },
+        json={
+            "research_object_id": object_id,
+            "research_goal": goal,
+            "as_of": "2026-09-05",
+            "preferences": {},
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def _wait_until_started(client: TestClient, run_id: str) -> None:
+    headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/research-runs/{run_id}", headers=headers)
+        assert response.status_code == 200, response.text
+        if response.json()["status"] == "RUNNING":
+            return
+        time.sleep(0.01)
+    raise AssertionError("scheduler did not start the admitted Run")
+
+
+def _concurrent_confirm(
+    client: TestClient,
+    *,
+    requests: tuple[tuple[dict[str, str], dict[str, object]], ...],
+):
+    barrier = Barrier(len(requests) + 1)
+
+    def send(headers: dict[str, str], body: dict[str, object]):
+        barrier.wait(timeout=15)
+        return client.post("/api/research-runs", headers=headers, json=body)
+
+    with ThreadPoolExecutor(max_workers=len(requests)) as pool:
+        futures = [pool.submit(send, headers, body) for headers, body in requests]
+        barrier.wait(timeout=15)
+        return [future.result(timeout=30) for future in futures]
+
+
 def test_confirm_admission_replay_and_immediate_run_collection_are_exactly_once() -> None:
     headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
     confirm_headers = {**headers, "Idempotency-Key": "be004-confirm"}
     app = create_app()
     with TestClient(app) as client:
+        app.state.phase4_product_backend._execute_started_run = _hold_started_run
         created = client.post(
             "/api/objects",
             headers={**headers, "Idempotency-Key": "be004-object"},
@@ -177,6 +280,8 @@ def test_confirm_admission_replay_and_immediate_run_collection_are_exactly_once(
             "scheduler_admissions",
         ):
             assert restart_counts[name] == counts[name]
+        _wait_until_started(client, run_id)
+        client.portal.call(_emit_scheduler_failure, reopened.state.phase4_product_backend, run_id)
 
 
 async def _hold_started_run(_run_id: str) -> None:
@@ -271,3 +376,156 @@ def test_terminal_scheduler_event_and_run_watermark_are_http_atomic_across_resta
         assert validate_run_collection(object_runs.json(), expected_object_id=object_id) == (
             run_id,
         )
+
+
+@pytest.mark.parametrize(
+    ("request_count", "symbol"),
+    ((2, "AMD"), (4, "GOOG")),
+)
+def test_concurrent_identical_confirm_has_one_creator_and_only_durable_replays(
+    request_count: int,
+    symbol: str,
+) -> None:
+    headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
+    app = create_app()
+    with TestClient(app) as client:
+        backend = app.state.phase4_product_backend
+        backend._execute_started_run = _hold_started_run
+        object_id = _create_object(client, symbol=symbol, key=f"{symbol}-object")
+        draft = _prepare(
+            client,
+            object_id=object_id,
+            key=f"{symbol}-prepare",
+            goal=f"Produce a verifiable research report for {symbol}.",
+        )
+        body = _confirm_body(draft, object_id)
+        confirm_headers = {**headers, "Idempotency-Key": f"{symbol}-confirm"}
+        responses = _concurrent_confirm(
+            client,
+            requests=tuple((confirm_headers, body) for _ in range(request_count)),
+        )
+
+        assert sorted(response.status_code for response in responses) == [
+            *([200] * (request_count - 1)),
+            201,
+        ]
+        admissions = [response.json()["admission"] for response in responses]
+        assert all(admission == admissions[0] for admission in admissions)
+        assert sorted(
+            response.json()["response_meta"]["idempotency_replayed"] for response in responses
+        ) == [False, *([True] * (request_count - 1))]
+        run_id = admissions[0]["run_id"]
+        counts = client.portal.call(_confirm_write_counts, backend, run_id)
+        assert counts["runs"] == 1
+        assert counts["planned_graphs"] == 1
+        assert counts["actual_graphs"] == 1
+        assert counts["tasks"] > 0
+        assert counts["events"] in {4 + counts["tasks"], 5 + counts["tasks"]}
+        assert counts["confirm_outcomes"] == 1
+        assert counts["scheduler_admissions"] == 1
+        assert counts["planned_task_set_closes"] is True
+
+        _wait_until_started(client, run_id)
+        client.portal.call(_emit_scheduler_failure, backend, run_id)
+
+
+def test_active_run_rejects_new_confirm_without_mutation_and_terminal_releases_slot() -> None:
+    headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
+    app = create_app()
+    with TestClient(app) as client:
+        backend = app.state.phase4_product_backend
+        backend._execute_started_run = _hold_started_run
+        object_id = _create_object(client, symbol="META", key="meta-object")
+        draft_a = _prepare(
+            client,
+            object_id=object_id,
+            key="meta-prepare-a",
+            goal="Produce the first verifiable META research report.",
+        )
+        draft_b = _prepare(
+            client,
+            object_id=object_id,
+            key="meta-prepare-b",
+            goal="Produce the second verifiable META research report.",
+        )
+        first = client.post(
+            "/api/research-runs",
+            headers={**headers, "Idempotency-Key": "meta-confirm-a"},
+            json=_confirm_body(draft_a, object_id),
+        )
+        assert first.status_code == 201, first.text
+        run_a = first.json()["admission"]["run_id"]
+        before = client.portal.call(_business_write_totals, backend)
+
+        rejected = client.post(
+            "/api/research-runs",
+            headers={**headers, "Idempotency-Key": "meta-confirm-b"},
+            json=_confirm_body(draft_b, object_id),
+        )
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["error"]["code"] == "CONFLICT"
+        assert rejected.json()["error"]["details"] == {"reason_code": "RUN_ALREADY_ACTIVE"}
+        assert rejected.json()["error"]["resource"] == {
+            "type": "research_run",
+            "id": run_a,
+        }
+        assert client.portal.call(_business_write_totals, backend) == before
+
+        _wait_until_started(client, run_a)
+        client.portal.call(_emit_scheduler_failure, backend, run_a)
+        admitted_b = client.post(
+            "/api/research-runs",
+            headers={**headers, "Idempotency-Key": "meta-confirm-b"},
+            json=_confirm_body(draft_b, object_id),
+        )
+        assert admitted_b.status_code == 201, admitted_b.text
+        run_b = admitted_b.json()["admission"]["run_id"]
+        assert run_b != run_a
+        _wait_until_started(client, run_b)
+        client.portal.call(_emit_scheduler_failure, backend, run_b)
+
+
+def test_concurrent_different_confirms_admit_exactly_one_active_run() -> None:
+    headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
+    app = create_app()
+    with TestClient(app) as client:
+        backend = app.state.phase4_product_backend
+        backend._execute_started_run = _hold_started_run
+        object_id = _create_object(client, symbol="INTC", key="intc-object")
+        draft_a = _prepare(
+            client,
+            object_id=object_id,
+            key="intc-prepare-a",
+            goal="Produce the first verifiable INTC research report.",
+        )
+        draft_b = _prepare(
+            client,
+            object_id=object_id,
+            key="intc-prepare-b",
+            goal="Produce the second verifiable INTC research report.",
+        )
+        before = client.portal.call(_business_write_totals, backend)
+        responses = _concurrent_confirm(
+            client,
+            requests=(
+                (
+                    {**headers, "Idempotency-Key": "intc-confirm-a"},
+                    _confirm_body(draft_a, object_id),
+                ),
+                (
+                    {**headers, "Idempotency-Key": "intc-confirm-b"},
+                    _confirm_body(draft_b, object_id),
+                ),
+            ),
+        )
+        assert sorted(response.status_code for response in responses) == [201, 409]
+        winner = next(response for response in responses if response.status_code == 201)
+        rejected = next(response for response in responses if response.status_code == 409)
+        run_id = winner.json()["admission"]["run_id"]
+        assert rejected.json()["error"]["details"] == {"reason_code": "RUN_ALREADY_ACTIVE"}
+        assert rejected.json()["error"]["resource"]["id"] == run_id
+        after = client.portal.call(_business_write_totals, backend)
+        assert {name: after[name] - before[name] for name in after} == {name: 1 for name in after}
+
+        _wait_until_started(client, run_id)
+        client.portal.call(_emit_scheduler_failure, backend, run_id)

@@ -652,6 +652,12 @@ class PostgreSQLAdmissionRepository(Protocol):
 
     dialect_name: Literal["postgresql"]
 
+    async def lock_run_admission_scope(self, scope_key: str) -> None:
+        """Hold the PostgreSQL transaction lock for one Run admission scope."""
+
+    async def get_active_run_id_for_update(self, scope_key: str) -> str | None:
+        """Return one admitted nonterminal authoritative Run under a row lock."""
+
     async def get_draft_for_update(
         self,
         draft_id: str,

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 
-from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, select, update
+from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
@@ -26,6 +26,7 @@ from src.application.persistence import (
 )
 from src.domain.calculation import CalculationRecord
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
+from src.domain.enums import RunStatus
 from src.domain.released_research_result import ReleasedResearchResult
 from src.domain.research_goal import ResearchGoal
 from src.domain.research_object import ResearchObject
@@ -48,6 +49,13 @@ from src.phase4_product.durability import (
 )
 from src.phase4_product.errors import product_error
 from src.phase4_product.reconstruction import PersistedRunSnapshot, ProjectionWatermark
+
+PHASE4_SINGLE_INSTANCE_SCOPE = "PHASE4_SINGLE_INSTANCE_SCOPE"
+_TERMINAL_RUN_STATUSES = (
+    RunStatus.RELEASED.value,
+    RunStatus.FAILED.value,
+    RunStatus.CANCELLED.value,
+)
 
 
 class Phase4IdempotencyOutcomeRow(Base):
@@ -246,6 +254,28 @@ class SQLAlchemyPhase4AdmissionRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def lock_run_admission_scope(self, scope_key: str) -> None:
+        """Serialize Confirm admission for one PostgreSQL-owned execution scope."""
+
+        if not isinstance(scope_key, str) or not scope_key.strip():
+            raise ValueError("run admission scope key must be non-empty")
+        await self.session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtextextended(scope_key, 0)))
+        )
+
+    async def get_active_run_id_for_update(self, scope_key: str) -> str | None:
+        """Return one authoritative admitted nonterminal Run, if present."""
+
+        if scope_key != PHASE4_SINGLE_INSTANCE_SCOPE:
+            raise ValueError("run admission scope is not configured")
+        return await self.session.scalar(
+            select(ResearchRunAggregateRow.run_id)
+            .where(ResearchRunAggregateRow.status.not_in(_TERMINAL_RUN_STATUSES))
+            .order_by(ResearchRunAggregateRow.run_id)
+            .limit(1)
+            .with_for_update()
+        )
 
     async def get_draft_for_update(self, draft_id: str) -> ResearchRunDraftRecordV1 | None:
         row = await self.session.scalar(
@@ -602,8 +632,14 @@ class SQLAlchemyPhase4ProjectionRepository:
 class PostgreSQLProductUnitOfWork:
     dialect_name = "postgresql"
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        isolation_level: Literal["READ COMMITTED", "REPEATABLE READ"] = "REPEATABLE READ",
+    ) -> None:
         self._sessions = sessions
+        self._isolation_level = isolation_level
         self.session: AsyncSession | None = None
         self.admission: SQLAlchemyPhase4AdmissionRepository
         self.scheduler: SQLAlchemyPhase4SchedulerAdmissionRepository
@@ -612,7 +648,7 @@ class PostgreSQLProductUnitOfWork:
     async def __aenter__(self) -> Self:
         self.session = self._sessions()
         await self.session.connection(
-            execution_options={"isolation_level": "REPEATABLE READ"}
+            execution_options={"isolation_level": self._isolation_level}
         )
         if self.session.get_bind().dialect.name != "postgresql":
             await self.session.rollback()
@@ -643,8 +679,17 @@ class PostgreSQLProductUnitOfWork:
 
 
 class PostgreSQLProductUnitOfWorkFactory:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        isolation_level: Literal["READ COMMITTED", "REPEATABLE READ"] = "REPEATABLE READ",
+    ) -> None:
         self.sessions = sessions
+        self.isolation_level = isolation_level
 
     def __call__(self) -> PostgreSQLProductUnitOfWork:
-        return PostgreSQLProductUnitOfWork(self.sessions)
+        return PostgreSQLProductUnitOfWork(
+            self.sessions,
+            isolation_level=self.isolation_level,
+        )

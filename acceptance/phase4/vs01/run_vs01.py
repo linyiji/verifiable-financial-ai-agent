@@ -26,6 +26,7 @@ import secrets
 import shlex
 import subprocess
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -42,8 +43,8 @@ from acceptance.phase4.vs01.harness.backend import (
     UrllibJsonTransport,
     run_backend_vs01,
     validate_confirm_response,
-    validate_research_run_draft,
     validate_released_result_projection,
+    validate_research_run_draft,
     validate_run_collection,
     validate_standalone_run_detail,
     verify_restart_checkpoint,
@@ -1428,8 +1429,7 @@ def _evaluate_external_sse_evidence(
         outcomes[control_id] = _pass(summary, item_evidence)
         dynamic_evidence[control_id] = item_evidence
     outcomes["VS01-DYN-007"] = _pass(
-        "real correction and pending/approved Replan captures proved "
-        "exclusive graph authority",
+        "real correction and pending/approved Replan captures proved exclusive graph authority",
         {"validated_controls": sorted(dynamic_evidence)},
     )
     return outcomes, public_values
@@ -1482,6 +1482,31 @@ def _public_projection(
     if observation.header("x-phase4-contract-version") != CORE_CONTRACT_VERSION:
         raise GateError("exact projection omitted the selected core contract header")
     return observation.json_object()
+
+
+def _wait_for_terminal_run(
+    transport: UrllibJsonTransport,
+    run_id: str,
+    *,
+    timeout_seconds: float,
+) -> JsonObject:
+    """Wait until the single active-Run slot is authoritatively released."""
+
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        projection = _public_projection(transport, run_id)
+        view = validate_run_projection(projection, expected_run_id=run_id)
+        if view.terminal.get("is_terminal") is True:
+            return {
+                "run_id": run_id,
+                "status": view.run_status,
+                "terminal_sequence": view.terminal.get("sequence"),
+            }
+        if time.monotonic() >= deadline:
+            raise GateError(
+                "single active Research Run did not reach terminal state before deadline"
+            )
+        time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
 
 
 def _prove_postgresql_causal_binding(
@@ -2652,13 +2677,23 @@ def _run_integrated(
             public_values,
         )
         report_a = run_backend_vs01(config_a, transport=transport)
-        report_b = run_backend_vs01(config_b, transport=transport)
         _record_backend_report(report_a, outcomes, source="Run A")
-        _record_backend_report(report_b, outcomes, source="Run B")
         if not report_a.passed or report_a.checkpoint is None:
             raise GateError("X1 Run A backend gate did not produce a checkpoint")
+        _wait_for_terminal_run(
+            transport,
+            report_a.checkpoint.run_id,
+            timeout_seconds=float(config.get("auto_start_timeout_seconds", 300)),
+        )
+        report_b = run_backend_vs01(config_b, transport=transport)
+        _record_backend_report(report_b, outcomes, source="Run B")
         if not report_b.passed or report_b.checkpoint is None:
             raise GateError("X1 Run B backend gate did not produce a checkpoint")
+        _wait_for_terminal_run(
+            transport,
+            report_b.checkpoint.run_id,
+            timeout_seconds=float(config.get("auto_start_timeout_seconds", 300)),
+        )
         identity_evidence = _check_cross_object_histories(
             transport, report_a.checkpoint, report_b.checkpoint
         )
@@ -2681,6 +2716,11 @@ def _run_integrated(
         outcomes["VS01-BE-009"] = _pass(
             "real new-key reuse of the concurrently consumed draft failed closed",
             concurrent_confirm,
+        )
+        _wait_for_terminal_run(
+            transport,
+            str(concurrent_confirm["run_id"]),
+            timeout_seconds=float(config.get("auto_start_timeout_seconds", 300)),
         )
         projection_a = _public_projection(transport, report_a.checkpoint.run_id)
         projection_b = _public_projection(transport, report_b.checkpoint.run_id)

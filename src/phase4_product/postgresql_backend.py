@@ -36,6 +36,7 @@ from src.domain.runtime_event import RuntimeEvent, RuntimeEventType, normalize_r
 from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph
 from src.infrastructure.database.phase3_records import SQLAlchemyPhase3RecordRepository
 from src.infrastructure.database.phase4_product import (
+    PHASE4_SINGLE_INSTANCE_SCOPE,
     Phase4RunProjectionRow,
     PostgreSQLProductUnitOfWorkFactory,
 )
@@ -142,6 +143,11 @@ class PostgreSQLPhase4ProductBackend:
         self.sessions = sessions
         self.service = service
         self.uow_factory = PostgreSQLProductUnitOfWorkFactory(sessions)
+        self._confirm_uow_factory = PostgreSQLProductUnitOfWorkFactory(
+            sessions,
+            isolation_level="READ COMMITTED",
+        )
+        self._run_admission_scope = PHASE4_SINGLE_INSTANCE_SCOPE
         service.event_store = _ProjectionPublishingEventStore(
             service.event_store,
             self._publish_runtime_event,
@@ -375,7 +381,8 @@ class PostgreSQLPhase4ProductBackend:
         key_digest = idempotency_key_digest(
             idempotency_key, method="POST", route_template=CONFIRM_ROUTE_TEMPLATE
         )
-        async with self.uow_factory() as uow:
+        async with self._confirm_uow_factory() as uow:
+            await uow.admission.lock_run_admission_scope(self._run_admission_scope)
             stored = await uow.admission.get_idempotency_outcome_for_update(
                 effective_access_scope_key="LOCAL_SINGLE_USER",
                 method="POST",
@@ -395,6 +402,11 @@ class PostgreSQLPhase4ProductBackend:
             if draft_record is None:
                 raise self._not_found("research_run_draft", payload.draft_id)
             validated = validate_confirm_request(draft_record, payload)
+            active_run_id = await uow.admission.get_active_run_id_for_update(
+                self._run_admission_scope
+            )
+            if active_run_id is not None:
+                raise self._active_run_conflict(active_run_id)
             goal = ResearchGoal.model_validate(validated.draft.goal.model_dump(mode="json"))
             scheme = ResearchSchemeSnapshot.model_validate(
                 validated.draft.scheme_snapshot.model_dump(mode="json")
@@ -1155,4 +1167,14 @@ class PostgreSQLPhase4ProductBackend:
             "CONFLICT",
             "Idempotency-Key was already used for a different request",
             details={"reason_code": "IDEMPOTENCY_REQUEST_MISMATCH"},
+        )
+
+    @staticmethod
+    def _active_run_conflict(run_id: str) -> ProductError:
+        return product_error(
+            "CONFLICT",
+            "A research run is already active. Wait for it to finish before starting another.",
+            resource_type="research_run",
+            resource_id=run_id,
+            details={"reason_code": "RUN_ALREADY_ACTIVE"},
         )
