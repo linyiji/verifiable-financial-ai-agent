@@ -26,8 +26,14 @@ RETRIEVED_AT = datetime(2026, 9, 4, 16, 0, tzinfo=UTC)
 
 
 class _Transport:
-    def __init__(self, payloads: dict[FMPEndpoint, Any]) -> None:
+    def __init__(
+        self,
+        payloads: dict[FMPEndpoint, Any],
+        *,
+        retrieved_at: datetime = RETRIEVED_AT,
+    ) -> None:
         self._payloads = payloads
+        self._retrieved_at = retrieved_at
 
     async def request(
         self,
@@ -41,7 +47,7 @@ class _Transport:
             endpoint=endpoint,
             status=FMPAccessStatus.AVAILABLE,
             http_status=200,
-            retrieved_at=RETRIEVED_AT,
+            retrieved_at=self._retrieved_at,
             payload=self._payloads[endpoint],
         )
 
@@ -202,6 +208,92 @@ async def test_current_snapshot_is_not_backdated_to_a_historical_request() -> No
     assert all(record.status is EvidenceStatus.REJECTED for record in result.records)
     assert all(record.as_of == RETRIEVED_AT.date() for record in result.records)
     assert all(record.observed_at == RETRIEVED_AT for record in result.records)
+
+
+@pytest.mark.asyncio
+async def test_current_acceptance_date_retains_phase2_1_peer_and_count_semantics() -> None:
+    """A run current in UTC retains the exact P2.1-012/013 production outputs."""
+
+    next_day = datetime(2026, 9, 5, 0, 5, tzinfo=UTC)
+    provider = FMPProvider(
+        _Transport(
+            {
+                FMPEndpoint.PROFILE: [
+                    {
+                        "symbol": "NVDA",
+                        "companyName": "NVIDIA Corporation",
+                        "currency": "USD",
+                        "fullTimeEmployees": "42000",
+                    }
+                ],
+                # This is the current stable endpoint shape observed by the
+                # authoritative run, not the legacy nested peersList shape.
+                FMPEndpoint.PEERS: [
+                    {"symbol": "AAPL", "companyName": "Apple Inc."},
+                    {"symbol": "ADI", "companyName": "Analog Devices, Inc."},
+                ],
+            },
+            retrieved_at=next_day,
+        )
+    )
+    as_of = next_day.date()
+    repository = InMemoryEvidenceRepository()
+    ingestion = EvidenceIngestionService(repository=repository)
+    profile = await ingestion.ingest(
+        provider=provider,
+        request=ProviderRequest(
+            symbol="NVDA",
+            dataset="company_profile",
+            as_of=as_of,
+            limit=1,
+        ),
+        run_id="RUN-CURRENT-UTC",
+        object_id="OBJ-NVDA",
+    )
+    peers = await ingestion.ingest(
+        provider=provider,
+        request=ProviderRequest(
+            symbol="NVDA",
+            dataset="peer_multiples",
+            as_of=as_of,
+            limit=10,
+        ),
+        run_id="RUN-CURRENT-UTC",
+        object_id="OBJ-NVDA",
+    )
+
+    employees = next(
+        record
+        for record in profile.accepted.records
+        if record.normalized_field == "full_time_employees"
+    )
+    assert employees.normalized_value == "42000"
+    assert employees.unit == "COUNT"
+    assert employees.currency is None
+    assert employees.actuality.value == "ACTUAL"
+    assert employees.period == "CURRENT"
+    assert employees.as_of == as_of
+
+    selection = PeerSelectionService().select(
+        subject=PeerCompanyFacts(symbol="NVDA"),
+        stock_peer_evidence=peers.accepted.records,
+        facts_by_symbol={},
+        business_relevance={},
+        required_metrics=frozenset({"revenue", "ebitda", "provider_reference_pe"}),
+    )
+    candidates = [item.model_dump(mode="json") for item in selection.candidates]
+    decisions = [item.model_dump(mode="json") for item in selection.decisions]
+    selected = [item.model_dump(mode="json") for item in selection.selected_comparables]
+
+    # These are the exact P2.1-012 separation predicates.
+    assert candidates
+    assert len(candidates) == len(decisions)
+    assert {item["candidate_symbol"] for item in candidates} == {
+        item["candidate_symbol"] for item in decisions
+    }
+    assert {item["candidate_symbol"] for item in selected} == {
+        item["candidate_symbol"] for item in decisions if item["selected"]
+    }
 
 
 @pytest.mark.asyncio
