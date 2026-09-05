@@ -1,0 +1,73 @@
+{
+  "schema_version": "phase4-vs01-dependencies-findings/v1",
+  "scope": "ACCEPTANCE_OBSERVATIONS_ONLY",
+  "dependencies": [
+    {
+      "owner": "A",
+      "blocking_vs01": true,
+      "status": "OPEN",
+      "requirement": "Real phase4-core/v1 Object, Prepare, Confirm, exact Run/projection, typed-error and PostgreSQL-backed restart behavior",
+      "remediation_evidence": "X1 and X4 live controls pass on Parent's integrated candidate"
+    },
+    {
+      "owner": "B",
+      "blocking_vs01": true,
+      "status": "OPEN",
+      "requirement": "Production Object-to-Run frontend journey, shared decoder, typed error, wrong-resource identity quarantine, observable exact public API routing, no second Start and no Demo fallback",
+      "remediation_evidence": "X2 real Playwright controls pass against the isolated stack"
+    },
+    {
+      "owner": "C",
+      "blocking_vs01": true,
+      "status": "OPEN",
+      "requirement": "Versioned exact-Run SSE, strict cursor/reconnect, Research Path and dynamic-path projection, plus a tracked scenario-capture driver that runs inside the gate-owned database/process/session",
+      "remediation_evidence": "X3 live SSE/projection controls and the runtime-bound capture gate pass on exact public URLs/bytes"
+    },
+    {
+      "owner": "PARENT_SHARED",
+      "blocking_vs01": true,
+      "status": "OPEN",
+      "requirement": "Serial route/bootstrap/migration/frontend composition, Node 24 browser bootstrap, tracked C scenario driver, and safe two-origin real frontend launch configuration",
+      "remediation_evidence": "one clean integrated candidate plus a successful run_vs01.py integrated result"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "VS01-FINDING-A-001",
+      "owner": "A",
+      "blocking_vs01": true,
+      "severity": "BLOCKING",
+      "contract_requirement": "Run collection activity uses the frozen exact-six SafeRuntimeActivity shape",
+      "observed_behavior": "The inspected A candidate serializes additional collection activity fields.",
+      "expected_remediation_evidence": "A conforms to the frozen collection DTO and the integrated X1/X4 controls pass."
+    },
+    {
+      "finding_id": "VS01-FINDING-A-002",
+      "owner": "A",
+      "blocking_vs01": true,
+      "severity": "BLOCKING",
+      "contract_requirement": "AtomicRunProjection embeds the frozen 14-field Run shape",
+      "observed_behavior": "The inspected A candidate embeds standalone Run watermark fields in the projection Run object.",
+      "expected_remediation_evidence": "Parent adjudicates a promoted authority change or A conforms, followed by passing integrated projection controls."
+    },
+    {
+      "finding_id": "VS01-FINDING-C-PARENT-001",
+      "owner": "C/PARENT_SHARED",
+      "blocking_vs01": true,
+      "severity": "BLOCKING",
+      "contract_requirement": "Typed add_edge/remove_edge operations require one promoted child-field wire encoding",
+      "observed_behavior": "The frozen materials name the operations but do not close their child wire-field names; X fails closed on those encodings.",
+      "expected_remediation_evidence": "Parent promotes an exact edge-operation encoding and C supplies matching real public evidence."
+    },
+    {
+      "finding_id": "VS01-FINDING-PARENT-001",
+      "owner": "PARENT_SHARED",
+      "blocking_vs01": true,
+      "severity": "BLOCKING",
+      "contract_requirement": "One isolated A+B+C+X real VS01 execution",
+      "observed_behavior": "No integrated candidate, reviewed commands, C-owned capture driver, or real two-origin browser run was executed in this X delivery.",
+      "expected_remediation_evidence": "Parent integrates A/B/C/X and executes the documented integrated runner with real services."
+    }
+  ],
+  "product_fix_applied_by_x": false
+}

@@ -1,0 +1,109 @@
+{
+  "schema_version": "phase4-vs01-runner-config/v1",
+  "x_delivery_sha": "REPLACE_WITH_REVIEWED_PUSHED_CODEX_X_40_HEX_SHA",
+  "postgres": {
+    "admin_url_env": "VS01_POSTGRES_ADMIN_URL",
+    "database_prefix": "vfas_vs01_",
+    "psql_binary": "psql",
+    "migration_command": [
+      "python3.11",
+      "scripts/postgresql_migrate.py"
+    ],
+    "migration_timeout_seconds": 180
+  },
+  "backend": {
+    "command": [
+      "python3.11",
+      "-m",
+      "uvicorn",
+      "apps.api.main:app",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8010"
+    ],
+    "cwd": ".",
+    "url": "http://127.0.0.1:8010",
+    "health_path": "/health",
+    "extra_env": {}
+  },
+  "frontend": {
+    "command": [
+      "npm",
+      "run",
+      "preview",
+      "--",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "4173"
+    ],
+    "cwd": "apps/web",
+    "url": "http://127.0.0.1:4173",
+    "health_path": "/",
+    "extra_env": {}
+  },
+  "frontend_unavailable": {
+    "command": [
+      "npm",
+      "run",
+      "preview",
+      "--",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "4174"
+    ],
+    "cwd": "apps/web",
+    "url": "http://127.0.0.1:4174",
+    "health_path": "/",
+    "extra_env": {}
+  },
+  "frontend_api_base_url": "http://127.0.0.1:8010/api",
+  "frontend_unavailable_api_base_url": "http://127.0.0.1:61999/api",
+  "unavailable_backend_url": "http://127.0.0.1:61999",
+  "sse_scenario_capture": {
+    "driver_path": "scripts/run_phase4_vs01_sse_scenarios.py",
+    "command": [
+      "python3.11",
+      "scripts/run_phase4_vs01_sse_scenarios.py"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 900
+  },
+  "browser": {
+    "command": [
+      "npm",
+      "run",
+      "test:real"
+    ],
+    "cwd": "acceptance/phase4/vs01/browser",
+    "node24_command": [
+      "npx",
+      "--offline",
+      "--yes",
+      "--package=node@24.8.0",
+      "--call"
+    ],
+    "timeout_seconds": 600
+  },
+  "object_a": {
+    "symbol": "AAPL",
+    "company_name": "Apple Inc.",
+    "exchange": "NASDAQ",
+    "currency": "USD"
+  },
+  "object_b": {
+    "symbol": "MSFT",
+    "company_name": "Microsoft Corporation",
+    "exchange": "NASDAQ",
+    "currency": "USD"
+  },
+  "goal_a": "Produce a verifiable full-company research report for Apple Inc.",
+  "goal_b": "Produce a distinct verifiable full-company research report for Microsoft Corporation.",
+  "as_of": "2026-09-05",
+  "service_timeout_seconds": 60,
+  "request_timeout_seconds": 10,
+  "auto_start_timeout_seconds": 120,
+  "sse_timeout_seconds": 180
+}

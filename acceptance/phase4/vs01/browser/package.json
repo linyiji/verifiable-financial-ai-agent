@@ -1,0 +1,21 @@
+{
+  "name": "@vfas/phase4-vs01-browser-acceptance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "verify:node": "node -e \"const major=Number(process.versions.node.split('.')[0]); if(major!==24){console.error('Phase 4 VS01 browser harness requires Node 24'); process.exit(1)}\"",
+    "check": "npm run verify:node && npm run test:self && npm run test:policy && npm run test:real:list",
+    "test:self": "node --test tests/browser-evidence.test.mjs tests/contract-helpers.test.mjs tests/scenario.test.mjs",
+    "test:policy": "node --test tests/real-spec-policy.test.mjs",
+    "test:real:list": "npm run verify:node && playwright test --config=playwright.config.mjs --list && node scripts/verify-playwright-json.mjs",
+    "test:real": "npm run verify:node && playwright test --config=playwright.config.mjs",
+    "install:chromium": "npm run verify:node && playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

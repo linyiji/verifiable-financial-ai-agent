@@ -1,0 +1,6 @@
+**/__pycache__/
+.pytest_cache/
+browser/node_modules/
+browser/test-results/
+browser/playwright-report/
+out/
