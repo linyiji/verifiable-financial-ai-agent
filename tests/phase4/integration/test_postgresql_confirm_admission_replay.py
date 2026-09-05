@@ -5,7 +5,7 @@ import os
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from acceptance.phase4.vs01.harness.backend import validate_run_collection
 from apps.api.main import create_app
 from src.application.persistence import ResearchRunAggregateRow, RuntimeEventRow, TaskRow
+from src.domain.enums import RunStatus
 from src.domain.runtime_event import RuntimeEventType
 from src.infrastructure.config.settings import get_settings
 from src.infrastructure.database.phase4_product import (
@@ -22,6 +23,7 @@ from src.infrastructure.database.phase4_product import (
     Phase4PlannedGraphRow,
     Phase4SchedulerAdmissionRow,
 )
+from src.runtime.scheduler import DependencyScheduler
 
 pytestmark = pytest.mark.skipif(
     "TEST_POSTGRESQL_URL" not in os.environ,
@@ -376,6 +378,74 @@ def test_terminal_scheduler_event_and_run_watermark_are_http_atomic_across_resta
         assert validate_run_collection(object_runs.json(), expected_object_id=object_id) == (
             run_id,
         )
+
+
+def test_production_execution_preserves_scheduler_start_during_event_publish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
+    payload_committed = Event()
+    allow_watermark = asyncio.Event()
+
+    async def publish_one_task_event_then_hold(
+        scheduler,
+        *,
+        state,
+        executor,
+        emit_run_started: bool = True,
+    ) -> None:
+        del executor, emit_run_started
+        state.run_status = RunStatus.RUNNING
+        task = state.actual_graph.tasks[0]
+        await scheduler._event_store.emit(
+            run_id=state.run_id,
+            task_id=task.task_id,
+            event_type=RuntimeEventType.TASK_READY,
+        )
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(DependencyScheduler, "execute", publish_one_task_event_then_hold)
+    app = create_app()
+    with TestClient(app) as client:
+        backend = app.state.phase4_product_backend
+        repository = backend.service.repository
+        original_save_run = repository.save_run
+        blocked_once = False
+
+        async def save_run_before_watermark(aggregate) -> None:
+            nonlocal blocked_once
+            await original_save_run(aggregate)
+            if not blocked_once:
+                blocked_once = True
+                payload_committed.set()
+                await allow_watermark.wait()
+
+        repository.save_run = save_run_before_watermark
+        object_id = _create_object(client, symbol="ORCL", key="start-owner-object")
+        draft = _prepare(
+            client,
+            object_id=object_id,
+            key="start-owner-prepare",
+            goal="Verify one authoritative scheduler start timestamp.",
+        )
+        confirmed = client.post(
+            "/api/research-runs",
+            headers={**headers, "Idempotency-Key": "start-owner-confirm"},
+            json=_confirm_body(draft, object_id),
+        )
+        assert confirmed.status_code == 201, confirmed.text
+        run_id = confirmed.json()["admission"]["run_id"]
+        assert payload_committed.wait(timeout=10), "event payload was not committed"
+
+        object_runs = client.get(f"/api/objects/{object_id}/runs", headers=headers)
+        assert object_runs.status_code == 200, object_runs.text
+        assert validate_run_collection(object_runs.json(), expected_object_id=object_id) == (
+            run_id,
+        )
+        item = object_runs.json()["items"][0]
+        assert item["activity"]["type"] == "run.started"
+        assert item["started_at"] == item["activity"]["timestamp"]
+        client.portal.call(allow_watermark.set)
 
 
 @pytest.mark.parametrize(

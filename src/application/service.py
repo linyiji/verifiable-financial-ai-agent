@@ -288,7 +288,10 @@ class ResearchApplicationService:
         if aggregate.run.status is RunStatus.RELEASED:
             return aggregate
         aggregate.run.status = RunStatus.RUNNING
-        aggregate.run.started_at = datetime.now(UTC)
+        if aggregate.run.started_at is None:
+            aggregate.run.started_at = datetime.now(UTC)
+            if aggregate.run.updated_at < aggregate.run.started_at:
+                aggregate.run.updated_at = aggregate.run.started_at
         try:
             async with self.instrumentation.run(run_id=run_id):
                 executor = IntegratedTaskExecutor(self, aggregate)
