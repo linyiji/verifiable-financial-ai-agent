@@ -1,52 +1,209 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { TASK_STATUS_MAP } from "../../types/domain";
 import type {
-  PathChange,
-  PathChangeType,
-  ResearchRun,
-  ResearchTask
+  PathChangeProjectionV1,
+  RunProjection,
+  RunTaskProjection
 } from "../../types/domain";
-import { TASK_STATUS_LABELS as STATUS_LABELS } from "../../state/status";
 
-type View = "actual" | "initial" | "compare";
+const TASK_STATUS_LABELS: Record<RunTaskProjection["backendStatus"], string> = {
+  CREATED: "Created",
+  WAITING: "Waiting",
+  READY: "Ready",
+  RUNNING: "Running",
+  WAITING_FOR_CAPABILITY: "Waiting for capability",
+  SELF_CORRECTING: "Self-correcting",
+  BLOCKED: "Blocked",
+  REVIEW: "Review",
+  COMPLETED: "Completed",
+  FAILED: "Failed",
+  CAPABILITY_BUILD_FAILED: "Capability build failed",
+  CANCELLED: "Cancelled"
+};
 
 const CHANGE_SEMANTICS: Record<
-  PathChangeType,
-  { label: string; shortLabel: string; description: string; icon: string; tone: string }
+  PathChangeProjectionV1["changeKind"],
+  { label: string; description: string; icon: string; tone: string }
 > = {
   SELF_CORRECTION: {
-    label: "SELF_CORRECTION · 原任务自我修正",
-    shortLabel: "SELF_CORRECTION",
-    description: "保持任务目标不变，在原任务内回退、修复并重试。",
+    label: "SELF_CORRECTION",
+    description: "Local correction on the same Task and graph identity.",
     icon: "↻",
     tone: "amber"
   },
   ADD_TASK: {
-    label: "ADD_TASK · 新增研究任务",
-    shortLabel: "ADD_TASK",
-    description: "Research Lead 因证据缺口正式增加研究任务。",
+    label: "ADD_TASK",
+    description: "Controlled Replan record for a Task addition request.",
     icon: "+",
     tone: "purple"
   },
   CHANGE_DEPENDENCY: {
-    label: "CHANGE_DEPENDENCY · 调整依赖",
-    shortLabel: "CHANGE_DEPENDENCY",
-    description: "后续任务改为等待新的证据或研究任务。",
+    label: "CHANGE_DEPENDENCY",
+    description: "Controlled Replan record for a dependency change request.",
     icon: "⇢",
     tone: "blue"
   }
 };
 
-function taskTone(task: ResearchTask) {
-  if (task.isDynamic) return "added";
-  if (task.status === "COMPLETED") return "done";
-  if (task.status === "RUNNING") return "live";
-  if (task.status === "SELF_CORRECTING") return "issue";
-  if (task.status === "BLOCKED" || task.status === "FAILED") return "blocked";
-  return "wait";
+type ProjectionModel =
+  | { kind: "ready"; levels: readonly (readonly RunTaskProjection[])[] }
+  | { kind: "pending"; message: string }
+  | { kind: "unavailable"; message: string };
+
+function sameStringSet(left: readonly string[], right: readonly string[]) {
+  if (left.length !== right.length) return false;
+  const values = new Set(left);
+  return values.size === left.length && right.every((value) => values.has(value));
 }
 
-function sameDependencies(left: string[] = [], right: string[] = []) {
-  return [...left].sort().join("|") === [...right].sort().join("|");
+function projectGraph(projection: RunProjection): ProjectionModel {
+  const runId = projection.run.runId;
+  if (projection.plannedGraph.runId !== runId) {
+    return { kind: "unavailable", message: "Planned Graph belongs to another Run." };
+  }
+  if (projection.actualGraph === null) {
+    return {
+      kind: "pending",
+      message: "Actual Graph is not available yet. Research Tasks will appear after authoritative graph creation."
+    };
+  }
+  if (projection.actualGraph.runId !== runId) {
+    return { kind: "unavailable", message: "Actual Graph belongs to another Run." };
+  }
+  if (
+    projection.graphVersion !== null &&
+    projection.graphVersion !== projection.actualGraph.version
+  ) {
+    return { kind: "unavailable", message: "Actual Graph version does not match the Run projection." };
+  }
+
+  const tasks = projection.tasks;
+  const graphTasks = projection.actualGraph.tasks;
+  if (tasks.length === 0 || graphTasks.length === 0) {
+    return {
+      kind: "pending",
+      message: "No authoritative Research Tasks are available for this Run."
+    };
+  }
+
+  const taskById = new Map<string, RunTaskProjection>();
+  for (const task of tasks) {
+    if (task.runId !== runId) {
+      return { kind: "unavailable", message: `Task ${task.taskId} belongs to another Run.` };
+    }
+    if (taskById.has(task.taskId)) {
+      return { kind: "unavailable", message: `Task ${task.taskId} is duplicated.` };
+    }
+    taskById.set(task.taskId, task);
+  }
+
+  const graphTaskIds = graphTasks.map((task) => task.taskId);
+  if (!sameStringSet([...taskById.keys()], graphTaskIds)) {
+    return {
+      kind: "unavailable",
+      message: "Actual Graph Tasks and the atomic Task projection do not match."
+    };
+  }
+
+  for (const graphTask of graphTasks) {
+    const task = taskById.get(graphTask.taskId);
+    if (!task || graphTask.runId !== runId) {
+      return { kind: "unavailable", message: `Graph Task ${graphTask.taskId} has invalid identity.` };
+    }
+    if (
+      task.backendStatus !== graphTask.backendStatus ||
+      task.status !== graphTask.status ||
+      !sameStringSet(task.dependencies, graphTask.dependencies)
+    ) {
+      return {
+        kind: "unavailable",
+        message: `Task ${task.taskId} is inconsistent across the atomic projection.`
+      };
+    }
+    if (new Set(task.dependencies).size !== task.dependencies.length) {
+      return { kind: "unavailable", message: `Task ${task.taskId} repeats a dependency.` };
+    }
+    if (task.dependencies.includes(task.taskId)) {
+      return { kind: "unavailable", message: `Task ${task.taskId} depends on itself.` };
+    }
+    const unknown = task.dependencies.find((dependency) => !taskById.has(dependency));
+    if (unknown) {
+      return {
+        kind: "unavailable",
+        message: `Task ${task.taskId} references unknown dependency ${unknown}.`
+      };
+    }
+  }
+
+  for (const change of projection.pathChanges) {
+    if (
+      change.changeKind === "SELF_CORRECTION" &&
+      (change.sourceKind !== "CORRECTION" ||
+        change.taskRefs.length !== 1 ||
+        !taskById.has(change.taskRefs[0]) ||
+        change.operations.length !== 0 ||
+        change.graphVersionBefore !== null ||
+        change.graphVersionAfter !== null)
+    ) {
+      return {
+        kind: "unavailable",
+        message: `Path Change ${change.pathChangeId} violates same-Task Self-Correction semantics.`
+      };
+    }
+    if (change.changeKind !== "SELF_CORRECTION" && change.sourceKind !== "REPLAN") {
+      return {
+        kind: "unavailable",
+        message: `Path Change ${change.pathChangeId} has invalid Replan authority.`
+      };
+    }
+    if (
+      change.sourceKind === "REPLAN" &&
+      change.decision !== "APPROVED" &&
+      change.graphVersionAfter !== null
+    ) {
+      return {
+        kind: "unavailable",
+        message: `Unapproved Path Change ${change.pathChangeId} claims a resulting Graph version.`
+      };
+    }
+    if (change.sourceKind === "REPLAN" && change.decision === "APPROVED") {
+      const boundTaskIds = [
+        ...change.taskRefs,
+        ...change.operations.flatMap((operation) =>
+          operation.dependencyTaskId === null
+            ? [operation.taskId]
+            : [operation.taskId, operation.dependencyTaskId]
+        )
+      ];
+      const unknownRef = boundTaskIds.find((taskId) => !taskById.has(taskId));
+      if (unknownRef) {
+        return {
+          kind: "unavailable",
+          message: `Approved Path Change ${change.pathChangeId} references unknown Task ${unknownRef}.`
+        };
+      }
+    }
+  }
+
+  const remaining = new Set(graphTaskIds);
+  const completed = new Set<string>();
+  const levels: RunTaskProjection[][] = [];
+  while (remaining.size > 0) {
+    const level = graphTasks
+      .filter((task) => remaining.has(task.taskId))
+      .filter((task) => task.dependencies.every((dependency) => completed.has(dependency)))
+      .map((task) => taskById.get(task.taskId))
+      .filter((task): task is RunTaskProjection => task !== undefined);
+    if (level.length === 0) {
+      return { kind: "unavailable", message: "Actual Graph contains a dependency cycle." };
+    }
+    levels.push(level);
+    for (const task of level) {
+      remaining.delete(task.taskId);
+      completed.add(task.taskId);
+    }
+  }
+  return { kind: "ready", levels };
 }
 
 function formatTimestamp(value: string) {
@@ -60,26 +217,41 @@ function formatTimestamp(value: string) {
   }).format(timestamp);
 }
 
+function taskTone(task: RunTaskProjection) {
+  if (task.status === "COMPLETE") return "done";
+  if (task.status === "ACTIVE") return "live";
+  if (task.status === "CORRECTING" || task.status === "WAITING_SUPPORT") {
+    return "issue";
+  }
+  if (task.status === "BLOCKED" || task.status === "FAILED" || task.status === "CANCELLED") {
+    return "blocked";
+  }
+  return "wait";
+}
+
 export function ResearchPath({
-  run,
+  projection,
   onOpenTask
 }: {
-  run: ResearchRun;
-  onOpenTask?: (task: ResearchTask) => void;
+  projection: RunProjection;
+  onOpenTask?: (task: RunTaskProjection) => void;
 }) {
-  const [view, setView] = useState<View>("actual");
-  const [showChanges, setShowChanges] = useState(true);
-  const [showSemantics, setShowSemantics] = useState(false);
-  const initialTasks = useMemo(
-    () => run.initialTasks.length > 0 ? run.initialTasks : run.tasks.filter((task) => !task.isDynamic),
-    [run.initialTasks, run.tasks]
+  const model = useMemo(() => projectGraph(projection), [projection]);
+  const correctionsByTask = useMemo(() => {
+    const changes = new Map<string, PathChangeProjectionV1[]>();
+    for (const change of projection.pathChanges) {
+      if (change.changeKind !== "SELF_CORRECTION" || change.taskRefs.length !== 1) continue;
+      const taskId = change.taskRefs[0];
+      const current = changes.get(taskId) ?? [];
+      current.push(change);
+      changes.set(taskId, current);
+    }
+    return changes;
+  }, [projection.pathChanges]);
+  const replans = useMemo(
+    () => projection.pathChanges.filter((change) => change.sourceKind === "REPLAN"),
+    [projection.pathChanges]
   );
-  const addedTasks = useMemo(() => run.tasks.filter((task) => task.isDynamic), [run.tasks]);
-  const selfCorrections = useMemo(
-    () => run.pathChanges.filter((change) => change.type === "SELF_CORRECTION"),
-    [run.pathChanges]
-  );
-  const observedTypes = useMemo(() => Array.from(new Set(run.pathChanges.map((change) => change.type))), [run.pathChanges]);
 
   return (
     <section className="path-panel rr-path-panel" aria-labelledby="research-path-title">
@@ -87,349 +259,216 @@ export function ResearchPath({
         <div>
           <div className="path-title" id="research-path-title">Research Path</div>
           <div className="path-sub">
-            初始计划是执行前快照；实际路径只展示本 Run 已发生且有 projection record 的变化语义。
+            Exact Run {projection.run.runId} · Tasks and dependencies come only from the atomic Actual Graph projection.
           </div>
         </div>
-        <div className="path-meta" aria-label="研究路径统计">
-          <span className="badge neutral">Initial {initialTasks.length}</span>
-          <span className={addedTasks.length ? "badge purple" : "badge neutral"}>Added {addedTasks.length}</span>
-          <span className={selfCorrections.length ? "badge amber" : "badge neutral"}>Corrections {selfCorrections.length}</span>
-          <span className="badge neutral">Graph v{run.graphVersion}</span>
+        <div className="path-meta" aria-label="Research Path projection metadata">
+          <span className="badge neutral">Sequence {projection.projectionSequence}</span>
+          <span className="badge neutral">Revision {projection.projectionRevision}</span>
+          <span className="badge neutral">
+            Graph {projection.actualGraph ? `v${projection.actualGraph.version}` : "pending"}
+          </span>
         </div>
       </div>
 
-      <div className="rr-path-toolbar">
-        <div className="segmented" role="tablist" aria-label="Research Path 视图">
-          {(["actual", "initial", "compare"] as View[]).map((item, index, views) => (
-            <button
-              type="button"
-              role="tab"
-              id={`research-path-tab-${item}`}
-              aria-controls={`research-path-panel-${item}`}
-              aria-selected={view === item}
-              tabIndex={view === item ? 0 : -1}
-              key={item}
-              className={view === item ? "active" : ""}
-              onClick={() => setView(item)}
-              onKeyDown={(event) => {
-                if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-                event.preventDefault();
-                const next = views[(index + (event.key === "ArrowRight" ? 1 : -1) + views.length) % views.length];
-                setView(next);
-                window.requestAnimationFrame(() => document.getElementById(`research-path-tab-${next}`)?.focus());
-              }}
-            >
-              {item === "actual" ? "Actual Path" : item === "initial" ? "Initial Plan" : "Compare Changes"}
-            </button>
+      <RunTerminalState projection={projection} />
+
+      {model.kind !== "ready" ? (
+        <div className="rr-path-empty" role={model.kind === "unavailable" ? "alert" : "status"}>
+          <strong>{model.kind === "unavailable" ? "Research Path unavailable" : "Research Path pending"}</strong>
+          <span>{model.message}</span>
+        </div>
+      ) : (
+        <div className="path-cluster rr-path-cluster">
+          <div className="path-cluster-title">
+            <div>
+              <strong>Actual Research Path</strong>
+              <div className="micro">
+                Graph {projection.actualGraph?.graphId} · dependency levels preserve authoritative snapshot order.
+              </div>
+            </div>
+            <span className="badge neutral">{projection.tasks.length} Tasks</span>
+          </div>
+          {model.levels.map((level, index) => (
+            <div className="rr-path-level" key={`level-${index + 1}`}>
+              <div className="micro">Dependency level {index + 1}</div>
+              <div className="path-grid">
+                {level.map((task) => (
+                  <div className="rr-task-node-stack" key={task.taskId}>
+                    <TaskNode task={task} onOpenTask={onOpenTask} />
+                    {(correctionsByTask.get(task.taskId) ?? []).map((change) => (
+                      <div className="rr-self-correction-loop" key={change.pathChangeId}>
+                        <span aria-hidden="true">↻</span>
+                        <div>
+                          <strong>Same-Task Self-Correction</strong>
+                          <span>
+                            {change.reasonCode ?? "Reason unavailable"} · {change.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
-        <div className="rr-path-actions">
-          {observedTypes.length > 0 && <button type="button" className="btn ghost sm" onClick={() => setShowSemantics((open) => !open)}>
-            {showSemantics ? "收起语义" : `本 Run 变化语义 (${observedTypes.length})`}
-          </button>}
-          <button type="button" className="btn ghost sm" onClick={() => setShowChanges((open) => !open)}>
-            {showChanges ? "收起变化记录" : `变化记录 (${run.pathChanges.length})`}
-          </button>
-        </div>
-      </div>
-
-      {showSemantics && <MutationLegend types={observedTypes} />}
-
-      <div className="path-body" id={`research-path-panel-${view}`} role="tabpanel" aria-labelledby={`research-path-tab-${view}`}>
-        {view === "initial" && <InitialPath tasks={initialTasks} onOpenTask={onOpenTask} />}
-        {view === "actual" && (run.mode === "INCREMENTAL" ? <IncrementalPath run={run} onOpenTask={onOpenTask} /> : <ActualPath run={run} tasks={run.tasks} onOpenTask={onOpenTask} />)}
-        {view === "compare" && (
-          <PathComparison initialTasks={initialTasks} actualTasks={run.tasks} onOpenTask={onOpenTask} />
-        )}
-      </div>
-
-      {showChanges && (
-        <PathChangeHistory
-          changes={run.pathChanges}
-          tasks={run.tasks}
-          onOpenTask={onOpenTask}
-        />
       )}
+
+      <PathChangeHistory changes={projection.pathChanges} replans={replans} />
     </section>
   );
 }
 
-function MutationLegend({ types }: { types: PathChangeType[] }) {
-  return (
-    <div className="rr-mutation-legend" aria-label="路径变化类型说明">
-      {types.map((type) => {
-        const semantic = CHANGE_SEMANTICS[type];
-        return (
-          <div className={`rr-mutation-help ${semantic.tone}`} key={type}>
-            <span className="rr-mutation-icon" aria-hidden="true">{semantic.icon}</span>
-            <div>
-              <strong>{semantic.label}</strong>
-              <span>{semantic.description}</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function IncrementalPath({ run, onOpenTask }: { run: ResearchRun; onOpenTask?: (task: ResearchTask) => void }) {
-  const steps = ["Previous Research Memory", "Freshness Check", "Changed Data", "Growth Update", "Valuation Update", "Risk Update", "Claim Comparison", "Updated Result"];
-  return <div className="incremental-path"><div className="incremental-path__banner"><div><strong>Incremental Research Path</strong><span>Demo / Pre-Integration projection · visually distinct from Full Research</span></div><span className="badge purple">Memory-aware</span></div><div className="incremental-flow">{steps.map((step, index) => { const task = run.tasks.find((candidate) => candidate.name === step); const content = <><span>{String(index + 1).padStart(2, "0")}</span><strong>{step}</strong><small>{task ? task.status : index === 0 ? run.memory?.sourceRunId : "Projection milestone"}</small></>; return task ? <button type="button" key={step} onClick={() => onOpenTask?.(task)}>{content}</button> : <div className="incremental-milestone" key={step}>{content}</div>; })}</div></div>;
-}
-
-function InitialPath({
-  tasks,
-  onOpenTask
-}: {
-  tasks: ResearchTask[];
-  onOpenTask?: (task: ResearchTask) => void;
-}) {
-  return (
-    <div className="path-cluster rr-path-cluster">
-      <div className="path-cluster-title">
+function RunTerminalState({ projection }: { projection: RunProjection }) {
+  const taskExecutionTerminal =
+    projection.tasks.length > 0 &&
+    projection.tasks.every((task) => TASK_STATUS_MAP[task.backendStatus].terminal);
+  if (projection.terminal.isTerminal) {
+    return (
+      <div className="auto-replan rr-auto-replan" role="status">
         <div>
-          <strong>Initial Research Plan</strong>
-          <div className="micro">执行开始前冻结的任务与依赖，不会被实际路径覆盖。</div>
+          <strong>Run terminal · {projection.terminal.outcome ?? projection.lifecycle.status}</strong>
+          <div className="small">
+            Authoritative terminal state at {projection.lifecycle.stage}
+            {projection.terminal.sequence === null ? "" : ` · sequence ${projection.terminal.sequence}`}
+          </div>
         </div>
-        <span className="badge neutral">Plan v1</span>
+        <span className="badge neutral">{projection.lifecycle.status}</span>
       </div>
-      <div className="path-grid">
-        {tasks.map((task) => (
-          <TaskNode key={task.id} task={task} planned onOpenTask={onOpenTask} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ActualPath({
-  run,
-  tasks,
-  onOpenTask
-}: {
-  run: ResearchRun;
-  tasks: ResearchTask[];
-  onOpenTask?: (task: ResearchTask) => void;
-}) {
-  const taskNames = new Map(tasks.map((task) => [task.id, task.name]));
-  const correctionByTask = new Map<string, PathChange[]>();
-  for (const change of run.pathChanges) {
-    if (change.type !== "SELF_CORRECTION" || !change.triggerTaskId) continue;
-    const entries = correctionByTask.get(change.triggerTaskId) ?? [];
-    entries.push(change);
-    correctionByTask.set(change.triggerTaskId, entries);
+    );
   }
-  const structuralChanges = run.pathChanges.filter((change) => change.type !== "SELF_CORRECTION");
-  const pathChanged = run.graphVersion > 1 || structuralChanges.length > 0 || tasks.some((task) => task.isDynamic);
-
   return (
-    <>
-      {structuralChanges.length > 0 && (
-        <div className="auto-replan rr-auto-replan">
-          <div>
-            <strong>AI 已调整研究路径</strong>
-            <div className="small">
-              当前实际路径来自 Runtime projection；所有变化会保留到复核和执行记录。
-            </div>
-          </div>
-          <span className="badge purple">{structuralChanges.length} Path Changes</span>
-        </div>
-      )}
-      <div className="path-cluster rr-path-cluster">
-        <div className="path-cluster-title">
-          <div>
-            <strong>Actual Research Path</strong>
-            <div className="micro">任务卡仅代表正式研究任务；能力准备显示为任务内 supporting activity。</div>
-          </div>
-          <span className={pathChanged ? "badge purple" : "badge neutral"}>
-            {pathChanged ? "Path changed" : "As planned"}
-          </span>
-        </div>
-        <div className="path-grid">
-          {tasks.map((task) => (
-            <div className="rr-task-node-stack" key={task.id}>
-              <TaskNode task={task} taskNames={taskNames} onOpenTask={onOpenTask} />
-              {(correctionByTask.get(task.id) ?? []).map((change) => (
-                <div className="rr-self-correction-loop" key={change.changeId}>
-                  <span aria-hidden="true">↻</span>
-                  <div>
-                    <strong>原任务自我修正</strong>
-                    <span>{change.reason} · {change.status}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-      {structuralChanges.length > 0 && (
-        <div className="path-note">
-          <strong>为什么与初始计划不同：</strong>{" "}
-          {structuralChanges.map((change) => change.reason).join("；")}。
-        </div>
-      )}
-    </>
+    <div className="path-note" role="status">
+      <strong>Run remains nonterminal.</strong>{" "}
+      {taskExecutionTerminal
+        ? `Task execution is terminal; review, proof, or release closure is still pending at ${projection.lifecycle.stage}.`
+        : `Current authoritative stage: ${projection.lifecycle.stage}.`}
+    </div>
   );
 }
 
 function TaskNode({
   task,
-  planned = false,
-  taskNames,
   onOpenTask
 }: {
-  task: ResearchTask;
-  planned?: boolean;
-  taskNames?: Map<string, string>;
-  onOpenTask?: (task: ResearchTask) => void;
+  task: RunTaskProjection;
+  onOpenTask?: (task: RunTaskProjection) => void;
 }) {
-  const dependencies = task.dependsOn ?? [];
-  const detail = dependencies.length > 0
-    ? `依赖 ${dependencies.map((id) => taskNames?.get(id) ?? id).join("、")}`
-    : planned ? "初始任务" : STATUS_LABELS[task.status];
-
+  const percent = Math.round(Math.max(0, Math.min(1, task.progress)) * 100);
   return (
     <button
       type="button"
-      className={`branch-node rr-branch-node ${planned ? "planned" : taskTone(task)}`}
+      className={`branch-node rr-branch-node ${taskTone(task)}`}
       onClick={() => onOpenTask?.(task)}
-      aria-label={`打开任务 ${task.name}`}
+      aria-label={`Open Task ${task.taskId}`}
     >
       <div className="rr-node-topline">
-        <span className="micro">{task.id}</span>
-        {task.isDynamic && <span className="flag">+ ADDED</span>}
+        <span className="micro">{task.taskId}</span>
+        {task.origin === "REPLAN" && <span className="flag">+ REPLAN</span>}
       </div>
-      <div className="bn">{task.name}</div>
-      <div className="bs">{detail}</div>
-      {!planned && <div className="rr-node-status">Status · {STATUS_LABELS[task.status]}</div>}
-      {!planned && task.progress !== undefined && task.status !== "COMPLETED" && (
-        <div className="rr-node-progress" role="progressbar" aria-label={`进度 ${task.progress}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={task.progress}>
-          <span style={{ width: `${Math.max(0, Math.min(100, task.progress))}%` }} />
-        </div>
-      )}
-      {!planned && task.supportingActivity && (
-        <div className={`rr-supporting-activity ${task.supportingActivity.status.toLowerCase()}`}>
-          <span aria-hidden="true">◇</span>
-          <span>
-            <strong>Supporting activity</strong>
-            {task.supportingActivity.label}
-          </span>
-        </div>
-      )}
+      <div className="bn">{task.taskType}</div>
+      <div className="bs">{task.goal}</div>
+      <div className="rr-node-status">
+        Raw status · {TASK_STATUS_LABELS[task.backendStatus]} ({task.backendStatus})
+      </div>
+      <div className="rr-node-status">Projected status · {task.status}</div>
+      <div
+        className="rr-node-progress"
+        role="progressbar"
+        aria-label={`Task progress ${percent}%`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+      >
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      <div className="micro">
+        {task.dependencies.length > 0
+          ? `Depends on ${task.dependencies.join(" · ")}`
+          : "No declared dependencies"}
+      </div>
     </button>
-  );
-}
-
-function PathComparison({
-  initialTasks,
-  actualTasks,
-  onOpenTask
-}: {
-  initialTasks: ResearchTask[];
-  actualTasks: ResearchTask[];
-  onOpenTask?: (task: ResearchTask) => void;
-}) {
-  return (
-    <div className="path-compare rr-path-compare">
-      <div className="path-compare-col">
-        <h4>Initial Plan</h4>
-        <div className="mini-flow">
-          {initialTasks.map((task) => (
-            <button type="button" className="mini-flow-row rr-mini-flow-row" key={task.id} onClick={() => onOpenTask?.(task)}>
-              <span className="mini-dot" />
-              <span><strong>{task.name}</strong><small>{task.dependsOn?.length ? `依赖 ${task.dependsOn.join("、")}` : "原始任务"}</small></span>
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="path-compare-col">
-        <h4>Actual Path</h4>
-        <div className="mini-flow">
-          {actualTasks.map((task) => {
-            const initial = initialTasks.find((candidate) => candidate.id === task.id);
-            const dependencyChanged = Boolean(initial && !sameDependencies(initial.dependsOn, task.dependsOn));
-            return (
-              <button type="button" className="mini-flow-row rr-mini-flow-row" key={task.id} onClick={() => onOpenTask?.(task)}>
-                <span className={`mini-dot ${task.isDynamic ? "purple" : dependencyChanged ? "amber" : task.status === "COMPLETED" ? "green" : ""}`} />
-                <span>
-                  <strong>{task.isDynamic ? "+ " : ""}{task.name}</strong>
-                  <small>
-                    {task.isDynamic ? "ADDED by graph.task_added" : dependencyChanged ? "Dependency changed" : STATUS_LABELS[task.status]}
-                  </small>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
   );
 }
 
 function PathChangeHistory({
   changes,
-  tasks,
-  onOpenTask
+  replans
 }: {
-  changes: PathChange[];
-  tasks: ResearchTask[];
-  onOpenTask?: (task: ResearchTask) => void;
+  changes: readonly PathChangeProjectionV1[];
+  replans: readonly PathChangeProjectionV1[];
 }) {
-  const taskById = new Map(tasks.map((task) => [task.id, task]));
-
   return (
     <div className="rr-path-history">
       <div className="rr-section-heading">
         <div>
           <strong>Path Change History</strong>
-          <span>变化在 Run 完成后仍可审计；自纠不会生成新任务卡。</span>
+          <span>
+            Read-only correction and Lead-controlled Replan records. Topology always comes from the Actual Graph snapshot.
+          </span>
         </div>
         <span className="badge neutral">{changes.length} records</span>
       </div>
       {changes.length === 0 ? (
-        <div className="rr-path-empty">实际执行与初始计划一致，暂无路径变化。</div>
-      ) : changes.map((change) => {
-        const semantic = CHANGE_SEMANTICS[change.type];
-        const trigger = change.triggerTaskId ? taskById.get(change.triggerTaskId) : undefined;
-        const relatedIds = [...(change.addedTaskIds ?? []), ...(change.affectedTaskIds ?? [])];
-        return (
-          <div className={`path-change rr-path-change ${semantic.tone}`} key={change.changeId}>
-            <div className="pc-type">
-              <span className={`rr-change-chip ${semantic.tone}`}>
-                <span aria-hidden="true">{semantic.icon}</span>{semantic.shortLabel}
+        <div className="rr-path-empty">No authoritative Path Change records are available.</div>
+      ) : (
+        changes.map((change) => {
+          const semantic = CHANGE_SEMANTICS[change.changeKind];
+          const isApprovedReplan =
+            change.sourceKind === "REPLAN" && change.decision === "APPROVED";
+          const isUnapprovedReplan = change.sourceKind === "REPLAN" && !isApprovedReplan;
+          return (
+            <div className={`path-change rr-path-change ${semantic.tone}`} key={change.pathChangeId}>
+              <div className="pc-type">
+                <span className={`rr-change-chip ${semantic.tone}`}>
+                  <span aria-hidden="true">{semantic.icon}</span>{semantic.label}
+                </span>
+              </div>
+              <div>
+                <div className="pc-title">
+                  {change.reasonCode ?? "Reason code unavailable"} · {change.sourceKind} {change.sourceId}
+                </div>
+                <div className="pc-sub">
+                  {semantic.description} · {formatTimestamp(change.createdAt)}
+                </div>
+                <div className="rr-change-links">
+                  {change.taskRefs.map((taskId) => <span key={taskId}>Task · {taskId}</span>)}
+                </div>
+                {change.operations.length > 0 && (
+                  <div className="task-fact-list">
+                    <span>
+                      {isApprovedReplan
+                        ? "Approved operation records"
+                        : "Requested operations only · no mutation asserted"}
+                    </span>
+                    {change.operations.map((operation, index) => (
+                      <span key={`${operation.operation}-${operation.taskId}-${index}`}>
+                        {operation.operation} · {operation.taskId}
+                        {operation.dependencyTaskId ? ` · dependency ${operation.dependencyTaskId}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {isUnapprovedReplan && (
+                  <div className="small">
+                    No topology effect is inferred from this {change.decision ?? "UNDECIDED"} Replan record.
+                  </div>
+                )}
+              </div>
+              <span className="badge neutral">
+                {change.decision ?? change.status}
               </span>
             </div>
-            <div>
-              <div className="pc-title">{change.reason}</div>
-              <div className="pc-sub">
-                {change.type === "SELF_CORRECTION" ? "原任务内修复" : semantic.description}
-                {" · "}{formatTimestamp(change.createdAt)}
-              </div>
-              {(trigger || relatedIds.length > 0) && (
-                <div className="rr-change-links">
-                  {trigger && (
-                    <button type="button" onClick={() => onOpenTask?.(trigger)}>
-                      触发：{trigger.name}
-                    </button>
-                  )}
-                  {relatedIds.map((id) => {
-                    const task = taskById.get(id);
-                    return task ? (
-                      <button type="button" key={id} onClick={() => onOpenTask?.(task)}>
-                        {change.addedTaskIds?.includes(id) ? "新增" : "影响"}：{task.name}
-                      </button>
-                    ) : <span key={id}>{id}</span>;
-                  })}
-                </div>
-              )}
-            </div>
-            <span className={`badge ${change.status === "OPEN" ? "amber" : change.status === "RESOLVED" ? "green" : "purple"}`}>
-              {change.status}
-            </span>
-          </div>
-        );
-      })}
+          );
+        })
+      )}
+      {replans.length > 0 && (
+        <div className="path-note">
+          {replans.length} Replan record{replans.length === 1 ? "" : "s"}; only approved graph state present in the
+          atomic projection is rendered above.
+        </div>
+      )}
     </div>
   );
 }
