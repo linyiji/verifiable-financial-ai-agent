@@ -1,0 +1,753 @@
+{
+  "schema_version": "1.0.0",
+  "manifest_id": "V17_REFERENCE_MANIFEST_V1",
+  "manifest_status": "CORRECTED_COMPANION_REFERENCE_MANIFEST",
+  "archive_filename": "Verifiable_Financial_Agent_Frontend_V17_Integration_Package_WITH_HANDOFF.zip",
+  "archive_sha256": "b90a356d666c30a07362f080fd418a2cf051c9b80483d308eac474dc51d79f31",
+  "archive_size_bytes": 198339,
+  "archive_root_prefix": "Verifiable_Financial_Agent_Frontend_V17_Integration_Package_WITH_HANDOFF/",
+  "archive_member_count": 65,
+  "declared_original_member_count": 61,
+  "corrected_member_count": 65,
+  "original_manifest_status": "FAIL_INCOMPLETE_AND_STALE_README_METADATA",
+  "original_manifest_member_count_source": "COUNT_OF_files_ARRAY; original manifest has no explicit member-count field",
+  "original_manifest_omitted_paths": [
+    "MANIFEST_V17.json",
+    "handoff/01_GPT_HANDOFF_V17.md",
+    "handoff/02_GPT_EXECUTION_INSTRUCTION_V17.md",
+    "handoff/03_COPY_PASTE_STARTER_PROMPT.md"
+  ],
+  "original_manifest_metadata_mismatches": [
+    {
+      "path": "README.md",
+      "declared_sha256": "017d04be45ff2ac1969c2a358f644cf1239371cdec20b30c8ddc1b445d9015e7",
+      "actual_sha256": "21785aaef9d8e1882119f875493b0430c9df11a92c0a91b4bca1054d65e75ba8",
+      "declared_size_bytes": 2567,
+      "actual_size_bytes": 3067
+    }
+  ],
+  "original_readme_declared_sha256": "017d04be45ff2ac1969c2a358f644cf1239371cdec20b30c8ddc1b445d9015e7",
+  "actual_readme_sha256": "21785aaef9d8e1882119f875493b0430c9df11a92c0a91b4bca1054d65e75ba8",
+  "reference_v8_sha256": "d4131743eb30e41e52e1b17bfa27ba485f5f79378a7ac04dcce15c5eb87beda6",
+  "reference_v8_repository_path": "frontend_reference/financial_agent_workspace_v8_dynamic_path.html",
+  "reference_v8_repository_sha256": "d4131743eb30e41e52e1b17bfa27ba485f5f79378a7ac04dcce15c5eb87beda6",
+  "reference_v8_byte_match": true,
+  "reference_v17_sha256": "1cc44c95017b2178e39138b1310e02c55d849dd71af50b63c074686a215ed18d",
+  "path_validation": {
+    "normalization_rule": "Validate the original ZIP member name first, require and strip exactly one archive_root_prefix, then require a non-empty NFC POSIX-relative rootless path whose segments are never empty, dot, or dot-dot.",
+    "unsafe_path_count": 0,
+    "duplicate_raw_path_count": 0,
+    "duplicate_normalized_path_count": 0,
+    "directory_member_count": 0,
+    "symlink_member_count": 0
+  },
+  "archive_ordering": {
+    "status": "NON_LEXICOGRAPHIC",
+    "member_index_base": 1,
+    "recorded_in_member_field": "archive_index",
+    "archive_order_manifest_algorithm": "SHA-256 of UTF-8 lines in central-directory order: <archive_index><two spaces><normalized path><LF>",
+    "archive_order_manifest_sha256": "168164a1bf3c12eb18046edc7f99a1fe9ed1cf762c651635b02fec34fa1cb48c"
+  },
+  "compiled_or_cache_members": [
+    "backend_contracts/__pycache__/models.cpython-313.pyc"
+  ],
+  "authority_class_counts": {
+    "DEMO_ONLY": 6,
+    "GOVERNANCE_ONLY": 5,
+    "OUT_OF_SCOPE": 1,
+    "PHASE5_DEFERRED": 2,
+    "REFERENCE_ONLY": 24,
+    "TARGET_SCAFFOLD_INPUT": 27
+  },
+  "authority_class_vocabulary": [
+    "REFERENCE_ONLY",
+    "GOVERNANCE_ONLY",
+    "DEMO_ONLY",
+    "PHASE5_DEFERRED",
+    "OUT_OF_SCOPE",
+    "TARGET_SCAFFOLD_INPUT"
+  ],
+  "phase_class_vocabulary": [
+    "PHASE4_CORE",
+    "PHASE4_REFERENCE",
+    "PHASE5_DEFERRED",
+    "PHASE5_REFERENCE",
+    "DEMO_ONLY",
+    "GOVERNANCE_ONLY",
+    "BASELINE_REFERENCE",
+    "CROSS_PHASE_REFERENCE",
+    "OUT_OF_SCOPE"
+  ],
+  "precedence_order": [
+    "V8.1 baseline",
+    "approved frontend governance",
+    "future approved V17 FCR revision",
+    "this corrected V17 reference manifest",
+    "package documents and scaffold",
+    "HTML UX references"
+  ],
+  "conflict_rule": "The actual repository and approved contracts govern whenever package material conflicts.",
+  "members": [
+    {
+      "path": "MANIFEST_V17.json",
+      "sha256": "cff8ff75e967937f57afda5da33397f3d2ee00a0486910190ed710d1179b9763",
+      "size_bytes": 10487,
+      "content_role": "PACKAGE_MANIFEST",
+      "authority_class": "GOVERNANCE_ONLY",
+      "phase_class": "GOVERNANCE_ONLY",
+      "source_relationship": "ORIGINAL_DEFECTIVE_MANIFEST_INPUT",
+      "archive_index": 3
+    },
+    {
+      "path": "README.md",
+      "sha256": "21785aaef9d8e1882119f875493b0430c9df11a92c0a91b4bca1054d65e75ba8",
+      "size_bytes": 3067,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "CROSS_PHASE_REFERENCE",
+      "source_relationship": "PACKAGE_README_REFERENCE_INPUT",
+      "archive_index": 2
+    },
+    {
+      "path": "apps/web/index.html",
+      "sha256": "2377cc8b9b35a8246f81396803d8bc61234fce34c5d9b54b9ac3060771062d4c",
+      "size_bytes": 264,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 30
+    },
+    {
+      "path": "apps/web/package.json",
+      "sha256": "19d756f07d638e899271605f561993c4e35ad1338f92ff3a4db0ea496925fc3f",
+      "size_bytes": 474,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 32
+    },
+    {
+      "path": "apps/web/src/App.tsx",
+      "sha256": "cfb5342175d3e2920c6700f0e8c1d7d92f7500b7515f94f9718d15ef45c8badf",
+      "size_bytes": 3628,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 34
+    },
+    {
+      "path": "apps/web/src/api/DemoFrontendDataSource.ts",
+      "sha256": "d04d77f75217666963c66e4b6d15f78af62c2d75516ae604a2ce922f78845e70",
+      "size_bytes": 1974,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "DEMO_ONLY",
+      "phase_class": "DEMO_ONLY",
+      "source_relationship": "DEMO_SCAFFOLD_INPUT",
+      "archive_index": 61
+    },
+    {
+      "path": "apps/web/src/api/DemoRuntimeTransport.ts",
+      "sha256": "0eeeeeacdac3b88717cc0c016a6de7374a76d21070e26d3ae3177ee30d86c466",
+      "size_bytes": 388,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "DEMO_ONLY",
+      "phase_class": "DEMO_ONLY",
+      "source_relationship": "DEMO_SCAFFOLD_INPUT",
+      "archive_index": 60
+    },
+    {
+      "path": "apps/web/src/api/FrontendDataSource.ts",
+      "sha256": "0bf74f91cd43f01df5a8e66fa7ec8c8851b392cce989ca8c57e16bc0b0cb1ba2",
+      "size_bytes": 1349,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 59
+    },
+    {
+      "path": "apps/web/src/api/HttpFrontendDataSource.ts",
+      "sha256": "4bb6b178ead67024ea5f4e88a1fed7158f6a9117d01dbff91b703d6f08d0226d",
+      "size_bytes": 2632,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 63
+    },
+    {
+      "path": "apps/web/src/api/RuntimeTransport.ts",
+      "sha256": "e66b992aa65522a9968275d251c57202086d0a8ab4826e4ee3b95abe6f66b02b",
+      "size_bytes": 188,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 64
+    },
+    {
+      "path": "apps/web/src/api/SSERuntimeTransport.ts",
+      "sha256": "77b10b90e17ca4c1e5aeb3982e7089860325682cd13a450200a6c51924ddfdbe",
+      "size_bytes": 459,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 62
+    },
+    {
+      "path": "apps/web/src/components/ClaimTraceDrawer.tsx",
+      "sha256": "518c03ab767d1752f95c7f907a743a2267fcfdb6575d4135334b1514aad616e2",
+      "size_bytes": 1036,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 45
+    },
+    {
+      "path": "apps/web/src/components/ExecutionRecord.tsx",
+      "sha256": "003fb4027210dfbdeca262235e42b3665ec934998abb940be53852b109c6e2aa",
+      "size_bytes": 1639,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 44
+    },
+    {
+      "path": "apps/web/src/components/FinancialReview.tsx",
+      "sha256": "51c08bfa8363df4a7f8bdeda460475afae8a3d8b7978b2a6d7991201c958e3c2",
+      "size_bytes": 1163,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 46
+    },
+    {
+      "path": "apps/web/src/components/ProfessionalReport.tsx",
+      "sha256": "4e52c81e51d9d5d9cc0b2c8327ba61735f276b856c7dae637372fa4e19ad0ffc",
+      "size_bytes": 1497,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 40
+    },
+    {
+      "path": "apps/web/src/components/ResearchCompare.tsx",
+      "sha256": "1f22a43f875a5fc2054cf1ca7a741dbc1ecfbea153757c34e426f4f4adf043ef",
+      "size_bytes": 875,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "PHASE5_DEFERRED",
+      "phase_class": "PHASE5_DEFERRED",
+      "source_relationship": "PHASE5_SCAFFOLD_INPUT",
+      "archive_index": 37
+    },
+    {
+      "path": "apps/web/src/components/ResearchMemory.tsx",
+      "sha256": "b5f64aab9399ac342f77ddd8272d5f6c092a776e3e47fbd9482e4b7f61db41f0",
+      "size_bytes": 882,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "PHASE5_DEFERRED",
+      "phase_class": "PHASE5_DEFERRED",
+      "source_relationship": "PHASE5_SCAFFOLD_INPUT",
+      "archive_index": 41
+    },
+    {
+      "path": "apps/web/src/components/ResearchPath.tsx",
+      "sha256": "5a45fc2b0a7637611c168bbb6db161e8069a87a8a115b585c8582b0d681888f9",
+      "size_bytes": 833,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 43
+    },
+    {
+      "path": "apps/web/src/components/ResearchPlanSnapshot.tsx",
+      "sha256": "4c6dc95c73d21f3371e06abe32d052df9432e8500f7274e66af57fa2bb681e0f",
+      "size_bytes": 1306,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 39
+    },
+    {
+      "path": "apps/web/src/components/ResearchRuntimeWorkspace.tsx",
+      "sha256": "0c06c4b56f26dedd3cc3de0f25e92630bf4fba1bacf0d12248768ff133f6ab6f",
+      "size_bytes": 1088,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 38
+    },
+    {
+      "path": "apps/web/src/components/TaskDetailDrawer.tsx",
+      "sha256": "5aeafef3342587c8d443a739488ec8ce00c1ad0776d447c7fabf659863e3f1e8",
+      "size_bytes": 672,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 47
+    },
+    {
+      "path": "apps/web/src/components/TraceChain.tsx",
+      "sha256": "83c4f8f9a52094d4226d4873d9e9fae692be2464de2158319d58692cc75a4367",
+      "size_bytes": 742,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 42
+    },
+    {
+      "path": "apps/web/src/demo/PresenterOverlay.tsx",
+      "sha256": "ae299a0dc1a24f839e361abe3b1def468c9a83e742cedf723b2aa24bf445ff16",
+      "size_bytes": 692,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "DEMO_ONLY",
+      "phase_class": "DEMO_ONLY",
+      "source_relationship": "DEMO_SCAFFOLD_INPUT",
+      "archive_index": 50
+    },
+    {
+      "path": "apps/web/src/demo/demoData.ts",
+      "sha256": "ecf3565b98220f0b08c45555539aa928ddf3189d80091a2d6673cb66e833d80b",
+      "size_bytes": 6195,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "DEMO_ONLY",
+      "phase_class": "DEMO_ONLY",
+      "source_relationship": "DEMO_SCAFFOLD_INPUT",
+      "archive_index": 49
+    },
+    {
+      "path": "apps/web/src/demo/scenarioRuntime.ts",
+      "sha256": "2d2e8ad65f577d141d512855c0f1f4c6cd4f6e4782328e9b98c5224b7b78e3d4",
+      "size_bytes": 827,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "DEMO_ONLY",
+      "phase_class": "DEMO_ONLY",
+      "source_relationship": "DEMO_SCAFFOLD_INPUT",
+      "archive_index": 51
+    },
+    {
+      "path": "apps/web/src/demo/scenarios.ts",
+      "sha256": "e2a1c8f10e017d5d7e9bf919a2fa7af4ce58495c82809b475d15c98035625809",
+      "size_bytes": 1512,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "DEMO_ONLY",
+      "phase_class": "DEMO_ONLY",
+      "source_relationship": "DEMO_SCAFFOLD_INPUT",
+      "archive_index": 52
+    },
+    {
+      "path": "apps/web/src/main.tsx",
+      "sha256": "8382f17b67dfb2d634dfcd2935493cfa1a8e24b33b46b8ba379b1f4aecb0f5fc",
+      "size_bytes": 229,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 33
+    },
+    {
+      "path": "apps/web/src/pages/NewResearchTaskPage.tsx",
+      "sha256": "bc08b75a133274a7cb8ecdd64ca578e259320d9983f560ca0e217fb6f939cd9a",
+      "size_bytes": 1853,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 55
+    },
+    {
+      "path": "apps/web/src/pages/ResearchObjectDetailPage.tsx",
+      "sha256": "8bcf241771842051675e4461497aac674c54ee7ec42f54fe1844e930ba3423f1",
+      "size_bytes": 1715,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 54
+    },
+    {
+      "path": "apps/web/src/pages/ResearchObjectsPage.tsx",
+      "sha256": "534b4cee62bf43ea10e84302bfba84ee488c50b81a80726f1dd017843a8b6b15",
+      "size_bytes": 514,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 58
+    },
+    {
+      "path": "apps/web/src/pages/ResearchRunPage.tsx",
+      "sha256": "f3a71d4f0d6ffa4b378ca4f9f55e40f30be917e61144f2c4e5c54d88ca18a2c4",
+      "size_bytes": 1396,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 53
+    },
+    {
+      "path": "apps/web/src/pages/ResearchRunsPage.tsx",
+      "sha256": "3ea674040f8b6a39fb064caf7f4ec7e24e41f74a0d91986afa63dcc09a490d6c",
+      "size_bytes": 613,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 56
+    },
+    {
+      "path": "apps/web/src/pages/ResultsPage.tsx",
+      "sha256": "e7c7d31238c54ce3dd890b0040d6967820c921a1ffa3f83feda4fe838d2b6daf",
+      "size_bytes": 1830,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 57
+    },
+    {
+      "path": "apps/web/src/state/runtimeEventReducer.ts",
+      "sha256": "3af8aeaf8a52796bdbf7c26e01738af400d2b9676638d7de3de18d0872e96201",
+      "size_bytes": 1434,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 48
+    },
+    {
+      "path": "apps/web/src/styles/v17.css",
+      "sha256": "74684eac9a56491d4f16d75b71f0a8d19d4d4b1255fdc1817cc9d53e9948bac5",
+      "size_bytes": 75380,
+      "content_role": "UX_REFERENCE",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "V17_STYLE_REFERENCE_INPUT",
+      "archive_index": 35
+    },
+    {
+      "path": "apps/web/src/types/domain.ts",
+      "sha256": "81d694e8adf4fd98654a2e6d099453b0a1a12c33b7b35a84eed952f0c61925ad",
+      "size_bytes": 5366,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 36
+    },
+    {
+      "path": "apps/web/tsconfig.json",
+      "sha256": "83efc1798334967d5a907f26b8cba31fa213f16b5ac0ed5c02fd38e7cf0ceb66",
+      "size_bytes": 527,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 31
+    },
+    {
+      "path": "apps/web/vite.config.ts",
+      "sha256": "4c176a81060f72365d86a18a1f399fb37a00a80fb68dc8ffe38e60c5f2fa7cf3",
+      "size_bytes": 132,
+      "content_role": "SOURCE_SCAFFOLD",
+      "authority_class": "TARGET_SCAFFOLD_INPUT",
+      "phase_class": "PHASE4_CORE",
+      "source_relationship": "V17_TARGET_SCAFFOLD_INPUT",
+      "archive_index": 29
+    },
+    {
+      "path": "backend_contracts/README.md",
+      "sha256": "a9ea3ceb0e5a678c6c4d091792f2f1e9b24f7e4813c11d817b83299548b4cc99",
+      "size_bytes": 595,
+      "content_role": "GOVERNANCE_INPUT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "TARGET_CONTRACT_INPUT",
+      "archive_index": 5
+    },
+    {
+      "path": "backend_contracts/__pycache__/models.cpython-313.pyc",
+      "sha256": "9844dc261bf998c04d5d7dd8621db387015d418d8913d57c4f3127e3112d2ebe",
+      "size_bytes": 5108,
+      "content_role": "COMPILED_DEBRIS",
+      "authority_class": "OUT_OF_SCOPE",
+      "phase_class": "OUT_OF_SCOPE",
+      "source_relationship": "EXCLUDED_COMPILED_ARTIFACT",
+      "archive_index": 65
+    },
+    {
+      "path": "backend_contracts/models.py",
+      "sha256": "4c1695cfcddb2577cac86f931c06b54ee990e78c1a1325641b61dd8e96f8d4d6",
+      "size_bytes": 2258,
+      "content_role": "GOVERNANCE_INPUT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "TARGET_CONTRACT_INPUT",
+      "archive_index": 6
+    },
+    {
+      "path": "codex/FRONTEND_BACKEND_INTEGRATION_PROMPT_V17.md",
+      "sha256": "59d1dcd495da8c98aa86776fcab44418c0c004351ceb2eb098779b131bf43ab8",
+      "size_bytes": 1367,
+      "content_role": "GOVERNANCE_INPUT",
+      "authority_class": "GOVERNANCE_ONLY",
+      "phase_class": "GOVERNANCE_ONLY",
+      "source_relationship": "GOVERNANCE_WORKFLOW_INPUT",
+      "archive_index": 25
+    },
+    {
+      "path": "docs/00_READ_FIRST.md",
+      "sha256": "ed2344904e485883063c95c98a14a751f98f17bc5a30b8217ac0d31895751611",
+      "size_bytes": 1526,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 19
+    },
+    {
+      "path": "docs/01_V8_TO_V17_COMPLETE_CHANGELOG.md",
+      "sha256": "45dc8b65ec6f597293045f029ca2fddc7cc29e2b9f99b8dd8050472343e87777",
+      "size_bytes": 12313,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 21
+    },
+    {
+      "path": "docs/02_FRONTEND_V17_MODULE_MAP.md",
+      "sha256": "0f6e8b6f0acdaefaab9b2a468bf37b39ed60ae91e3bf45b7b3c88c1c30ce7c66",
+      "size_bytes": 1648,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 22
+    },
+    {
+      "path": "docs/03_BACKEND_REQUIREMENTS_V17.md",
+      "sha256": "703c80a8d3144c6c94d69f5c98b73bc2fcdfa407e68449bb457a083d9bc737eb",
+      "size_bytes": 5888,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 15
+    },
+    {
+      "path": "docs/04_FRONTEND_BACKEND_CONTRACT_MATRIX.md",
+      "sha256": "129847d5c22b2dad4d95be022b3f29aafcf381d2062dbd0f5dc84110dc07c826",
+      "size_bytes": 2511,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 12
+    },
+    {
+      "path": "docs/05_API_CONTRACT_V17.md",
+      "sha256": "926f054f841289fbe81e6ba1b133774544cd67c3d9d777fc2da51c99405958de",
+      "size_bytes": 2591,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 8
+    },
+    {
+      "path": "docs/06_SSE_EVENT_CONTRACT_V17.md",
+      "sha256": "85bf8bc3e08377559555382696fe9aaf8c6034930443b042e659acaa99856bc0",
+      "size_bytes": 2206,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 10
+    },
+    {
+      "path": "docs/07_RESEARCH_MEMORY_INCREMENTAL_BACKEND.md",
+      "sha256": "87599b038f8def8b1a1ff74fcdd3d70736eecb4b53acf6fa69cb7b61acb7e125",
+      "size_bytes": 1299,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE5_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 14
+    },
+    {
+      "path": "docs/08_FINANCIAL_REVIEW_EXECUTION_TRACE_BACKEND.md",
+      "sha256": "aecfc02028e4115870f3437ec81e07aded027e476d77646eeabe1be20b3f3fb6",
+      "size_bytes": 1756,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 7
+    },
+    {
+      "path": "docs/09_REPORT_CLAIM_TRACE_BACKEND.md",
+      "sha256": "bd34a2f16a285e218f179ebd9a1b09b4b07d4e1f2a534d174439389d15127c9d",
+      "size_bytes": 953,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 17
+    },
+    {
+      "path": "docs/10_DEMO_VS_PRODUCT_UI_BOUNDARY.md",
+      "sha256": "cfa445c5015e9f0697a10924110fdf7bed3e63d1913bdff21c16446b3daac81c",
+      "size_bytes": 694,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "CROSS_PHASE_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 9
+    },
+    {
+      "path": "docs/11_FILE_RELATIONSHIP_AND_DATAFLOW.md",
+      "sha256": "c71d0a8403f65572d42f9e360a9d4215c675c94ca12a03f2585919f53d5d06f3",
+      "size_bytes": 1440,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 24
+    },
+    {
+      "path": "docs/12_MIGRATION_PLAN_V8_TO_V17.md",
+      "sha256": "b5df08b8953af84433a3cf16b92f94f774117275a9d4a4255fd2ea2d09ea6ab4",
+      "size_bytes": 1140,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 13
+    },
+    {
+      "path": "docs/13_ACCEPTANCE_CHECKLIST_V17.md",
+      "sha256": "a9f9d526edfda162b073d3a116311ea361fcfbbd0a4a7c2a028ee5056af247c1",
+      "size_bytes": 1262,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 18
+    },
+    {
+      "path": "docs/14_OPEN_GAPS_AND_NON_GOALS.md",
+      "sha256": "93113afa5f53a4cf4b94ec20660435bf0fb953e6157de451854ec7684f63842c",
+      "size_bytes": 695,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 20
+    },
+    {
+      "path": "docs/15_V8_FILE_TO_V17_FILE_MAPPING.md",
+      "sha256": "acaa049e524e1263c82b9c86458240f00efe56e48c1dbe55c9e4321a046b8014",
+      "size_bytes": 2572,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 23
+    },
+    {
+      "path": "docs/16_BACKEND_MODULE_RELATIONSHIP.md",
+      "sha256": "00196b80811a273c333a829b5892a7ded243a7b3ef86675439867f9b3ed9a867",
+      "size_bytes": 2072,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 11
+    },
+    {
+      "path": "docs/17_HTML_TO_TSX_MAPPING.md",
+      "sha256": "581b3d67020aff27e4024f1ffd84ec3440b44fd6a0f227bf3cc890e5c904f0d0",
+      "size_bytes": 1712,
+      "content_role": "REFERENCE_DOCUMENT",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "PACKAGE_REFERENCE_DOCUMENT_INPUT",
+      "archive_index": 16
+    },
+    {
+      "path": "handoff/01_GPT_HANDOFF_V17.md",
+      "sha256": "ec1605fe9cc01cce93b6b4f6a42ed840bd91b37eb027c2c1f903c07a1deeb2c5",
+      "size_bytes": 14221,
+      "content_role": "HANDOFF",
+      "authority_class": "GOVERNANCE_ONLY",
+      "phase_class": "GOVERNANCE_ONLY",
+      "source_relationship": "GOVERNANCE_HANDOFF_INPUT",
+      "archive_index": 28
+    },
+    {
+      "path": "handoff/02_GPT_EXECUTION_INSTRUCTION_V17.md",
+      "sha256": "c93a2c751b2ba639a798d7c0f904a35fe9c655d18b63f6f48930b01248ed310e",
+      "size_bytes": 6105,
+      "content_role": "HANDOFF",
+      "authority_class": "GOVERNANCE_ONLY",
+      "phase_class": "GOVERNANCE_ONLY",
+      "source_relationship": "GOVERNANCE_HANDOFF_INPUT",
+      "archive_index": 27
+    },
+    {
+      "path": "handoff/03_COPY_PASTE_STARTER_PROMPT.md",
+      "sha256": "d132125f5b82f0fef9941cfa503f6bab1bcbb767e78870a18be7f85248494bf2",
+      "size_bytes": 2162,
+      "content_role": "HANDOFF",
+      "authority_class": "GOVERNANCE_ONLY",
+      "phase_class": "GOVERNANCE_ONLY",
+      "source_relationship": "GOVERNANCE_HANDOFF_INPUT",
+      "archive_index": 26
+    },
+    {
+      "path": "references_v17.html",
+      "sha256": "1cc44c95017b2178e39138b1310e02c55d849dd71af50b63c074686a215ed18d",
+      "size_bytes": 286290,
+      "content_role": "UX_REFERENCE",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "PHASE4_REFERENCE",
+      "source_relationship": "V17_UX_BEHAVIOR_REFERENCE_INPUT",
+      "archive_index": 4
+    },
+    {
+      "path": "references_v8.html",
+      "sha256": "d4131743eb30e41e52e1b17bfa27ba485f5f79378a7ac04dcce15c5eb87beda6",
+      "size_bytes": 108667,
+      "content_role": "UX_REFERENCE",
+      "authority_class": "REFERENCE_ONLY",
+      "phase_class": "BASELINE_REFERENCE",
+      "source_relationship": "APPROVED_V8_BASELINE_BYTE_MATCH",
+      "archive_index": 1
+    }
+  ],
+  "canonicalization": {
+    "path_order": "Lexicographic ascending order of normalized rootless archive-relative path.",
+    "line_format": "<sha256><two spaces><size_bytes><two spaces><path><LF>",
+    "encoding": "UTF-8",
+    "line_ending": "LF",
+    "terminal_newline": true,
+    "member_count": 65
+  },
+  "content_manifest_sha256": "d1410ffbec469e3f6708ef07f94f3db5de2b4c992a0ed8d7f571a4e3945a33e9",
+  "generated_at": "2026-09-04T07:21:18Z"
+}
+

@@ -1,0 +1,119 @@
+{
+  "schema_version": "phase4-access-mode-decision/v1",
+  "status": "OWNER_DECISION_RECORDED_READY_FOR_FINAL_FREEZE",
+  "decision_id": "P4-ACCESS-DECISION-001",
+  "decision_version": "1.0.0",
+  "phase_scope": "PHASE4A_CORE_INTEGRATION_ONLY",
+  "access_mode_id": "phase4-local-single-user-trusted/v1",
+  "access_mode_name": "LOCAL_SINGLE_USER_TRUSTED_V1",
+  "authentication_required": false,
+  "authentication_provider": "NONE",
+  "tenant_model": "NONE",
+  "workspace_ownership_model": "NONE",
+  "user_ownership_model": "NONE",
+  "effective_access_scope": "LOCAL_SINGLE_USER",
+  "effective_access_scope_key": "LOCAL_SINGLE_USER",
+  "client_asserted_authority_fields": {
+    "policy": "PROHIBITED",
+    "fields": ["user_id", "actor_id", "tenant_id", "workspace_id", "principal_id"],
+    "business_or_audit_name_collision_rule": "NEVER_REINTERPRET_AS_ACCESS_AUTHORITY"
+  },
+  "resource_identity_validation": "MANDATORY",
+  "identity_chain": [
+    "requested_object",
+    "requested_run_owned_by_object",
+    "exact_nested_resource_owned_by_run",
+    "all_indirect_references_close_to_same_run_and_object"
+  ],
+  "cross_object_policy": "PROHIBITED",
+  "cross_run_policy": "PROHIBITED",
+  "fallbacks_prohibited": ["latest", "first", "same_ticker", "same_company", "same_title", "same_metric_name", "same_claim_text"],
+  "artifact_ref_semantics": {
+    "classification": "NON_BEARER_RESOURCE_LOCATOR",
+    "path_template": "/api/research-runs/{run_id}/artifacts/{artifact_id}/content",
+    "possession_is_authority": false,
+    "request_time_checks": [
+      "run_exists",
+      "artifact_exists",
+      "artifact_belongs_to_run",
+      "run_belongs_to_exact_object",
+      "artifact_binds_exact_canonical_execution_record",
+      "artifact_binds_exact_released_research_result",
+      "representation_is_available",
+      "content_type_matches",
+      "size_matches",
+      "sha256_matches"
+    ],
+    "public_values_prohibited": ["filesystem_path", "artifact_locator", "storage_secret", "signed_storage_credential"]
+  },
+  "cache_scope": ["LOCAL_SINGLE_USER", "object_id", "run_id", "resource_type", "resource_id"],
+  "idempotency_scope": ["LOCAL_SINGLE_USER", "method", "normalized_route", "idempotency_key_digest", "request_hash"],
+  "error_behavior": {
+    "reserved_not_normally_generated": {
+      "UNAUTHENTICATED": 401,
+      "FORBIDDEN": 403
+    },
+    "phase4a": {
+      "NOT_FOUND": 404,
+      "IDENTITY_MISMATCH": 404,
+      "UNAVAILABLE": 409,
+      "NOT_GENERATED": 409,
+      "NOT_RELEASED": 409,
+      "CURSOR_AHEAD": 409,
+      "SCHEMA_INCOMPATIBLE": 409,
+      "INTEGRITY_FAILURE": 500,
+      "TRANSIENT_BACKEND_ERROR": 503
+    },
+    "foreign_owner_disclosure": "PROHIBITED"
+  },
+  "future_public_auth_status": "DEFERRED_TO_SEPARATE_GOVERNED_CHANGE",
+  "security_limitations": {
+    "allowed_profile": "GOVERNED_TRUSTED_LOCAL_PHASE4A_INTEGRATION",
+    "not_approved_for": [
+      "PUBLIC_UNAUTHENTICATED_DEPLOYMENT",
+      "MULTI_USER_DEPLOYMENT",
+      "MULTI_TENANT_DEPLOYMENT",
+      "SHARED_UNTRUSTED_NETWORK",
+      "PRODUCTION_INTERNET_EXPOSURE"
+    ]
+  },
+  "owner_decision_timestamp": "2026-09-04T07:57:17Z",
+  "project_owner_decision_applied": "phase4-local-single-user-trusted/v1",
+  "affected_uac_ids": ["UAC-006", "UAC-005", "UAC-015", "UAC-018"],
+  "affected_bd_ids": ["BD-001", "BD-003..009", "BD-011"],
+  "affected_acceptance": {
+    "p4_be": ["P4-BE-001..030"],
+    "p4_id": ["P4-ID-001..020", "P4-ID-023..028"],
+    "p4_e2e": ["P4-E2E-001..014", "P4-E2E-016..061 Core variants", "P4-E2E-063..096", "P4-E2E-098", "P4-E2E-101..102", "P4-E2E-105..106"],
+    "p4_sse": ["P4-SSE-001..020"],
+    "scenes": ["SCENE-01..04"]
+  },
+  "uac_effect": {
+    "uac_006": "RESOLVED_PROVISIONALLY",
+    "contract_semantics_state": "READY_FOR_FINAL_FREEZE",
+    "implementation_evidence_state": "PENDING",
+    "uac_final_closed": 0
+  },
+  "authorization": {
+    "authentication_implemented": false,
+    "phase4_implementation_authorized": false,
+    "v17_implementation_authorized": false,
+    "public_deployment_authorized": false
+  },
+  "results": {
+    "PHASE4_ACCESS_MODE_DECISION_READY": "YES",
+    "ACCESS_MODE_ID": "phase4-local-single-user-trusted/v1",
+    "UAC_006": "RESOLVED_PROVISIONALLY",
+    "UAC_PROVISIONAL_DECISIONS_COMPLETE": "18/18",
+    "UAC_SEMANTIC_DECISION_REQUIRED": 0,
+    "UAC_FINAL_CLOSED": 0,
+    "CONTRACT_SEMANTICS_PENDING": 0,
+    "IMPLEMENTATION_EVIDENCE_PENDING": 16,
+    "CURRENT_STATE_WAITING_FOR_IMPLEMENTATION_EVIDENCE": 5,
+    "WAITING_FOR_APPROVED_PHASE3_PARENT": "YES",
+    "WAITING_FOR_V17_CONTRACT_INPUT": "YES",
+    "PHASE4_BACKEND_CONTRACT_FREEZE_READY": "NO",
+    "PHASE4_PRODUCTION_IMPLEMENTATION_AUTHORIZED": "NO",
+    "CONTRACT_FREEZE_IMPLEMENTATION_EVIDENCE_DEADLOCK": "RESOLVED"
+  }
+}

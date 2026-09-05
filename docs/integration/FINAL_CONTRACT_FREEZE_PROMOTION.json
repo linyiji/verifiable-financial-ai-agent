@@ -1,0 +1,165 @@
+{
+  "schema_version": "phase4-final-contract-freeze-promotion/v1",
+  "receipt_id": "FINAL_CONTRACT_FREEZE_PROMOTION",
+  "promotion_timestamp_utc": "2026-09-05T05:31:44Z",
+  "promotion_authority": "Final Phase 3 to Phase 4 Promotion Coordinator under project-owner authorization",
+  "decision": "PASS",
+  "approved_phase3_parent": {
+    "status": "BOUND",
+    "sha": "4b6721b6db433aae300f94750e1a405b6b450501",
+    "tree": "35c47508ed65220c26620f5ec4bdd14cb798480d",
+    "source_fingerprint": "sha256:3c40c15b3f7517f6dc0ad6340fa712f7da29df356cc45791ffb528aef0794752",
+    "authoritative_run_id": "RUN-6d643419-3db3-4f99-8bc2-f8e18701a532",
+    "migration_head": "20260904_0006",
+    "worktree_clean_at_promotion": true
+  },
+  "uac_001": {
+    "status": "CLOSED",
+    "closure_receipt_json_path": "docs/integration/UAC_001_CLOSURE_RECEIPT.json",
+    "closure_receipt_json_byte_sha256": "ad534ef00a3ef541db40422b1b297ed026855301d582b27343b127d754ac815b",
+    "closure_receipt_markdown_path": "docs/integration/UAC_001_CLOSURE_RECEIPT.md",
+    "closure_receipt_markdown_byte_sha256": "94f42f9bf8ba2cc124cb78b6642a4485b7d9400480bd6d7a3cb7cbacb66244a7"
+  },
+  "uac_002": {
+    "status": "SATISFIED_OR_CLOSED",
+    "owner_approval_decision": "APPROVED",
+    "owner_approval_gate": "SATISFIED",
+    "owner_approval_json_path": "docs/frontend-governance/V17_PHASE4_CONTRACT_INPUT_R2_OWNER_APPROVAL.json",
+    "owner_approval_json_byte_sha256": "88b00e6a5684225bf5d265d4ad5e48cde373100d6f2145333e52c03879bb5035",
+    "owner_approval_json_canonical_sha256": "3cc8709d9c0cad5799b012d2d3cc5b8565c0e2c63ea7964a4b0067aa0585689e",
+    "owner_approval_markdown_path": "docs/frontend-governance/V17_PHASE4_CONTRACT_INPUT_R2_OWNER_APPROVAL.md",
+    "owner_approval_markdown_byte_sha256": "6c255e8f73b78541b9abf19790c8b7a8c6bbb53ab0374760bb08a1d1290ac0ee"
+  },
+  "independent_audits": {
+    "backend": {
+      "decision": "PASS",
+      "json_path": "docs/audit/phase3-final-20260905-remediated/backend/BACKEND_INDEPENDENT_FINAL_AUDIT.json",
+      "json_byte_sha256": "040b4e3e6d8dd0da95e3763efcc2e617c0294d915c47730f1f57853eb0d64daa",
+      "markdown_path": "docs/audit/phase3-final-20260905-remediated/backend/BACKEND_INDEPENDENT_FINAL_AUDIT.md",
+      "markdown_byte_sha256": "a8a9073b7b9df78be337ebd12ef3003d518e31c683809fc5af53d5e8d088b732",
+      "severity_counts": {
+        "P0": 0,
+        "P1": 0,
+        "P2": 0,
+        "P3": 0
+      }
+    },
+    "financial_semantics": {
+      "decision": "PASS",
+      "json_path": "docs/audit/phase3-final-20260905-remediated/financial/FINANCIAL_SEMANTICS_INDEPENDENT_FINAL_AUDIT.json",
+      "json_byte_sha256": "2e70a659b9dda8a6afb5e8b9e0d34c349331925674063fd0f418604922b0b6bb",
+      "markdown_path": "docs/audit/phase3-final-20260905-remediated/financial/FINANCIAL_SEMANTICS_INDEPENDENT_FINAL_AUDIT.md",
+      "markdown_byte_sha256": "b2fe455efdbb1f8b67afe1cfd58b6ea3769826d3aeace21844c21a0d22239b37",
+      "severity_counts": {
+        "P0": 0,
+        "P1": 0,
+        "P2": 0,
+        "P3": 0
+      }
+    },
+    "combined": {
+      "decision": "PASS",
+      "gate": "PASS",
+      "manifest_path": "docs/audit/phase3-final-20260905-remediated/PHASE3_INDEPENDENT_FINAL_AUDIT_MANIFEST.json",
+      "manifest_byte_sha256": "2242f0b97c9bcb545c57c37286a515df23842f3ff310521793eac6294515e6ae",
+      "summary_path": "docs/audit/phase3-final-20260905-remediated/PHASE3_INDEPENDENT_FINAL_AUDIT_SUMMARY.md",
+      "summary_byte_sha256": "81099db59ef52de5235f8f6bc836320e76df03a10831308381ba8e4e13c4bbc5"
+    }
+  },
+  "independence_process": {
+    "status": "DISCLOSED_EXCEPTION",
+    "combined_pass_invalidated": false,
+    "cross_team_receipt_or_judgment_access_before_freeze": false,
+    "parent_joined_only_after_both_receipts_frozen": true,
+    "disclosure_preserved_verbatim": true,
+    "disclosure": "Team A performed one locator-only filesystem search that emitted filenames from the coordinator integration worktree. It opened no content there and used none as evidence. Team A inspected no Team B worktree, notes, messages, status, or receipt; all conclusions were independently recomputed from its detached checkout, isolated bundle, read-only PostgreSQL, and fresh read-only Langfuse retrieval. Team B reported no Team A access or judgment reuse."
+  },
+  "owner_approved_v17_r2": {
+    "status": "BOUND",
+    "package_id": "V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2",
+    "revision": "2.0.0",
+    "canonical_sha256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19",
+    "canonical_sha256_independently_recomputed": true,
+    "package_json_path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.json",
+    "package_json_byte_sha256": "3822211ce66d392bcf7bc5fb5a5d0ebfa8a19df264b18acef08ddfda6ba98394",
+    "package_markdown_path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+    "package_markdown_byte_sha256": "fe7a8f5ea04dab9937a00b0a3d332032b527e03633846e7854a8705c4c0acfa1",
+    "manifest_path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_MANIFEST_R2.json",
+    "manifest_byte_sha256": "76fdb78f62ce9b133265c80899e0e987be15ecd9a5f5b01eb9b84bbfcb99d1c5",
+    "corrected_reference_manifest_sha256": "44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394",
+    "fcr_revision": "DRAFT-02",
+    "fcr_status": "DRAFT_CHANGE",
+    "fcr_byte_sha256": "1239b97b461415963d8bdbcc1ce5c2409e4e7b5ff0b47b0f0bfea90a5c9ac958"
+  },
+  "phase4_contract_set": {
+    "status": "BOUND",
+    "contract_family": "phase4-core/v1",
+    "contract_set_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+    "contract_set_sha256_independently_recomputed": true,
+    "manifest_path": "docs/integration/PHASE4_BACKEND_FINAL_CONTRACT_MANIFEST.json",
+    "manifest_byte_sha256": "1886ef831ebff461afcabd936deaadbb10afcaf0d3bd3a037e0f3a7de995657d",
+    "api_schema_contract_byte_sha256": "2a1265753c1b7b6e0756ea9c40886dcbcbdf4773e81e467b7df8fddd92763048",
+    "runtime_event_contract_byte_sha256": "f6bbca7123051c90d3321781b3e47d4028a457f2ee8a0f51a37acf836b38cf2e",
+    "route_inventory_canonical_sha256": "0a96e2ac182290820a01a4e6869b3053c55a3dc994b0bf7095acec73c809c4b1",
+    "field_ownership_state": "EXACT",
+    "semantic_conflicts": 0
+  },
+  "bd_contract_closure": {
+    "status": "COMPLETE",
+    "closed": 12,
+    "total": 12,
+    "final_disposition_path": "docs/integration/PHASE4_BACKEND_FINAL_BD_DISPOSITION.md",
+    "final_disposition_byte_sha256": "99ffdc460d2e2c9d49984af4882f076ca21f094f380487d4ab0a283cb8acbd28",
+    "implementation_evidence_state": "PENDING_AFTER_FREEZE"
+  },
+  "uac_contract_closure": {
+    "closed": 18,
+    "total": 18,
+    "semantic_ambiguity_remaining": 0,
+    "implementation_evidence_pending": 16,
+    "implementation_evidence_is_post_freeze": true
+  },
+  "historical_artifact_disposition": {
+    "historical_final_contract_manifest_status": "FINAL_DELTA_READY_FREEZE_BLOCKED",
+    "historical_final_contract_manifest_audit_state": "FAIL_FOR_PRIOR_CANDIDATE",
+    "historical_uac_disposition_closed": "16/18",
+    "resolution": "This append-only promotion binds the later approved Phase 3 parent and frozen PASS audits, plus the separately owner-approved V17 R2 package, thereby closing UAC-001 and satisfying UAC-002 without rewriting the historical manifest or dispositions.",
+    "historical_files_modified": false
+  },
+  "freeze_governance": {
+    "uac_register_json_byte_sha256": "61b38d5f057054a6e51af30d2bc590b9905a58feba2822bd4b02b7ff91799090",
+    "contract_freeze_boundary_byte_sha256": "6a3d64d12f6742f14c5fa0d66dc60bdc0fc45c8eab640677022332676b8d3d63",
+    "parallel_execution_governance_byte_sha256": "93fc7dddc51667189128d29f7c0d3d11678725cd4192ccb2f84da928d0e97c1f",
+    "checkpoint_tag_name": "p4-ig00-contract-freeze",
+    "checkpoint_tag_governance_source": "docs/integration/PHASE4_PARALLEL_EXECUTION_AND_FILE_OWNERSHIP.md",
+    "checkpoint_tag_is_existing_convention": true,
+    "main_merge_authorized": false,
+    "force_push_authorized": false
+  },
+  "authorization": {
+    "PHASE4_BACKEND_CONTRACT_FREEZE_READY": "YES",
+    "FINAL_CONTRACT_FREEZE_PROMOTION": "PASS",
+    "PHASE4_IMPLEMENTATION_AUTHORIZED": "YES",
+    "PHASE4_IMPLEMENTATION_STARTED": "NO",
+    "APPROVED_PHASE3_PARENT_READY": "YES",
+    "PHASE4_PARENT_READY_AFTER_REMOTE_SYNC": "YES"
+  },
+  "scope_guards": {
+    "approved_phase3_candidate_modified": false,
+    "phase3_source_modified": false,
+    "historical_audit_receipts_modified": false,
+    "historical_contract_files_modified": false,
+    "new_research_run_created": false,
+    "phase4_product_code_modified": false,
+    "phase4_implementation_started": false,
+    "v17_1_package_extracted": false,
+    "provider_policy_modified": false,
+    "secrets_recorded": false
+  },
+  "next_exact_action_after_remote_sync": "PHASE4_MINIMAL_DELTA_IMPLEMENTATION_KICKOFF",
+  "receipt_integrity": {
+    "hash_algorithm": "SHA-256",
+    "byte_sha256_reported_externally": true,
+    "serialization_profile": "UTF8_JSON_TWO_SPACE_INDENT_FIXED_KEY_AND_ARRAY_ORDER_TERMINAL_LF"
+  }
+}

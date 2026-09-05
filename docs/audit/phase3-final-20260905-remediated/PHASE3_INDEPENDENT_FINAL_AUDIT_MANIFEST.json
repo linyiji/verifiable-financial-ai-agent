@@ -1,0 +1,109 @@
+{
+  "schema_version": "phase3-independent-final-audit-manifest-v1",
+  "created_at_utc": "2026-09-05T05:09:16Z",
+  "audited_identity": {
+    "candidate_sha": "4b6721b6db433aae300f94750e1a405b6b450501",
+    "candidate_tree": "35c47508ed65220c26620f5ec4bdd14cb798480d",
+    "source_fingerprint": "sha256:3c40c15b3f7517f6dc0ad6340fa712f7da29df356cc45791ffb528aef0794752",
+    "authoritative_run_id": "RUN-6d643419-3db3-4f99-8bc2-f8e18701a532",
+    "migration_head": "20260904_0006",
+    "evidence_bundle_sha256": "sha256:0faae837be5fa9028af8c30d69983ec1738c5706f8df8627084711c99f499094",
+    "evidence_bundle_file_count": 63,
+    "identity_gate": "PASS"
+  },
+  "backend_audit": {
+    "decision": "PASS",
+    "severity_counts": {
+      "P0": 0,
+      "P1": 0,
+      "P2": 0,
+      "P3": 0
+    },
+    "previous_findings": {
+      "P1_BA_001": "CLOSED",
+      "P1_BA_002": "CLOSED"
+    },
+    "mandatory_results": {
+      "F1_INDEPENDENT_RECONSTRUCTION": "PASS",
+      "RUNTIME_PERSISTENCE_INTEGRITY": "PASS",
+      "LANGFUSE_COMPLETENESS": "PASS",
+      "LANGFUSE_REDACTION": "PASS",
+      "TRACE_REFERENCE_CLOSURE": "PASS",
+      "RISC_PROOF": "PASS",
+      "CER_RELEASEDRESULT_CLOSURE": "PASS",
+      "REPORT_ARTIFACT_CLOSURE": "PASS"
+    },
+    "langfuse": {
+      "expected": 88,
+      "observed": 88,
+      "identity_set_equal": true,
+      "trace_reference_ledger": 72,
+      "trace_reference_unresolved": 0,
+      "cer_trace_references_resolved": "67/67"
+    },
+    "markdown_receipt": {
+      "path": "/Users/mac/Verifiable_Financial_Agent_System_audits/phase3-final-20260905-remediated/backend/BACKEND_INDEPENDENT_FINAL_AUDIT.md",
+      "sha256": "sha256:a8a9073b7b9df78be337ebd12ef3003d518e31c683809fc5af53d5e8d088b732",
+      "mode": "0444"
+    },
+    "json_receipt": {
+      "path": "/Users/mac/Verifiable_Financial_Agent_System_audits/phase3-final-20260905-remediated/backend/BACKEND_INDEPENDENT_FINAL_AUDIT.json",
+      "sha256": "sha256:040b4e3e6d8dd0da95e3763efcc2e617c0294d915c47730f1f57853eb0d64daa",
+      "canonical_payload_sha256": "sha256:00f12002058cb79924299b00b35b33d8c43c0856749f1596e923bfdf7f8e0c45",
+      "mode": "0444"
+    },
+    "team_a_receipt_frozen": true
+  },
+  "financial_audit": {
+    "decision": "PASS",
+    "severity_counts": {
+      "P0": 0,
+      "P1": 0,
+      "P2": 0,
+      "P3": 0
+    },
+    "material_metrics": "10/10 PASS",
+    "fundamental_metrics": "3/3 PASS",
+    "technical_metrics": "7/7 PASS",
+    "previous_findings": {
+      "FIN_P2_001": "CLOSED",
+      "FIN_P2_002": "CLOSED"
+    },
+    "mandatory_results": {
+      "GENERATED_CAPABILITY_FINANCIAL_SEMANTICS": "PASS",
+      "REVIEW_PROOF_RELEASE_REPORT": "PASS",
+      "P2_1_REGRESSION": "PASS"
+    },
+    "markdown_receipt": {
+      "path": "/Users/mac/Verifiable_Financial_Agent_System_audits/phase3-final-20260905-remediated/financial/FINANCIAL_SEMANTICS_INDEPENDENT_FINAL_AUDIT.md",
+      "sha256": "sha256:b2fe455efdbb1f8b67afe1cfd58b6ea3769826d3aeace21844c21a0d22239b37",
+      "mode": "0444"
+    },
+    "json_receipt": {
+      "path": "/Users/mac/Verifiable_Financial_Agent_System_audits/phase3-final-20260905-remediated/financial/FINANCIAL_SEMANTICS_INDEPENDENT_FINAL_AUDIT.json",
+      "sha256": "sha256:2e70a659b9dda8a6afb5e8b9e0d34c349331925674063fd0f418604922b0b6bb",
+      "mode": "0444"
+    },
+    "team_b_receipt_frozen": true
+  },
+  "independence_process": {
+    "status": "DISCLOSED_EXCEPTION",
+    "separate_detached_worktrees": true,
+    "separate_authenticated_evidence_copies": true,
+    "parent_joined_only_after_both_receipts_frozen": true,
+    "cross_team_receipt_or_judgment_access_before_freeze": false,
+    "disclosure": "Team A performed one locator-only filesystem search that emitted filenames from the coordinator integration worktree. It opened no content there and used none as evidence. Team A inspected no Team B worktree, notes, messages, status, or receipt; all conclusions were independently recomputed from its detached checkout, isolated bundle, read-only PostgreSQL, and fresh read-only Langfuse retrieval. Team B reported no Team A access or judgment reuse."
+  },
+  "combined_decision": "PASS",
+  "phase3_independent_final_audit_gate": "PASS",
+  "uac_001_ready_for_closure": true,
+  "approved_phase3_parent_ready": true,
+  "source_modified": false,
+  "database_modified": false,
+  "provider_modified": false,
+  "langfuse_modified": false,
+  "new_run_created": false,
+  "phase4_started": false,
+  "phase4_authorized": false,
+  "next_exact_action": "CLOSE_UAC_001_AND_PERFORM_FINAL_CONTRACT_FREEZE_PROMOTION"
+}

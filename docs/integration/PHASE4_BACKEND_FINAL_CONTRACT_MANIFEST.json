@@ -1,0 +1,477 @@
+{
+  "schema_version": "phase4-backend-final-contract-manifest/v1",
+  "manifest_id": "PHASE4_BACKEND_FINAL_CONTRACT_DELTA",
+  "status": "FINAL_DELTA_READY_FREEZE_BLOCKED",
+  "contract_family": "phase4-core/v1",
+  "event_contract_family": "phase4-runtime-event/v1",
+  "hash_algorithm": "SHA-256",
+  "canonical_json_rule": "UTF-8 JSON with object keys sorted, no insignificant whitespace, arrays retained in declared order",
+  "authority": {
+    "phase3_candidate_sha": "e02314c552d88fb736473bc587c650539615224a",
+    "phase3_tree": "af74ec7e6bcf40d281c0a1ea5463c794d795718f",
+    "phase3_parent_sha": "8c4a77ccb70bceb1e8bf496ea528682df95a3405",
+    "authoritative_phase3_run_id": "RUN-a5e58911-9b0f-4848-90fe-a65f436fa9c2",
+    "migration_revision": "20260904_0005",
+    "candidate_worktree_clean_at_acceptance": true,
+    "coordinator_checkout_tracked_files_clean_at_reconciliation": true,
+    "coordinator_checkout_has_preexisting_untracked_files": true,
+    "formal_acceptance": {
+      "decision": "PASS",
+      "passed": 52,
+      "total": 52,
+      "financial_semantics_passed": 13,
+      "financial_semantics_total": 13,
+      "acceptance_summary_sha256": "bf84f2ed890fd0f339d272e9257668764048e1210f3cd1e4353beb6c8aee07ef",
+      "acceptance_matrix_sha256": "4fa81c955cf873cfc96df56a72dd291a68ceec4d7581a84124e726bf17202f86",
+      "financial_semantics_matrix_sha256": "4b68b78a39287308875a7ee51f653eb09630ff83c2a70d41aac79b720bdab90b",
+      "candidate_identity_sha256": "1a61d215066f8ccbd7190e295ef00827dd74aea78f90768daf9c99d658901b28"
+    },
+    "audit_receipts": {
+      "backend_independent_final_audit": {
+        "status": "FAIL_RECEIPT_RECEIVED",
+        "task_title": "Backend Independent Final Audit",
+        "task_id": "01a06c0a-f96a-7c00-a8c7-6b2fbbbf5db2",
+        "decision": "FAIL",
+        "audited_sha": "e02314c552d88fb736473bc587c650539615224a",
+        "audited_run_id": "RUN-a5e58911-9b0f-4848-90fe-a65f436fa9c2",
+        "finding_counts": {"P0": 0, "P1": 1, "P2": 1, "P3": 0},
+        "source_modified": false,
+        "phase4_authorized": false,
+        "receipt_hash_scope": "canonical structured receipt payload below",
+        "receipt_sha256": "b06c5f8d74479eba8e664c7d9f8e82b6bdad10fd129c72ecb6be8923cdc3bd7f",
+        "receipt_payload": {
+          "decision": "FAIL",
+          "audited_sha": "e02314c552d88fb736473bc587c650539615224a",
+          "audited_run_id": "RUN-a5e58911-9b0f-4848-90fe-a65f436fa9c2",
+          "finding_counts": {"P0": 0, "P1": 1, "P2": 1, "P3": 0},
+          "findings": [
+            {"priority": "P1", "summary": "Generated source and unit-test preimages are not persisted or resolvable; generated:// references, hashes and validation booleans cannot independently reproduce P3-CAP-003, P3-CAP-004, P3-CAP-008 or P3-CAP-011."},
+            {"priority": "P2", "summary": "The live Langfuse trace exposes LANGFUSE_PUBLIC_KEY as metadata.scope.attributes.public_key on the root trace and all 88 observations (89 occurrences), despite the candidate redaction policy classifying public_key as sensitive."}
+          ],
+          "source_modified": false,
+          "phase4_authorized": false
+        }
+      },
+      "financial_semantics_independent_final_audit": {
+        "status": "FAIL_RECEIPT_RECEIVED",
+        "task_title": "Financial Semantics Independent Final Audit",
+        "task_id": "01a06c0b-6add-7e62-9519-399530ac598f",
+        "decision": "FAIL",
+        "audited_sha": "e02314c552d88fb736473bc587c650539615224a",
+        "audited_run_id": "RUN-a5e58911-9b0f-4848-90fe-a65f436fa9c2",
+        "material_metrics": "10/10",
+        "finding_counts": {"P0": 0, "P1": 1, "P2": 2, "P3": 0},
+        "source_modified": false,
+        "phase4_authorized": false,
+        "receipt_hash_scope": "canonical structured receipt payload below",
+        "receipt_sha256": "d4d4dc0edff5c260d42cb5ed2f3accd7f837feb4e9ae381356156f204b21a458",
+        "receipt_payload": {
+          "decision": "FAIL",
+          "audited_sha": "e02314c552d88fb736473bc587c650539615224a",
+          "audited_run_id": "RUN-a5e58911-9b0f-4848-90fe-a65f436fa9c2",
+          "material_metrics": "10/10",
+          "finding_counts": {"P0": 0, "P1": 1, "P2": 2, "P3": 0},
+          "findings": [
+            {"priority": "P1", "summary": "Generated FCF source and unit-test bytes were not retained; unresolved generated:// references and hashes do not permit independent reconstruction or implementation_hash verification."},
+            {"priority": "P2", "summary": "revenue_growth_v1 executes (current-prior)/abs(prior), not the required (current-prior)/prior, and no positive-prior invariant prevents divergence for negative prior revenue."},
+            {"priority": "P2", "summary": "MACD line and histogram use ambient Decimal precision; outputs vary with context and the released methodology does not bind the precision used by review."}
+          ],
+          "phase4_authorized": false
+        }
+      }
+    },
+    "v17_contract_input": {
+      "package_status_observed": "READY_FOR_OWNER_APPROVAL",
+      "owner_approval_status": "PENDING",
+      "package_path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE.json",
+      "package_file_sha256_observed": "2d5bd33ff2c2b15df74773168ab16408391a45a105ebf8446c06cc55c2067512",
+      "package_companion_path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE.md",
+      "package_companion_sha256": "02f86ca518bd0bbca5e2824b6fba32a48d0b0cfc48a75600da010b9a1240a695",
+      "package_manifest_path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_MANIFEST.json",
+      "package_manifest_sha256": "03520cb26b25a27ad0b4c87ee4c9d297e8bd875181ce8416ff587e87e6b7e75a",
+      "canonical_package_sha256": "36cf733d07b4df1ad4cb1065bdd17eceb6bbc98cf6f77fe0dfb1963185757e08",
+      "reference_manifest_sha256": "44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394",
+      "fcr_revision": "DRAFT-01",
+      "fcr_status": "DRAFT_CHANGE",
+      "normalized_contracts": "13/13",
+      "bd_records": "12/12",
+      "implementation_candidate_required": false,
+      "implementation_authorized": false
+    }
+  },
+  "source_delta": [
+    {
+      "path": "scripts/run_phase3_acceptance.py",
+      "old_blob": "7cff6e82a348adc7825c681e229fae45a02f1b45",
+      "new_blob": "85a2eb169775c4dc785d0b3e011d60ab6c9101f4",
+      "classification": ["ACCEPTANCE_ONLY_CODE", "GENERATED_CAPABILITY_ACCEPTANCE", "RUNTIME_OBSERVABILITY_ACCEPTANCE"],
+      "public_contract_effect": "NONE; the formal oracle now accepts one active generated record while retaining rejected BUILD_FAILED attempts and binds scheme observation to the authoritative Run"
+    },
+    {
+      "path": "src/application/phase3_financial.py",
+      "old_blob": "8a6d886bcc3b2b7158bb120205ec63d6b76efd8a",
+      "new_blob": "83d7af3de4e28509bcce68382ad0be0f5c531824",
+      "classification": ["FINANCIAL_METRIC", "GENERATED_CAPABILITY"],
+      "public_contract_effect": "NO FIELD CHANGE; adds a high-precision Decimal oracle fixture"
+    },
+    {
+      "path": "src/application/service.py",
+      "old_blob": "b5fdc54422135f1ba2e64f947a3ca5e154cf024d",
+      "new_blob": "1dc4cc54231979e88e131d8f0f9646be54b1e5e6",
+      "classification": ["APPLICATION_SERVICE", "RUNTIME_OBSERVABILITY"],
+      "public_contract_effect": "NO ROUTE/DTO CHANGE; optional internal observation_run_id controls trace correlation and rejects blank values"
+    },
+    {
+      "path": "src/capabilities/generated/builder.py",
+      "old_blob": "25c556fd333699177c0a549e0c5dfb103f4198d1",
+      "new_blob": "d17ce900aaab393ea8541f2e0988cef5c6d5f7b3",
+      "classification": ["GENERATED_CAPABILITY", "FINANCIAL_METRIC"],
+      "public_contract_effect": "NO WIRE CHANGE; generation instruction requires Decimal-only arithmetic"
+    },
+    {
+      "path": "src/capabilities/generated/orchestration.py",
+      "old_blob": "5ac79896a50a98a64ae454f45cc93dfff455f854",
+      "new_blob": "ee36051e8d0750f88cd06462f096526ca5e458ab",
+      "classification": ["GENERATED_CAPABILITY", "PERSISTENCE_SEMANTICS", "RUNTIME_OBSERVABILITY"],
+      "public_contract_effect": "NO EVENT NAME/PAYLOAD CHANGE; persists sandbox runtime_version on the active generated record and marks non-active generated attempts BUILD_FAILED"
+    },
+    {
+      "path": "src/capabilities/generated/validation.py",
+      "old_blob": "3fbcfa85edaea4dfcab304736aff58bfed78958f",
+      "new_blob": "3ae59feb7a669665afbd98e78a1c92f460a96e35",
+      "classification": ["GENERATED_CAPABILITY", "FINANCIAL_METRIC"],
+      "public_contract_effect": "NO WIRE CHANGE; decimal schemas must import the owned Decimal runtime"
+    },
+    {
+      "path": "tests/integration/test_generated_validation_pipeline.py",
+      "old_blob": "2905839d5365890efebd77a857cc32cd78ddb785",
+      "new_blob": "a1d107cc5584cf15a1d2786df3eddc7f624bd03a",
+      "classification": ["ACCEPTANCE_ONLY_CODE", "GENERATED_CAPABILITY", "FINANCIAL_METRIC"],
+      "public_contract_effect": "NONE"
+    },
+    {
+      "path": "tests/integration/test_runtime_observability.py",
+      "old_blob": "6283e7c4a4cd1dc3b3d94fbf8f42af16574f8318",
+      "new_blob": "78954a54a1d641a135aa7142d31ee37e4e66e322",
+      "classification": ["ACCEPTANCE_ONLY_CODE", "RUNTIME_OBSERVABILITY"],
+      "public_contract_effect": "NONE"
+    },
+    {
+      "path": "tests/unit/generated/test_orchestration.py",
+      "old_blob": "d5306255de96b80c518394d7d02da2ac5f11263c",
+      "new_blob": "1d97a7e30560e6deba9c234c2202cf244bfc56f3",
+      "classification": ["ACCEPTANCE_ONLY_CODE", "GENERATED_CAPABILITY", "PERSISTENCE_SEMANTICS"],
+      "public_contract_effect": "NONE"
+    },
+    {
+      "path": "tests/unit/generated/test_validation.py",
+      "old_blob": "b7c893218673bad72fb01029ca8fdd636e37ad7c",
+      "new_blob": "1e6ee770eccd40f6655381579335e3434a60c78d",
+      "classification": ["ACCEPTANCE_ONLY_CODE", "GENERATED_CAPABILITY", "FINANCIAL_METRIC"],
+      "public_contract_effect": "NONE"
+    },
+    {
+      "path": "tests/unit/test_phase3_financial_extension.py",
+      "old_blob": "e5c736a846f6cfab80127904c4f39d691b3f2dca",
+      "new_blob": "8583da47eaaa8808cb0ca1537b7f160e920a6cc2",
+      "classification": ["ACCEPTANCE_ONLY_CODE", "FINANCIAL_METRIC", "GENERATED_CAPABILITY"],
+      "public_contract_effect": "NONE"
+    }
+  ],
+  "delta_dimension_summary": {
+    "API": [],
+    "DTO": [],
+    "Domain": [],
+    "persistence": ["src/capabilities/generated/orchestration.py"],
+    "migration": [],
+    "RuntimeEvent": [],
+    "SSE": [],
+    "Review": [],
+    "Proof": [],
+    "ReleasedResult": [],
+    "Artifact": [],
+    "financial_metric": ["src/application/phase3_financial.py", "src/capabilities/generated/builder.py", "src/capabilities/generated/validation.py"],
+    "Generated_Capability": ["src/application/phase3_financial.py", "src/capabilities/generated/builder.py", "src/capabilities/generated/orchestration.py", "src/capabilities/generated/validation.py"],
+    "acceptance_only_code": ["scripts/run_phase3_acceptance.py", "tests/integration/test_generated_validation_pipeline.py", "tests/integration/test_runtime_observability.py", "tests/unit/generated/test_orchestration.py", "tests/unit/generated/test_validation.py", "tests/unit/test_phase3_financial_extension.py"]
+  },
+  "backend_fact_recheck": {
+    "run_status_enum_count": 10,
+    "task_status_enum_count": 12,
+    "runtime_event_enum_count": 55,
+    "authoritative_run_runtime_event_instances": 640,
+    "authoritative_run_distinct_emitted_event_types": 42,
+    "authoritative_run_sequences_contiguous": true,
+    "accepted_evidence_count": 539,
+    "calculation_count": 10,
+    "typed_material_claim_count": 10,
+    "review_count": 1,
+    "review_status": "PASS",
+    "proof_count": 1,
+    "canonical_execution_record_count": 1,
+    "released_result_count": 1,
+    "report_artifact_count": 3,
+    "migration_head": "20260904_0005",
+    "sse_full_replay_count": 640,
+    "sse_numeric_resume_count": 320,
+    "sse_opaque_resume_count": 320,
+    "sse_tail_heartbeat": true,
+    "phase3_idempotency": "PROCESS_LOCAL_OPERATION_PLUS_KEY_CACHE_NOT_REQUEST_BOUND_OR_DURABLE",
+    "fastapi_default_composition": "SQLITE_IN_MEMORY_WITH_IN_MEMORY_EVENT_AND_CHECKPOINT_STORES",
+    "phase4_public_routes_implemented": false,
+    "existing_backend_classifications_revalidated": true
+  },
+  "contract_components": {
+    "api_schema_contract": {
+      "hash_scope": "exact artifact bytes",
+      "artifact": "docs/integration/PHASE4_BACKEND_API_SCHEMA_DRAFT.md",
+      "sha256": "2a1265753c1b7b6e0756ea9c40886dcbcbdf4773e81e467b7df8fddd92763048",
+      "promotion_state": "PREPARED_NOT_FROZEN"
+    },
+    "runtime_event_contract": {
+      "hash_scope": "exact artifact bytes; focused terminal/payload addenda are bound by this manifest",
+      "artifact": "docs/integration/PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md",
+      "sha256": "f6bbca7123051c90d3321781b3e47d4028a457f2ee8a0f51a37acf836b38cf2e",
+      "promotion_state": "PREPARED_NOT_FROZEN"
+    },
+    "error_availability_contract": {
+      "hash_scope": "canonical payload below",
+      "artifact": "docs/integration/PHASE4_BACKEND_IDENTITY_ERROR_AVAILABILITY_CONTRACT.md",
+      "base_artifact_sha256": "1cfcafe17c94e1d87bdcd8230ecaeef11913a2cdb7174ace52a2fa01d8ab00b9",
+      "sha256": "5cd8dd06203707b3b9597bc4dbfdc343d7c84884bf2c73982a22cff2f9ffd79a",
+      "payload": {
+        "base_artifact_sha256": "1cfcafe17c94e1d87bdcd8230ecaeef11913a2cdb7174ace52a2fa01d8ab00b9",
+        "telemetry_secret_redaction": {
+          "sensitive_names": ["LANGFUSE_PUBLIC_KEY", "public_key"],
+          "scope": ["root trace metadata.scope.attributes", "every child observation metadata.scope.attributes", "every exported telemetry copy"],
+          "required_result": "SENSITIVE_VALUE_OMITTED_OR_IRREVERSIBLY_REDACTED",
+          "raw_value_allowed": false,
+          "applies_even_when_key_is_named_public": true
+        }
+      },
+      "promotion_state": "PREPARED_NOT_FROZEN"
+    },
+    "access_mode_decision": {
+      "hash_scope": "exact JSON artifact bytes",
+      "artifact": "docs/integration/PHASE4_ACCESS_MODE_DECISION_V1.json",
+      "sha256": "c32ac85f7930ab151fbb769350bed270549bdb132489c5c769ec7ef1e042415d",
+      "decision_id": "phase4-local-single-user-trusted/v1",
+      "promotion_state": "BOUND"
+    },
+    "uac_register": {
+      "hash_scope": "exact final disposition artifact bytes",
+      "artifact": "docs/integration/PHASE4_BACKEND_FINAL_UAC_DISPOSITION.md",
+      "sha256": "226a586e696f92fe6249f7c043ea005291858e7c1bcf46d5a825d1ecf595146c",
+      "closed": 16,
+      "total": 18
+    },
+    "bd_uac_crosswalk": {
+      "hash_scope": "exact canonical crosswalk artifact bytes",
+      "artifact": "docs/integration/PHASE4_BACKEND_BD_UAC_CROSSWALK.md",
+      "sha256": "a3e76d8a9eda32ffa85be9e2d744dd2a26a22554ad30676e50ddce4d97941b59",
+      "final_disposition_artifact": "docs/integration/PHASE4_BACKEND_FINAL_BD_DISPOSITION.md",
+      "final_disposition_sha256": "99ffdc460d2e2c9d49984af4882f076ca21f094f380487d4ab0a283cb8acbd28"
+    },
+    "field_ownership_matrix": {
+      "hash_scope": "exact canonical ownership artifact bytes",
+      "artifact": "docs/integration/PHASE4_BACKEND_FRONTEND_FIELD_OWNERSHIP_MATRIX.md",
+      "sha256": "e91ed0321a96067f93eb0b1a284c7374b1919688e2db52c9e4e9cda360d93569",
+      "final_parity_artifact": "docs/integration/PHASE4_BACKEND_FRONTEND_FINAL_PARITY_MATRIX.md",
+      "final_parity_sha256": "ac3a3c6e1735519a960df7643bf8353646e2d5ab63874965d7beac3e6da48028"
+    },
+    "route_inventory": {
+      "hash_scope": "canonical payload below",
+      "sha256": "0a96e2ac182290820a01a4e6869b3053c55a3dc994b0bf7095acec73c809c4b1",
+      "payload": [
+        {"method": "GET", "path": "/api/research-runs", "decision": "ADD", "response": "ResearchRunCollectionV1"},
+        {"method": "POST", "path": "/api/research-runs/prepare", "decision": "RETAIN_STRENGTHEN", "response": "ResearchRunDraftV1"},
+        {"method": "POST", "path": "/api/research-runs", "decision": "RETAIN_STRENGTHEN", "response": "ConfirmRunResponseV1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}", "decision": "RETAIN_VERSION", "response": "ResearchRunDetailV1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}/projection", "decision": "ADD", "response": "AtomicRunProjectionV1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}/events", "decision": "RETAIN_STRENGTHEN", "response": "SSE:phase4-runtime-event/v1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}/result", "decision": "RETAIN_VERSION", "response": "ReleasedResultProjectionV1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}/claims/{claim_id}", "decision": "ADD", "response": "ClaimDetailV1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}/review-view", "decision": "RETAIN_REPLACE_BODY", "response": "FinancialReviewProjectionV1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}/execution-view", "decision": "RETAIN_VERSION", "response": "ExecutionProjectionV1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}/trace/{claim_id}", "decision": "ADD", "response": "TraceBundleV1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}/artifacts", "decision": "ADD", "response": "ReportArtifactGroupV1"},
+        {"method": "GET", "path": "/api/research-runs/{run_id}/artifacts/{artifact_id}/content", "decision": "ADD", "response": "VERIFIED_BYTES"},
+        {"method": "POST", "path": "/api/objects", "decision": "RETAIN_STRENGTHEN", "response": "ResearchObjectDetailV1"},
+        {"method": "GET", "path": "/api/objects", "decision": "RETAIN_VERSION", "response": "ResearchObjectCollectionV1"},
+        {"method": "GET", "path": "/api/objects/{object_id}", "decision": "RETAIN_VERSION", "response": "ResearchObjectDetailV1"},
+        {"method": "GET", "path": "/api/objects/{object_id}/runs", "decision": "RETAIN_VERSION", "response": "ResearchRunCollectionV1"},
+        {"method": "GET", "path": "/api/objects/{object_id}/released-state", "decision": "ADD", "response": "ReleasedObjectCoreV1"}
+      ]
+    },
+    "enum_map": {
+      "hash_scope": "canonical payload below",
+      "sha256": "656b14d7787b3a0db3b9d8b0b50ba4c97911aedc5f7c11318cbfa2e904582f6f",
+      "payload": {
+        "run": {
+          "DRAFT": ["PREPARE", false],
+          "SCHEME_GENERATING": ["PREPARE", false],
+          "AWAITING_CONFIRMATION": ["CONFIRM", false],
+          "PLANNING": ["PLANNING", false],
+          "RUNNING": ["RESEARCH", false],
+          "REVIEW": ["REVIEW", false],
+          "PROVING": ["PROVING", false],
+          "RELEASED": ["COMPLETE", true],
+          "FAILED": ["FAILED", true],
+          "CANCELLED": ["CANCELLED", true]
+        },
+        "task": {
+          "CREATED": ["QUEUED", false],
+          "WAITING": ["QUEUED", false],
+          "READY": ["READY", false],
+          "RUNNING": ["ACTIVE", false],
+          "WAITING_FOR_CAPABILITY": ["WAITING_SUPPORT", false],
+          "SELF_CORRECTING": ["CORRECTING", false],
+          "BLOCKED": ["BLOCKED", false],
+          "REVIEW": ["REVIEW", false],
+          "COMPLETED": ["COMPLETE", true],
+          "FAILED": ["FAILED", true],
+          "CAPABILITY_BUILD_FAILED": ["FAILED", true],
+          "CANCELLED": ["CANCELLED", true]
+        },
+        "review": {"PASS": "PASS", "REVIEW": "NEEDS_REVIEW", "BLOCK": "BLOCKED"},
+        "availability": ["PENDING", "AVAILABLE", "NOT_GENERATED", "NOT_RELEASED", "UNAVAILABLE", "FAILED"],
+        "path_change": ["SELF_CORRECTION", "ADD_TASK", "CHANGE_DEPENDENCY"],
+        "connection": ["IDLE", "CONNECTING", "OPEN", "RECOVERING", "BACKOFF", "TERMINAL", "FAILED"],
+        "financial_unit": ["RATIO", "PERCENT", "CURRENCY", "COUNT", "SHARES", "INDEX", "MULTIPLE"],
+        "financial_period_basis": ["FY", "QUARTER", "TTM", "LTM", "CURRENT", "DAILY"],
+        "financial_actuality": ["UNKNOWN", "ACTUAL", "ESTIMATE"],
+        "runtime_event_count": 55,
+        "runtime_event_raw_values": ["run.created", "run.started", "run.status_changed", "run.completed", "run.failed", "scheme.generation_started", "scheme.generated", "scheme.confirmed", "plan.generated", "task.created", "task.ready", "task.started", "task.progress", "task.waiting_for_capability", "task.resumed", "task.self_correcting", "task.correction_resolved", "task.completed", "task.failed", "replan.requested", "replan.approved", "replan.rejected", "graph.task_added", "graph.edge_added", "graph.edge_removed", "graph.version_changed", "evidence.accepted", "evidence.conflict", "calculation.started", "calculation.completed", "capability.gap_detected", "capability.build_requested", "capability.build_started", "capability.generated", "capability.static_validated", "capability.sandbox_started", "capability.test_passed", "capability.test_failed", "capability.financial_validated", "capability.approved", "capability.registered", "capability.build_failed", "workspace.created", "capability.generation_started", "capability.tested", "capability.validated", "review.started", "review.required", "review.resolved", "proof.started", "proof.required", "proof.generated", "proof.verified", "proof.failed", "release.completed"],
+        "runtime_event_supported_v1_count": 47,
+        "runtime_event_unsupported_v1": ["scheme.generation_started", "replan.rejected", "evidence.conflict", "workspace.created", "capability.generation_started", "capability.tested", "capability.validated", "review.required"]
+      }
+    },
+    "VersionProtocolV1": {
+      "hash_scope": "canonical payload below",
+      "sha256": "ebac4e85f21f9cc145043c9b39d3ca8d04030f8c332b951bb326ab0f4de958fb",
+      "payload": {
+        "path_family": "/api",
+        "request_header": "X-Phase4-Contract-Version",
+        "accepted_request_values": [null, "phase4-core/v1"],
+        "selected_contract": "phase4-core/v1",
+        "invalid_response": {"http": 409, "code": "SCHEMA_INCOMPATIBLE", "retryable": false, "recovery": "NONE", "mutation": false},
+        "json_success_header": ["X-Phase4-Contract-Version", "phase4-core/v1"],
+        "sse_success_header": ["X-Phase4-Event-Contract-Version", "phase4-runtime-event/v1"],
+        "event_contract_version": "phase4-runtime-event/v1",
+        "payload_schema_version": 1,
+        "implicit_minor_downgrade": false,
+        "duplicate_v1_path_family": false
+      }
+    },
+    "CursorProtocolV1": {
+      "hash_scope": "canonical payload below",
+      "sha256": "5578976fb01c7ebacaac039a93f21c57cbb2ff51868f7a64513e61660aa42b01",
+      "payload": {
+        "bootstrap": "ATOMIC_SNAPSHOT_AT_N_THEN_STREAM_AFTER_N",
+        "accepted_cursor_families": ["NONNEGATIVE_DECIMAL_SEQUENCE", "EXACT_SAME_RUN_OPAQUE_EVENT_ID"],
+        "validation_time": "BEFORE_SSE_HEADERS",
+        "malformed_or_foreign": [400, "INVALID_CURSOR", "SNAPSHOT_RELOAD"],
+        "ahead": [409, "CURSOR_AHEAD", "SNAPSHOT_RELOAD"],
+        "terminal_equal": "RETURN_TERMINAL_STATE_AND_CLOSE_WITHOUT_HEARTBEAT_LOOP",
+        "resume": "STRICT_SUFFIX_SEQUENCE_GREATER_THAN_CURSOR",
+        "heartbeat": "SSE_COMMENT_NO_SEQUENCE_NO_STATE_MUTATION",
+        "clamp": false,
+        "replay_from_zero_fallback": false,
+        "cross_run_fallback": false
+      }
+    },
+    "artifact_policy": {
+      "hash_scope": "canonical payload below",
+      "sha256": "1c912c1864aa2c5940182148706757d3f6c92e7c620d275f9c60503e0f30959a",
+      "payload": {
+        "policy_id": "phase4-html-required-pdf-optional/v1",
+        "representations": [
+          {"format": "HTML", "required_for_release": true, "content_type": "text/html; charset=utf-8"},
+          {"format": "PDF", "required_for_release": false, "content_type": "application/pdf"}
+        ],
+        "lifecycle": ["NOT_GENERATED", "PENDING", "AVAILABLE", "FAILED", "UNAVAILABLE_AFTER_SUCCESS"],
+        "attempts": "APPEND_ONLY_INDEPENDENT_BY_FORMAT",
+        "terminal_pending_allowed": false,
+        "available_post_terminal_regeneration_allowed": false,
+        "policy_skipped_pdf": {"availability": "NOT_GENERATED", "reason_code": "PDF_NOT_GENERATED_BY_POLICY", "safe_failure_code": null},
+        "authorized_ref": "NON_BEARER_SAME_ORIGIN_RELATIVE_PATH",
+        "integrity_before_delivery": true,
+        "internal_locator_public": false
+      }
+    },
+    "release_policy": {
+      "hash_scope": "canonical payload below",
+      "sha256": "0a823de3f31ec730d32164eec15a0090bd7841ece715603ba57633dd19a9ac63",
+      "payload": {
+        "release_policy_id": "phase4-release-eligibility/v1",
+        "review_policy_id": "phase4-independent-financial-review/v1",
+        "material_output_policy_id": "phase4-full-material-output/v1",
+        "artifact_policy_id": "phase4-html-required-pdf-optional/v1",
+        "phase3_proof_policy_observed": "phase3-revenue-growth-must-prove-v1",
+        "eligible_requirements": ["RUN_RELEASED", "ONE_ALLOWED_RELEASE_VALIDATION", "REVIEW_PASS_EXACT_INPUT", "FULL_MATERIAL_METRIC_CLAIM_EVIDENCE_CLOSURE", "REQUIRED_PROOFS_VERIFIED", "GENERATED_CAPABILITY_BYTES_RETAINED_AND_HASH_VERIFIABLE", "TERMINAL_CER", "RELEASED_RESULT_BINDS_CER", "HTML_AVAILABLE_INTEGRITY_VALID", "PDF_TERMINAL_POLICY_PERMITTED"],
+        "generated_capability_provenance": {
+          "source_bytes": "IMMUTABLE_CONTENT_ADDRESSED_REQUIRED",
+          "unit_test_bytes": "IMMUTABLE_CONTENT_ADDRESSED_REQUIRED",
+          "generated_uri": "MUST_RESOLVE_WITHIN_THE_BOUND_RELEASE_EVIDENCE",
+          "implementation_hash": "MUST_RECOMPUTE_FROM_RETAINED_BYTES",
+          "hash_only_or_unresolved_reference": "INELIGIBLE"
+        },
+        "latest_order": ["released_at DESC", "run_id DESC BYTEWISE"],
+        "empty_result": [null, "NOT_RELEASED", "NO_RELEASED_RUN"],
+        "frontend_arithmetic": false
+      }
+    },
+    "financial_projection_contract": {
+      "hash_scope": "canonical payload below",
+      "sha256": "1c165059432174062625f2a0a969454e831eb2db7a89d9eb52119c6e2f6bfdcf",
+      "payload": {
+        "schema": "ReleasedFinancialMetricProjectionV1",
+        "required_fields": ["run_id", "metric_id", "name", "canonical_value", "canonical_unit", "display_value", "display_unit", "period", "period_basis", "actuality", "as_of", "currency", "formula_id", "capability_id", "calculation_id", "evidence_refs", "claim_refs", "proof", "method_metadata", "technical_price_basis", "corporate_action_status", "corporate_action_guard_refs", "limitations"],
+        "decimal_wire_type": "STRING",
+        "display_authority": "BACKEND",
+        "decimal_evaluation_context": {
+          "scope": "EXPLICIT_CONTEXT_LOCAL_FOR_EVERY_MATERIAL_FORMULA",
+          "binary_float_allowed": false,
+          "quantize_before_canonical_storage": false,
+          "profiles": {
+            "fundamental_ratio_division_v1": {"precision": 28, "rounding": "ROUND_HALF_EVEN", "formulas": ["revenue_growth_v1", "ebitda_margin_v1", "operating_cash_flow_plus_signed_capex_divided_by_revenue_v1"]},
+            "technical_average_and_ema_v1": {"precision": 50, "rounding": "ROUND_HALF_EVEN", "formulas": ["sma_close_50_v1", "sma_close_200_v1", "rsi_close_14_simple_average_v1", "macd_line_close_12_26_adjust_false_v1", "macd_signal_close_12_26_9_adjust_false_v1", "macd_histogram_close_12_26_9_adjust_false_v1", "latest_volume_to_average_volume_20_v1"], "operations": "SMA/RSI/volume aggregation and division plus every EMA alpha and recurrence"},
+            "macd_line_and_histogram_subtraction_v1": {"precision": 28, "rounding": "ROUND_HALF_EVEN", "formulas": ["macd_line_close_12_26_adjust_false_v1", "macd_signal_close_12_26_9_adjust_false_v1", "macd_histogram_close_12_26_9_adjust_false_v1"], "operations": "each fast-minus-slow line element and final line-minus-signal histogram; signal EMA consumes the precision-28 line sequence and runs under technical_average_and_ema_v1"}
+          }
+        },
+        "formula_semantics": {
+          "revenue_growth_v1": "(current_revenue - prior_revenue) / prior_revenue; prior_revenue != 0; denominator sign is preserved",
+          "ebitda_margin_v1": "ebitda / revenue; revenue != 0",
+          "operating_cash_flow_plus_signed_capex_divided_by_revenue_v1": "(operating_cash_flow + signed_capital_expenditure) / revenue; capital expenditure input is non-positive; revenue != 0",
+          "sma_close_50_v1": "arithmetic mean of the ordered trailing 50 close observations",
+          "sma_close_200_v1": "arithmetic mean of the ordered trailing 200 close observations",
+          "rsi_close_14_simple_average_v1": "14 latest ordered price changes; average_gain=sum(max(change,0))/14; average_loss=sum(max(-change,0))/14; both zero => 50; loss zero with gain nonzero => 100; gain zero with loss nonzero => 0; otherwise 100 - 100/(1 + average_gain/average_loss)",
+          "macd_line_close_12_26_adjust_false_v1": "EMA12(close, adjust=false, first-observation seed) - EMA26(close, adjust=false, first-observation seed); EMA recurrences use the precision-50 profile and every fast-minus-slow subtraction uses the precision-28 profile",
+          "macd_signal_close_12_26_9_adjust_false_v1": "EMA9(the full precision-28 MACD-line sequence, adjust=false, first-observation seed); alpha and recurrence use the precision-50 profile",
+          "macd_histogram_close_12_26_9_adjust_false_v1": "MACD line - MACD signal under the precision-28 profile",
+          "latest_volume_to_average_volume_20_v1": "latest volume / arithmetic mean of the ordered trailing 20 volume observations; denominator != 0"
+        },
+        "proof_fields": ["policy_id", "requirement", "status", "proof_refs"],
+        "method_metadata_fields": ["method", "parameters", "observation_count", "warmup_required", "warmup_satisfied", "first_as_of", "last_as_of", "is_wilder", "ema_adjust"],
+        "full_material_formulas": ["revenue_growth_v1", "ebitda_margin_v1", "operating_cash_flow_plus_signed_capex_divided_by_revenue_v1", "sma_close_50_v1", "sma_close_200_v1", "rsi_close_14_simple_average_v1", "macd_line_close_12_26_adjust_false_v1", "macd_signal_close_12_26_9_adjust_false_v1", "macd_histogram_close_12_26_9_adjust_false_v1", "latest_volume_to_average_volume_20_v1"],
+        "frontend_numeric_conversion": false,
+        "valid_means_verified": false
+      }
+    }
+  },
+  "contract_set_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+  "results": {
+    "PHASE4_BACKEND_FINAL_DELTA_READY": "YES",
+    "UAC_CONTRACT_CLOSED": "16/18",
+    "BD_CONTRACT_CLOSED": "12/12",
+    "FRONTEND_CONTRACT_SEMANTIC_CONFLICTS": 0,
+    "BACKEND_FRONTEND_FIELD_OWNERSHIP": "EXACT",
+    "APPROVED_PHASE3_PARENT_BOUND": "NO",
+    "BACKEND_INDEPENDENT_FINAL_AUDIT": "FAIL",
+    "FINANCIAL_SEMANTICS_INDEPENDENT_FINAL_AUDIT": "FAIL",
+    "V17_CONTRACT_INPUT_OWNER_APPROVAL": "PENDING",
+    "PHASE4_BACKEND_CONTRACT_FREEZE_READY": "NO",
+    "PHASE4_IMPLEMENTATION_ACCEPTED": "NO",
+    "PHASE4_CORE_ACCEPTANCE": "NOT_EXECUTED",
+    "WAITING_FOR": ["REMEDIATION_AND_PASS_REAUDIT_OF_BACKEND_P1_AND_P2_FINDINGS_FOR_BOUND_PHASE3_CANDIDATE", "REMEDIATION_AND_PASS_REAUDIT_OF_FINANCIAL_SEMANTICS_P1_AND_P2_FINDINGS_FOR_BOUND_PHASE3_CANDIDATE", "OWNER_APPROVED_HASH_BOUND_V17_CONTRACT_INPUT_PACKAGE"]
+  }
+}

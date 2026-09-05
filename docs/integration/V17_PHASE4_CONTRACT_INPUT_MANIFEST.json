@@ -1,0 +1,91 @@
+{
+  "schema_version": "v17-phase4-contract-input-manifest/v1",
+  "manifest_id": "V17_PHASE4_CONTRACT_INPUT_MANIFEST",
+  "package_id": "V17_PHASE4_CONTRACT_INPUT_PACKAGE",
+  "package_revision": "1.0.0",
+  "prepared_at": "2026-09-04T10:55:07Z",
+  "status": "READY_FOR_OWNER_APPROVAL",
+  "canonical_package": {
+    "canonicalization_profile": "LEXICOGRAPHIC_COMPACT_JSON_V1",
+    "payload_path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE.json",
+    "sha256": "36cf733d07b4df1ad4cb1065bdd17eceb6bbc98cf6f77fe0dfb1963185757e08",
+    "algorithm": "SHA-256",
+    "object_key_order": "BYTEWISE_LEXICOGRAPHIC_RECURSIVE",
+    "array_order": "PRESERVED",
+    "serialization": "COMPACT_UTF8_JSON_NO_TERMINAL_NEWLINE"
+  },
+  "members": [
+    {
+      "path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE.json",
+      "role": "NORMATIVE_MACHINE_READABLE_SEMANTIC_PAYLOAD",
+      "sha256": "2d5bd33ff2c2b15df74773168ab16408391a45a105ebf8446c06cc55c2067512"
+    },
+    {
+      "path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE.md",
+      "role": "HUMAN_READABLE_COMPANION",
+      "sha256": "02f86ca518bd0bbca5e2824b6fba32a48d0b0cfc48a75600da010b9a1240a695"
+    },
+    {
+      "path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_MANIFEST.json",
+      "role": "PACKAGE_MANIFEST",
+      "sha256": null,
+      "self_hash_policy": "OMITTED_TO_AVOID_RECURSION; exact external digest may be computed over the completed file"
+    }
+  ],
+  "member_accounting": {
+    "expected": 3,
+    "recorded": 3,
+    "complete": true
+  },
+  "bound_parent": {
+    "id": "FRONTEND_BASELINE_V8.1",
+    "sha": "d854c97789c98cca14fee3f4b3d7f00e0d5d137a"
+  },
+  "bound_reference_manifest": {
+    "id": "V17_REFERENCE_MANIFEST_V1",
+    "sha256": "44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394",
+    "completeness": "65/65"
+  },
+  "bound_fcr": {
+    "change_id": "FRONTEND_V17_PHASE4_CORE_INTEGRATION",
+    "record_revision": "DRAFT-01",
+    "status": "DRAFT_CHANGE",
+    "path": "docs/frontend-governance/FCR_V17_PHASE4_CORE_INTEGRATION.md",
+    "sha256": "b20f2a0527638d057b1de62a6b154cdc8d50724d4aa75ee3491122fad3280df1",
+    "git_blob_sha1": "52a3ebdbc107f42b87094e60cbc39ad730089510",
+    "implementation_authorized": false,
+    "candidate_sha": "PENDING",
+    "modified_by_package": false
+  },
+  "governance": {
+    "classification": "DOCUMENTATION_GOVERNANCE_ONLY",
+    "frontend_candidate_sha_required_for_backend_freeze": false,
+    "frontend_candidate_created": false,
+    "frontend_implementation_authorized": false,
+    "contract_input_approval_ready": true,
+    "owner_approval_required": true,
+    "owner_approval_status": "PENDING",
+    "self_approved": false,
+    "cycle": "OWNER_APPROVAL -> BACKEND_FINAL_CONTRACT_FREEZE -> V17_IMPLEMENTATION"
+  },
+  "completeness": {
+    "normalized_contracts": "13/13",
+    "backend_dependency_records": "12/12",
+    "interaction_reservations": "6/6",
+    "interaction_id_range": "071..076",
+    "proposed_e2e_delta": "P4-E2E-107..112",
+    "scene_dispositions": "6/6",
+    "node24_evidence_bound": true
+  },
+  "final": {
+    "V17_CONTRACT_INPUT_PACKAGE_READY": "YES",
+    "V17_CONTRACT_INPUT_PACKAGE_SHA256": "36cf733d07b4df1ad4cb1065bdd17eceb6bbc98cf6f77fe0dfb1963185757e08",
+    "NORMALIZED_CONTRACTS": "13/13",
+    "BD_RECORDS": "12/12",
+    "REFERENCE_MANIFEST": "44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394",
+    "FRONTEND_IMPLEMENTATION_AUTHORIZED": "NO",
+    "FRONTEND_CANDIDATE_CREATED": "NO",
+    "CONTRACT_INPUT_APPROVAL_READY": "YES",
+    "OWNER_APPROVAL_REQUIRED": "YES"
+  }
+}

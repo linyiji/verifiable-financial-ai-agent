@@ -1,0 +1,52 @@
+{
+  "schema_version": "v17-phase4-contract-input-owner-approval/v1",
+  "approval_id": "V17_PHASE4_CONTRACT_INPUT_R2_OWNER_APPROVAL",
+  "decision": "APPROVED",
+  "approval_authority": "PROJECT_OWNER",
+  "approval_timestamp_utc": "2026-09-04T12:39:11Z",
+  "approval_scope": "PHASE4_BACKEND_FINAL_CONTRACT_FREEZE_FRONTEND_INPUT_ONLY",
+  "approved_package_id": "V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2",
+  "approved_package_revision": "2.0.0",
+  "approved_package_sha256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19",
+  "approved_backend_contract_set_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+  "approved_reference_manifest_sha256": "44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394",
+  "fcr_revision": "DRAFT-02",
+  "fcr_status": "DRAFT_CHANGE",
+  "fcr_sha256": "1239b97b461415963d8bdbcc1ce5c2409e4e7b5ff0b47b0f0bfea90a5c9ac958",
+  "uac_002_owner_approval_gate": "SATISFIED",
+  "uac_002_approved_input_sha256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19",
+  "final_contract_freeze_remaining_blocker": "UAC-001_PHASE3_REMEDIATION_AND_TWO_PASS_REAUDITS",
+  "immutability_verification": {
+    "r2_package_canonical_sha256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19",
+    "r2_package_json_byte_sha256": "3822211ce66d392bcf7bc5fb5a5d0ebfa8a19df264b18acef08ddfda6ba98394",
+    "r2_package_markdown_byte_sha256": "fe7a8f5ea04dab9937a00b0a3d332032b527e03633846e7854a8705c4c0acfa1",
+    "r2_delta_markdown_byte_sha256": "d942cfffc77be3b8ab11dbca372817715745fbf4931ebf6c01637e65c1ec948e",
+    "r2_manifest_byte_sha256": "76fdb78f62ce9b133265c80899e0e987be15ecd9a5f5b01eb9b84bbfcb99d1c5",
+    "r2_package_members_byte_identical": true,
+    "fcr_draft_02_byte_identical": true,
+    "r1_artifacts_unchanged": true
+  },
+  "excluded_authorizations": {
+    "frontend_implementation_authorized": false,
+    "frontend_candidate_creation_authorized": false,
+    "frontend_build_approved": false,
+    "phase4_integration_approved": false,
+    "phase4_start_authorized": false,
+    "phase4_acceptance_authorized": false,
+    "deployment_authorized": false,
+    "phase5_authorized": false
+  },
+  "project_state_after_recording": {
+    "frontend_production_source_changed": false,
+    "backend_production_source_changed": false,
+    "frontend_implementation_started": false,
+    "frontend_candidate_created": false,
+    "phase4_started": false,
+    "uac_001_status": "STILL_OPEN",
+    "uac_002_external_governance_dependency": "SATISFIED"
+  },
+  "promotion_rule": "A later Final Contract Freeze Promotion must consume the existing immutable contract-set hash, this owner-approval receipt, and a future approved Phase 3 parent with both required independent PASS audit receipts; it must produce a new freeze/promotion receipt rather than rewrite existing hash-bound artifacts.",
+  "receipt_membership": "EXTERNAL_TO_APPROVED_R2_PACKAGE",
+  "serialization_profile": "UTF8_JSON_TWO_SPACE_INDENT_FIXED_KEY_AND_ARRAY_ORDER_TERMINAL_LF",
+  "self_approved": false
+}

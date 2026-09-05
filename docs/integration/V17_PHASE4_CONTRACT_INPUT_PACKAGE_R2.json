@@ -1,0 +1,537 @@
+{
+  "schema_version": "v17-phase4-contract-input-package/v2",
+  "package_id": "V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2",
+  "package_revision": "2.0.0",
+  "prepared_at": "2026-09-04T11:20:10Z",
+  "status": "READY_FOR_OWNER_APPROVAL",
+  "purpose": "Successor Frontend V17 consumer-contract input reconciled to the latest Phase 4 Backend final-delta semantic decisions.",
+  "lineage": {
+    "r1": {
+      "package_id": "V17_PHASE4_CONTRACT_INPUT_PACKAGE",
+      "revision": "1.0.0",
+      "canonical_sha256": "36cf733d07b4df1ad4cb1065bdd17eceb6bbc98cf6f77fe0dfb1963185757e08",
+      "json_file_sha256": "2d5bd33ff2c2b15df74773168ab16408391a45a105ebf8446c06cc55c2067512",
+      "markdown_file_sha256": "02f86ca518bd0bbca5e2824b6fba32a48d0b0cfc48a75600da010b9a1240a695",
+      "manifest_file_sha256": "03520cb26b25a27ad0b4c87ee4c9d297e8bd875181ce8416ff587e87e6b7e75a",
+      "historical_status": "READY_FOR_OWNER_APPROVAL",
+      "owner_approval": "NO",
+      "disposition": "SUPERSEDED_BEFORE_OWNER_APPROVAL",
+      "modified_by_r2": false
+    },
+    "R1_STATUS": "SUPERSEDED_BEFORE_OWNER_APPROVAL",
+    "R1_OWNER_APPROVAL": "NO",
+    "only_package_eligible_for_future_owner_approval": "R2"
+  },
+  "authority": {
+    "classification": "DOCUMENTATION_GOVERNANCE_ONLY",
+    "parent_baseline_id": "FRONTEND_BASELINE_V8.1",
+    "parent_baseline_sha": "d854c97789c98cca14fee3f4b3d7f00e0d5d137a",
+    "reference_manifest_sha256": "44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394",
+    "backend_contract_family": "phase4-core/v1",
+    "runtime_event_contract": "phase4-runtime-event/v1",
+    "frontend_candidate_sha_required": false,
+    "frontend_candidate_created": false,
+    "frontend_implementation_authorized": false,
+    "phase4_started": false,
+    "frontend_source_changed": false,
+    "backend_source_changed": false,
+    "is_build": false,
+    "is_integration_pass": false,
+    "is_delta_audit": false,
+    "is_implementation_evidence": false
+  },
+  "approval": {
+    "contract_input_approval_ready": true,
+    "owner_approval_required": true,
+    "owner_approval_status": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "self_approved": false
+  },
+  "fcr_binding": {
+    "change_id": "FRONTEND_V17_PHASE4_CORE_INTEGRATION",
+    "record_revision": "DRAFT-02",
+    "status": "DRAFT_CHANGE",
+    "path": "docs/frontend-governance/FCR_V17_PHASE4_CORE_INTEGRATION_DRAFT_02.md",
+    "implementation_authorized": false,
+    "candidate_sha": "PENDING",
+    "binding_rule": "The canonical R2 payload binds FCR identity/revision/status. The exact finalized DRAFT-02 file digest is bound by the R2 manifest after DRAFT-02 records the canonical R2 package hash, avoiding a mutual hash recursion.",
+    "r1_fcr_preserved": {
+      "record_revision": "DRAFT-01",
+      "path": "docs/frontend-governance/FCR_V17_PHASE4_CORE_INTEGRATION.md",
+      "sha256": "b20f2a0527638d057b1de62a6b154cdc8d50724d4aa75ee3491122fad3280df1",
+      "modified_by_r2": false
+    }
+  },
+  "phase4_backend_final_contract_set_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+  "normative_bindings": [
+    {"precedence":1,"role":"APPROVED_FRONTEND_PARENT","id":"FRONTEND_BASELINE_V8.1","sha":"d854c97789c98cca14fee3f4b3d7f00e0d5d137a"},
+    {"precedence":2,"role":"PHASE4_BACKEND_FINAL_CONTRACT_DELTA","path":"docs/integration/PHASE4_BACKEND_FINAL_CONTRACT_DELTA.md","sha256":"191d7ffb2f2636ed772839fd3888850adeb64b6e4680fd09803ab45aadd91fe3"},
+    {"precedence":3,"role":"PHASE4_BACKEND_FINAL_PARITY_MATRIX","path":"docs/integration/PHASE4_BACKEND_FRONTEND_FINAL_PARITY_MATRIX.md","sha256":"ac3a3c6e1735519a960df7643bf8353646e2d5ab63874965d7beac3e6da48028"},
+    {"precedence":4,"role":"FINAL_UAC_DISPOSITION","path":"docs/integration/PHASE4_BACKEND_FINAL_UAC_DISPOSITION.md","sha256":"226a586e696f92fe6249f7c043ea005291858e7c1bcf46d5a825d1ecf595146c"},
+    {"precedence":5,"role":"FINAL_BD_DISPOSITION","path":"docs/integration/PHASE4_BACKEND_FINAL_BD_DISPOSITION.md","sha256":"99ffdc460d2e2c9d49984af4882f076ca21f094f380487d4ab0a283cb8acbd28"},
+    {"precedence":6,"role":"ACCESS_MODE_DECISION_V1","path":"docs/integration/PHASE4_ACCESS_MODE_DECISION_V1.json","sha256":"c32ac85f7930ab151fbb769350bed270549bdb132489c5c769ec7ef1e042415d"},
+    {"precedence":7,"role":"ACCEPTANCE_V17_INTERACTION_DELTA","paths":["docs/integration/acceptance/PHASE4_BROWSER_ACCEPTANCE_EXECUTION_PLAN.md","docs/frontend-governance/V17_INTERACTION_IMPACT_MATRIX.md","docs/integration/V17_FRONTEND_TEST_PREPARATION.md"],"sha256":["265ee96b845b49517264739e125d417a2d293f498e02496c26014ef837841b91","39fbe34aafd98e5916f0d714dac1d217752e68fe813dc4bd85fc8b746f280d1a","5955d37ec6e3fce2e623f2b85e9c03108608cd385782a7d253c84e78dc0067c4"]},
+    {"precedence":8,"role":"PREVIOUS_R1_PACKAGE","canonical_sha256":"36cf733d07b4df1ad4cb1065bdd17eceb6bbc98cf6f77fe0dfb1963185757e08","disposition":"SUPERSEDED_BEFORE_OWNER_APPROVAL"}
+  ],
+  "component_bindings": {
+    "final_contract_manifest": {"path":"docs/integration/PHASE4_BACKEND_FINAL_CONTRACT_MANIFEST.json","byte_sha256":"1886ef831ebff461afcabd936deaadbb10afcaf0d3bd3a037e0f3a7de995657d","contract_set_sha256":"0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741"},
+    "api_schema_contract": {"path":"docs/integration/PHASE4_BACKEND_API_SCHEMA_DRAFT.md","byte_sha256":"2a1265753c1b7b6e0756ea9c40886dcbcbdf4773e81e467b7df8fddd92763048"},
+    "runtime_event_contract": {"path":"docs/integration/PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md","byte_sha256":"f6bbca7123051c90d3321781b3e47d4028a457f2ee8a0f51a37acf836b38cf2e"},
+    "error_availability_contract": {"path":"docs/integration/PHASE4_BACKEND_IDENTITY_ERROR_AVAILABILITY_CONTRACT.md","base_artifact_byte_sha256":"1cfcafe17c94e1d87bdcd8230ecaeef11913a2cdb7174ace52a2fa01d8ab00b9","canonical_payload_sha256":"5cd8dd06203707b3b9597bc4dbfdc343d7c84884bf2c73982a22cff2f9ffd79a"},
+    "access_mode_decision": {"path":"docs/integration/PHASE4_ACCESS_MODE_DECISION_V1.json","byte_sha256":"c32ac85f7930ab151fbb769350bed270549bdb132489c5c769ec7ef1e042415d","markdown_path":"docs/integration/PHASE4_ACCESS_MODE_DECISION_V1.md","markdown_byte_sha256":"b0131d3650e389d35ec2118419e3d1a017951a2247e9a8f2f4fa8ca44afee8f8"},
+    "final_uac_disposition": {"path":"docs/integration/PHASE4_BACKEND_FINAL_UAC_DISPOSITION.md","byte_sha256":"226a586e696f92fe6249f7c043ea005291858e7c1bcf46d5a825d1ecf595146c"},
+    "final_bd_disposition": {"path":"docs/integration/PHASE4_BACKEND_FINAL_BD_DISPOSITION.md","byte_sha256":"99ffdc460d2e2c9d49984af4882f076ca21f094f380487d4ab0a283cb8acbd28"},
+    "final_backend_frontend_parity": {"path":"docs/integration/PHASE4_BACKEND_FRONTEND_FINAL_PARITY_MATRIX.md","byte_sha256":"ac3a3c6e1735519a960df7643bf8353646e2d5ab63874965d7beac3e6da48028"},
+    "VersionProtocolV1": {"canonical_payload_sha256":"ebac4e85f21f9cc145043c9b39d3ca8d04030f8c332b951bb326ab0f4de958fb","independently_recomputed":true},
+    "CursorProtocolV1": {"canonical_payload_sha256":"5578976fb01c7ebacaac039a93f21c57cbb2ff51868f7a64513e61660aa42b01","independently_recomputed":true},
+    "artifact_policy": {"policy_id":"phase4-html-required-pdf-optional/v1","canonical_payload_sha256":"1c912c1864aa2c5940182148706757d3f6c92e7c620d275f9c60503e0f30959a","independently_recomputed":true},
+    "release_policy": {"policy_id":"phase4-release-eligibility/v1","canonical_payload_sha256":"0a823de3f31ec730d32164eec15a0090bd7841ece715603ba57633dd19a9ac63","independently_recomputed":true},
+    "financial_projection_contract": {"schema":"ReleasedFinancialMetricProjectionV1","canonical_payload_sha256":"1c165059432174062625f2a0a969454e831eb2db7a89d9eb52119c6e2f6bfdcf","independently_recomputed":true},
+    "route_inventory": {"canonical_payload_sha256":"0a96e2ac182290820a01a4e6869b3053c55a3dc994b0bf7095acec73c809c4b1","independently_recomputed":true},
+    "enum_map": {"canonical_payload_sha256":"656b14d7787b3a0db3b9d8b0b50ba4c97911aedc5f7c11318cbfa2e904582f6f","independently_recomputed":true},
+    "corrected_v17_reference_manifest": {"path":"docs/frontend-governance/V17_REFERENCE_MANIFEST_V1.json","byte_sha256":"44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394"}
+  },
+  "node24_compatibility": {
+    "path": "docs/integration/FRONTEND_V8_1_NODE24_COMPATIBILITY.md",
+    "byte_sha256": "889a975aa39f6401cf06c5ba59e6d9256d8159c489a4861ed85db9562e3feca7",
+    "scope": "FRONTEND_BASELINE_V8.1_ONLY",
+    "node": "v24.18.0",
+    "result": "PASS",
+    "v17_candidate_toolchain_acceptance": "NOT_RUN",
+    "authorizes_v17_implementation": false
+  },
+  "access_mode": {
+    "decision_id": "P4-ACCESS-DECISION-001",
+    "decision_version": "1.0.0",
+    "ACCESS_MODE_ID": "phase4-local-single-user-trusted/v1",
+    "phase_scope": "PHASE4A_CORE_INTEGRATION_ONLY",
+    "authentication_required": false,
+    "authentication_provider": null,
+    "effective_access_scope_key": "LOCAL_SINGLE_USER",
+    "client_asserted_authority_fields": "PROHIBITED",
+    "invented_frontend_authority_fields": ["userId", "tenantId", "workspaceId", "principalId"],
+    "invented_frontend_authority_field_count": 0,
+    "resource_identity_validation": "MANDATORY",
+    "cross_object_fallback": "PROHIBITED",
+    "cross_run_fallback": "PROHIBITED",
+    "artifact_ref_semantics": "NON_BEARER_RESOURCE_LOCATOR",
+    "future_public_auth": "DEFERRED_TO_SEPARATE_GOVERNED_CHANGE"
+  },
+  "shared_semantics": {
+    "wire_to_consumer_boundary": ["unknown response", "versioned decoder", "private snake_case DTO", "shared adapter camelCase normalization", "immutable consumer projection", "reducer/store", "page/component"],
+    "version_request_header": "X-Phase4-Contract-Version",
+    "accepted_contract_tokens": [null, "phase4-core/v1"],
+    "invalid_contract_token_result": {"http":409,"code":"SCHEMA_INCOMPATIBLE","retryable":false,"recovery":"NONE","mutation":false},
+    "run_status_values": ["DRAFT","SCHEME_GENERATING","AWAITING_CONFIRMATION","PLANNING","RUNNING","REVIEW","PROVING","RELEASED","FAILED","CANCELLED"],
+    "run_stage_map": {"DRAFT":"PREPARE","SCHEME_GENERATING":"PREPARE","AWAITING_CONFIRMATION":"CONFIRM","PLANNING":"PLANNING","RUNNING":"RESEARCH","REVIEW":"REVIEW","PROVING":"PROVING","RELEASED":"COMPLETE","FAILED":"FAILED","CANCELLED":"CANCELLED"},
+    "path_change_values": ["SELF_CORRECTION","ADD_TASK","CHANGE_DEPENDENCY"],
+    "review_status_values": ["PASS","REVIEW","BLOCK"],
+    "review_exception_values": ["NONE","OPEN","RESOLVED"],
+    "availability_values": ["PENDING","AVAILABLE","NOT_GENERATED","NOT_RELEASED","UNAVAILABLE","FAILED"],
+    "unknown_policy": "Unknown schema, enum, identity, event, payload version, payload, cursor, or conflicting duplicate causes zero business mutation and zero cursor advance; retain at most a visibly stale last-valid projection and enter authoritative recovery.",
+    "backend_business_authority": ["identity","Run/Task/graph lifecycle","financial values and methodology","Review","Proof","release","artifact state/integrity","A/B/C and trace relations"],
+    "frontend_allowed_derivations": ["snake_case to camelCase rename","readonly wrappers","event effect lookup from frozen table","connection transport state","percent = fraction * 100 presentation value","display-only rounding/labels/focus/layout"],
+    "forbidden_public_content": ["raw provider bodies","prompts","hidden reasoning or Chain-of-Thought","scratch state","secrets","filesystem paths","artifact:// locators","internal storage locators"],
+    "phase5_exclusions": ["ResearchObjectVersion","ResearchViewVersion","ResearchMemory","ComparisonDataset","IncrementalResearchSeed","Freshness","Reuse","Refresh","Revalidate","Prevent","Claim Diff","Object Writeback","real SCENE-05","real SCENE-06"]
+  },
+  "contracts": [
+    {
+      "index": 1,
+      "name": "GlobalRunCollectionProjection",
+      "backend_wire_contract": "ResearchRunCollectionV1",
+      "backend_dependencies": ["BD-009"],
+      "uac_decisions": ["UAC-008","UAC-009","UAC-010","UAC-017"],
+      "schema": {
+        "fields": ["schemaVersion: literal phase4-run-collection/v1","items: readonly RunCollectionItem[]","nextCursor: string | null"],
+        "RunCollectionItem": ["runId: string","object: {objectId:string; symbol:string; companyName:string}","backendStatus: RunStatus","status: NormalizedRunStatus","stage: RunStage","progress: {method:literal ACTUAL_TASK_MEAN_V1; completedTasks:integer>=0; totalTasks:integer>=0; fraction:number[0,1]; percent:number[0,100]}","activity: {eventId:string; type:string; sequence:integer>=1; timestamp:RFC3339UTC; taskId:string|null; messageCode:string} | null","graphVersion: integer>=1 | null","projectionRevision: integer>=1","projectionSequence: integer>=0","asOf: date string","createdAt: RFC3339UTC","updatedAt: RFC3339UTC","startedAt: RFC3339UTC | null","completedAt: RFC3339UTC | null","terminal: boolean","resultAvailability: Availability"]
+      },
+      "field_classification": {
+        "UNCHANGED": ["schemaVersion","items","nextCursor","items[].runId","items[].object.objectId","items[].object.symbol","items[].object.companyName","items[].backendStatus","items[].status","items[].stage","items[].progress.method","items[].progress.fraction","items[].activity","items[].activity.eventId","items[].activity.type","items[].activity.sequence","items[].activity.timestamp","items[].activity.taskId","items[].activity.messageCode","items[].projectionRevision","items[].projectionSequence","items[].asOf","items[].createdAt","items[].updatedAt","items[].startedAt","items[].completedAt","items[].terminal","items[].resultAvailability"],
+        "ADDED": ["items[].progress.completedTasks","items[].progress.totalTasks"],
+        "NULLABILITY_CHANGED": ["items[].graphVersion"],
+        "OWNERSHIP_CHANGED": ["items[].progress.percent"],
+        "RENAMED": [],"MOVED": [],"REMOVED": [],"ENUM_TIGHTENED": [],"SEMANTICALLY_REPLACED": []
+      },
+      "identity_keys": ["items[].object.objectId","items[].runId","items[].projectionRevision","items[].projectionSequence"],
+      "availability": "resultAvailability is mandatory; graphVersion is null only before actual graph exists; activity/start/completion/cursor nullable only as declared.",
+      "unknown_behavior": "Any invalid item invalidates the response; a prior valid collection may remain only as visibly stale.",
+      "adapter_ownership": "Backend owns all business fields and order/cursor. Shared adapter performs camel rename, immutable wrapping, total status mapping, and percent=fraction*100 only."
+    },
+    {
+      "index": 2,
+      "name": "PreparedResearchDraft",
+      "backend_wire_contract": "ResearchRunDraftV1",
+      "backend_dependencies": ["BD-007"],
+      "uac_decisions": ["UAC-005"],
+      "schema": {"fields":["schemaVersion: literal phase4-run-draft/v1","draftId: string","draftVersion: integer>=1","status: literal AWAITING_CONFIRMATION","previewKind: literal SCHEME_ONLY","plannedGraphAvailability: Availability with NOT_GENERATED/PLAN_CREATED_ON_CONFIRM/false at creation","objectId: string","goal: NormalizedGoal","schemeSnapshot: NormalizedScheme with confirmedAt:null","prepareRequestHash: sha256:<64 lowercase hex>","draftHash: sha256:<64 lowercase hex>","createdAt: RFC3339UTC","expiresAt: RFC3339UTC"]},
+      "field_classification": {
+        "UNCHANGED": ["schemaVersion","draftId","draftVersion","status","previewKind","objectId","goal","schemeSnapshot","prepareRequestHash","createdAt","expiresAt"],
+        "ADDED": ["plannedGraphAvailability","draftHash"],
+        "REMOVED": ["mode","goalTemplateId"],
+        "RENAMED": [],"MOVED": [],"ENUM_TIGHTENED": [],"NULLABILITY_CHANGED": [],"OWNERSHIP_CHANGED": [],"SEMANTICALLY_REPLACED": []
+      },
+      "identity_keys": ["draftId","draftVersion","draftHash","objectId","goal.goalId","schemeSnapshot.schemeId","prepareRequestHash"],
+      "availability": "No planned Task/graph is returned; plannedGraphAvailability is explicit NOT_GENERATED until Confirm.",
+      "unknown_behavior": "Expired, consumed, identity/hash/version mismatch, incremental input, or unknown schema fails explicitly.",
+      "adapter_ownership": "Backend owns immutable draft facts. Template and FULL labels remain frontend display/form state and are absent from the normalized business DTO."
+    },
+    {
+      "index": 3,
+      "name": "ConfirmRunResponseV1",
+      "r1_contract_name": "ConfirmAndStartResult",
+      "backend_wire_contract": "ConfirmRunResponseV1",
+      "backend_dependencies": ["BD-008"],
+      "uac_decisions": ["UAC-005","UAC-007","UAC-011"],
+      "schema": {
+        "fields": ["schemaVersion: literal phase4-confirm-response/v1","admission: RunAdmissionV1","responseMeta: ResponseMetaV1"],
+        "RunAdmissionV1": ["schemaVersion: literal phase4-run-admission/v1","admissionId: string","runId: string","objectId: string","draftId: string","draftVersion: integer>=1","draftHash: sha256:<64 lowercase hex>","goalId: string","schemeId: string","plannedGraphId: string","backendStatus: literal PLANNING","status: literal PLANNING","autoStart: {required:literal true; admitted:literal true}","confirmationRequestHash: sha256:<64 lowercase hex>","admittedAt: RFC3339UTC","projectionRef: string","eventsRef: string"],
+        "ResponseMetaV1": ["schemaVersion: literal phase4-response-meta/v1","requestId: string | null","idempotencyReplayed: boolean"]
+      },
+      "field_classification": {
+        "UNCHANGED": [],
+        "ADDED": ["schemaVersion","admission","responseMeta","admission.schemaVersion","admission.admissionId","admission.draftId","admission.draftVersion","admission.draftHash","admission.autoStart.required","admission.autoStart.admitted","admission.admittedAt","responseMeta.schemaVersion","responseMeta.requestId"],
+        "MOVED": ["runId -> admission.runId","objectId -> admission.objectId","goalId -> admission.goalId","schemeId -> admission.schemeId","plannedGraphId -> admission.plannedGraphId","backendStatus -> admission.backendStatus","status -> admission.status","confirmationRequestHash -> admission.confirmationRequestHash","projectionRef -> admission.projectionRef","eventsRef -> admission.eventsRef","idempotencyReplayed -> responseMeta.idempotencyReplayed"],
+        "SEMANTICALLY_REPLACED": ["autoStart:boolean -> admission.autoStart:{required,admitted}"],
+        "RENAMED": [],"REMOVED": [],"ENUM_TIGHTENED": [],"NULLABILITY_CHANGED": [],"OWNERSHIP_CHANGED": ["idempotencyReplayed is transport metadata and excluded from immutable admission"]
+      },
+      "identity_keys": ["admission.admissionId","admission.runId","admission.objectId","admission.draftId","admission.draftVersion","admission.draftHash","admission.goalId","admission.schemeId","admission.plannedGraphId","admission.confirmationRequestHash"],
+      "availability": "Successful first response is 201/replayed false; exact replay is 200/replayed true with byte/semantic-identical admission. Conflicts return no admission.",
+      "unknown_behavior": "Ambiguous outcome retries exact key/body. Same key with changed hash is CONFLICT; a new key cannot consume an already consumed draft.",
+      "adapter_ownership": "Backend owns immutable admission and per-attempt ResponseMeta. Frontend may display replay diagnostics but replay never mutates business identity."
+    },
+    {
+      "index": 4,
+      "name": "RunProjection",
+      "backend_wire_contract": "AtomicRunProjectionV1",
+      "backend_dependencies": ["BD-001","BD-010","BD-012"],
+      "uac_decisions": ["UAC-008","UAC-009","UAC-010","UAC-011","UAC-016","UAC-017"],
+      "schema": {
+        "fields": ["projectionSchemaVersion: literal phase4-run-projection/v1","projectionRevision: integer>=1","projectionSequence: integer>=0","generatedAt: RFC3339UTC","object: NormalizedObjectIdentity","run: NormalizedRunRecord","goal: NormalizedGoal","confirmedScheme: NormalizedScheme","plannedGraph: NormalizedGraph","actualGraph: NormalizedGraph | null","graphVersion: integer>=1 | null","tasks: readonly RunTaskProjection[]","pathChanges: readonly PathChangeProjectionV1[]","activity: readonly SafeRuntimeActivity[]","lifecycle: NormalizedRunLifecycle","review: OwnedAvailabilityRef","result: OwnedAvailabilityRef","artifacts: OwnedAvailabilityRef","proof: NormalizedProofSummary","execution: OwnedAvailabilityRef","terminal: NormalizedTerminalState"],
+        "PathChangeProjectionV1": ["pathChangeId:string","sourceKind:CORRECTION|REPLAN","sourceId:string","changeKind:SELF_CORRECTION|ADD_TASK|CHANGE_DEPENDENCY","status:string","decision:string|null","reasonCode:string|null","taskRefs:readonly string[]","operations:readonly TypedGraphOperation[]","graphVersionBefore:integer>=1|null","graphVersionAfter:integer>=1|null","createdAt:RFC3339UTC","resolvedAt:RFC3339UTC|null"],
+        "progress": ["method:literal ACTUAL_TASK_MEAN_V1","completedTasks:integer>=0","totalTasks:integer>=0","fraction:number[0,1]","percent:number[0,100] adapter-derived"]
+      },
+      "field_classification": {
+        "UNCHANGED": ["projectionSchemaVersion","projectionRevision","projectionSequence","generatedAt","object","run","goal","confirmedScheme","plannedGraph","tasks","pathChanges","activity","lifecycle","review","result","artifacts","proof","execution","terminal","pathChanges[].pathChangeId","pathChanges[].sourceKind","pathChanges[].sourceId","pathChanges[].status","pathChanges[].reasonCode","pathChanges[].taskRefs","pathChanges[].operations","pathChanges[].createdAt","pathChanges[].resolvedAt"],
+        "ADDED": ["lifecycle.progress.completedTasks","lifecycle.progress.totalTasks","pathChanges[].decision"],
+        "RENAMED": [],
+        "NULLABILITY_CHANGED": ["actualGraph","graphVersion","pathChanges[].graphVersionBefore","pathChanges[].graphVersionAfter"],
+        "OWNERSHIP_CHANGED": ["lifecycle.progress.percent"],
+        "ENUM_TIGHTENED": ["pathChanges[].changeKind exactly SELF_CORRECTION|ADD_TASK|CHANGE_DEPENDENCY"],
+        "MOVED": [],"REMOVED": [],"SEMANTICALLY_REPLACED": ["pathChanges are exact one-source Backend projections, never frontend event reconstructions"]
+      },
+      "identity_keys": ["object.objectId","run.runId","projectionRevision","projectionSequence","plannedGraph.graphId","actualGraph.graphId when present","pathChanges[].pathChangeId"],
+      "availability": "Every review/result/artifact/proof/execution field is availability-wrapped; actual graph/version may be null only before creation; terminal fields are nullable only while nonterminal.",
+      "unknown_behavior": "Torn watermark, identity mismatch, unknown status, sparse graph data, gap, or unsupported mutation rejects/pauses reduction and reloads one atomic snapshot.",
+      "adapter_ownership": "Backend owns revision, sequence, graphs, fraction/counts/method and path changes. Adapter alone derives presentation percent and frozen effect mapping; reducer is sole live mutation point."
+    },
+    {
+      "index": 5,
+      "name": "NormalizedRuntimeEventV1",
+      "backend_wire_contract": "RuntimeEventNormalizedV1",
+      "backend_dependencies": ["BD-002","BD-003","BD-012"],
+      "uac_decisions": ["UAC-003","UAC-004","UAC-009","UAC-010","UAC-011"],
+      "schema": {"fields":["eventContractVersion: literal phase4-runtime-event/v1","eventId: string","runId: string","taskId: string | null","type: RuntimeEventRawTypeV1","timestamp: RFC3339UTC","sequence: integer>=1","payloadSchemaVersion: literal 1","payload: RuntimePayloadByType[type]","graphVersion: integer>=1 | null","effect: PATCH_PROJECTION|REFRESH_PROJECTION|OBSERVATION_ONLY|TERMINAL","projectionRefreshRequired: boolean true exactly for REFRESH_PROJECTION or TERMINAL"]},
+      "field_classification": {
+        "UNCHANGED": ["eventId","runId","taskId","type","timestamp","sequence","payload","effect","projectionRefreshRequired"],
+        "RENAMED": ["schemaVersion -> eventContractVersion"],
+        "ADDED": ["payloadSchemaVersion","graphVersion"],
+        "MOVED": [],"REMOVED": [],"ENUM_TIGHTENED": ["type: 55 raw values; 47 supported V1 and 8 explicit unsupported"],"NULLABILITY_CHANGED": [],"OWNERSHIP_CHANGED": ["effect and projectionRefreshRequired are Backend-supplied or mechanically attached from the frozen table"],"SEMANTICALLY_REPLACED": []
+      },
+      "runtime_inventory": {
+        "raw_type_count": 55,
+        "raw_types": ["run.created","run.started","run.status_changed","run.completed","run.failed","scheme.generation_started","scheme.generated","scheme.confirmed","plan.generated","task.created","task.ready","task.started","task.progress","task.waiting_for_capability","task.resumed","task.self_correcting","task.correction_resolved","task.completed","task.failed","replan.requested","replan.approved","replan.rejected","graph.task_added","graph.edge_added","graph.edge_removed","graph.version_changed","evidence.accepted","evidence.conflict","calculation.started","calculation.completed","capability.gap_detected","capability.build_requested","capability.build_started","capability.generated","capability.static_validated","capability.sandbox_started","capability.test_passed","capability.test_failed","capability.financial_validated","capability.approved","capability.registered","capability.build_failed","workspace.created","capability.generation_started","capability.tested","capability.validated","review.started","review.required","review.resolved","proof.started","proof.required","proof.generated","proof.verified","proof.failed","release.completed"],
+        "supported_v1_count": 47,
+        "supported_v1_rule": "raw_types minus unsupported_v1",
+        "unsupported_v1": ["scheme.generation_started","replan.rejected","evidence.conflict","workspace.created","capability.generation_started","capability.tested","capability.validated","review.required"],
+        "event_effect_table_source": "PHASE4_BACKEND_EVENT_CONTRACT_DRAFT.md sections 3 and 3.1 plus final manifest addenda"
+      },
+      "identity_keys": ["runId","sequence","eventId","taskId when present"],
+      "availability": "graphVersion is always present, non-null for graph-semantic events and run.started, and otherwise nullable by the frozen event table; taskId is nullable only for Run-level families. Heartbeats are comments and not events.",
+      "unknown_behavior": "Unsupported/unknown type, payload, version, Run/Task, gap, order error, or conflicting duplicate causes zero mutation and cursor advance and snapshot recovery; exact duplicate is a no-op.",
+      "adapter_ownership": "Backend owns raw event fact/version/payload. Transport validates. Shared adapter may attach exact effect/refresh values. Reducer applies only validated same-Run sequence."
+    },
+    {
+      "index": 6,
+      "name": "ConnectionState",
+      "backend_wire_contract": "CursorProtocolV1 plus SSE transport state",
+      "backend_dependencies": ["BD-003"],
+      "uac_decisions": ["UAC-004","UAC-009","UAC-010","UAC-011","UAC-018"],
+      "schema": {"variants":["IDLE {runId,lastSequence}","CONNECTING {runId,lastSequence,attempt}","OPEN {runId,lastSequence,lastHeartbeatAt:string|null}","RECOVERING {runId,lastSequence,reason:SEQUENCE_GAP|UNKNOWN_EVENT|SCHEMA_INCOMPATIBLE|CURSOR_REJECTED|PROJECTION_MISMATCH}","BACKOFF {runId,lastSequence,retryAt,attempt,error:ErrorEnvelope}","TERMINAL {runId,lastSequence,outcome:SUCCESS|FAILURE|CANCELLED}","FAILED {runId,lastSequence,error:ErrorEnvelope}"]},
+      "field_classification": {"UNCHANGED":["kind","runId","lastSequence","attempt","lastHeartbeatAt","reason","retryAt","error","outcome"],"RENAMED":[],"MOVED":[],"ADDED":[],"REMOVED":[],"ENUM_TIGHTENED":[],"NULLABILITY_CHANGED":[],"OWNERSHIP_CHANGED":[],"SEMANTICALLY_REPLACED":[]},
+      "cursor_protocol": {"numeric":"canonical 0|[1-9][0-9]* within signed 64-bit and <= Run tail","opaque":"[A-Za-z0-9._:-]{1,256} exact eventId in the same Run","invalid_or_foreign":"HTTP 400 INVALID_CURSOR SNAPSHOT_RELOAD before SSE headers","ahead":"HTTP 409 CURSOR_AHEAD SNAPSHOT_RELOAD before SSE headers","terminal_equal":"HTTP 200 SSE terminal headers, zero business/heartbeat frames, immediate close","architecture":"atomic snapshot at N then fetch-stream strictly after N"},
+      "identity_keys": ["runId","lastSequence"],
+      "availability": "Only OPEN.lastHeartbeatAt is nullable; variant-specific fields exist only in their variant.",
+      "unknown_behavior": "No clamp, replay-from-zero, Run switch, polling substitution, or terminal reconnect loop.",
+      "adapter_ownership": "Frontend transport owns connection state only; Backend sequence/cursor identity is retained; it never becomes Run lifecycle authority."
+    },
+    {
+      "index": 7,
+      "name": "FinancialReviewProjection",
+      "backend_wire_contract": "FinancialReviewProjectionV1",
+      "backend_dependencies": ["BD-006","BD-010","BD-011"],
+      "uac_decisions": ["UAC-010","UAC-013"],
+      "schema": {
+        "fields": ["schemaVersion: literal phase4-financial-review/v1","projectionRevision: integer>=1","projectionSequence: integer>=0","objectId: string","runId: string","canonicalRecordId: string | null","releasedResultId: string | null","reviewId: string | null","verdict: PASS|REVIEW|BLOCK|null","reviewer: string | null","inputSnapshotHash: sha256 string | null","reviewedEvidenceRefs: readonly string[]","reviewedCalculationRefs: readonly string[]","reviewedMetricRefs: readonly string[]","reviewedClaimRefs: readonly string[]","reviewedJudgmentRefs: readonly string[]","requiredProofCalculationRefs: readonly string[]","checks: readonly FinancialReviewCheckProjectionV1[]","availability: Availability"],
+        "FinancialReviewCheckProjectionV1": ["checkId:string","checkCode:string","status:PASS|REVIEW|BLOCK","subjects:readonly {subjectType:RUN|TASK|EVIDENCE|CALCULATION|METRIC|CLAIM|JUDGMENT|PROOF|CANONICAL_RECORD|RELEASED_RESULT; subjectId:string; runId:string}[]","expected: Readonly<SafeJsonObject>","actual: Readonly<SafeJsonObject>","detail:string|null","exceptionState:NONE|OPEN|RESOLVED","correctionRefs:readonly {correctionId:string; runId:string; taskId:string; relation:literal ADDRESSES_CHECK; status:RESOLVED|FAILED|ESCALATED; resolvedAt:RFC3339UTC|null}[]","createdAt:RFC3339UTC","resolvedAt:RFC3339UTC|null"]
+      },
+      "field_classification": {
+        "UNCHANGED": ["schemaVersion","projectionRevision","projectionSequence","objectId","runId","canonicalRecordId","releasedResultId","reviewedEvidenceRefs","reviewedCalculationRefs","reviewedMetricRefs","reviewedClaimRefs","requiredProofCalculationRefs","checks","availability"],
+        "ADDED": ["inputSnapshotHash","reviewedJudgmentRefs","checks[].checkId","checks[].checkCode","checks[].status","checks[].subjects","checks[].subjects[].subjectType","checks[].subjects[].subjectId","checks[].subjects[].runId","checks[].expected","checks[].actual","checks[].detail","checks[].exceptionState","checks[].correctionRefs","checks[].correctionRefs[].correctionId","checks[].correctionRefs[].runId","checks[].correctionRefs[].taskId","checks[].correctionRefs[].relation","checks[].correctionRefs[].status","checks[].correctionRefs[].resolvedAt","checks[].createdAt","checks[].resolvedAt"],
+        "ENUM_TIGHTENED": ["verdict removes PASS_WITH_UNCERTAINTY and is exactly PASS|REVIEW|BLOCK|null; Check status, subject type, exception state, and correction status use only the final Backend vocabularies"],
+        "NULLABILITY_CHANGED": ["reviewId","verdict","reviewer"],
+        "RENAMED": ["Backend status -> frontend verdict by frozen rename"],
+        "MOVED": [],"REMOVED": ["PASS_WITH_UNCERTAINTY verdict value"],"OWNERSHIP_CHANGED": [],"SEMANTICALLY_REPLACED": ["uncertainty and correction history are explicit Backend check/exception/correction facts, never a frontend verdict"]
+      },
+      "identity_keys": ["objectId","runId","reviewId when present","checks[].checkId","canonicalRecordId and releasedResultId as an all-null or all-non-null pair"],
+      "availability": "If Review absent, review fields are null, arrays empty, and Availability explicit. Before Review PENDING; terminal-before-Review NOT_GENERATED. Half-null canonical/result is integrity failure.",
+      "unknown_behavior": "Unknown status/check schema or invalid subject/correction relation withholds Review. Aggregate review.resolved cannot manufacture check resolution.",
+      "adapter_ownership": "Backend owns every Review/check/subject/expected/actual/exception/correction fact. Adapter only renames and wraps."
+    },
+    {
+      "index": 8,
+      "name": "ClaimTraceProjection / TraceBundle",
+      "backend_wire_contract": "TraceBundleV1 plus ClaimAnchorManifestV1",
+      "backend_dependencies": ["BD-004","BD-005","BD-006","BD-011"],
+      "uac_decisions": ["UAC-012","UAC-013","UAC-014"],
+      "schema": {
+        "fields": ["schemaVersion: literal phase4-trace/v1","projectionRevision: integer>=1","projectionSequence: integer>=0","anchorManifestId: string","anchorManifestSha256: sha256 string","objectId: string","runId: string","claimId: string","metricId: string","calculationId: string","claim: TypedReleasedClaimV1","releasedMetric: ReleasedFinancialMetric","taskRefs: readonly TaskAvailabilityRef[]","primaryTaskId: string | null","evidenceRefs: readonly EvidenceAvailabilityRef[]","calculationRefs: readonly CalculationAvailabilityRef[]","judgmentRefs: readonly JudgmentAvailability[]","reviewRefs: readonly ReviewAvailabilityRef[]","proofRefs: readonly ProofTraceRef[]","canonicalRecordId: string","releasedResultId: string","report: {reportId:string; representations:readonly [HTMLRepresentationTrace,PDFRepresentationTrace]}","reviewAnchors: readonly ReviewCheckAnchor[]","taskAnchors: readonly TaskAnchor[]","executionAnchors: readonly ExecutionEventAnchor[]","availability: Availability"],
+        "representation": ["format:HTML|PDF","artifactId:string|null","availability:Availability","claimAnchor:RepresentationClaimAnchor|null; non-null exactly when that representation anchor is available"],
+        "anchor_common": ["anchorId:string|null only when unavailable","anchorKind:string","objectId:string","runId:string","claimId:string","availability:Availability"],
+        "review_anchor": ["reviewId:string","checkId:string"],
+        "task_anchor": ["taskId:string"],
+        "execution_anchor": ["canonicalRecordId:string","taskId:string","eventRefs:readonly string[] ordered by sequence"]
+      },
+      "field_classification": {
+        "UNCHANGED": ["schemaVersion","projectionRevision","projectionSequence","objectId","runId","claimId","claim","releasedMetric","taskRefs","primaryTaskId","evidenceRefs","calculationRefs","judgmentRefs","reviewRefs","proofRefs","canonicalRecordId","releasedResultId","report.reportId","availability"],
+        "ADDED": ["anchorManifestId","anchorManifestSha256","metricId","calculationId","report.representations","report.representations[].format","report.representations[].artifactId","report.representations[].availability","report.representations[].claimAnchor","reviewAnchors","taskAnchors","executionAnchors","reviewAnchors[].anchorId","reviewAnchors[].anchorKind","reviewAnchors[].objectId","reviewAnchors[].runId","reviewAnchors[].claimId","reviewAnchors[].reviewId","reviewAnchors[].checkId","reviewAnchors[].availability","taskAnchors[].anchorId","taskAnchors[].anchorKind","taskAnchors[].objectId","taskAnchors[].runId","taskAnchors[].claimId","taskAnchors[].taskId","taskAnchors[].availability","executionAnchors[].anchorId","executionAnchors[].anchorKind","executionAnchors[].objectId","executionAnchors[].runId","executionAnchors[].claimId","executionAnchors[].canonicalRecordId","executionAnchors[].taskId","executionAnchors[].eventRefs","executionAnchors[].availability"],
+        "SEMANTICALLY_REPLACED": ["report.artifactIds plus report.anchor -> fixed representation-scoped report.representations[].artifactId/claimAnchor","single reviewAnchor -> plural reviewAnchors","single taskAnchor -> plural taskAnchors","single executionAnchor -> plural executionAnchors"],
+        "REMOVED": ["report.artifactIds","report.anchor","reviewAnchor","taskAnchor","executionAnchor"],
+        "NULLABILITY_CHANGED": ["all representation artifact/anchor IDs are nullable only for that unavailable representation"],
+        "ENUM_TIGHTENED": ["report.representations[].format exactly HTML|PDF"],
+        "RENAMED": [],"MOVED": [],"OWNERSHIP_CHANGED": ["primaryTaskId requires an explicit durable Backend primary relation; singleton cardinality never selects it"]
+      },
+      "identity_keys": ["anchorManifestId","anchorManifestSha256","objectId","runId","claimId","metricId","calculationId","canonicalRecordId","releasedResultId","report.reportId","representation format/artifactId","each anchorId and target IDs"],
+      "availability": "Each missing detail/representation/anchor retains exact identity plus Availability. One format never borrows the other format's artifact or anchor.",
+      "unknown_behavior": "No title/text/name/position/first/latest/metric/DOM/document fallback; any closure/hash failure withholds trace.",
+      "adapter_ownership": "Backend owns relation and anchor manifest truth. Adapter preserves source order and exact camel rename. Frontend owns navigation/focus/scroll/highlight only."
+    },
+    {
+      "index": 9,
+      "name": "ReportArtifactGroup",
+      "backend_wire_contract": "ReportArtifactGroupV1",
+      "backend_dependencies": ["BD-004","BD-006"],
+      "uac_decisions": ["UAC-014","UAC-015","UAC-016"],
+      "schema": {
+        "fields": ["schemaVersion: literal phase4-report-artifacts/v1","objectId: string","runId: string","reportId: string equal releasedResultId","canonicalRecordId: string","releasedResultId: string","releasePolicyVersion: literal phase4-release-eligibility/v1","artifactPolicyVersion: literal phase4-html-required-pdf-optional/v1","anchorManifestId: string|null; required when group AVAILABLE","anchorManifestSha256: sha256 string|null; required when group AVAILABLE","availability: Availability","representations: readonly [HTMLRepresentation,PDFRepresentation]"],
+        "ReportRepresentation": ["format:HTML|PDF","requiredForRelease:boolean fixed HTML true/PDF false","contentType: exact text/html; charset=utf-8 or application/pdf","availability:Availability","artifactId:string|null","safeFailureCode:string|null","generationAttemptId:string|null","generationAttemptCount:integer>=0","sha256:sha256 string|null","sizeBytes:integer>0|null","renderer:{rendererId:string;rendererVersion:string}|null","generatedAt:RFC3339UTC|null","authorizedRef:relative same-origin string|null"]
+      },
+      "field_classification": {
+        "UNCHANGED": ["schemaVersion","objectId","runId","reportId","canonicalRecordId","releasedResultId","availability","representations","representations[].format","representations[].artifactId","representations[].contentType","representations[].availability","representations[].safeFailureCode","representations[].sha256","representations[].sizeBytes","representations[].renderer","representations[].renderer.rendererId","representations[].renderer.rendererVersion","representations[].generatedAt","representations[].authorizedRef"],
+        "ADDED": ["releasePolicyVersion","artifactPolicyVersion","anchorManifestId","anchorManifestSha256","representations[].requiredForRelease","representations[].generationAttemptId","representations[].generationAttemptCount"],
+        "ENUM_TIGHTENED": ["representations fixed exactly [HTML,PDF] with fixed requiredForRelease and contentType"],
+        "NULLABILITY_CHANGED": ["artifact state table governs artifactId, safeFailureCode, attempt fields, sha256, sizeBytes, renderer, generatedAt, authorizedRef"],
+        "OWNERSHIP_CHANGED": ["authorizedRef is Backend-projected non-bearer locator and never authorization"],
+        "RENAMED": [],"MOVED": [],"REMOVED": [],"SEMANTICALLY_REPLACED": ["policy-skipped PDF uses availability.reasonCode PDF_NOT_GENERATED_BY_POLICY and safeFailureCode null"]
+      },
+      "identity_keys": ["objectId","runId","reportId","canonicalRecordId","releasedResultId","anchorManifestId","anchorManifestSha256","representations[].format","representations[].artifactId when retained","representations[].generationAttemptId when attempted"],
+      "availability": "Lifecycle is NOT_GENERATED->PENDING->AVAILABLE|FAILED; retry appends attempt and may FAILED->PENDING; AVAILABLE may later become UNAVAILABLE retaining immutable success metadata but no authorizedRef; terminal has no PENDING.",
+      "unknown_behavior": "Unknown policy/format/state, owner/hash/size/type mismatch, internal locator, or manifest mismatch fails closed; protected byte failures return zero bytes.",
+      "adapter_ownership": "Backend owns slots, attempts, state, policies, manifest, bytes and locator projection. Adapter copies locator; every GET rechecks scope/identity/state/integrity."
+    },
+    {
+      "index": 10,
+      "name": "ReleasedFinancialMetric",
+      "backend_wire_contract": "ReleasedFinancialMetricProjectionV1",
+      "backend_dependencies": ["BD-005","BD-010"],
+      "uac_decisions": ["UAC-012","UAC-017"],
+      "schema": {
+        "fields": ["runId:string","metricId:string","name:string","canonicalValue:decimal string","canonicalUnit:RATIO|PERCENT|CURRENCY|COUNT|SHARES|INDEX|MULTIPLE","displayValue:string","displayUnit:string","period:string","periodBasis:FY|QUARTER|TTM|LTM|CURRENT|DAILY","actuality:UNKNOWN|ACTUAL|ESTIMATE","asOf:date string","currency:string|null by unit semantics","formulaId:string","capabilityId:string","calculationId:string","evidenceRefs:readonly nonempty string[]","claimRefs:readonly nonempty string[]","proof:{policyId:string; requirement:NOT_REQUIRED|MUST_PROVE; status:ProofStatusV1; proofRefs:readonly string[]}","methodMetadata:MethodMetadataV1|null","technicalPriceBasis:TechnicalPriceBasisV1|null","corporateActionStatus:CorporateActionStatusV1|null","corporateActionGuardRefs:readonly string[]","limitations:readonly string[]"],
+        "MethodMetadataV1": ["method:string","parameters:readonly MethodParameterV1[] preserving Backend order","observationCount:integer|null","warmupRequired:integer|null","warmupSatisfied:boolean|null","firstAsOf:date|null","lastAsOf:date|null","isWilder:boolean|null","emaAdjust:boolean|null"]
+      },
+      "field_classification": {
+        "UNCHANGED": ["runId","metricId","name","canonicalValue","canonicalUnit","displayValue","displayUnit","period","periodBasis","actuality","asOf","currency","formulaId","capabilityId","calculationId","evidenceRefs","claimRefs","proof.requirement","proof.status","proof.proofRefs","limitations"],
+        "ADDED": ["proof.policyId","methodMetadata","methodMetadata.method","methodMetadata.parameters","methodMetadata.observationCount","methodMetadata.warmupRequired","methodMetadata.warmupSatisfied","methodMetadata.firstAsOf","methodMetadata.lastAsOf","methodMetadata.isWilder","methodMetadata.emaAdjust","technicalPriceBasis","corporateActionStatus","corporateActionGuardRefs"],
+        "NULLABILITY_CHANGED": [],
+        "ENUM_TIGHTENED": ["proof.status follows total Backend Proof mapping; VALID is GENERATED_UNVERIFIED and never VERIFIED"],
+        "SEMANTICALLY_REPLACED": ["proof object gains explicit policyId and current Backend proof semantics"],
+        "RENAMED": [],"MOVED": [],"REMOVED": [],"OWNERSHIP_CHANGED": ["all method/technical/corporate fields and display values are Backend authority"]
+      },
+      "capability_version_disposition": "ABSENT_FROM_CURRENT_PUBLIC_RELEASED_METRIC_CONTRACT; capabilityId remains required. Adding capabilityVersion requires a later versioned contract.",
+      "decimal_and_methodology": {"wire_decimal_type":"STRING","rounding":"ROUND_HALF_EVEN under explicit formula-specific context","fundamental_ratio_precision":28,"technical_average_and_ema_precision":50,"macd_line_and_histogram_subtraction_precision":28,"revenue_growth_denominator":"signed prior revenue, nonzero","frontend_numeric_conversion":false},
+      "identity_keys": ["runId","metricId","calculationId","formulaId","capabilityId","proof.policyId"],
+      "availability": "Method metadata and technical/corporate applicability fields may be null only under explicit Backend non-applicability semantics; limitations/guard refs remain present arrays.",
+      "unknown_behavior": "Unknown unit/period/actuality/proof/method/price/corporate state or broken lineage withholds metric and release; no recomputation or field dropping.",
+      "adapter_ownership": "Backend is sole numeric, method, technical-price, corporate-action, Proof, and lineage authority. Adapter only renames/wraps; component concatenates supplied displayValue/displayUnit."
+    },
+    {
+      "index": 11,
+      "name": "ReleasedObjectCoreProjection",
+      "backend_wire_contract": "ReleasedObjectCoreV1",
+      "backend_dependencies": ["BD-001","BD-009"],
+      "uac_decisions": ["UAC-008","UAC-016","UAC-017"],
+      "schema": {"fields":["schemaVersion:literal phase4-released-object-core/v1","projectionRevision:integer>=1","generatedAt:RFC3339UTC","object:NormalizedObjectIdentity","latestReleasedRunId:string|null","currentReleasedResultAvailability:Availability","sourceRunId:string|null","releasedResultId:string|null","canonicalRecordId:string|null","releasedAt:RFC3339UTC|null","metrics:readonly ReleasedFinancialMetric[]","claimRefs:readonly string[]","reportArtifacts:ReportArtifactGroup|null","runs:readonly RunCollectionItem[]","runCount:integer>=0"]},
+      "field_classification": {
+        "UNCHANGED": ["schemaVersion","object","latestReleasedRunId","currentReleasedResultAvailability","sourceRunId","releasedResultId","canonicalRecordId","releasedAt","metrics","claimRefs","reportArtifacts"],
+        "ADDED": ["projectionRevision","generatedAt","runs","runCount"],
+        "NULLABILITY_CHANGED": ["latestReleasedRunId/sourceRunId/releasedResultId/canonicalRecordId/releasedAt/reportArtifacts form one release-governed tuple"],
+        "SEMANTICALLY_REPLACED": ["latest release eligibility requires one ALLOWED ReleaseValidationRecord and complete Review/Proof/material-output/artifact closure"],
+        "RENAMED": [],"MOVED": [],"REMOVED": [],"ENUM_TIGHTENED": [],"OWNERSHIP_CHANGED": []
+      },
+      "release_selector": "Eligible RELEASED Runs only; maximum by releasedAt DESC then opaque runId DESC bytewise; empty is NOT_RELEASED/NO_RELEASED_RUN; sourceRunId equals latestReleasedRunId.",
+      "identity_keys": ["object.objectId","projectionRevision","latestReleasedRunId/sourceRunId when present","releasedResultId when present","canonicalRecordId when present","runs[].runId"],
+      "availability": "No eligible release means the full release tuple and reportArtifacts null and metrics/claimRefs empty; available release requires complete non-null closure.",
+      "unknown_behavior": "Partial tuple, invalid validation/policy/metric/artifact relation, or cross-Object Run withholds the slice; no latest arbitrary Run fallback.",
+      "adapter_ownership": "Backend owns eligibility, order, release tuple, history and lossless members. Phase 5 memory/version/comparison/incremental/writeback remains absent."
+    },
+    {
+      "index": 12,
+      "name": "ErrorEnvelope",
+      "backend_wire_contract": "ErrorEnvelopeV1",
+      "backend_dependencies": ["BD-003","BD-004","BD-008"],
+      "uac_decisions": ["UAC-003","UAC-006","UAC-018"],
+      "schema": {"fields":["schemaVersion:literal phase4-error/v1","error.code:INVALID_CURSOR|UNAUTHENTICATED|FORBIDDEN|NOT_FOUND|IDENTITY_MISMATCH|UNAVAILABLE|NOT_GENERATED|NOT_RELEASED|CONFLICT|CURSOR_AHEAD|SCHEMA_INCOMPATIBLE|UNSUPPORTED_EVENT|TERMINAL|REQUEST_VALIDATION_ERROR|INTEGRITY_FAILURE|INTERNAL_ERROR|TRANSIENT_BACKEND_ERROR","error.message:safe string","error.retryable:boolean fixed by code","error.recovery:NONE|RETRY|SNAPSHOT_RELOAD|REAUTHENTICATE fixed by code","error.requestId:string|null","error.resource:{type:string;id:string}|null","error.details:Readonly<SafeJsonObject>"]},
+      "field_classification": {
+        "UNCHANGED": ["schemaVersion","error","error.message","error.retryable","error.requestId","error.resource","error.resource.type","error.resource.id","error.details"],
+        "ADDED": ["error.code.UNAUTHENTICATED","error.code.REQUEST_VALIDATION_ERROR","error.code.INTERNAL_ERROR"],
+        "ENUM_TIGHTENED": ["error.code exact 17-code UAC-018 vocabulary","error.recovery exact code-bound tuple"],
+        "SEMANTICALLY_REPLACED": ["INVALID_CURSOR recovery is SNAPSHOT_RELOAD","NOT_RELEASED recovery is SNAPSHOT_RELOAD","UNSUPPORTED_EVENT recovery is SNAPSHOT_RELOAD","INTEGRITY_FAILURE recovery is SNAPSHOT_RELOAD"],
+        "RENAMED": [],"MOVED": [],"REMOVED": [],"NULLABILITY_CHANGED": [],"OWNERSHIP_CHANGED": []
+      },
+      "http_map": {"INVALID_CURSOR":[400,false,"SNAPSHOT_RELOAD"],"UNAUTHENTICATED":[401,false,"REAUTHENTICATE"],"FORBIDDEN":[403,false,"NONE"],"NOT_FOUND":[404,false,"NONE"],"IDENTITY_MISMATCH":[404,false,"NONE"],"UNAVAILABLE":[409,false,"NONE"],"NOT_GENERATED":[409,false,"NONE"],"NOT_RELEASED":[409,false,"SNAPSHOT_RELOAD"],"CONFLICT":[409,false,"NONE"],"CURSOR_AHEAD":[409,false,"SNAPSHOT_RELOAD"],"SCHEMA_INCOMPATIBLE":[409,false,"NONE"],"UNSUPPORTED_EVENT":[409,false,"SNAPSHOT_RELOAD"],"TERMINAL":[409,false,"NONE"],"REQUEST_VALIDATION_ERROR":[422,false,"NONE"],"INTEGRITY_FAILURE":[500,false,"SNAPSHOT_RELOAD"],"INTERNAL_ERROR":[500,false,"NONE"],"TRANSIENT_BACKEND_ERROR":[503,true,"RETRY"]},
+      "identity_keys": ["error.requestId when present","error.resource.type/id when present","adapter-retained requested route tuple"],
+      "availability": "requestId/resource may be null only when safe context is absent; details is always allowlisted/redacted. Normal Phase 4A local requests do not emit reserved 401/403.",
+      "unknown_behavior": "Unknown/unsafe envelope becomes a local safe transport failure; no raw body or foreign-owner fact is exposed.",
+      "adapter_ownership": "Backend owns code/HTTP/retry/recovery/message/context. Adapter validates and follows typed recovery; pages never reinterpret or render arbitrary raw details."
+    },
+    {
+      "index": 13,
+      "name": "Availability",
+      "backend_wire_contract": "AvailabilityV1",
+      "backend_dependencies": ["BD-001","BD-004","BD-010"],
+      "uac_decisions": ["UAC-006","UAC-008","UAC-011","UAC-012","UAC-013","UAC-014","UAC-015","UAC-016","UAC-017","UAC-018"],
+      "schema": {"fields":["status:PENDING|AVAILABLE|NOT_GENERATED|NOT_RELEASED|UNAVAILABLE|FAILED","reasonCode:string|null; null iff AVAILABLE","retryable:boolean"]},
+      "field_classification": {"UNCHANGED":["status","reasonCode","retryable"],"RENAMED":[],"MOVED":[],"ADDED":[],"REMOVED":[],"ENUM_TIGHTENED":[],"NULLABILITY_CHANGED":[],"OWNERSHIP_CHANGED":[],"SEMANTICALLY_REPLACED":[]},
+      "identity_keys": ["exact referenced resource ID","owning Object/Run tuple when applicable"],
+      "availability": "PENDING only nonterminal; NOT_GENERATED means no attempt/record; FAILED means attempted and failed; UNAVAILABLE means retained known ref cannot be supplied; terminal resources never PENDING.",
+      "unknown_behavior": "Unknown/invariant failure rejects containing projection as SCHEMA_INCOMPATIBLE. Empty/null/HTTP200 never substitutes for Availability.",
+      "adapter_ownership": "Backend projection owns every value; adapter only renames reason_code to reasonCode and UI enables retry only when supplied true."
+    }
+  ],
+  "backend_dependencies": [
+    {"id":"BD-001","consumer_contracts":["RunProjection","ReleasedObjectCoreProjection","Availability"],"backend_obligation":"One AtomicRunProjectionV1 with exact Object/Run closure, monotonic revision and same-snapshot event watermark.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001 approved remediated parent and PASS reaudits","UAC-002 owner-approved R2 package"],"implementation_evidence_status":"PENDING","implementation_evidence":"projection route, MVCC publication, race/restart tests"},
+    {"id":"BD-002","consumer_contracts":["NormalizedRuntimeEventV1"],"backend_obligation":"All 55 raw RuntimeEvent values have a supported effect/payload or explicit UNSUPPORTED_EVENT; raw name preserved.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001","UAC-002"],"implementation_evidence_status":"PENDING","implementation_evidence":"public version fields and decoder/reducer fixtures"},
+    {"id":"BD-003","consumer_contracts":["ConnectionState","NormalizedRuntimeEventV1","ErrorEnvelope"],"backend_obligation":"Snapshot-at-N, strict numeric/opaque same-Run cursor, pre-header errors, gap recovery, heartbeat and terminal close.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001","UAC-002"],"implementation_evidence_status":"PENDING","implementation_evidence":"strengthened SSE route and P4-SSE-001..020"},
+    {"id":"BD-004","consumer_contracts":["ReportArtifactGroup","Availability","ErrorEnvelope","Trace representation anchors"],"backend_obligation":"Fixed independent HTML/PDF slots, non-bearer authorized path, exact identity and integrity before bytes.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001","UAC-002"],"implementation_evidence_status":"PENDING","implementation_evidence":"metadata/content routes, attempt persistence, authorization/integrity/restart tests"},
+    {"id":"BD-005","consumer_contracts":["ReleasedFinancialMetric","ClaimTraceProjection"],"backend_obligation":"Lossless metric/Claim with Decimal strings, signed-prior revenue growth, explicit half-even contexts, method/technical/corporate fields, proof and lineage.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001 remediated financial PASS reaudit","UAC-002"],"implementation_evidence_status":"PENDING","bound_phase3_receipt_status":"NONCONFORMING","implementation_evidence":"Phase 4 projection, exact release joins and display/methodology evidence"},
+    {"id":"BD-006","consumer_contracts":["ClaimTraceProjection / TraceBundle","FinancialReviewProjection","ReportArtifactGroup"],"backend_obligation":"Exact Claim/Trace routes and immutable representation-scoped anchor manifest; retained content-addressed generated source/test bytes; no inferred joins.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001 remediated generated-byte PASS reaudits","UAC-002"],"implementation_evidence_status":"PENDING","bound_phase3_receipt_status":"NONCONFORMING","implementation_evidence":"routes, typed detail, byte retention, manifests, substitution/restart tests"},
+    {"id":"BD-007","consumer_contracts":["PreparedResearchDraft"],"backend_obligation":"Immutable hashed SCHEME_ONLY draft, explicit not-generated planned graph, no Tasks.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001","UAC-002"],"implementation_evidence_status":"PENDING","implementation_evidence":"strengthened prepare/idempotency/draft persistence tests"},
+    {"id":"BD-008","consumer_contracts":["ConfirmRunResponseV1","ErrorEnvelope"],"r1_consumer_contract_name":"ConfirmAndStartResult","backend_obligation":"Confirm consumes one draft and returns immutable admission plus replay metadata; exact replay/conflict semantics.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001","UAC-002"],"implementation_evidence_status":"PENDING","implementation_evidence":"durable admission/outbox/lease and response-loss/restart evidence"},
+    {"id":"BD-009","consumer_contracts":["GlobalRunCollectionProjection","ReleasedObjectCoreProjection"],"backend_obligation":"Global collection route, fixed updatedAt/runId order, opaque filter-bound cursor and list/detail consistency.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001","UAC-002"],"implementation_evidence_status":"PENDING","implementation_evidence":"additive route, durable updatedAt/revision and multipage identity tests"},
+    {"id":"BD-010","consumer_contracts":["RunProjection","FinancialReviewProjection","ReleasedFinancialMetric","Availability"],"backend_obligation":"Total Run/Task/Review/Proof/availability maps; unknown fails closed and recovers from authoritative snapshot.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001","UAC-002"],"implementation_evidence_status":"PENDING","implementation_evidence":"exhaustive map fixtures and release consequences"},
+    {"id":"BD-011","consumer_contracts":["FinancialReviewProjection","ClaimTraceProjection / TraceBundle"],"backend_obligation":"Release-independent Review with nullable absence, stable checks, typed subjects and exact correction/exception history.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001","UAC-002"],"implementation_evidence_status":"PENDING","implementation_evidence":"durable Check schema, route expansion and history/nullability tests"},
+    {"id":"BD-012","consumer_contracts":["RunProjection","NormalizedRuntimeEventV1"],"backend_obligation":"PathChangeProjectionV1 uses exactly three mutation types; sparse graph events refresh and never fabricate Tasks.","semantic_status":"CONTRACT_CLOSED","final_freeze_dependency":["UAC-001","UAC-002"],"implementation_evidence_status":"PENDING","implementation_evidence":"projection/reducer and graph mutation evidence"}
+  ],
+  "uac_disposition": [
+    {"id":"UAC-001","status":"STILL_OPEN","contract_decision":"READY","remaining_dependency":"Remediate every Backend and Financial Semantics finding and obtain independent PASS receipts bound to the approved Phase 3 SHA/tree/Run."},
+    {"id":"UAC-002","status":"STILL_OPEN","contract_decision":"READY","remaining_dependency":"Owner approval of this exact R2 canonical package SHA; R1 approval is not accepted."},
+    {"id":"UAC-003","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"VersionProtocolV1."},
+    {"id":"UAC-004","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"CursorProtocolV1."},
+    {"id":"UAC-005","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Immutable RunAdmissionV1 plus transport-only ResponseMetaV1."},
+    {"id":"UAC-006","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"phase4-local-single-user-trusted/v1 with mandatory identity validation."},
+    {"id":"UAC-007","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Durable exactly-once Run scheduler admission."},
+    {"id":"UAC-008","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Backend projection authority; adapter-only percent."},
+    {"id":"UAC-009","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Per-Run atomic publication with MVCC-consistent watermark."},
+    {"id":"UAC-010","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Total enum maps and 55 RuntimeEvent dispositions."},
+    {"id":"UAC-011","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Exactly one terminal finalizer/event ordering."},
+    {"id":"UAC-012","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Exact same-Run Claim lineage; no inferred primary Task."},
+    {"id":"UAC-013","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Release-independent Review/Check/history projection."},
+    {"id":"UAC-014","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Representation-scoped hash-bound Trace anchor manifest."},
+    {"id":"UAC-015","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Non-bearer authorizedRef with identity/integrity recheck."},
+    {"id":"UAC-016","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"HTML-required/PDF-optional independent artifact slots."},
+    {"id":"UAC-017","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Eligible release selection, lossless financial projection, signed-prior and explicit Decimal contexts."},
+    {"id":"UAC-018","status":"CONTRACT_CLOSED","implementation_evidence":"PENDING","decision":"Total ErrorEnvelope/Availability and safe telemetry redaction."}
+  ],
+  "interaction_and_e2e_delta": {
+    "authority_state": "DESIGN_DEFINED_RESERVATIONS_NOT_YET_APPROVED_OR_FINALIZED",
+    "current_authoritative_e2e_namespace": "P4-E2E-001..106",
+    "current_authoritative_interaction_coverage": "69/69 active; 70/70 historical including tombstone 015",
+    "reservations": [
+      {"interaction_id":"071","gate_id":"P4-E2E-107","intent":"Execution actor-type filter","proposed_activation":"PHASE4_CORE_REQUIRED","state":"RESERVED_NOT_ACTIVE","semantics":"Exact O/R/X rows only; ALL|AGENT|LLM|DATA|TOOL|CODE|RUNTIME|REVIEW|PROOF; accessible selection, empty state, no mutation or raw/hidden-field search."},
+      {"interaction_id":"072","gate_id":"P4-E2E-108","intent":"Execution safe free-text search","proposed_activation":"PHASE4_CORE_REQUIRED","state":"RESERVED_NOT_ACTIVE","semantics":"Allowlisted normalized fields/IDs only; intersects filter; exact O/R/X; clear/focus/live count/stale-response quarantine; no raw/private/hidden search."},
+      {"interaction_id":"073","gate_id":"P4-E2E-109","intent":"Presenter Scene selector","proposed_activation":"PRESENTER_ONLY","source_class":"DEMO","result_class":"DEMO_UX_ONLY","state":"RESERVED_NOT_ACTIVE","real_phase4_aggregate_membership":"NONE"},
+      {"interaction_id":"074","gate_id":"P4-E2E-110","intent":"Presenter reset","proposed_activation":"PRESENTER_ONLY","source_class":"DEMO","result_class":"DEMO_UX_ONLY","state":"RESERVED_NOT_ACTIVE","real_phase4_aggregate_membership":"NONE"},
+      {"interaction_id":"075","gate_id":"P4-E2E-111","intent":"Presenter previous","proposed_activation":"PRESENTER_ONLY","source_class":"DEMO","result_class":"DEMO_UX_ONLY","state":"RESERVED_NOT_ACTIVE","real_phase4_aggregate_membership":"NONE"},
+      {"interaction_id":"076","gate_id":"P4-E2E-112","intent":"Presenter next","proposed_activation":"PRESENTER_ONLY","source_class":"DEMO","result_class":"DEMO_UX_ONLY","state":"RESERVED_NOT_ACTIVE","real_phase4_aggregate_membership":"NONE"}
+    ],
+    "expected_if_later_approved_unchanged": {"production":"71/71","presenter_enabled_demo":"75/75","historical_union":"76/76 including tombstone 015"},
+    "no_demo_gate_enters_phase4_core": true
+  },
+  "scene_dispositions": [
+    {"scene":"SCENE-01","phase4_real":"PHASE4_CORE_REQUIRED","impact":"AFFECTED","demo_result_separate":true},
+    {"scene":"SCENE-02","phase4_real":"PHASE4_CORE_REQUIRED","impact":"AFFECTED","demo_result_separate":true},
+    {"scene":"SCENE-03","phase4_real":"PHASE4_CORE_REQUIRED","impact":"AFFECTED","demo_result_separate":true},
+    {"scene":"SCENE-04","phase4_real":"PHASE4_CORE_REQUIRED","impact":"AFFECTED","demo_result_separate":true},
+    {"scene":"SCENE-05","phase4_real":"EXCLUDED","future_activation":"PHASE5_ACTIVATED","state":"DEFINED_NOT_ACTIVATED","impact":"COMPATIBILITY_AND_DEMO_ONLY","demo_result_separate":true},
+    {"scene":"SCENE-06","phase4_real":"EXCLUDED","future_activation":"PHASE5_ACTIVATED","state":"DEFINED_NOT_ACTIVATED","impact":"COMPATIBILITY_AND_DEMO_ONLY","demo_result_separate":true}
+  ],
+  "governance_cycle": {
+    "required_order": ["OWNER_APPROVES_R2_CONTRACT_INPUT","BACKEND_FINAL_CONTRACT_FREEZE_CONSUMES_APPROVED_R2","FRONTEND_V17_IMPLEMENTATION_CONSUMES_FROZEN_BACKEND_CONTRACT"],
+    "frontend_candidate_sha_is_backend_freeze_prerequisite": false,
+    "implementation_evidence_is_semantic_freeze_prerequisite_for_new_phase4_behavior": false,
+    "implementation_evidence_remains_required_before_acceptance": true
+  },
+  "backend_final_freeze_state": {
+    "final_delta_ready": true,
+    "uac_contract_closed": "16/18",
+    "uac_001": "STILL_OPEN_PENDING_REMEDIATION_AND_PASS_REAUDITS",
+    "uac_002": "STILL_OPEN_PENDING_OWNER_APPROVED_R2",
+    "bd_contract_closed": "12/12",
+    "backend_frontend_field_ownership": "EXACT_AFTER_R2_CORRECTIONS",
+    "backend_independent_final_audit": "FAIL",
+    "financial_semantics_independent_audit": "FAIL",
+    "phase4_backend_contract_freeze_ready": false,
+    "phase4_implementation_accepted": false,
+    "phase4_core_acceptance": "NOT_EXECUTED"
+  },
+  "validation": {
+    "normalized_contract_families_accounted": "13/13",
+    "bd_records_accounted": "12/12",
+    "uac_mapped": "18/18",
+    "unmapped_field_groups": 0,
+    "unowned_business_fields": 0,
+    "reference_manifest_bound": true,
+    "access_mode_bound": true,
+    "uac_semantic_decisions_bound": true,
+    "r1_modified": false,
+    "r1_approved": false,
+    "r2_field_ownership_exact": true,
+    "frontend_financial_authority": 0,
+    "cross_object_fallback": 0,
+    "cross_run_fallback": 0,
+    "hidden_cot_exposure": 0,
+    "raw_provider_body_exposure": 0,
+    "raw_artifact_locator_exposure": 0,
+    "phase5_leakage": 0,
+    "frontend_source_changed": false,
+    "backend_source_changed": false,
+    "frontend_contract_conflicts": 0,
+    "production_source_modified": false
+  },
+  "final": {
+    "V17_CONTRACT_INPUT_R2_READY": "YES",
+    "R1_STATUS": "SUPERSEDED_BEFORE_OWNER_APPROVAL",
+    "R1_OWNER_APPROVAL": "NO",
+    "NORMALIZED_CONTRACTS": "13/13",
+    "BD_RECORDS": "12/12",
+    "UAC_MAPPED": "18/18",
+    "FRONTEND_CONTRACT_CONFLICTS": 0,
+    "FCR_REVISION": "DRAFT-02",
+    "FCR_STATUS": "DRAFT_CHANGE",
+    "CONTRACT_INPUT_APPROVAL_READY": "YES",
+    "OWNER_APPROVAL_REQUIRED": "YES",
+    "FRONTEND_IMPLEMENTATION_AUTHORIZED": "NO",
+    "FRONTEND_CANDIDATE_CREATED": "NO",
+    "PHASE4_STARTED": "NO"
+  }
+}

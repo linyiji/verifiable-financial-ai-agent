@@ -1,0 +1,665 @@
+{
+  "schema_version": "v17-phase4-contract-input-package/v1",
+  "package_id": "V17_PHASE4_CONTRACT_INPUT_PACKAGE",
+  "package_revision": "1.0.0",
+  "prepared_at": "2026-09-04T10:55:07Z",
+  "status": "READY_FOR_OWNER_APPROVAL",
+  "purpose": "One governed, hash-bound Frontend consumer-contract input for Phase 4 Backend Final Contract Freeze.",
+  "authority": {
+    "classification": "DOCUMENTATION_GOVERNANCE_ONLY",
+    "is_frontend_implementation_candidate": false,
+    "is_source_baseline": false,
+    "is_build": false,
+    "is_integration_pass": false,
+    "is_delta_audit": false,
+    "authorizes_implementation": false,
+    "parent_baseline_id": "FRONTEND_BASELINE_V8.1",
+    "parent_baseline_sha": "d854c97789c98cca14fee3f4b3d7f00e0d5d137a",
+    "frontend_candidate_sha_required": false,
+    "frontend_candidate_created": false,
+    "frontend_implementation_authorized": false,
+    "governance_cycle": [
+      "OWNER_APPROVES_V17_CONTRACT_INPUT_PACKAGE",
+      "BACKEND_FINAL_CONTRACT_FREEZE_CONSUMES_APPROVED_PACKAGE",
+      "V17_IMPLEMENTATION_CONSUMES_FROZEN_BACKEND_CONTRACT"
+    ],
+    "forbidden_cycle": "V17_IMPLEMENTATION_PRECEDES_BACKEND_FINAL_CONTRACT_FREEZE"
+  },
+  "approval": {
+    "contract_input_approval_ready": true,
+    "owner_approval_required": true,
+    "owner_approval_status": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "self_approved": false
+  },
+  "bindings": {
+    "reference_manifest": {
+      "id": "V17_REFERENCE_MANIFEST_V1",
+      "path": "docs/frontend-governance/V17_REFERENCE_MANIFEST_V1.json",
+      "sha256": "44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394",
+      "completeness": "65/65",
+      "relationship": "REFERENCE_INPUT_ONLY",
+      "correction_record": "V17-RMCR-001"
+    },
+    "fcr": {
+      "change_id": "FRONTEND_V17_PHASE4_CORE_INTEGRATION",
+      "record_revision": "DRAFT-01",
+      "status": "DRAFT_CHANGE",
+      "path": "docs/frontend-governance/FCR_V17_PHASE4_CORE_INTEGRATION.md",
+      "sha256": "b20f2a0527638d057b1de62a6b154cdc8d50724d4aa75ee3491122fad3280df1",
+      "git_blob_sha1": "52a3ebdbc107f42b87094e60cbc39ad730089510",
+      "implementation_authorized": false,
+      "candidate_sha": "PENDING",
+      "mutation_by_this_package": "NONE"
+    },
+    "source_artifacts": [
+      {
+        "role": "NORMALIZED_CONTRACT_SOURCE",
+        "path": "docs/integration/V17_FRONTEND_CONTRACT_PREPARATION.md",
+        "sha256": "09d473ec009fd6658569c4054b3943f26679f74aa671772b6a0bc8887381067d"
+      },
+      {
+        "role": "BACKEND_DEPENDENCY_SOURCE",
+        "path": "docs/integration/V17_FRONTEND_BACKEND_DEPENDENCY_MATRIX.md",
+        "sha256": "9f6981cd7e5782b5467f4a1fc8770b46d0e1460e9b18bc20aa8918b82034eb24"
+      },
+      {
+        "role": "INTERACTION_RESERVATION_SOURCE",
+        "path": "docs/frontend-governance/V17_INTERACTION_IMPACT_MATRIX.md",
+        "sha256": "39fbe34aafd98e5916f0d714dac1d217752e68fe813dc4bd85fc8b746f280d1a"
+      },
+      {
+        "role": "E2E_DELTA_SOURCE",
+        "path": "docs/integration/V17_FRONTEND_TEST_PREPARATION.md",
+        "sha256": "5955d37ec6e3fce2e623f2b85e9c03108608cd385782a7d253c84e78dc0067c4"
+      },
+      {
+        "role": "SCENE_DISPOSITION_SOURCE",
+        "path": "docs/integration/PHASE4_BROWSER_SCENARIO_MATRIX.md",
+        "sha256": "9da7425b1bab5fab8371a2ee8e5ea733f7871e4ec3b4c581793564cd94de2052"
+      },
+      {
+        "role": "SCENE_ACTIVATION_SOURCE",
+        "path": "docs/integration/PHASE4_E2E_GATE_ACTIVATION_MATRIX.md",
+        "sha256": "b3b2aa62e8a389403f3d5b537de5a316bacaab88d2286cb7bb43f556ca25a96e"
+      },
+      {
+        "role": "NODE24_COMPATIBILITY_EVIDENCE",
+        "path": "docs/integration/FRONTEND_V8_1_NODE24_COMPATIBILITY.md",
+        "sha256": "889a975aa39f6401cf06c5ba59e6d9256d8159c489a4861ed85db9562e3feca7"
+      },
+      {
+        "role": "REFERENCE_MANIFEST_CORRECTION",
+        "path": "docs/frontend-governance/V17_REFERENCE_MANIFEST_CORRECTION_RECORD.md",
+        "sha256": "8745eca44d1b65836317f689dc0af9f50069bde5ff95ce30976c93434e10ef6c"
+      },
+      {
+        "role": "GOVERNANCE_CYCLE_RULE",
+        "path": "docs/integration/PHASE4_CONTRACT_FREEZE_ACCEPTANCE_BOUNDARY.md",
+        "sha256": "6a3d64d12f6742f14c5fa0d66dc60bdc0fc45c8eab640677022332676b8d3d63"
+      }
+    ]
+  },
+  "shared_semantics": {
+    "boundary": [
+      "response.json(): unknown",
+      "versioned runtime decoder",
+      "private snake_case Backend DTO",
+      "HttpFrontendDataSource or RuntimeTransport normalization",
+      "immutable camelCase Frontend projection",
+      "runtimeEventReducer or store",
+      "Page or Component"
+    ],
+    "backend_authority": [
+      "identity",
+      "Run, Task, and graph lifecycle",
+      "financial values and semantics",
+      "Review and Proof",
+      "release state",
+      "artifact integrity",
+      "A/B/C relations"
+    ],
+    "forbidden_projection_content": [
+      "prompts",
+      "raw completions",
+      "scratch state",
+      "hidden reasoning or Chain-of-Thought",
+      "provider raw bodies",
+      "secrets",
+      "filesystem paths",
+      "internal artifact refs"
+    ],
+    "run_status_mapping": {
+      "DRAFT": "PREPARING",
+      "SCHEME_GENERATING": "PREPARING",
+      "AWAITING_CONFIRMATION": "AWAITING_CONFIRMATION",
+      "PLANNING": "PLANNING",
+      "RUNNING": "RESEARCHING",
+      "REVIEW": "REVIEWING",
+      "PROVING": "PROVING",
+      "RELEASED": "COMPLETED_IF_RELEASE_CLOSURE_VALID",
+      "FAILED": "FAILED",
+      "CANCELLED": "CANCELLED"
+    },
+    "run_stage_mapping": {
+      "DRAFT": "PREPARE",
+      "SCHEME_GENERATING": "PREPARE",
+      "AWAITING_CONFIRMATION": "CONFIRM",
+      "PLANNING": "PLANNING",
+      "RUNNING": "RESEARCH",
+      "REVIEW": "REVIEW",
+      "PROVING": "PROVING",
+      "RELEASED": "COMPLETE_IF_RELEASE_CLOSURE_VALID",
+      "FAILED": "FAILED",
+      "CANCELLED": "CANCELLED"
+    },
+    "dynamic_mutation_allowlist": [
+      "SELF_CORRECTION",
+      "ADD_TASK",
+      "CHANGE_DEPENDENCY"
+    ],
+    "deferred_or_unknown_mutation_behavior": "RETURN_TO_STEP, WAIT_FOR_USER, RESUME, and any unknown mutation fail closed.",
+    "abc_identity_invariant": [
+      "A.objectId = B.objectId = C.objectId",
+      "A.runId = B.runId = C.runId",
+      "A.canonicalRecordId = B.canonicalRecordId = C.canonicalRecordId"
+    ],
+    "unknown_policy": "Unknown major schemas, enum values, event types or payloads, and failed identity closure fail closed; retain at most a visibly stale last-valid projection and request authoritative recovery.",
+    "page_wire_access": "FORBIDDEN",
+    "frontend_financial_arithmetic": "FORBIDDEN"
+  },
+  "contracts": [
+    {
+      "index": 1,
+      "name": "GlobalRunCollectionProjection",
+      "schema": {
+        "kind": "interface",
+        "schemaVersion": "phase4-run-collection/v1",
+        "fields": {
+          "schemaVersion": "literal phase4-run-collection/v1; required; non-null",
+          "items": "readonly RunCollectionItem[]; required; non-null",
+          "nextCursor": "string | null; required; nullable"
+        },
+        "RunCollectionItem": {
+          "runId": "string; required; non-null",
+          "object": "{objectId:string; symbol:string; companyName:string}; required; non-null",
+          "backendStatus": "string; required; non-null",
+          "status": "RunStatus; required; non-null",
+          "stage": "RunStage; required; non-null",
+          "progress": "{fraction:number; percent:number; method:literal ACTUAL_TASK_MEAN_V1}; required; non-null",
+          "activity": "{eventId:string; type:string; sequence:number; timestamp:string; taskId:string|null; messageCode:string} | null; required; nullable",
+          "graphVersion": "number; required; non-null",
+          "projectionRevision": "number; required; non-null",
+          "projectionSequence": "number; required; non-null",
+          "asOf": "string; required; non-null",
+          "createdAt": "string; required; non-null",
+          "updatedAt": "string; required; non-null",
+          "startedAt": "string | null; required; nullable",
+          "completedAt": "string | null; required; nullable",
+          "terminal": "boolean; required; non-null",
+          "resultAvailability": "Availability; required; non-null"
+        }
+      },
+      "enum_mappings": "Use shared total RunStatus and RunStage mappings; preserve backendStatus verbatim; progress method is ACTUAL_TASK_MEAN_V1.",
+      "unknown_behavior": "Any unknown status, invalid owner, or invalid invariant invalidates the response. A transient failure may retain only a visibly stale last-valid collection.",
+      "identity_keys": ["object.objectId", "runId"],
+      "availability": "resultAvailability is mandatory; activity, lifecycle timestamps, and nextCursor are nullable only as declared.",
+      "backend_dependency_ids": ["BD-009"],
+      "adapter_ownership": "HttpFrontendDataSource decodes and normalizes the private collection DTO; normalized store owns immutable collection state; pages never consume wire DTOs.",
+      "normalization": "Order is (updated_at DESC, run_id DESC); cursor is opaque, versioned, and filter-bound; backend supplies non-financial percent."
+    },
+    {
+      "index": 2,
+      "name": "PreparedResearchDraft",
+      "schema": {
+        "kind": "interface",
+        "schemaVersion": "phase4-run-draft/v1",
+        "fields": {
+          "schemaVersion": "literal phase4-run-draft/v1; required; non-null",
+          "draftId": "string; required; non-null",
+          "draftVersion": "number; required; non-null",
+          "status": "literal AWAITING_CONFIRMATION; required; non-null",
+          "previewKind": "literal SCHEME_ONLY; required; non-null",
+          "objectId": "string; required; non-null",
+          "mode": "literal FULL; required; non-null",
+          "goalTemplateId": "string | null; required; nullable",
+          "goal": "NormalizedGoal; required; non-null",
+          "schemeSnapshot": "NormalizedScheme & {confirmedAt:null}; required; non-null",
+          "prepareRequestHash": "string; required; non-null",
+          "createdAt": "string; required; non-null",
+          "expiresAt": "string; required; non-null"
+        }
+      },
+      "enum_mappings": "status is exactly AWAITING_CONFIRMATION; previewKind is exactly SCHEME_ONLY; Phase 4 mode is exactly FULL.",
+      "unknown_behavior": "Incremental mode, mismatched identity/version/hash, and expired or consumed drafts fail explicitly; regenerate creates a new draftId.",
+      "identity_keys": ["draftId", "draftVersion", "objectId", "goal.goalId", "schemeSnapshot.schemeId", "prepareRequestHash"],
+      "availability": "Tasks and graphs are absent, never empty placeholders; confirmedAt is null; goalTemplateId and backend-declared optional model/template fields may be null.",
+      "backend_dependency_ids": ["BD-007"],
+      "adapter_ownership": "HttpFrontendDataSource normalizes the draft; backend owns Goal/Scheme generation, version, expiry, consumption, request hash, and identity; the UI labels it Scheme/Plan Preview."
+    },
+    {
+      "index": 3,
+      "name": "ConfirmAndStartResult",
+      "schema": {
+        "kind": "interface",
+        "schemaVersion": "phase4-run-admission/v1",
+        "fields": {
+          "schemaVersion": "literal phase4-run-admission/v1; required; non-null",
+          "runId": "string; required; non-null",
+          "objectId": "string; required; non-null",
+          "goalId": "string; required; non-null",
+          "schemeId": "string; required; non-null",
+          "plannedGraphId": "string; required; non-null",
+          "backendStatus": "literal PLANNING; required; non-null",
+          "status": "literal PLANNING; required; non-null",
+          "autoStart": "literal true; required; non-null",
+          "idempotencyReplayed": "boolean; required; non-null",
+          "confirmationRequestHash": "string; required; non-null",
+          "projectionRef": "string; required; non-null",
+          "eventsRef": "string; required; non-null"
+        }
+      },
+      "enum_mappings": "Durable admission maps to PLANNING, never fabricated RESEARCHING; autoStart is true.",
+      "unknown_behavior": "An ambiguous network outcome retries the exact body with the same stable Idempotency-Key. The client never generates a replacement key automatically.",
+      "identity_keys": ["runId", "objectId", "goalId", "schemeId", "plannedGraphId", "confirmationRequestHash"],
+      "availability": "All identity, request-hash, and reference fields are required and non-null.",
+      "backend_dependency_ids": ["BD-008"],
+      "adapter_ownership": "HttpFrontendDataSource may expose confirmAndStartRun; backend atomically freezes the draft, admits exactly one Run/scheduler start, owns durable replay, and returns the authoritative result. No second Start action exists."
+    },
+    {
+      "index": 4,
+      "name": "RunProjection",
+      "schema": {
+        "kind": "interface",
+        "schemaVersion": "phase4-run-projection/v1",
+        "fields": {
+          "projectionSchemaVersion": "literal phase4-run-projection/v1; required; non-null",
+          "projectionRevision": "number; required; non-null",
+          "projectionSequence": "number; required; non-null",
+          "generatedAt": "string; required; non-null",
+          "object": "NormalizedObjectIdentity; required; non-null",
+          "run": "NormalizedRunRecord; required; non-null",
+          "goal": "NormalizedGoal; required; non-null",
+          "confirmedScheme": "NormalizedScheme; required; non-null",
+          "plannedGraph": "NormalizedGraph; required; non-null",
+          "actualGraph": "NormalizedGraph; required; non-null",
+          "graphVersion": "number; required; non-null",
+          "tasks": "readonly RunTaskProjection[]; required; non-null",
+          "pathChanges": "readonly PathChangeProjection[]; required; non-null",
+          "activity": "readonly SafeRuntimeActivity[]; required; non-null",
+          "lifecycle": "NormalizedRunLifecycle; required; non-null",
+          "review": "OwnedAvailabilityRef; required; non-null",
+          "result": "OwnedAvailabilityRef; required; non-null",
+          "artifacts": "OwnedAvailabilityRef; required; non-null",
+          "proof": "NormalizedProofSummary; required; non-null",
+          "execution": "OwnedAvailabilityRef; required; non-null",
+          "terminal": "NormalizedTerminalState; required; non-null"
+        }
+      },
+      "supporting_schema_invariants": "Every NormalizedGraph has exact graphId, runId, version, typed task IDs, and typed edges. Planned graph is immutable; actual graph and graphVersion are backend-owned.",
+      "enum_mappings": "Use shared total RunStatus/RunStage, PathChangeType, review, proof, and availability mappings; raw backend status remains preserved.",
+      "unknown_behavior": "Unknown/gap/out-of-order input pauses mutation and reloads one coherent snapshot. Sparse graph events set projectionRefreshRequired and never fabricate Tasks or edges.",
+      "identity_keys": ["object.objectId", "run.runId", "plannedGraph.graphId", "actualGraph.graphId", "graphVersion", "projectionRevision", "projectionSequence"],
+      "availability": "Review, result, artifacts, proof, and execution are represented by explicit availability-bearing refs; terminal outcome/event may be null only while nonterminal.",
+      "backend_dependency_ids": ["BD-001"],
+      "adapter_ownership": "HttpFrontendDataSource owns initial DTO validation/normalization; runtimeEventReducer is the sole live business-state mutation point; normalized store owns the immutable projection; pages are read-only consumers."
+    },
+    {
+      "index": 5,
+      "name": "NormalizedRuntimeEventV1",
+      "schema": {
+        "kind": "generic interface",
+        "schemaVersion": "phase4-runtime-event/v1",
+        "fields": {
+          "schemaVersion": "literal phase4-runtime-event/v1; required; non-null",
+          "eventId": "string; required; non-null",
+          "runId": "string; required; non-null",
+          "taskId": "string | null; required; nullable only for Run-level events",
+          "type": "RuntimeEventType; required; non-null",
+          "timestamp": "string; required; non-null",
+          "sequence": "number; required; non-null",
+          "payload": "RuntimePayloadByType[type]; required; non-null",
+          "effect": "PATCH_PROJECTION | REFRESH_PROJECTION | OBSERVATION_ONLY | TERMINAL; required; non-null",
+          "projectionRefreshRequired": "boolean; required; non-null"
+        }
+      },
+      "enum_mappings": {
+        "name_rule": "Preserve the canonical raw backend event name; never synthesize a new business event name.",
+        "PATCH_PROJECTION": ["run.started", "run.status_changed", "task.ready", "task.started", "task.progress", "task.waiting_for_capability", "task.resumed", "task.self_correcting", "task.completed", "task.failed"],
+        "REFRESH_PROJECTION": ["run.created", "scheme.generated", "scheme.confirmed", "plan.generated", "task.created", "task.correction_resolved", "replan.requested", "replan.approved", "graph.task_added", "graph.edge_added", "graph.edge_removed", "graph.version_changed", "review.started", "review.resolved", "proof.required", "proof.started", "proof.generated", "proof.verified", "proof.failed", "release.completed"],
+        "OBSERVATION_ONLY": ["evidence.accepted", "calculation.started", "calculation.completed", "capability.gap_detected", "capability.build_requested", "capability.build_started", "capability.generated", "capability.static_validated", "capability.sandbox_started", "capability.test_passed", "capability.test_failed", "capability.financial_validated", "capability.approved", "capability.registered", "capability.build_failed"],
+        "TERMINAL": ["run.completed", "run.failed"],
+        "semantic_guards": ["task.correction_resolved is explicit same-Task correction resolution", "review.resolved is Run-level Review completion and not exception resolution", "release.completed is not terminal", "proof.generated never implies validity"]
+      },
+      "unknown_behavior": "Unknown type/payload/schema, identity conflict, gap, out-of-order frame, or conflicting duplicate mutates no state, advances no committed cursor, retains the visibly stale last-valid projection, and triggers authoritative recovery. Exact duplicate eventId/sequence/content is ignored.",
+      "identity_keys": ["runId", "sequence", "eventId", "taskId when present"],
+      "availability": "taskId is nullable only for Run-level events; all other envelope fields are required. Heartbeats are SSE comments and never normalized as business events.",
+      "backend_dependency_ids": ["BD-002", "BD-012"],
+      "adapter_ownership": "RuntimeTransport validates envelope, schema, identity, ordering, and payload; runtimeEventReducer alone applies supported effects; connection state cannot mutate Run truth."
+    },
+    {
+      "index": 6,
+      "name": "ConnectionState",
+      "schema": {
+        "kind": "discriminated union",
+        "discriminator": "kind",
+        "variants": {
+          "IDLE": "{kind:IDLE; runId:string; lastSequence:number}",
+          "CONNECTING": "{kind:CONNECTING; runId:string; lastSequence:number; attempt:number}",
+          "OPEN": "{kind:OPEN; runId:string; lastSequence:number; lastHeartbeatAt:string|null}",
+          "RECOVERING": "{kind:RECOVERING; runId:string; lastSequence:number; reason:SEQUENCE_GAP|UNKNOWN_EVENT|SCHEMA_INCOMPATIBLE|CURSOR_REJECTED|PROJECTION_MISMATCH}",
+          "BACKOFF": "{kind:BACKOFF; runId:string; lastSequence:number; retryAt:string; attempt:number; error:ErrorEnvelope}",
+          "TERMINAL": "{kind:TERMINAL; runId:string; lastSequence:number; outcome:SUCCESS|FAILURE|CANCELLED}",
+          "FAILED": "{kind:FAILED; runId:string; lastSequence:number; error:ErrorEnvelope}"
+        }
+      },
+      "enum_mappings": {
+        "LIVE": "OPEN",
+        "RECONNECTING": "BACKOFF",
+        "STALE": "BACKOFF",
+        "RECONCILING": "RECOVERING",
+        "terminal transport variant": "TERMINAL",
+        "request-level SCHEMA_INCOMPATIBLE": "FAILED",
+        "unsupported in-stream value": "RECOVERING"
+      },
+      "unknown_behavior": "Invalid or ahead cursor uses the typed ErrorEnvelope and snapshot recovery. Gaps and unknowns enter RECOVERING. Terminal never reconnects indefinitely.",
+      "identity_keys": ["runId", "lastSequence"],
+      "availability": "Only OPEN.lastHeartbeatAt may be null; every variant retains exact runId and lastSequence.",
+      "backend_dependency_ids": ["BD-003"],
+      "adapter_ownership": "RuntimeTransport and normalized store own transport state. One active fetch-stream subscription exists per exact Run. Connection state never changes canonical Run status."
+    },
+    {
+      "index": 7,
+      "name": "FinancialReviewProjection",
+      "schema": {
+        "kind": "interface",
+        "schemaVersion": "phase4-financial-review/v1",
+        "fields": {
+          "schemaVersion": "literal phase4-financial-review/v1; required; non-null",
+          "projectionRevision": "number; required; non-null",
+          "projectionSequence": "number; required; non-null",
+          "objectId": "string; required; non-null",
+          "runId": "string; required; non-null",
+          "canonicalRecordId": "string | null; required; nullable only for explicit live nonreleased review",
+          "releasedResultId": "string | null; required; nullable only for explicit live nonreleased review",
+          "reviewId": "string; required; non-null",
+          "verdict": "PASS | PASS_WITH_UNCERTAINTY | REVIEW | BLOCK; required; non-null",
+          "reviewer": "string; required; non-null",
+          "reviewedEvidenceRefs": "readonly string[]; required; non-null",
+          "reviewedCalculationRefs": "readonly string[]; required; non-null",
+          "reviewedMetricRefs": "readonly string[]; required; non-null",
+          "reviewedClaimRefs": "readonly string[]; required; non-null",
+          "requiredProofCalculationRefs": "readonly string[]; required; non-null",
+          "checks": "readonly FinancialReviewCheckProjection[]; required; non-null",
+          "availability": "Availability; required; non-null"
+        }
+      },
+      "enum_mappings": "PASS_WITH_UNCERTAINTY requires explicit backend authority; RESOLVED is exception history and never a verdict; unknown verdicts do not coerce.",
+      "unknown_behavior": "Unknown verdict/check schema or broken owner relation withholds the review and requests a compatible projection; the frontend never infers PASS or synthesizes input-process-output steps from logs.",
+      "identity_keys": ["objectId", "runId", "reviewId", "canonicalRecordId when released", "releasedResultId when released", "stable check IDs"],
+      "availability": "canonicalRecordId and releasedResultId may be null only for explicit live nonreleased review; a released B view must close to the same Object/Run/canonical record as A and C.",
+      "backend_dependency_ids": ["BD-010", "BD-011"],
+      "adapter_ownership": "HttpFrontendDataSource normalizes the projection; backend authors verdict, checks, refs, exception history, correction relations, and release identity; UI filters are presentation only."
+    },
+    {
+      "index": 8,
+      "name": "ClaimTraceProjection / TraceBundle",
+      "schema": {
+        "kind": "interface",
+        "schemaVersion": "phase4-trace/v1",
+        "fields": {
+          "schemaVersion": "literal phase4-trace/v1; required; non-null",
+          "projectionRevision": "number; required; non-null",
+          "projectionSequence": "number; required; non-null",
+          "objectId": "string; required; non-null",
+          "runId": "string; required; non-null",
+          "claimId": "string; required; non-null",
+          "claim": "TypedReleasedClaim; required; non-null",
+          "releasedMetric": "ReleasedFinancialMetric; required; non-null",
+          "taskRefs": "readonly AvailabilityRef<taskId>[]; required; non-null",
+          "primaryTaskId": "string | null; required; nullable unless backend selects one",
+          "evidenceRefs": "readonly AvailabilityRef<evidenceId>[]; required; non-null",
+          "calculationRefs": "readonly AvailabilityRef<calculationId>[]; required; non-null",
+          "judgmentRefs": "readonly AvailabilityRef<judgmentId>[]; required; non-null",
+          "reviewRefs": "readonly ReviewTraceRef[]; required; non-null",
+          "proofRefs": "readonly ProofTraceRef[]; required; non-null",
+          "canonicalRecordId": "string; required; non-null",
+          "releasedResultId": "string; required; non-null",
+          "report": "{reportId:string; artifactIds:readonly string[]; anchor:ScopedAnchor}; required; non-null",
+          "reviewAnchor": "ScopedAnchor; required; non-null",
+          "taskAnchor": "ScopedAnchor; required; non-null",
+          "executionAnchor": "ScopedAnchor & {eventRefs:readonly string[]}; required; non-null",
+          "availability": "Availability; required; non-null"
+        }
+      },
+      "enum_mappings": "Trace relation kinds and scoped-anchor kinds are closed, versioned backend values; an unknown relation/anchor kind fails closed.",
+      "unknown_behavior": "Missing or unknown relations never fall back to title, text, first, latest, symbol, or metric matching. Return exact unavailable state or fail closed.",
+      "identity_keys": ["objectId", "runId", "claimId", "report.reportId", "canonicalRecordId", "releasedResultId"],
+      "availability": "Each missing detail or anchor carries explicit availability. primaryTaskId alone may be null; canonicalRecordId and releasedResultId are required for released trace. report.reportId equals releasedResultId in Phase 4 v1.",
+      "backend_dependency_ids": ["BD-006"],
+      "adapter_ownership": "HttpFrontendDataSource maps private TraceBundleV1 DTO to camelCase. Backend owns all relation truth and opaque scope-bound anchors; frontend owns Back/Forward, focus, scroll, highlight, and overlay presentation.",
+      "required_path": "Report -> Claim -> Review -> Task -> Calculation -> Evidence -> Execution -> original Report Anchor"
+    },
+    {
+      "index": 9,
+      "name": "ReportArtifactGroup",
+      "schema": {
+        "kind": "interface",
+        "schemaVersion": "phase4-report-artifacts/v1",
+        "fields": {
+          "schemaVersion": "literal phase4-report-artifacts/v1; required; non-null",
+          "objectId": "string; required; non-null",
+          "runId": "string; required; non-null",
+          "reportId": "string; required; non-null",
+          "canonicalRecordId": "string; required; non-null",
+          "releasedResultId": "string; required; non-null",
+          "availability": "Availability; required; non-null",
+          "representations": "readonly ReportRepresentation[]; required; non-null"
+        },
+        "ReportRepresentation": {
+          "format": "HTML | PDF; required; non-null",
+          "artifactId": "string | null; required; nullable by availability",
+          "contentType": "text/html; charset=utf-8 | application/pdf; required; non-null",
+          "availability": "Availability; required; non-null",
+          "safeFailureCode": "string | null; required; nullable",
+          "sha256": "string | null; required; nullable by availability",
+          "sizeBytes": "number | null; required; nullable by availability",
+          "renderer": "{rendererId:string; rendererVersion:string} | null; required; nullable by availability",
+          "generatedAt": "string | null; required; nullable by availability",
+          "authorizedRef": "string | null; required; nullable by availability"
+        }
+      },
+      "enum_mappings": "artifact_type maps only to HTML/text-html or PDF/application-pdf; representation availability uses the six-state Availability contract.",
+      "unknown_behavior": "Unknown format, content type, hash/size mismatch, unsafe ref, or owner mismatch is INTEGRITY_FAILURE. Refresh or reauthorize the exact representation; never expose artifact:// or filesystem refs.",
+      "identity_keys": ["objectId", "runId", "reportId", "canonicalRecordId", "releasedResultId", "representations[].format", "representations[].artifactId when available"],
+      "availability": "Each representation is independent. AVAILABLE requires artifactId, sha256, sizeBytes, renderer, generatedAt, and authorizedRef. NOT_GENERATED requires artifactId null.",
+      "backend_dependency_ids": ["BD-004"],
+      "adapter_ownership": "HttpFrontendDataSource groups backend-owned immutable representation records without merging identity; backend owns bytes/integrity and same-origin authorized delivery; the retrieval adapter revalidates exact ownership."
+    },
+    {
+      "index": 10,
+      "name": "ReleasedFinancialMetric",
+      "schema": {
+        "kind": "interface",
+        "fields": {
+          "runId": "string; required; non-null",
+          "metricId": "string; required; non-null",
+          "name": "string; required; non-null",
+          "canonicalValue": "string; required; non-null",
+          "canonicalUnit": "RATIO | PERCENT | CURRENCY | COUNT | SHARES | INDEX | MULTIPLE; required; non-null",
+          "displayValue": "string; required; non-null",
+          "displayUnit": "string; required; non-null",
+          "period": "string; required; non-null",
+          "periodBasis": "FY | QUARTER | TTM | LTM | CURRENT | DAILY; required; non-null",
+          "actuality": "UNKNOWN | ACTUAL | ESTIMATE; required; non-null",
+          "asOf": "string; required; non-null",
+          "currency": "string | null; required; nullable only when explicitly not applicable or unknown",
+          "formulaId": "string; required; non-null",
+          "capabilityId": "string; required; non-null",
+          "calculationId": "string; required; non-null",
+          "evidenceRefs": "readonly string[]; required; non-null",
+          "claimRefs": "readonly string[]; required; non-null",
+          "proof": "{requirement:NOT_REQUIRED|MUST_PROVE; status:ProofStatus; proofRefs:readonly string[]}; required; non-null",
+          "limitations": "readonly string[]; required; non-null"
+        }
+      },
+      "enum_mappings": "No unit, actuality, period, currency, release, or proof inference. Decimal values remain strings. Claims bind exact metricId; Proofs bind exact calculationId.",
+      "unknown_behavior": "Unknown unit, actuality, period basis, proof state, or lineage withholds the metric; there is no fallback or frontend recomputation.",
+      "identity_keys": ["runId", "metricId", "calculationId"],
+      "availability": "currency alone may be null under explicit backend semantics; arrays remain present even when empty; absence never implies proof or release state.",
+      "backend_dependency_ids": ["BD-005"],
+      "adapter_ownership": "HttpFrontendDataSource performs lossless snake_case-to-camelCase mapping. Backend is sole financial authority; UI only joins/formats backend displayValue and displayUnit.",
+      "mandatory_fixture": {
+        "canonicalValue": "0.6547",
+        "canonicalUnit": "RATIO",
+        "displayValue": "65.47",
+        "displayUnit": "%",
+        "visible": "65.47%"
+      }
+    },
+    {
+      "index": 11,
+      "name": "ReleasedObjectCoreProjection",
+      "schema": {
+        "kind": "interface",
+        "schemaVersion": "phase4-released-object-core/v1",
+        "fields": {
+          "schemaVersion": "literal phase4-released-object-core/v1; required; non-null",
+          "object": "NormalizedObjectIdentity; required; non-null",
+          "latestReleasedRunId": "string | null; required; nullable",
+          "currentReleasedResultAvailability": "Availability; required; non-null",
+          "sourceRunId": "string | null; required; nullable",
+          "releasedResultId": "string | null; required; nullable",
+          "canonicalRecordId": "string | null; required; nullable",
+          "releasedAt": "string | null; required; nullable",
+          "metrics": "readonly ReleasedFinancialMetric[]; required; non-null",
+          "claimRefs": "readonly string[]; required; non-null",
+          "reportArtifacts": "ReportArtifactGroup | null; required; nullable"
+        }
+      },
+      "enum_mappings": "Latest selection considers only valid RELEASED Runs and orders (released_at DESC, run_id DESC); running or failed Runs never supersede the released slice.",
+      "unknown_behavior": "Invalid or unknown release closure withholds the slice. Never fall back to latest arbitrary Run or cross-Object data.",
+      "identity_keys": ["object.objectId", "latestReleasedRunId when present", "sourceRunId when present", "releasedResultId when present", "canonicalRecordId when present"],
+      "availability": "No released Run means all release IDs/time and reportArtifacts are null with NOT_RELEASED. AVAILABLE means release IDs/time are non-null and sourceRunId equals latestReleasedRunId.",
+      "backend_dependency_ids": ["BD-001", "BD-009"],
+      "adapter_ownership": "HttpFrontendDataSource normalizes the exact Object-to-released-Run-to-result/canonical/artifact closure; backend owns valid-release selection; Phase 5 memory/version/comparison/writeback fields are absent."
+    },
+    {
+      "index": 12,
+      "name": "ErrorEnvelope",
+      "schema": {
+        "kind": "interface",
+        "schemaVersion": "phase4-error/v1",
+        "fields": {
+          "schemaVersion": "literal phase4-error/v1; required; non-null",
+          "error": "ErrorBody; required; non-null"
+        },
+        "ErrorBody": {
+          "code": "NOT_FOUND | FORBIDDEN | UNAVAILABLE | NOT_GENERATED | NOT_RELEASED | CONFLICT | INVALID_CURSOR | CURSOR_AHEAD | SCHEMA_INCOMPATIBLE | IDENTITY_MISMATCH | INTEGRITY_FAILURE | UNSUPPORTED_EVENT | TERMINAL | TRANSIENT_BACKEND_ERROR; required; non-null",
+          "message": "string; required; non-null",
+          "retryable": "boolean; required; non-null",
+          "recovery": "NONE | RETRY | SNAPSHOT_RELOAD | REAUTHENTICATE; required; non-null",
+          "requestId": "string | null; required; nullable only when safe context is unavailable",
+          "resource": "{type:string; id:string} | null; required; nullable only when safe context is unavailable",
+          "details": "Readonly<Record<string, SafeJsonValue>>; required; non-null; redacted allowlist only"
+        }
+      },
+      "enum_mappings": "request_id maps to requestId; RESOURCE_NOT_FOUND maps to NOT_FOUND; HTTP and SSE mappings must be total and versioned.",
+      "unknown_behavior": "A non-envelope body becomes a local transport failure and the raw body is never exposed. Recovery follows only the typed directive.",
+      "identity_keys": ["requestId when present", "resource.type and resource.id when present", "the adapter-retained requested identity tuple"],
+      "availability": "requestId and resource may be null only when backend lacks safe context; details is always present, safe, and redacted.",
+      "backend_dependency_ids": ["BD-003", "BD-004", "BD-008"],
+      "adapter_ownership": "HttpFrontendDataSource and RuntimeTransport decode/redact the safe envelope, retain the exact requested tuple, and never substitute another entity or reveal a raw response body."
+    },
+    {
+      "index": 13,
+      "name": "Availability",
+      "schema": {
+        "kind": "interface",
+        "fields": {
+          "status": "PENDING | AVAILABLE | NOT_GENERATED | NOT_RELEASED | UNAVAILABLE | FAILED; required; non-null",
+          "reasonCode": "string | null; required; nullable only for AVAILABLE",
+          "retryable": "boolean; required; non-null"
+        }
+      },
+      "enum_mappings": "reason_code maps to reasonCode; absence is never synthesized as AVAILABLE; PENDING is valid only for a nonterminal Run.",
+      "unknown_behavior": "Unknown status or invalid invariant becomes SCHEMA_INCOMPATIBLE, withholds the resource, and triggers authoritative snapshot reload.",
+      "identity_keys": ["exact resource identity", "owning Run/Object tuple when applicable"],
+      "availability": "AVAILABLE requires reasonCode null. Every non-AVAILABLE state requires a non-empty stable reasonCode. retryable is backend-authored and cannot be inferred from absence.",
+      "backend_dependency_ids": ["BD-004", "BD-005", "BD-010"],
+      "adapter_ownership": "The relevant data/transport adapter normalizes AvailabilityV1; backend projection owns state for the exact resource and owner tuple; UI renders it without promoting absence to success."
+    }
+  ],
+  "backend_dependencies": [
+    {"id":"BD-001","priority":"P0","dependency":"Coherent Run projection + event watermark","input_state":"BACKEND_PROJECTION_REQUIRED","frontend_consumers":["Runs","Run","Results","Object core","reducer"],"required_final_disposition":"Approved schema/route; snapshot/replay race oracle; nested same-Run ownership checks."},
+    {"id":"BD-002","priority":"P0","dependency":"Versioned raw-event normalization contract","input_state":"SEMANTIC_CONFLICT","frontend_consumers":["transport","reducer","Run","Review","Execution"],"required_final_disposition":"Approved total event/payload/effect table; real-event reducer fixture; unknown values fail closed."},
+    {"id":"BD-003","priority":"P0","dependency":"Browser SSE cursor/recovery/terminal protocol","input_state":"WAITING_FOR_BACKEND_FREEZE","frontend_consumers":["RuntimeTransport","SSERuntimeTransport","ConnectionState"],"required_final_disposition":"P4-SSE-001..020 mapped to one frozen fetch-stream wire protocol and ErrorEnvelope."},
+    {"id":"BD-004","priority":"P0","dependency":"Frontend-safe artifact group and authorized delivery","input_state":"BACKEND_ROUTE_REQUIRED","frontend_consumers":["Results","Professional Report","download actions"],"required_final_disposition":"Group DTO and Claim anchors; cross-object rejection; independent HTML/PDF byte hash, size, and type checks."},
+    {"id":"BD-005","priority":"P0","dependency":"Lossless released metric/Claim projection","input_state":"BACKEND_PROJECTION_REQUIRED","frontend_consumers":["Results","Financial Review","Object core"],"required_final_disposition":"Canonical/display/unit/period/actuality/as-of/currency/lineage contract and 0.6547 RATIO to 65.47% fixture."},
+    {"id":"BD-006","priority":"P0","dependency":"Exact Claim Trace bundle and anchor manifest","input_state":"BACKEND_PROJECTION_REQUIRED","frontend_consumers":["Report","Review","Execution","Claim drawer","Task drawer"],"required_final_disposition":"Report-to-Claim-to-Review-to-Task-to-Calculation-to-Evidence-to-Execution-to-original-Report-Anchor oracle and negative substitutions."},
+    {"id":"BD-007","priority":"P1","dependency":"Prepare boundary","input_state":"SEMANTIC_CONFLICT","frontend_consumers":["New Task","Plan Snapshot"],"required_final_disposition":"Freeze Scheme-only preview, immutable draft/version/expiry/hash, Object/Goal ownership, and honest labels with no invented Tasks."},
+    {"id":"BD-008","priority":"P1","dependency":"Confirm-and-auto-start idempotency","input_state":"SEMANTIC_CONFLICT","frontend_consumers":["New Task","Run landing"],"required_final_disposition":"Durable key/request binding and restart replay; exactly one Run, run.created, scheduler admission, and effective run.started."},
+    {"id":"BD-009","priority":"P1","dependency":"Global Run collection","input_state":"BACKEND_PROJECTION_REQUIRED","frontend_consumers":["Shell","Runs","Object detail"],"required_final_disposition":"Global route/projection with stable order, cursor/filter binding, Object summary, and list/detail revision consistency."},
+    {"id":"BD-010","priority":"P1","dependency":"Total Run/Task/Review/Proof enum maps","input_state":"WAITING_FOR_BACKEND_FREEZE","frontend_consumers":["types","adapters","reducer","all state UI"],"required_final_disposition":"Exhaustive map for cancelled, waiting, capability failure, uncertainty, resolved history, and unknown behavior."},
+    {"id":"BD-011","priority":"P1","dependency":"Financial Review UI projection","input_state":"BACKEND_PROJECTION_REQUIRED","frontend_consumers":["Financial Review","Results","Trace"],"required_final_disposition":"Per-Claim/check and exception-history schema with stable exact refs and backend-authoritative decisions."},
+    {"id":"BD-012","priority":"P1","dependency":"Complete graph mutation semantics","input_state":"SEMANTIC_CONFLICT","frontend_consumers":["reducer","Research Path","Task drawer"],"required_final_disposition":"Complete event payload or mandatory atomic projection refresh; never fabricate labels, dependencies, or Tasks."}
+  ],
+  "interaction_and_e2e_delta": {
+    "finalization_status": "READY_FOR_OWNER_APPROVAL_NOT_SELF_FINALIZED",
+    "append_only_rule": "Existing interaction IDs 001..070 and P4-E2E-001..106 retain identity; 015 remains a non-executable tombstone.",
+    "reservations": [
+      {"interaction_id":"071","gate_id":"P4-E2E-107","contract":"Execution actor-type filter","activation_scope":"PHASE4_CORE_REQUIRED","source_class":"INTEGRATED","result_membership":"PHASE4_CORE_E2E_RESULT","semantics":"Filter only safe normalized Execution C rows for the exact Object/Run/canonical record. Values are ALL, AGENT, LLM, DATA, TOOL, CODE, RUNTIME, REVIEW, PROOF. Named keyboard-operable group; selected state, empty result, focus, route, query, original sequence, cursor reset, and stale-response quarantine are observable. Backend freeze must choose a cursor-bound actor_type query or prove the complete safe collection is loaded; filtering one page locally fails."},
+      {"interaction_id":"072","gate_id":"P4-E2E-108","contract":"Execution free-text search","activation_scope":"PHASE4_CORE_REQUIRED","source_class":"INTEGRATED","result_membership":"PHASE4_CORE_E2E_RESULT","semantics":"Search only a frozen allowlist of safe normalized labels and exact Task/Evidence/Calculation/Proof IDs within the exact Object/Run/canonical record. Never stringify/search arbitrary input, output, meta, prompts, provider bodies, secrets, or hidden reasoning. Query intersects actor filter; change resets cursor and quarantines stale responses; clear retains focus; retry repeats exact read/query; private-field canary yields zero matches."},
+      {"interaction_id":"073","gate_id":"P4-E2E-109","contract":"Presenter Scene selector","activation_scope":"DEPLOYMENT_ACTIVATED","exposure_condition":"VITE_ENABLE_PRESENTER == true","source_class":"DEMO","result_class":"DEMO_UX_ONLY","result_membership":"NONE","semantics":"Select one valid watermarked Demo Scene through a named select; no production store, route, request, or domain mutation."},
+      {"interaction_id":"074","gate_id":"P4-E2E-110","contract":"Presenter reset","activation_scope":"DEPLOYMENT_ACTIVATED","exposure_condition":"VITE_ENABLE_PRESENTER == true","source_class":"DEMO","result_class":"DEMO_UX_ONLY","result_membership":"NONE","semantics":"Reset only isolated Demo presentation state to the deterministic first step; no production request or mutation."},
+      {"interaction_id":"075","gate_id":"P4-E2E-111","contract":"Presenter previous","activation_scope":"DEPLOYMENT_ACTIVATED","exposure_condition":"VITE_ENABLE_PRESENTER == true","source_class":"DEMO","result_class":"DEMO_UX_ONLY","result_membership":"NONE","semantics":"Move exactly one Demo step backward; at first step the named button is disabled and a no-op; no production request or mutation."},
+      {"interaction_id":"076","gate_id":"P4-E2E-112","contract":"Presenter next","activation_scope":"DEPLOYMENT_ACTIVATED","exposure_condition":"VITE_ENABLE_PRESENTER == true","source_class":"DEMO","result_class":"DEMO_UX_ONLY","result_membership":"NONE","semantics":"Move exactly one Demo step forward; at final step the named button is disabled and a no-op; no production request or mutation."}
+    ],
+    "counts_if_owner_approved_and_finalized": {
+      "P4_E2E_DEFINED_IDS": 112,
+      "P4_E2E_PHASE4_CORE_UNIQUE_IDS": 101,
+      "P4_E2E_PHASE5_ONLY_IDS": 4,
+      "P4_E2E_DEPLOYMENT_ONLY_IDS": 2,
+      "P4_E2E_DEMO_ONLY_IDS": 4,
+      "P4_E2E_TOMBSTONES": 1,
+      "PRODUCTION_INTERACTIONS": "71/71",
+      "PRESENTER_ENABLED_DEMO_INTERACTIONS": "75/75",
+      "HISTORICAL_INTERACTION_UNION": "76/76"
+    }
+  },
+  "scene_dispositions": [
+    {"scene_id":"SCENE-01","name":"Full Financial Research","impact":"AFFECTED","real_backend_activation_scope":"PHASE4_CORE_REQUIRED","phase4_disposition":"Prepare/start, runtime, released finance, A/B/C, trace, and artifacts require real Phase 4 evidence.","demo_result_separate":true},
+    {"scene_id":"SCENE-02","name":"Dynamic Research Path","impact":"AFFECTED","real_backend_activation_scope":"PHASE4_CORE_REQUIRED","phase4_disposition":"Immutable plan, authoritative actual graph, bounded mutations, replay, and recovery require real Phase 4 evidence.","demo_result_separate":true},
+    {"scene_id":"SCENE-03","name":"Self-Correction and Review","impact":"AFFECTED","real_backend_activation_scope":"PHASE4_CORE_REQUIRED","phase4_disposition":"Same-Task correction, exact recalculation/review, and release closure require real Phase 4 evidence.","demo_result_separate":true},
+    {"scene_id":"SCENE-04","name":"Claim Trace","impact":"AFFECTED","real_backend_activation_scope":"PHASE4_CORE_REQUIRED","phase4_disposition":"Exact relation round trip to the original Report anchor requires real Phase 4 evidence.","demo_result_separate":true},
+    {"scene_id":"SCENE-05","name":"Object Accumulation","impact":"AFFECTED_COMPATIBILITY_ONLY","real_backend_activation_scope":"PHASE5_ACTIVATED","real_backend_activation_state":"DEFINED_NOT_ACTIVATED","phase4_disposition":"Only shared frontend and Demo regression; no Phase 4 claim of real Object Memory or version behavior.","demo_result_separate":true},
+    {"scene_id":"SCENE-06","name":"Incremental Return","impact":"AFFECTED_COMPATIBILITY_ONLY","real_backend_activation_scope":"PHASE5_ACTIVATED","real_backend_activation_state":"DEFINED_NOT_ACTIVATED","phase4_disposition":"Only disabled/unavailable and Demo regression; no Phase 4 claim of real Incremental behavior.","demo_result_separate":true}
+  ],
+  "node24_compatibility": {
+    "evidence_scope": "FRONTEND_BASELINE_V8.1_ONLY",
+    "result": "PASS",
+    "source_sha": "d854c97789c98cca14fee3f4b3d7f00e0d5d137a",
+    "source_git_tree": "50114fa04c2a0ad81597283f5a487806e2e640cd",
+    "node": "v24.18.0",
+    "npm": "11.6.2",
+    "npm_ci": "PASS",
+    "typecheck": "PASS",
+    "runtime_test": "PASS",
+    "build": "PASS",
+    "build_artifact_manifest_sha256": "5fc76ef3038cc6826c54d072b99466b18d7f61a4528594fbd040f5b7a5a1a943",
+    "package_lock_sha256": "55cc3eb4d61e8ab53a130c338ef22fd929545214a9d34f7466f5edf1bbb2a5e0",
+    "v17_candidate_toolchain_acceptance": "NOT_RUN",
+    "authorizes_v17_implementation": false
+  },
+  "readiness": {
+    "V17_CONTRACT_INPUT_PACKAGE_READY": "YES",
+    "NORMALIZED_CONTRACTS": "13/13",
+    "BD_RECORDS": "12/12",
+    "REFERENCE_MANIFEST": "44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394",
+    "FRONTEND_IMPLEMENTATION_AUTHORIZED": "NO",
+    "FRONTEND_CANDIDATE_CREATED": "NO",
+    "CONTRACT_INPUT_APPROVAL_READY": "YES",
+    "OWNER_APPROVAL_REQUIRED": "YES"
+  }
+}

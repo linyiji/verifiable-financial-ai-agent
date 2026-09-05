@@ -1,0 +1,2265 @@
+{
+  "schema_version": "phase4-full-traceability/v1",
+  "generated_for": "PHASE4_5_PREIMPLEMENTATION",
+  "source_modified": false,
+  "authority": {
+    "frontend_r2_sha256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19",
+    "backend_contract_set_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+    "backend_parent_candidate": "66edc5110b6ab7d81578cef80190497a2f11e5b2",
+    "frontend_baseline": "d854c97789c98cca14fee3f4b3d7f00e0d5d137a",
+    "uac_001": "OPEN",
+    "uac_002": "SATISFIED"
+  },
+  "lifecycle_order": [
+    "CONTRACT_CLOSED",
+    "IMPLEMENTATION_PENDING",
+    "IMPLEMENTATION_COMPLETE",
+    "TECHNICAL_ACCEPTANCE_PASS",
+    "PRODUCT_JOURNEY_PASS",
+    "RELEASE_ACCEPTED"
+  ],
+  "contracts": [
+    {
+      "contract_id": "C01",
+      "name": "GlobalRunCollectionProjection",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "BCO",
+        "DBO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "GET /api/research-runs"
+        ],
+        "wire_dtos": [
+          "ResearchRunCollectionV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-1",
+          "FE-E2E-3",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-001",
+          "BD-009"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-006",
+          "UAC-008",
+          "UAC-009",
+          "UAC-010",
+          "UAC-016",
+          "UAC-017",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-001",
+          "P4-BE-010",
+          "P4-BE-028",
+          "P4-BE-029",
+          "P4-BE-030"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-1",
+          "FE-E2E-3",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-01",
+          "X-E2E-02",
+          "X-E2E-07",
+          "X-E2E-08"
+        ],
+        "product_journeys": [
+          "PJ-01"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-02",
+          "SCENE-03",
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C02",
+      "name": "PreparedResearchDraft",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "BCO",
+        "DBO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "POST /api/research-runs/prepare"
+        ],
+        "wire_dtos": [
+          "ResearchRunDraftV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-1",
+          "FE-E2E-2",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-007"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-005",
+          "UAC-006",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-002",
+          "P4-BE-003"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-1",
+          "FE-E2E-2",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-01"
+        ],
+        "product_journeys": [
+          "PJ-01"
+        ],
+        "scenes": [
+          "SCENE-01"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C03",
+      "name": "ConfirmRunResponseV1",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "BCO",
+        "DBO",
+        "EVO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "POST /api/research-runs"
+        ],
+        "wire_dtos": [
+          "ConfirmRunResponseV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-2",
+          "FE-E2E-3",
+          "FE-E2E-4",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-007",
+          "BD-008"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-005",
+          "UAC-006",
+          "UAC-007",
+          "UAC-011",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-004",
+          "P4-BE-005",
+          "P4-BE-006",
+          "P4-BE-017"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-2",
+          "FE-E2E-3",
+          "FE-E2E-4",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-01",
+          "X-E2E-07",
+          "X-E2E-08"
+        ],
+        "product_journeys": [
+          "PJ-01"
+        ],
+        "scenes": [
+          "SCENE-01"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C04",
+      "name": "RunProjection",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "BCO",
+        "DBO",
+        "EVO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "GET /api/research-runs/{run_id}",
+          "GET /api/research-runs/{run_id}/projection"
+        ],
+        "wire_dtos": [
+          "AtomicRunProjectionV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-3",
+          "FE-E2E-4",
+          "FE-E2E-5",
+          "FE-E2E-8",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-001",
+          "BD-010",
+          "BD-012"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-004",
+          "UAC-006",
+          "UAC-008",
+          "UAC-009",
+          "UAC-010",
+          "UAC-011",
+          "UAC-016",
+          "UAC-017",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-007",
+          "P4-BE-008",
+          "P4-BE-009",
+          "P4-BE-010",
+          "P4-BE-015",
+          "P4-BE-016",
+          "P4-BE-017",
+          "P4-BE-018",
+          "P4-BE-019"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-3",
+          "FE-E2E-4",
+          "FE-E2E-5",
+          "FE-E2E-8",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-02",
+          "X-E2E-07",
+          "X-E2E-08"
+        ],
+        "product_journeys": [
+          "PJ-01",
+          "PJ-02",
+          "PJ-03"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-02",
+          "SCENE-03",
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C05",
+      "name": "NormalizedRuntimeEventV1",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "EVO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "GET /api/research-runs/{run_id}/events"
+        ],
+        "wire_dtos": [
+          "RuntimeEventNormalizedV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-4",
+          "FE-E2E-5",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-002",
+          "BD-003",
+          "BD-012"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-004",
+          "UAC-006",
+          "UAC-007",
+          "UAC-008",
+          "UAC-009",
+          "UAC-010",
+          "UAC-011",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-011",
+          "P4-BE-012",
+          "P4-BE-013",
+          "P4-BE-014",
+          "P4-BE-015",
+          "P4-BE-016",
+          "P4-BE-017",
+          "P4-BE-018",
+          "P4-BE-019"
+        ],
+        "p4_sse": [
+          "P4-SSE-001..020"
+        ],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-4",
+          "FE-E2E-5",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-02",
+          "X-E2E-07",
+          "X-E2E-08"
+        ],
+        "product_journeys": [
+          "PJ-01",
+          "PJ-02",
+          "PJ-03"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-02",
+          "SCENE-03"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C06",
+      "name": "ConnectionState",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "EVO",
+        "SCO"
+      ],
+      "backend": {
+        "routes": [
+          "GET /api/research-runs/{run_id}/projection",
+          "GET /api/research-runs/{run_id}/events"
+        ],
+        "wire_dtos": [
+          "CursorProtocolV1 + transport"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-4",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-003"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-004",
+          "UAC-006",
+          "UAC-009",
+          "UAC-010",
+          "UAC-011",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-008",
+          "P4-BE-011",
+          "P4-BE-012",
+          "P4-BE-013",
+          "P4-BE-014",
+          "P4-BE-015",
+          "P4-BE-016",
+          "P4-BE-017"
+        ],
+        "p4_sse": [
+          "P4-SSE-001..020"
+        ],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-4",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-02",
+          "X-E2E-07",
+          "X-E2E-08"
+        ],
+        "product_journeys": [
+          "PJ-01",
+          "PJ-02",
+          "PJ-03"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-02",
+          "SCENE-03",
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C07",
+      "name": "FinancialReviewProjection",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "TRO",
+        "DBO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "GET /api/research-runs/{run_id}/review-view"
+        ],
+        "wire_dtos": [
+          "FinancialReviewProjectionV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-7",
+          "FE-E2E-9",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-006",
+          "BD-010",
+          "BD-011"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-006",
+          "UAC-010",
+          "UAC-011",
+          "UAC-013",
+          "UAC-017",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-023",
+          "P4-BE-024"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-7",
+          "FE-E2E-9",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-04",
+          "X-E2E-05",
+          "X-E2E-08"
+        ],
+        "product_journeys": [
+          "PJ-01",
+          "PJ-03",
+          "PJ-04"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-03",
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C08",
+      "name": "ClaimTraceProjection / TraceBundle",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "TRO",
+        "DBO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "GET /api/research-runs/{run_id}/claims/{claim_id}",
+          "GET /api/research-runs/{run_id}/trace/{claim_id}"
+        ],
+        "wire_dtos": [
+          "TraceBundleV1 + ClaimAnchorManifestV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-8",
+          "FE-E2E-9",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-005",
+          "BD-006"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-006",
+          "UAC-010",
+          "UAC-011",
+          "UAC-012",
+          "UAC-013",
+          "UAC-014",
+          "UAC-017",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-022",
+          "P4-BE-024",
+          "P4-BE-030"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-8",
+          "FE-E2E-9",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-03",
+          "X-E2E-05",
+          "X-E2E-08"
+        ],
+        "product_journeys": [
+          "PJ-04"
+        ],
+        "scenes": [
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C09",
+      "name": "ReportArtifactGroup",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "TRO",
+        "DBO",
+        "RCO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "GET /api/research-runs/{run_id}/artifacts",
+          "GET /api/research-runs/{run_id}/artifacts/{artifact_id}/content"
+        ],
+        "wire_dtos": [
+          "ReportArtifactGroupV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-10",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-004",
+          "BD-006"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-006",
+          "UAC-011",
+          "UAC-014",
+          "UAC-015",
+          "UAC-016",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-025",
+          "P4-BE-026",
+          "P4-BE-027",
+          "P4-BE-030"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-10",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-05",
+          "X-E2E-06",
+          "X-E2E-08"
+        ],
+        "product_journeys": [
+          "PJ-01",
+          "PJ-04"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C10",
+      "name": "ReleasedFinancialMetric",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "FNO",
+        "DBO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "GET /api/research-runs/{run_id}/result"
+        ],
+        "wire_dtos": [
+          "ReleasedFinancialMetricProjectionV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-6",
+          "FE-E2E-7",
+          "FE-E2E-9",
+          "FE-E2E-10",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-005",
+          "BD-010"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-006",
+          "UAC-010",
+          "UAC-012",
+          "UAC-017",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-020",
+          "P4-BE-021",
+          "P4-BE-022"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-6",
+          "FE-E2E-7",
+          "FE-E2E-9",
+          "FE-E2E-10",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-03",
+          "X-E2E-04",
+          "X-E2E-05"
+        ],
+        "product_journeys": [
+          "PJ-01",
+          "PJ-03",
+          "PJ-04"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-03",
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C11",
+      "name": "ReleasedObjectCoreProjection",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "FNO",
+        "DBO",
+        "BCO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "GET /api/objects/{object_id}/released-state"
+        ],
+        "wire_dtos": [
+          "ReleasedObjectCoreV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-1",
+          "FE-E2E-6",
+          "FE-E2E-10",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-001",
+          "BD-009"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-006",
+          "UAC-008",
+          "UAC-011",
+          "UAC-016",
+          "UAC-017",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-028",
+          "P4-BE-029",
+          "P4-BE-030"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-1",
+          "FE-E2E-6",
+          "FE-E2E-10",
+          "FE-E2E-11",
+          "FE-E2E-12"
+        ],
+        "x_e2e": [
+          "X-E2E-01",
+          "X-E2E-03",
+          "X-E2E-06",
+          "X-E2E-07",
+          "X-E2E-08"
+        ],
+        "product_journeys": [
+          "PJ-01"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-02",
+          "SCENE-03",
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C12",
+      "name": "ErrorEnvelope",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "BCO",
+        "TRO",
+        "EVO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "ALL API/SSE error surfaces"
+        ],
+        "wire_dtos": [
+          "ErrorEnvelopeV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-1..12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-003",
+          "BD-004",
+          "BD-008"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-006",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-001..030 negative variants"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-1..12"
+        ],
+        "x_e2e": [
+          "X-E2E-01..08"
+        ],
+        "product_journeys": [
+          "PJ-01",
+          "PJ-02",
+          "PJ-03",
+          "PJ-04"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-02",
+          "SCENE-03",
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    },
+    {
+      "contract_id": "C13",
+      "name": "Availability",
+      "authority_refs": [
+        "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+        "approved authority hashes"
+      ],
+      "implementation_owners": [
+        "BCO",
+        "FNO",
+        "TRO",
+        "DBO",
+        "SCO",
+        "FEO"
+      ],
+      "backend": {
+        "routes": [
+          "Embedded in projections"
+        ],
+        "wire_dtos": [
+          "AvailabilityV1"
+        ],
+        "persistence": [
+          "PostgreSQL durable authority and restart-stable projection"
+        ]
+      },
+      "frontend": {
+        "consumers": [
+          "FE-E2E-3",
+          "FE-E2E-6..12"
+        ],
+        "boundary": [
+          "private DTO",
+          "versioned decoder",
+          "adapter",
+          "store/page"
+        ]
+      },
+      "dependencies": {
+        "bd": [
+          "BD-001",
+          "BD-004",
+          "BD-005",
+          "BD-010"
+        ],
+        "uac": [
+          "UAC-001",
+          "UAC-002",
+          "UAC-003",
+          "UAC-006",
+          "UAC-008",
+          "UAC-010",
+          "UAC-011",
+          "UAC-012",
+          "UAC-013",
+          "UAC-014",
+          "UAC-015",
+          "UAC-016",
+          "UAC-017",
+          "UAC-018"
+        ],
+        "p4_be": [
+          "P4-BE-007",
+          "P4-BE-015..030"
+        ],
+        "p4_sse": [],
+        "p4_id": [
+          "P4-ID core applicable subset"
+        ],
+        "p4_e2e": [
+          "P4-E2E Core applicable subset"
+        ],
+        "fe_e2e": [
+          "FE-E2E-3",
+          "FE-E2E-6..12"
+        ],
+        "x_e2e": [
+          "X-E2E-02..08"
+        ],
+        "product_journeys": [
+          "PJ-01",
+          "PJ-03",
+          "PJ-04"
+        ],
+        "scenes": [
+          "SCENE-01",
+          "SCENE-03",
+          "SCENE-04"
+        ]
+      },
+      "evidence_required": [
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser/DOM evidence as applicable",
+        "hash-linked manifest"
+      ],
+      "phase": "PHASE4",
+      "activation": "PHASE4_CORE_REQUIRED",
+      "release_blocking": true,
+      "lifecycle": {
+        "contract": "CONTRACT_CLOSED",
+        "implementation": "IMPLEMENTATION_PENDING",
+        "technical_acceptance": "NOT_REACHED",
+        "product_journey": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      }
+    }
+  ],
+  "bd_register": [
+    {
+      "id": "BD-001",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C01",
+        "C04",
+        "C11",
+        "C13"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-002",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C05"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-003",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C05",
+        "C06",
+        "C12"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-004",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C09",
+        "C12",
+        "C13"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-005",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C08",
+        "C10",
+        "C13"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-006",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C07",
+        "C08",
+        "C09"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-007",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C02",
+        "C03"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-008",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C03",
+        "C12"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-009",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C01",
+        "C11"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-010",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C04",
+        "C07",
+        "C10",
+        "C13"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-011",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C07",
+        "C08"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    },
+    {
+      "id": "BD-012",
+      "state": "CONTRACT_CLOSED",
+      "implementation_state": "IMPLEMENTATION_PENDING",
+      "contract_ids": [
+        "C04",
+        "C05"
+      ],
+      "uac_ids": [
+        "UAC-001",
+        "UAC-002",
+        "UAC-003..018 applicable"
+      ],
+      "technical_gates": [
+        "P4-BE mapped subset"
+      ],
+      "product_gates": [
+        "PJ mapped subset"
+      ],
+      "release_blocking": true
+    }
+  ],
+  "uac_register": [
+    {
+      "id": "UAC-001",
+      "state": "OPEN",
+      "contract_ids": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": "remediated Phase 3 candidate, authoritative Run, and two independent PASS audits",
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-002",
+      "state": "SATISFIED",
+      "contract_ids": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-003",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-004",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C04",
+        "C05",
+        "C06"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-005",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C02",
+        "C03"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-006",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-007",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C03",
+        "C05"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-008",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C01",
+        "C04",
+        "C05",
+        "C11",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-009",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C01",
+        "C04",
+        "C05",
+        "C06"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-010",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C01",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C10",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-011",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C11",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-012",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C08",
+        "C10",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-013",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C07",
+        "C08",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-014",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C08",
+        "C09",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-015",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C09",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-016",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C01",
+        "C04",
+        "C09",
+        "C11",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-017",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C01",
+        "C04",
+        "C07",
+        "C08",
+        "C10",
+        "C11",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    },
+    {
+      "id": "UAC-018",
+      "state": "CONTRACT_CLOSED",
+      "contract_ids": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13"
+      ],
+      "bd_ids": [
+        "BD-001",
+        "BD-002",
+        "BD-003",
+        "BD-004",
+        "BD-005",
+        "BD-006",
+        "BD-007",
+        "BD-008",
+        "BD-009",
+        "BD-010",
+        "BD-011",
+        "BD-012"
+      ],
+      "blocking_dependency": null,
+      "release_blocking": true
+    }
+  ],
+  "namespaces": {
+    "fe_e2e": [
+      "FE-E2E-1",
+      "FE-E2E-2",
+      "FE-E2E-3",
+      "FE-E2E-4",
+      "FE-E2E-5",
+      "FE-E2E-6",
+      "FE-E2E-7",
+      "FE-E2E-8",
+      "FE-E2E-9",
+      "FE-E2E-10",
+      "FE-E2E-11",
+      "FE-E2E-12"
+    ],
+    "x_e2e": [
+      "X-E2E-01",
+      "X-E2E-02",
+      "X-E2E-03",
+      "X-E2E-04",
+      "X-E2E-05",
+      "X-E2E-06",
+      "X-E2E-07",
+      "X-E2E-08"
+    ],
+    "product_journeys": [
+      "PJ-01",
+      "PJ-02",
+      "PJ-03",
+      "PJ-04",
+      "PJ-05",
+      "PJ-06"
+    ],
+    "scenes": [
+      "SCENE-01",
+      "SCENE-02",
+      "SCENE-03",
+      "SCENE-04",
+      "SCENE-05",
+      "SCENE-06"
+    ]
+  },
+  "phase5_product_rows": [
+    {
+      "journey": "PJ-05",
+      "scene": "SCENE-05",
+      "contract_ids": [],
+      "wire_schema_state": "UNFROZEN",
+      "activation": "PHASE5_ONLY",
+      "activation_state": "DEFINED_NOT_ACTIVATED",
+      "result": null,
+      "release_blocking_phase4": false
+    },
+    {
+      "journey": "PJ-06",
+      "scene": "SCENE-06",
+      "contract_ids": [],
+      "wire_schema_state": "UNFROZEN",
+      "activation": "PHASE5_ONLY",
+      "activation_state": "DEFINED_NOT_ACTIVATED",
+      "result": null,
+      "release_blocking_phase4": false
+    }
+  ],
+  "validation_rules": [
+    "All 13 contracts, BD-001..012 and UAC-001..018 occur in registers",
+    "Lifecycle advances only one adjacent state at a time",
+    "UAC-001 not satisfied blocks IG-00 and production authorization",
+    "DEFINED_NOT_ACTIVATED requires result null and release_blocking_phase4 false",
+    "IMPLEMENTATION_PENDING forbids any acceptance PASS",
+    "No Demo evidence satisfies a real Phase 4 gate"
+  ],
+  "coverage_assertions": {
+    "contracts": "13/13",
+    "bd": "12/12",
+    "uac": "18/18",
+    "fe_e2e": "12/12",
+    "x_e2e": "8/8",
+    "product_journeys": "6/6",
+    "scenes": "6/6",
+    "phase5_leakage": 0
+  }
+}

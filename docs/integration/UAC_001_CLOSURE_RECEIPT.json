@@ -1,0 +1,194 @@
+{
+  "schema_version": "phase4-uac-001-closure-receipt/v1",
+  "receipt_id": "UAC_001_CLOSURE_RECEIPT",
+  "uac_id": "UAC-001",
+  "title": "Authoritative Phase 3 Backend parent identity and evidence binding",
+  "closed_at_utc": "2026-09-05T05:31:44Z",
+  "promotion_authority": "Final Phase 3 to Phase 4 Promotion Coordinator under project-owner authorization",
+  "governance_sources": [
+    {
+      "path": "docs/integration/PHASE4_BACKEND_UAC_CLOSURE_REGISTER.json",
+      "byte_sha256": "61b38d5f057054a6e51af30d2bc590b9905a58feba2822bd4b02b7ff91799090"
+    },
+    {
+      "path": "docs/integration/PHASE4_BACKEND_UAC_CLOSURE_REGISTER.md",
+      "byte_sha256": "45e83069ce008bfcf7a97655a583e2536b16302b86611c676ae744d469590c36"
+    },
+    {
+      "path": "docs/integration/PHASE4_CONTRACT_FREEZE_ACCEPTANCE_BOUNDARY.md",
+      "byte_sha256": "6a3d64d12f6742f14c5fa0d66dc60bdc0fc45c8eab640677022332676b8d3d63"
+    }
+  ],
+  "prior_status": "WAITING_FOR_APPROVED_PHASE3_PARENT",
+  "new_status": "CLOSED",
+  "closure_criteria": {
+    "git_commit_object_exists": true,
+    "candidate_tree_exact": true,
+    "source_fingerprint_exact": true,
+    "approved_worktree_clean": true,
+    "migration_head_exact": true,
+    "approved_parent_identity_bound": true,
+    "authoritative_same_run_receipt_bound": true,
+    "clean_tree_receipt_bound": true,
+    "migration_database_api_event_route_build_hashes_bound": true,
+    "backend_independent_final_audit_pass": true,
+    "financial_semantics_independent_final_audit_pass": true,
+    "combined_independent_final_audit_pass": true,
+    "all_receipts_name_one_candidate_tree_and_run": true,
+    "accepted_parent_drift_explained": true,
+    "final_close_condition_satisfied": true
+  },
+  "approved_phase3_identity": {
+    "candidate_sha": "4b6721b6db433aae300f94750e1a405b6b450501",
+    "candidate_tree": "35c47508ed65220c26620f5ec4bdd14cb798480d",
+    "source_fingerprint": "sha256:3c40c15b3f7517f6dc0ad6340fa712f7da29df356cc45791ffb528aef0794752",
+    "authoritative_run_id": "RUN-6d643419-3db3-4f99-8bc2-f8e18701a532",
+    "migration_head": "20260904_0006",
+    "migration_chain": [
+      "20260904_0004",
+      "20260904_0005",
+      "20260904_0006"
+    ],
+    "worktree_clean": true
+  },
+  "authoritative_phase3_evidence": {
+    "bundle_sha256": "sha256:0faae837be5fa9028af8c30d69983ec1738c5706f8df8627084711c99f499094",
+    "bundle_file_count": 63,
+    "candidate_identity_json_byte_sha256": "974ff594f560a8b8c23e0889d2b14af853f9e86dd5a9829b8e6caef681abe708",
+    "phase3_acceptance_json_byte_sha256": "1e17e917c6557d32aea65da00a08723b6ceb6190744469f46a2c6b1c3bd3af56",
+    "acceptance_matrix_json_byte_sha256": "3f6e511fc52542ce5fd45034934efcebb2435ce7795b63b428202bda9730916d",
+    "financial_semantics_matrix_json_byte_sha256": "23d0e24c6ed64d4e1cc7649b6b5c81d1272a8968d3cecba0e4e7b1cd5af1f24f",
+    "proof_release_manifest_json_byte_sha256": "9480c087ce51c90617552c997afff17e4a0dd0c3bb9c03e4cef0b970df677376"
+  },
+  "phase3_source_bindings": {
+    "migration_head_source": {
+      "path": "alembic/versions/20260904_0006_generated_capability_artifact_retention.py",
+      "git_blob": "e25223cdccc9ab377b76a0ab02cba6eccba32520"
+    },
+    "api_and_route_sources": [
+      {
+        "path": "apps/api/main.py",
+        "git_blob": "53e389db0e4c313c50a2ba9ebb84ab2f7c025f0d"
+      },
+      {
+        "path": "apps/api/routes.py",
+        "git_blob": "0fdd26aceeff0ea2dca7e2fa28096c1e9ba91350"
+      },
+      {
+        "path": "contracts/api/models.py",
+        "git_blob": "110ade690d0e54637f5c64faf583122acc81611d"
+      }
+    ],
+    "event_sources": [
+      {
+        "path": "src/application/events.py",
+        "git_blob": "5b221a381c68fadfbc74bc949160680f37f2cbba"
+      },
+      {
+        "path": "src/domain/runtime_event.py",
+        "git_blob": "29ef3b0021ce70a7972d417701b03047f3c8b3af"
+      },
+      {
+        "path": "src/infrastructure/database/postgresql_events.py",
+        "git_blob": "80dae59e6069997b045a3f80dd678025d289a8e2"
+      },
+      {
+        "path": "src/runtime/events.py",
+        "git_blob": "3624693bef4ffcd3e7698e166c818c2ada50c65e"
+      }
+    ],
+    "build_sources": [
+      {
+        "path": "zk/revenue_growth/Cargo.lock",
+        "git_blob": "4703bf8c3bd4d9d7ab4223082372172c56bbb3cc"
+      },
+      {
+        "path": "zk/revenue_growth/methods/build.rs",
+        "git_blob": "6c335b14027c4c4cae968659339f1be7a69c50e4"
+      },
+      {
+        "path": "zk/revenue_growth/methods/guest/Cargo.lock",
+        "git_blob": "eb45052dd85b4790ed22ebd95bdfee2b9c7a171a"
+      }
+    ],
+    "risc0_release_manifest_sha256": "sha256:be89ab2127d229a77e6fa8acb3e3eaa0592ecd7153d6dc189cca83cd640b3724",
+    "risc0_source_set_sha256": "sha256:f9298b08b95126e4ed225af59463f9368724d9dc2de938a80abb06982fe033cc",
+    "risc0_guest_binary_sha256": "sha256:afbcd20dbe0cbbcfb91a031e0fcc75961ad854d56d9fe832c8c5420e95905f60",
+    "risc0_guest_elf_sha256": "sha256:454aa141740723afbb5beeeb9f8100947bf05b04853a4c39d4230a4b9d4e76cb"
+  },
+  "phase4_contract_hash_bindings": {
+    "api_schema_contract_byte_sha256": "2a1265753c1b7b6e0756ea9c40886dcbcbdf4773e81e467b7df8fddd92763048",
+    "runtime_event_contract_byte_sha256": "f6bbca7123051c90d3321781b3e47d4028a457f2ee8a0f51a37acf836b38cf2e",
+    "route_inventory_canonical_sha256": "0a96e2ac182290820a01a4e6869b3053c55a3dc994b0bf7095acec73c809c4b1",
+    "phase4_contract_set_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741"
+  },
+  "backend_independent_final_audit": {
+    "decision": "PASS",
+    "markdown_path": "docs/audit/phase3-final-20260905-remediated/backend/BACKEND_INDEPENDENT_FINAL_AUDIT.md",
+    "markdown_byte_sha256": "a8a9073b7b9df78be337ebd12ef3003d518e31c683809fc5af53d5e8d088b732",
+    "json_path": "docs/audit/phase3-final-20260905-remediated/backend/BACKEND_INDEPENDENT_FINAL_AUDIT.json",
+    "json_byte_sha256": "040b4e3e6d8dd0da95e3763efcc2e617c0294d915c47730f1f57853eb0d64daa",
+    "json_canonical_payload_sha256": "00f12002058cb79924299b00b35b33d8c43c0856749f1596e923bfdf7f8e0c45",
+    "severity_counts": {
+      "P0": 0,
+      "P1": 0,
+      "P2": 0,
+      "P3": 0
+    },
+    "P1_BA_001": "CLOSED",
+    "P1_BA_002": "CLOSED"
+  },
+  "financial_semantics_independent_final_audit": {
+    "decision": "PASS",
+    "markdown_path": "docs/audit/phase3-final-20260905-remediated/financial/FINANCIAL_SEMANTICS_INDEPENDENT_FINAL_AUDIT.md",
+    "markdown_byte_sha256": "b2fe455efdbb1f8b67afe1cfd58b6ea3769826d3aeace21844c21a0d22239b37",
+    "json_path": "docs/audit/phase3-final-20260905-remediated/financial/FINANCIAL_SEMANTICS_INDEPENDENT_FINAL_AUDIT.json",
+    "json_byte_sha256": "2e70a659b9dda8a6afb5e8b9e0d34c349331925674063fd0f418604922b0b6bb",
+    "severity_counts": {
+      "P0": 0,
+      "P1": 0,
+      "P2": 0,
+      "P3": 0
+    },
+    "material_financial_metrics": "10/10 PASS",
+    "fundamental_metrics": "3/3 PASS",
+    "technical_metrics": "7/7 PASS",
+    "FIN_P2_001": "CLOSED",
+    "FIN_P2_002": "CLOSED"
+  },
+  "combined_independent_final_audit": {
+    "decision": "PASS",
+    "gate": "PASS",
+    "manifest_path": "docs/audit/phase3-final-20260905-remediated/PHASE3_INDEPENDENT_FINAL_AUDIT_MANIFEST.json",
+    "manifest_byte_sha256": "2242f0b97c9bcb545c57c37286a515df23842f3ff310521793eac6294515e6ae",
+    "summary_path": "docs/audit/phase3-final-20260905-remediated/PHASE3_INDEPENDENT_FINAL_AUDIT_SUMMARY.md",
+    "summary_byte_sha256": "81099db59ef52de5235f8f6bc836320e76df03a10831308381ba8e4e13c4bbc5"
+  },
+  "independence_process": {
+    "status": "DISCLOSED_EXCEPTION",
+    "combined_pass_invalidated": false,
+    "cross_team_receipt_or_judgment_access_before_freeze": false,
+    "parent_joined_only_after_both_receipts_frozen": true,
+    "disclosure": "Team A performed one locator-only filesystem search that emitted filenames from the coordinator integration worktree. It opened no content there and used none as evidence. Team A inspected no Team B worktree, notes, messages, status, or receipt; all conclusions were independently recomputed from its detached checkout, isolated bundle, read-only PostgreSQL, and fresh read-only Langfuse retrieval. Team B reported no Team A access or judgment reuse."
+  },
+  "drift_reconciliation": {
+    "historical_contract_manifest_candidate": "e02314c552d88fb736473bc587c650539615224a",
+    "approved_parent": "4b6721b6db433aae300f94750e1a405b6b450501",
+    "disposition": "APPEND_ONLY_AUTHORITY_UPDATE",
+    "explanation": "The approved parent is a descendant that closes the historical independent-audit findings and provider reliability prerequisites. Its final independent audits recomputed the full frozen acceptance identity. Phase 3 API route and runtime-event source blobs are unchanged; contracts/api/models.py differs only by terminal whitespace. Migration 20260904_0006 adds immutable generated-capability artifact retention required by the frozen BD-006 semantics. No Phase 4 public route or contract implementation was introduced.",
+    "unexplained_drift": false,
+    "historical_contract_manifest_modified": false
+  },
+  "closure_result": {
+    "UAC_001": "CLOSED",
+    "approved_phase3_parent_ready": true,
+    "source_modified_by_promotion": false,
+    "new_research_run_created": false,
+    "phase4_implementation_started": false
+  },
+  "receipt_integrity": {
+    "hash_algorithm": "SHA-256",
+    "byte_sha256_reported_externally": true,
+    "serialization_profile": "UTF8_JSON_TWO_SPACE_INDENT_FIXED_KEY_AND_ARRAY_ORDER_TERMINAL_LF"
+  }
+}

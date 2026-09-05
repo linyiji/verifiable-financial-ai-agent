@@ -1,0 +1,156 @@
+{
+  "schema_version": "v17-phase4-contract-input-manifest/v2",
+  "manifest_id": "V17_PHASE4_CONTRACT_INPUT_MANIFEST_R2",
+  "package_id": "V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2",
+  "package_revision": "2.0.0",
+  "prepared_at": "2026-09-04T11:20:10Z",
+  "status": "READY_FOR_OWNER_APPROVAL",
+  "canonical_package": {
+    "canonicalization_profile": "LEXICOGRAPHIC_COMPACT_JSON_V1",
+    "payload_path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.json",
+    "sha256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19",
+    "algorithm": "SHA-256",
+    "object_key_order": "BYTEWISE_LEXICOGRAPHIC_RECURSIVE",
+    "array_order": "PRESERVED",
+    "serialization": "COMPACT_UTF8_JSON_NO_TERMINAL_NEWLINE"
+  },
+  "members": [
+    {
+      "path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.json",
+      "role": "NORMATIVE_MACHINE_READABLE_SEMANTIC_PAYLOAD",
+      "sha256": "3822211ce66d392bcf7bc5fb5a5d0ebfa8a19df264b18acef08ddfda6ba98394"
+    },
+    {
+      "path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_PACKAGE_R2.md",
+      "role": "HUMAN_READABLE_COMPANION",
+      "sha256": "fe7a8f5ea04dab9937a00b0a3d332032b527e03633846e7854a8705c4c0acfa1"
+    },
+    {
+      "path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_R1_TO_R2_DELTA.md",
+      "role": "EXHAUSTIVE_R1_TO_R2_SEMANTIC_DELTA",
+      "sha256": "d942cfffc77be3b8ab11dbca372817715745fbf4931ebf6c01637e65c1ec948e"
+    },
+    {
+      "path": "docs/integration/V17_PHASE4_CONTRACT_INPUT_MANIFEST_R2.json",
+      "role": "PACKAGE_MANIFEST",
+      "sha256": null,
+      "self_hash_policy": "OMITTED_TO_AVOID_RECURSION; exact completed-file byte SHA-256 is reported externally"
+    }
+  ],
+  "member_accounting": {
+    "expected": 4,
+    "recorded": 4,
+    "complete": true
+  },
+  "lineage": {
+    "r1_package_sha256": "36cf733d07b4df1ad4cb1065bdd17eceb6bbc98cf6f77fe0dfb1963185757e08",
+    "r1_status": "SUPERSEDED_BEFORE_OWNER_APPROVAL",
+    "r1_owner_approval": "NO",
+    "r1_artifacts_modified": false,
+    "r1_fcr_revision": "DRAFT-01",
+    "r1_fcr_sha256": "b20f2a0527638d057b1de62a6b154cdc8d50724d4aa75ee3491122fad3280df1"
+  },
+  "bound_parent": {
+    "id": "FRONTEND_BASELINE_V8.1",
+    "sha": "d854c97789c98cca14fee3f4b3d7f00e0d5d137a"
+  },
+  "bound_backend_contract": {
+    "family": "phase4-core/v1",
+    "runtime_event_contract": "phase4-runtime-event/v1",
+    "final_contract_set_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+    "final_manifest_path": "docs/integration/PHASE4_BACKEND_FINAL_CONTRACT_MANIFEST.json",
+    "final_manifest_byte_sha256": "1886ef831ebff461afcabd936deaadbb10afcaf0d3bd3a037e0f3a7de995657d",
+    "contract_set_recomputation": {
+      "input": "contract_components transformed to a sorted canonical array of {id,sha256}, using each component's declared sha256",
+      "serialization": "RECURSIVELY_SORTED_COMPACT_UTF8_JSON_NO_TERMINAL_NEWLINE",
+      "result": "MATCH"
+    }
+  },
+  "bound_reference_manifest": {
+    "id": "V17_REFERENCE_MANIFEST_V1",
+    "path": "docs/frontend-governance/V17_REFERENCE_MANIFEST_V1.json",
+    "sha256": "44be67d6854a284055c19919bcaf979097c710b33d3e5f57c5f7a35fe376f394",
+    "completeness": "65/65"
+  },
+  "bound_source_hashes": {
+    "api_schema_contract_byte_sha256": "2a1265753c1b7b6e0756ea9c40886dcbcbdf4773e81e467b7df8fddd92763048",
+    "runtime_event_contract_byte_sha256": "f6bbca7123051c90d3321781b3e47d4028a457f2ee8a0f51a37acf836b38cf2e",
+    "error_availability_base_byte_sha256": "1cfcafe17c94e1d87bdcd8230ecaeef11913a2cdb7174ace52a2fa01d8ab00b9",
+    "access_mode_decision_byte_sha256": "c32ac85f7930ab151fbb769350bed270549bdb132489c5c769ec7ef1e042415d",
+    "access_mode_decision_markdown_byte_sha256": "b0131d3650e389d35ec2118419e3d1a017951a2247e9a8f2f4fa8ca44afee8f8",
+    "final_uac_disposition_byte_sha256": "226a586e696f92fe6249f7c043ea005291858e7c1bcf46d5a825d1ecf595146c",
+    "final_bd_disposition_byte_sha256": "99ffdc460d2e2c9d49984af4882f076ca21f094f380487d4ab0a283cb8acbd28",
+    "final_parity_matrix_byte_sha256": "ac3a3c6e1735519a960df7643bf8353646e2d5ab63874965d7beac3e6da48028"
+  },
+  "bound_canonical_component_hashes": {
+    "error_availability_final_addendum": "5cd8dd06203707b3b9597bc4dbfdc343d7c84884bf2c73982a22cff2f9ffd79a",
+    "VersionProtocolV1": "ebac4e85f21f9cc145043c9b39d3ca8d04030f8c332b951bb326ab0f4de958fb",
+    "CursorProtocolV1": "5578976fb01c7ebacaac039a93f21c57cbb2ff51868f7a64513e61660aa42b01",
+    "artifact_policy": "1c912c1864aa2c5940182148706757d3f6c92e7c620d275f9c60503e0f30959a",
+    "release_policy": "0a823de3f31ec730d32164eec15a0090bd7841ece715603ba57633dd19a9ac63",
+    "financial_projection_contract": "1c165059432174062625f2a0a969454e831eb2db7a89d9eb52119c6e2f6bfdcf",
+    "route_inventory": "0a96e2ac182290820a01a4e6869b3053c55a3dc994b0bf7095acec73c809c4b1",
+    "enum_map": "656b14d7787b3a0db3b9d8b0b50ba4c97911aedc5f7c11318cbfa2e904582f6f",
+    "validation": "INDEPENDENT_RECOMPUTATION_MATCHED_8_OF_8"
+  },
+  "bound_fcr": {
+    "change_id": "FRONTEND_V17_PHASE4_CORE_INTEGRATION",
+    "record_revision": "DRAFT-02",
+    "status": "DRAFT_CHANGE",
+    "path": "docs/frontend-governance/FCR_V17_PHASE4_CORE_INTEGRATION_DRAFT_02.md",
+    "sha256": "1239b97b461415963d8bdbcc1ce5c2409e4e7b5ff0b47b0f0bfea90a5c9ac958",
+    "implementation_authorized": false,
+    "candidate_sha": "PENDING",
+    "owner_approval": "PENDING"
+  },
+  "node24_compatibility": {
+    "path": "docs/integration/FRONTEND_V8_1_NODE24_COMPATIBILITY.md",
+    "sha256": "889a975aa39f6401cf06c5ba59e6d9256d8159c489a4861ed85db9562e3feca7",
+    "scope": "FRONTEND_BASELINE_V8.1_ONLY",
+    "result": "PASS",
+    "v17_candidate_toolchain_acceptance": "NOT_RUN"
+  },
+  "governance": {
+    "classification": "DOCUMENTATION_GOVERNANCE_ONLY",
+    "frontend_candidate_sha_required_for_backend_freeze": false,
+    "frontend_candidate_created": false,
+    "frontend_implementation_authorized": false,
+    "phase4_started": false,
+    "contract_input_approval_ready": true,
+    "owner_approval_required": true,
+    "owner_approval_status": "PENDING",
+    "self_approved": false,
+    "cycle": "OWNER_APPROVAL_OF_R2 -> BACKEND_FINAL_CONTRACT_FREEZE -> FRONTEND_V17_IMPLEMENTATION"
+  },
+  "completeness": {
+    "normalized_contracts": "13/13",
+    "backend_dependency_records": "12/12",
+    "uac_records": "18/18",
+    "frontend_contract_conflicts": 0,
+    "unmapped_field_groups": 0,
+    "unowned_business_fields": 0,
+    "interaction_reservations": "6/6",
+    "interaction_id_range": "071..076",
+    "reserved_e2e_delta": "P4-E2E-107..112",
+    "scene_dispositions": "6/6",
+    "node24_evidence_bound": true,
+    "production_source_modified": false
+  },
+  "final": {
+    "V17_CONTRACT_INPUT_R2_READY": "YES",
+    "R1_STATUS": "SUPERSEDED_BEFORE_OWNER_APPROVAL",
+    "R2_PACKAGE_SHA256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19",
+    "PHASE4_CONTRACT_SET_SHA256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+    "NORMALIZED_CONTRACTS": "13/13",
+    "BD_RECORDS": "12/12",
+    "UAC_MAPPED": "18/18",
+    "FRONTEND_CONTRACT_CONFLICTS": 0,
+    "FCR_REVISION": "DRAFT-02",
+    "FCR_STATUS": "DRAFT_CHANGE",
+    "CONTRACT_INPUT_APPROVAL_READY": "YES",
+    "OWNER_APPROVAL_REQUIRED": "YES",
+    "FRONTEND_IMPLEMENTATION_AUTHORIZED": "NO",
+    "FRONTEND_CANDIDATE_CREATED": "NO",
+    "PHASE4_STARTED": "NO"
+  }
+}

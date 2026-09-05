@@ -1,0 +1,332 @@
+{
+  "schema_version": "phase3-financial-semantics-independent-final-audit/v1",
+  "audit_role": "TEAM_B_FINANCIAL_SEMANTICS_INDEPENDENT_FINAL_AUDIT",
+  "audited_at_utc": "2026-09-05T04:59:53Z",
+  "decision": "PASS",
+  "team_b_receipt_frozen": true,
+  "identity_gate": {
+    "status": "PASS",
+    "candidate_sha": "4b6721b6db433aae300f94750e1a405b6b450501",
+    "candidate_tree": "35c47508ed65220c26620f5ec4bdd14cb798480d",
+    "source_fingerprint": "sha256:3c40c15b3f7517f6dc0ad6340fa712f7da29df356cc45791ffb528aef0794752",
+    "worktree_clean": true,
+    "migration_head": "20260904_0006",
+    "candidate_commit_time": "2026-09-05T12:18:45+08:00",
+    "run_created_at": "2026-09-05T04:23:02.769305Z",
+    "candidate_precedes_run": true,
+    "authoritative_run": "RUN-6d643419-3db3-4f99-8bc2-f8e18701a532",
+    "foreign_run_identities": [],
+    "evidence_bundle": {
+      "framing": "sorted(relative_path); uint64be(path_length)+path+uint64be(content_length)+content",
+      "sha256": "sha256:0faae837be5fa9028af8c30d69983ec1738c5706f8df8627084711c99f499094",
+      "file_count": 63,
+      "byte_count": 4774193
+    }
+  },
+  "independence": {
+    "status": "PASS",
+    "team_a_worktree_inspected": false,
+    "team_a_directory_inspected": false,
+    "team_a_notes_or_messages_inspected": false,
+    "team_a_status_or_receipt_inspected": false,
+    "team_a_judgments_reused": false,
+    "audit_evidence_scope": "/Users/mac/Verifiable_Financial_Agent_System_audits/phase3-final-20260905-remediated/financial/evidence_bundle",
+    "checkout_scope": "/Users/mac/Verifiable_Financial_Agent_System_worktrees/phase3-remediated-final-financial-audit"
+  },
+  "authoritative_acceptance_cross_check": {
+    "formal_acceptance": "52/52 PASS",
+    "financial_semantics_internal": "13/13 PASS",
+    "run_terminal_event": "run.completed",
+    "run_terminal_at": "2026-09-05T04:24:14.941545Z"
+  },
+  "severity_counts": {
+    "P0": 0,
+    "P1": 0,
+    "P2": 0,
+    "P3": 0
+  },
+  "findings": [],
+  "B1_fundamental_metrics": {
+    "status": "3/3 PASS",
+    "method": "Independent Decimal recomputation from each CalculationRecord's ordered accepted Evidence identities; rendered values were not used as calculation authority.",
+    "metrics": [
+      {
+        "formula_id": "revenue_growth_v1",
+        "input_fields": ["revenue:FY2025", "revenue:FY2026"],
+        "formula": "(current_revenue - prior_revenue) / prior_revenue",
+        "recomputed_value": "0.6547353579009479145114447075",
+        "retained_value_equal": true,
+        "decimal_precision": 28,
+        "period_basis": "FY",
+        "actuality": "ACTUAL",
+        "currency": "USD",
+        "unit": "CURRENCY inputs; RATIO output",
+        "statement_series_equal": true,
+        "prior_revenue_positive": true,
+        "zero_prior_revenue_fails_closed": true,
+        "negative_prior_revenue_fails_closed": true
+      },
+      {
+        "formula_id": "ebitda_margin_v1",
+        "input_fields": ["ebitda:FY2026", "revenue:FY2026"],
+        "formula": "ebitda / revenue",
+        "recomputed_value": "0.6694143689392325574933545740",
+        "retained_value_equal": true,
+        "period_basis": "FY",
+        "actuality": "ACTUAL",
+        "currency": "USD",
+        "statement_cohort_equal": true
+      },
+      {
+        "formula_id": "operating_cash_flow_plus_signed_capex_divided_by_revenue_v1",
+        "input_fields": ["operating_cash_flow", "capital_expenditure", "revenue"],
+        "formula": "(operating_cash_flow + signed_capital_expenditure) / revenue",
+        "recomputed_value": "0.4477025812964832498217080829",
+        "retained_value_equal": true,
+        "capital_expenditure": "-6042000000",
+        "capital_expenditure_sign_convention": "OUTFLOW_NEGATIVE",
+        "absolute_value_not_used": true,
+        "period": "FY2026",
+        "actuality": "ACTUAL",
+        "currency": "USD",
+        "statement_cohort_equal": true
+      }
+    ]
+  },
+  "B2_technical_metrics": {
+    "status": "7/7 PASS",
+    "method": "Independent Decimal recomputation in retained Evidence-ID order, with each input checked as ACCEPTED, ACTUAL, DAILY and owned by the audited Run.",
+    "metrics": [
+      {
+        "formula_id": "sma_close_50_v1",
+        "evidence_count": 50,
+        "recomputed_value": "210.5664",
+        "retained_value_equal": true,
+        "window": 50,
+        "price_basis": "RAW_CLOSE",
+        "corporate_action_status": "UNASSESSED"
+      },
+      {
+        "formula_id": "sma_close_200_v1",
+        "evidence_count": 200,
+        "recomputed_value": "196.67945",
+        "retained_value_equal": true,
+        "window": 200,
+        "price_basis": "RAW_CLOSE",
+        "corporate_action_status": "UNASSESSED"
+      },
+      {
+        "formula_id": "rsi_close_14_simple_average_v1",
+        "evidence_count": 15,
+        "price_change_count": 14,
+        "recomputed_value": "53.677987075484669324900316238141069709885879279527",
+        "retained_value_equal": true,
+        "method": "simple_average_not_wilder",
+        "price_basis": "RAW_CLOSE",
+        "corporate_action_status": "UNASSESSED"
+      },
+      {
+        "formula_id": "macd_line_close_12_26_adjust_false_v1",
+        "evidence_count": 250,
+        "recomputed_value": "3.8312329766339825859682836",
+        "retained_value_equal": true
+      },
+      {
+        "formula_id": "macd_signal_close_12_26_9_adjust_false_v1",
+        "evidence_count": 250,
+        "recomputed_value": "2.994088968765850171279231979",
+        "retained_value_equal": true
+      },
+      {
+        "formula_id": "macd_histogram_close_12_26_9_adjust_false_v1",
+        "evidence_count": 250,
+        "recomputed_value": "0.837144007868132414689051621",
+        "retained_value_equal": true
+      },
+      {
+        "formula_id": "latest_volume_to_average_volume_20_v1",
+        "evidence_count": 20,
+        "recomputed_value": "1.0267085312351010380724223296119561419231175575929",
+        "retained_value_equal": true,
+        "average_includes_latest_observation": true,
+        "input_field": "volume",
+        "input_unit": "COUNT",
+        "input_currency": null,
+        "technical_price_basis": null,
+        "corporate_action_status": null
+      }
+    ],
+    "macd_policy": {
+      "fast_span": 12,
+      "slow_span": 26,
+      "signal_span": 9,
+      "ema_adjust": false,
+      "ema_seed": "first_observation",
+      "warmup_required": 34,
+      "warmup_satisfied": true,
+      "decimal_precision": 28,
+      "decimal_rounding": "ROUND_HALF_EVEN"
+    },
+    "all_released_canonical_values_equal_recomputation": true,
+    "all_display_values_equal_round_half_even_two_decimal_policy": true
+  },
+  "B3_generated_capability_financial_semantics": {
+    "status": "PASS",
+    "formula_id": "operating_cash_flow_plus_signed_capex_divided_by_revenue_v1",
+    "output_unit": "RATIO",
+    "spec_sha256": "sha256:166294149a830cac44af2024b2389aacd52545e4cb1c228223b029ba36076bf7",
+    "source_sha256": "sha256:d8551c1df602f65ce0a06e2dc3d5d31cbe82cb674b8e9d3ae83832bf09dc2df2",
+    "tests_sha256": "sha256:07b836ebb2d9febc8818dde1a4186756bca9e67bec4e55643bb6ee340f79f128",
+    "compiler_id": "vfas-generated-capability-compiler",
+    "compiler_version": "1",
+    "canonical_spec_bytes_equal_retained": true,
+    "recompiled_source_bytes_equal_retained": true,
+    "recompiled_test_bytes_equal_retained": true,
+    "json_object_member_reordering_preserves_compilation": true,
+    "ordered_formula_ir_mutation_fails_closed": true,
+    "live_runtime_value": "0.4477025812964832498217080829",
+    "owned_oracle_value": "0.4477025812964832498217080829",
+    "runtime_oracle_equal": true,
+    "zero_revenue_fails_closed": true,
+    "negative_outflow_capex_preserved": true,
+    "provider": "mimo",
+    "requested_model": "mimo-v2.5",
+    "actual_model": "mimo-v2.5"
+  },
+  "B4_review_proof_release_report": {
+    "status": "PASS",
+    "review": {
+      "reviewer": "independent-financial-review-v2",
+      "status": "PASS",
+      "check_count": 54,
+      "input_snapshot_hash_retained": "sha256:3dafcb553c8fe26b64aa4f52270f467865710ef5b274f064f834fe8efc83cfd1",
+      "input_snapshot_hash_recomputed": "sha256:3dafcb553c8fe26b64aa4f52270f467865710ef5b274f064f834fe8efc83cfd1",
+      "reviewed_calculation_count": 10,
+      "reviewed_metric_count": 10,
+      "reviewed_claim_count": 10,
+      "reviewed_evidence_count": 539
+    },
+    "proof": {
+      "must_prove_count": 1,
+      "must_prove_formula": "revenue_growth_v1",
+      "proof_id": "PROOF-RUN-6d643419-3db3-4f99-8bc2-f8e18701a532-REVENUE-GROWTH",
+      "backend": "risc0",
+      "status": "VERIFIED",
+      "input_commitment": "sha256:688ef341b649a8299d74ecd1b52a0788e628df2962f4236add011be38314e77f",
+      "expected_output_commitment": "sha256:d7254f824d221d591e8c1854a9f29ec94054d9926b6c38623f44255cc42b7538",
+      "receipt_sha256": "sha256:293d45b31db3cfd717e049032b37d7a14b2c269a76e4612b88728498e66a9ea4",
+      "receipt_size_bytes": 256610,
+      "journal_sha256": "sha256:d5506980597f998c2819a32e7f0803306c3205ceb39329df6068fd2b9c0d7a73",
+      "input_commitment_recomputed_equal": true,
+      "verification_precedes_release": true
+    },
+    "closure": {
+      "canonical_record_id": "CER-RUN-6d643419-3db3-4f99-8bc2-f8e18701a532",
+      "released_result_id": "RESULT-RUN-6d643419-3db3-4f99-8bc2-f8e18701a532",
+      "same_run": true,
+      "calculation_refs_closed": "10/10",
+      "metric_refs_closed": "10/10",
+      "claim_refs_closed": "10/10",
+      "proof_refs_closed": "1/1",
+      "canonical_report_dto_semantic_sha256": "sha256:8abd709bde026decccbef693c1b44412b974fba8fc099c233d899938ed4e8079",
+      "released_metric_semantics_sha256": "sha256:8e797d0d6ed8a94a7dfa7c55b1be6aff238d89d07ca4f4ba292e0a8263483680",
+      "svg_semantic_sha256": "sha256:5653b97b86ccbe0e80769c35fcd7ce762b09d64fffe689947ddaa2532c533024",
+      "no_report_only_mutation": true,
+      "no_renderer_refetch": true
+    },
+    "artifacts": [
+      {
+        "type": "image/svg+xml",
+        "sha256": "sha256:e0e6644332fa37bda285b90b088591577436d9cd5ee0ccd8904feaf4efa06969",
+        "size_bytes": 4023,
+        "all_10_display_metrics_present": true
+      },
+      {
+        "type": "text/html",
+        "sha256": "sha256:4ee6f9315562eb3dd634f6e2f59adc065e1b79df299fbef094ed8e1e0488812a",
+        "size_bytes": 191709,
+        "all_10_display_metrics_present": true
+      },
+      {
+        "type": "application/pdf",
+        "sha256": "sha256:5998d0482a5afa7ad27d3bdb19bdf9f9c48c68d32a98169360f8dad5656be2fe",
+        "size_bytes": 484625,
+        "all_10_display_metrics_present": true
+      }
+    ]
+  },
+  "B5_phase2_1_regression": {
+    "status": "PASS",
+    "P2_1_012": {
+      "status": "PASS",
+      "candidate_count": 9,
+      "decision_count": 9,
+      "selected_count": 0,
+      "candidate_decision_selected_sets_distinct": true,
+      "fabricated_selected_comparables": false,
+      "result_status": "no_selected_comparables_due_missing_enrichment"
+    },
+    "P2_1_013": {
+      "status": "PASS",
+      "normalized_field": "full_time_employees",
+      "normalized_value": "42000",
+      "unit": "COUNT",
+      "period": "CURRENT",
+      "period_basis": "CURRENT",
+      "actuality": "ACTUAL",
+      "currency": null,
+      "evidence_status": "ACCEPTED"
+    }
+  },
+  "old_finding_closure": {
+    "FIN_P2_001": {
+      "status": "CLOSED",
+      "fundamental_calculation_refs": 3,
+      "technical_calculation_refs": 7,
+      "material_calculation_refs": 10,
+      "sets_disjoint": true,
+      "union_equals_canonical_calculation_set": true,
+      "technical_refs_inside_fundamental_result": 0
+    },
+    "FIN_P2_002": {
+      "status": "CLOSED",
+      "volume_ratio_value": "1.0267085312351010380724223296119561419231175575929",
+      "independently_recomputed_equal": true,
+      "volume_evidence_refs": 20,
+      "all_volume_evidence_authoritative": true,
+      "calculation_snapshot_price_basis": null,
+      "calculation_snapshot_corporate_action_status": null,
+      "released_metric_price_basis": null,
+      "released_metric_corporate_action_status": null,
+      "numeric_formula_code_changed_by_remediation": false,
+      "price_based_metrics_retain_valid_price_metadata": true,
+      "cross_view_consistent": true
+    }
+  },
+  "mandatory_results": {
+    "FINANCIAL_MATERIAL_METRICS": "10/10 PASS",
+    "FUNDAMENTAL_METRICS": "3/3 PASS",
+    "TECHNICAL_METRICS": "7/7 PASS",
+    "GENERATED_CAPABILITY_FINANCIAL_SEMANTICS": "PASS",
+    "REVIEW_PROOF_RELEASE_REPORT": "PASS",
+    "P2_1_REGRESSION": "PASS",
+    "FIN_P2_001": "CLOSED",
+    "FIN_P2_002": "CLOSED"
+  },
+  "mutation_flags": {
+    "source_modified": false,
+    "tests_modified": false,
+    "database_modified": false,
+    "provider_modified": false,
+    "langfuse_modified": false,
+    "historical_evidence_modified": false,
+    "acceptance_artifacts_modified": false,
+    "new_run_created": false,
+    "phase4_started": false,
+    "repair_performed": false
+  },
+  "receipt_integrity": {
+    "strategy": "SHA256 of exact frozen file bytes, computed only after both receipts were complete; hashes are reported out-of-band to avoid self-reference",
+    "hash_embedded_in_receipt": false
+  }
+}

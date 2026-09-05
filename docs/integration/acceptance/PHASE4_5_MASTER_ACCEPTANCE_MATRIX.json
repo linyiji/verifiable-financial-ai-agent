@@ -1,0 +1,4615 @@
+{
+  "schema_version": "phase4-5-master-acceptance-matrix/v1",
+  "program_status": "DESIGN_READY_NOT_EXECUTED",
+  "source_modified": false,
+  "phase4_started": false,
+  "authority": {
+    "frontend_baseline": "d854c97789c98cca14fee3f4b3d7f00e0d5d137a",
+    "frontend_r2_sha256": "fc184034e448e85190aa4cfd92b89e90b9f258307632920daa8d8cd73c600c19",
+    "backend_contract_set_sha256": "0bf6c824d553847fa129a429715aedc36a30601a97421f4447cdd3f6d6a81741",
+    "uac_001": "OPEN",
+    "uac_002": "SATISFIED"
+  },
+  "result_vocabulary": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "NOT_ACTIVATED"
+  ],
+  "phase4_aggregate": {
+    "included_scenes": [
+      "SCENE-01",
+      "SCENE-02",
+      "SCENE-03",
+      "SCENE-04"
+    ],
+    "excluded_scenes": [
+      "SCENE-05",
+      "SCENE-06"
+    ],
+    "result": null
+  },
+  "required_fields": [
+    "id",
+    "layer",
+    "scene",
+    "phase",
+    "activation",
+    "vertical_slice",
+    "backend_surface",
+    "frontend_surface",
+    "user_action",
+    "precondition",
+    "input",
+    "expected_backend_state",
+    "expected_frontend_state",
+    "expected_events",
+    "expected_persistence",
+    "expected_identity",
+    "negative_oracle",
+    "environment",
+    "data_class",
+    "automation",
+    "manual_required",
+    "evidence",
+    "blocking",
+    "owner",
+    "status"
+  ],
+  "items": [
+    {
+      "id": "LEVEL-L0",
+      "layer": "L0",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Static and contract layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L1",
+      "layer": "L1",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Unit layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L2",
+      "layer": "L2",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Component layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L3",
+      "layer": "L3",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Backend integration layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1"
+      ],
+      "data_class": [
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L4",
+      "layer": "L4",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Frontend component and adapter layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1"
+      ],
+      "data_class": [
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "SCO/FEO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L5",
+      "layer": "L5",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Backend-Frontend integration layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "SCO/FEO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L6",
+      "layer": "L6",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Browser E2E layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "LIVE_PROVIDER_WHEN_AUTHORIZED"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L7",
+      "layer": "L7",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Vertical slice layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "LIVE_PROVIDER_WHEN_AUTHORIZED"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L8",
+      "layer": "L8",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Product Journey layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "LIVE_PROVIDER_WHEN_AUTHORIZED"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L9",
+      "layer": "L9",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Six-scene acceptance layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "LIVE_PROVIDER_WHEN_AUTHORIZED"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L10",
+      "layer": "L10",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute System acceptance layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2",
+        "E3"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "LIVE_PROVIDER_WHEN_AUTHORIZED"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/RCO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "LEVEL-L11",
+      "layer": "L11",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [],
+      "frontend_surface": [],
+      "user_action": "Execute Preview and release layer",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E3",
+        "E4"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "LIVE_PROVIDER_WHEN_AUTHORIZED"
+      ],
+      "automation": "AUTOMATED",
+      "manual_required": false,
+      "evidence": [
+        "candidate manifest",
+        "test transcript",
+        "hash-linked witness"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/RCO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C01",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "GET /api/research-runs"
+      ],
+      "frontend_surface": [
+        "Runs page"
+      ],
+      "user_action": "Exercise GlobalRunCollectionProjection positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "GlobalRunCollectionProjection identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C02",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "POST /api/research-runs/prepare"
+      ],
+      "frontend_surface": [
+        "New task/Scheme"
+      ],
+      "user_action": "Exercise PreparedResearchDraft positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "PreparedResearchDraft identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C03",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "POST /api/research-runs"
+      ],
+      "frontend_surface": [
+        "Confirm/Run route"
+      ],
+      "user_action": "Exercise ConfirmRunResponseV1 positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "ConfirmRunResponseV1 identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C04",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "run detail/projection"
+      ],
+      "frontend_surface": [
+        "Run workspace/path"
+      ],
+      "user_action": "Exercise RunProjection positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "RunProjection identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C05",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "events/SSE"
+      ],
+      "frontend_surface": [
+        "SSE reducer/workspace"
+      ],
+      "user_action": "Exercise NormalizedRuntimeEventV1 positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "NormalizedRuntimeEventV1 identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C06",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "projection/events/cursor"
+      ],
+      "frontend_surface": [
+        "connection/recovery UI"
+      ],
+      "user_action": "Exercise ConnectionState positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "ConnectionState identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C07",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "review-view"
+      ],
+      "frontend_surface": [
+        "Results/Review"
+      ],
+      "user_action": "Exercise FinancialReviewProjection positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "FinancialReviewProjection identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C08",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-04",
+      "backend_surface": [
+        "claim/trace"
+      ],
+      "frontend_surface": [
+        "Claim Trace/Execution"
+      ],
+      "user_action": "Exercise ClaimTraceProjection / TraceBundle positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "ClaimTraceProjection / TraceBundle identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C09",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-05",
+      "backend_surface": [
+        "artifacts/content"
+      ],
+      "frontend_surface": [
+        "Report/unavailable"
+      ],
+      "user_action": "Exercise ReportArtifactGroup positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "ReportArtifactGroup identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C10",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "result/trace"
+      ],
+      "frontend_surface": [
+        "Results/Review/Trace"
+      ],
+      "user_action": "Exercise ReleasedFinancialMetric positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "ReleasedFinancialMetric identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C11",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "object released-state"
+      ],
+      "frontend_surface": [
+        "Object pages"
+      ],
+      "user_action": "Exercise ReleasedObjectCoreProjection positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "ReleasedObjectCoreProjection identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C12",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [
+        "all API/SSE errors"
+      ],
+      "frontend_surface": [
+        "all error states"
+      ],
+      "user_action": "Exercise ErrorEnvelope positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "ErrorEnvelope identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "C13",
+      "layer": "L0-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [
+        "embedded availability"
+      ],
+      "frontend_surface": [
+        "all resource availability UI"
+      ],
+      "user_action": "Exercise Availability positive, idempotent, mismatch, version, restart, authorization and integrity variants",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "Availability identity is backend-authored and exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0",
+        "E1",
+        "E2"
+      ],
+      "data_class": [
+        "CONTRACT_FIXTURE",
+        "SYNTHETIC",
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "contract test",
+        "HTTP/SSE transcript",
+        "SQL witness",
+        "browser DOM when applicable"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-1",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Object/New"
+      ],
+      "user_action": "Browser executes Object/New",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-2",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Scheme/Confirm"
+      ],
+      "user_action": "Browser executes Scheme/Confirm",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-3",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Run Workspace"
+      ],
+      "user_action": "Browser executes Run Workspace",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-4",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "SSE progression"
+      ],
+      "user_action": "Browser executes SSE progression",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-5",
+      "layer": "L6",
+      "scene": [
+        "SCENE-02",
+        "SCENE-03"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-03",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Dynamic Path"
+      ],
+      "user_action": "Browser executes Dynamic Path",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-6",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Financial Results"
+      ],
+      "user_action": "Browser executes Financial Results",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-7",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Financial Review"
+      ],
+      "user_action": "Browser executes Financial Review",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-8",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-04",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Execution"
+      ],
+      "user_action": "Browser executes Execution",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-9",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-04",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Claim Trace"
+      ],
+      "user_action": "Browser executes Claim Trace",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-10",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-05",
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Report/HTML/PDF"
+      ],
+      "user_action": "Browser executes Report/HTML/PDF",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-11",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Recovery"
+      ],
+      "user_action": "Browser executes Recovery",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "FE-E2E-12",
+      "layer": "L6",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [
+        "real Phase 4 HTTP/SSE endpoints"
+      ],
+      "frontend_surface": [
+        "Error/unavailable"
+      ],
+      "user_action": "Browser executes Error/unavailable",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "PLAYWRIGHT_PLUS_MANUAL",
+      "manual_required": true,
+      "evidence": [
+        "Playwright trace",
+        "screenshots",
+        "DOM/a11y/focus",
+        "network/SSE",
+        "console"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "X-E2E-01",
+      "layer": "L5-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "API",
+        "PostgreSQL",
+        "SSE",
+        "provider/artifact as applicable"
+      ],
+      "frontend_surface": [
+        "Create"
+      ],
+      "user_action": "Complete cross-layer Create flow",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "HTTP/SSE/SQL/browser joined ledger"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "X-E2E-02",
+      "layer": "L5-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "API",
+        "PostgreSQL",
+        "SSE",
+        "provider/artifact as applicable"
+      ],
+      "frontend_surface": [
+        "Live Run"
+      ],
+      "user_action": "Complete cross-layer Live Run flow",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "HTTP/SSE/SQL/browser joined ledger"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "X-E2E-03",
+      "layer": "L5-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "API",
+        "PostgreSQL",
+        "SSE",
+        "provider/artifact as applicable"
+      ],
+      "frontend_surface": [
+        "Result"
+      ],
+      "user_action": "Complete cross-layer Result flow",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "HTTP/SSE/SQL/browser joined ledger"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "X-E2E-04",
+      "layer": "L5-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "API",
+        "PostgreSQL",
+        "SSE",
+        "provider/artifact as applicable"
+      ],
+      "frontend_surface": [
+        "Review"
+      ],
+      "user_action": "Complete cross-layer Review flow",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "HTTP/SSE/SQL/browser joined ledger"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "X-E2E-05",
+      "layer": "L5-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-04",
+      "backend_surface": [
+        "API",
+        "PostgreSQL",
+        "SSE",
+        "provider/artifact as applicable"
+      ],
+      "frontend_surface": [
+        "Trace"
+      ],
+      "user_action": "Complete cross-layer Trace flow",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "HTTP/SSE/SQL/browser joined ledger"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "X-E2E-06",
+      "layer": "L5-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": "VS-05",
+      "backend_surface": [
+        "API",
+        "PostgreSQL",
+        "SSE",
+        "provider/artifact as applicable"
+      ],
+      "frontend_surface": [
+        "Artifact"
+      ],
+      "user_action": "Complete cross-layer Artifact flow",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "HTTP/SSE/SQL/browser joined ledger"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "X-E2E-07",
+      "layer": "L5-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [
+        "API",
+        "PostgreSQL",
+        "SSE",
+        "provider/artifact as applicable"
+      ],
+      "frontend_surface": [
+        "Recovery"
+      ],
+      "user_action": "Complete cross-layer Recovery flow",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "HTTP/SSE/SQL/browser joined ledger"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "X-E2E-08",
+      "layer": "L5-L8",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_IG_00",
+      "vertical_slice": null,
+      "backend_surface": [
+        "API",
+        "PostgreSQL",
+        "SSE",
+        "provider/artifact as applicable"
+      ],
+      "frontend_surface": [
+        "Failure"
+      ],
+      "user_action": "Complete cross-layer Failure flow",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL",
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "HTTP/SSE/SQL/browser joined ledger"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "PJ-01",
+      "layer": "L8",
+      "scene": [
+        "SCENE-01"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "real API/SSE/PostgreSQL"
+      ],
+      "frontend_surface": [
+        "Full Research"
+      ],
+      "user_action": "User completes Full Research journey",
+      "precondition": [
+        "IG-00 and prerequisite technical gates PASS"
+      ],
+      "input": [
+        "controlled real financial research input"
+      ],
+      "expected_backend_state": [
+        "durable authoritative terminal state"
+      ],
+      "expected_frontend_state": [
+        "complete understandable product outcome"
+      ],
+      "expected_events": [
+        "frozen normalized events"
+      ],
+      "expected_persistence": [
+        "restart-stable PostgreSQL closure"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "product receipt",
+        "browser/HTTP/SSE/SQL/artifact evidence"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "PJ-02",
+      "layer": "L8",
+      "scene": [
+        "SCENE-02"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "real API/SSE/PostgreSQL"
+      ],
+      "frontend_surface": [
+        "Dynamic Replan"
+      ],
+      "user_action": "User completes Dynamic Replan journey",
+      "precondition": [
+        "IG-00 and prerequisite technical gates PASS"
+      ],
+      "input": [
+        "controlled real financial research input"
+      ],
+      "expected_backend_state": [
+        "durable authoritative terminal state"
+      ],
+      "expected_frontend_state": [
+        "complete understandable product outcome"
+      ],
+      "expected_events": [
+        "frozen normalized events"
+      ],
+      "expected_persistence": [
+        "restart-stable PostgreSQL closure"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "product receipt",
+        "browser/HTTP/SSE/SQL/artifact evidence"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "PJ-03",
+      "layer": "L8",
+      "scene": [
+        "SCENE-03"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-03",
+      "backend_surface": [
+        "real API/SSE/PostgreSQL"
+      ],
+      "frontend_surface": [
+        "Self-Correction and Review"
+      ],
+      "user_action": "User completes Self-Correction and Review journey",
+      "precondition": [
+        "IG-00 and prerequisite technical gates PASS"
+      ],
+      "input": [
+        "controlled real financial research input"
+      ],
+      "expected_backend_state": [
+        "durable authoritative terminal state"
+      ],
+      "expected_frontend_state": [
+        "complete understandable product outcome"
+      ],
+      "expected_events": [
+        "frozen normalized events"
+      ],
+      "expected_persistence": [
+        "restart-stable PostgreSQL closure"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "product receipt",
+        "browser/HTTP/SSE/SQL/artifact evidence"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "PJ-04",
+      "layer": "L8",
+      "scene": [
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-04",
+      "backend_surface": [
+        "real API/SSE/PostgreSQL"
+      ],
+      "frontend_surface": [
+        "Claim Trace"
+      ],
+      "user_action": "User completes Claim Trace journey",
+      "precondition": [
+        "IG-00 and prerequisite technical gates PASS"
+      ],
+      "input": [
+        "controlled real financial research input"
+      ],
+      "expected_backend_state": [
+        "durable authoritative terminal state"
+      ],
+      "expected_frontend_state": [
+        "complete understandable product outcome"
+      ],
+      "expected_events": [
+        "frozen normalized events"
+      ],
+      "expected_persistence": [
+        "restart-stable PostgreSQL closure"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "product receipt",
+        "browser/HTTP/SSE/SQL/artifact evidence"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "PJ-05",
+      "layer": "L8",
+      "scene": [
+        "SCENE-05"
+      ],
+      "phase": "PHASE5",
+      "activation": "DEFINED_NOT_ACTIVATED",
+      "vertical_slice": "VS-06",
+      "backend_surface": [
+        "future unfrozen contract"
+      ],
+      "frontend_surface": [
+        "Object Accumulation"
+      ],
+      "user_action": "User completes Object Accumulation journey",
+      "precondition": [
+        "Phase 4 accepted",
+        "IG-11 separately activated"
+      ],
+      "input": [
+        "future governed data package"
+      ],
+      "expected_backend_state": [
+        "future state per separately frozen contract"
+      ],
+      "expected_frontend_state": [
+        "future product UI without Phase 4 leakage"
+      ],
+      "expected_events": [
+        "future event contract required"
+      ],
+      "expected_persistence": [
+        "future migration/replay contract required"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "FUTURE_PHASE5"
+      ],
+      "data_class": [
+        "FUTURE_GOVERNED"
+      ],
+      "automation": "NOT_ACTIVATED",
+      "manual_required": true,
+      "evidence": [
+        "future evidence package"
+      ],
+      "blocking": "NOT_PHASE4_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_ACTIVATED",
+      "result": null
+    },
+    {
+      "id": "PJ-06",
+      "layer": "L8",
+      "scene": [
+        "SCENE-06"
+      ],
+      "phase": "PHASE5",
+      "activation": "DEFINED_NOT_ACTIVATED",
+      "vertical_slice": "VS-07",
+      "backend_surface": [
+        "future unfrozen contract"
+      ],
+      "frontend_surface": [
+        "Incremental Research"
+      ],
+      "user_action": "User completes Incremental Research journey",
+      "precondition": [
+        "Phase 4 accepted",
+        "IG-12 separately activated"
+      ],
+      "input": [
+        "future governed data package"
+      ],
+      "expected_backend_state": [
+        "future state per separately frozen contract"
+      ],
+      "expected_frontend_state": [
+        "future product UI without Phase 4 leakage"
+      ],
+      "expected_events": [
+        "future event contract required"
+      ],
+      "expected_persistence": [
+        "future migration/replay contract required"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "FUTURE_PHASE5"
+      ],
+      "data_class": [
+        "FUTURE_GOVERNED"
+      ],
+      "automation": "NOT_ACTIVATED",
+      "manual_required": true,
+      "evidence": [
+        "future evidence package"
+      ],
+      "blocking": "NOT_PHASE4_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_ACTIVATED",
+      "result": null
+    },
+    {
+      "id": "SCENE-01",
+      "layer": "L9",
+      "scene": "SCENE-01",
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "real full-stack surfaces"
+      ],
+      "frontend_surface": [
+        "Full Research"
+      ],
+      "user_action": "Execute six-scene row 1: Full Research",
+      "precondition": [
+        "all applicable technical gates PASS"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "scene product receipt and full evidence bundle"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "SCENE-02",
+      "layer": "L9",
+      "scene": "SCENE-02",
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "real full-stack surfaces"
+      ],
+      "frontend_surface": [
+        "Dynamic Replan"
+      ],
+      "user_action": "Execute six-scene row 2: Dynamic Replan",
+      "precondition": [
+        "all applicable technical gates PASS"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "scene product receipt and full evidence bundle"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "SCENE-03",
+      "layer": "L9",
+      "scene": "SCENE-03",
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-03",
+      "backend_surface": [
+        "real full-stack surfaces"
+      ],
+      "frontend_surface": [
+        "Self-Correction and Review"
+      ],
+      "user_action": "Execute six-scene row 3: Self-Correction and Review",
+      "precondition": [
+        "all applicable technical gates PASS"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "scene product receipt and full evidence bundle"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "SCENE-04",
+      "layer": "L9",
+      "scene": "SCENE-04",
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-04",
+      "backend_surface": [
+        "real full-stack surfaces"
+      ],
+      "frontend_surface": [
+        "Claim Trace"
+      ],
+      "user_action": "Execute six-scene row 4: Claim Trace",
+      "precondition": [
+        "all applicable technical gates PASS"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "scene product receipt and full evidence bundle"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "SCENE-05",
+      "layer": "L9",
+      "scene": "SCENE-05",
+      "phase": "PHASE5",
+      "activation": "DEFINED_NOT_ACTIVATED",
+      "vertical_slice": "VS-06",
+      "backend_surface": [
+        "future schemas/routes/events"
+      ],
+      "frontend_surface": [
+        "Object Accumulation"
+      ],
+      "user_action": "Execute six-scene row 5: Object Accumulation",
+      "precondition": [
+        "separate Phase 5 activation"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "FUTURE_PHASE5"
+      ],
+      "data_class": [
+        "FUTURE_GOVERNED"
+      ],
+      "automation": "NOT_ACTIVATED",
+      "manual_required": true,
+      "evidence": [
+        "future receipt"
+      ],
+      "blocking": "NOT_PHASE4_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_ACTIVATED",
+      "result": null
+    },
+    {
+      "id": "SCENE-06",
+      "layer": "L9",
+      "scene": "SCENE-06",
+      "phase": "PHASE5",
+      "activation": "DEFINED_NOT_ACTIVATED",
+      "vertical_slice": "VS-07",
+      "backend_surface": [
+        "future schemas/routes/events"
+      ],
+      "frontend_surface": [
+        "Incremental Research"
+      ],
+      "user_action": "Execute six-scene row 6: Incremental Research",
+      "precondition": [
+        "separate Phase 5 activation"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "FUTURE_PHASE5"
+      ],
+      "data_class": [
+        "FUTURE_GOVERNED"
+      ],
+      "automation": "NOT_ACTIVATED",
+      "manual_required": true,
+      "evidence": [
+        "future receipt"
+      ],
+      "blocking": "NOT_PHASE4_BLOCKING",
+      "owner": "PJO/QAO",
+      "status": "DEFINED_NOT_ACTIVATED",
+      "result": null
+    },
+    {
+      "id": "VS-01",
+      "layer": "L7",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "Start and Live Run"
+      ],
+      "frontend_surface": [
+        "Start and Live Run"
+      ],
+      "user_action": "Exercise vertical slice Start and Live Run end to end",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "joined backend/frontend evidence"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "VS-02",
+      "layer": "L7",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "Result and Review"
+      ],
+      "frontend_surface": [
+        "Result and Review"
+      ],
+      "user_action": "Exercise vertical slice Result and Review end to end",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "joined backend/frontend evidence"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "VS-03",
+      "layer": "L7",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-03",
+      "backend_surface": [
+        "Dynamic Path"
+      ],
+      "frontend_surface": [
+        "Dynamic Path"
+      ],
+      "user_action": "Exercise vertical slice Dynamic Path end to end",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "joined backend/frontend evidence"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "VS-04",
+      "layer": "L7",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-04",
+      "backend_surface": [
+        "Trace and Execution"
+      ],
+      "frontend_surface": [
+        "Trace and Execution"
+      ],
+      "user_action": "Exercise vertical slice Trace and Execution end to end",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "joined backend/frontend evidence"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "VS-05",
+      "layer": "L7",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "ACTIVE_AFTER_PREREQUISITE_IG",
+      "vertical_slice": "VS-05",
+      "backend_surface": [
+        "Report and Artifact"
+      ],
+      "frontend_surface": [
+        "Report and Artifact"
+      ],
+      "user_action": "Exercise vertical slice Report and Artifact end to end",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "CONTROLLED_REAL"
+      ],
+      "automation": "MIXED",
+      "manual_required": true,
+      "evidence": [
+        "joined backend/frontend evidence"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_EXECUTED"
+    },
+    {
+      "id": "VS-06",
+      "layer": "L7",
+      "scene": "SCENE-05",
+      "phase": "PHASE5",
+      "activation": "DEFINED_NOT_ACTIVATED",
+      "vertical_slice": "VS-06",
+      "backend_surface": [
+        "Object Accumulation"
+      ],
+      "frontend_surface": [
+        "Object Accumulation"
+      ],
+      "user_action": "Exercise vertical slice Object Accumulation end to end",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "FUTURE_PHASE5"
+      ],
+      "data_class": [
+        "FUTURE_GOVERNED"
+      ],
+      "automation": "NOT_ACTIVATED",
+      "manual_required": true,
+      "evidence": [
+        "future evidence"
+      ],
+      "blocking": "NOT_PHASE4_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_ACTIVATED",
+      "result": null
+    },
+    {
+      "id": "VS-07",
+      "layer": "L7",
+      "scene": "SCENE-06",
+      "phase": "PHASE5",
+      "activation": "DEFINED_NOT_ACTIVATED",
+      "vertical_slice": "VS-07",
+      "backend_surface": [
+        "Incremental Research"
+      ],
+      "frontend_surface": [
+        "Incremental Research"
+      ],
+      "user_action": "Exercise vertical slice Incremental Research end to end",
+      "precondition": [
+        "IG-00 PASS",
+        "immutable candidate"
+      ],
+      "input": [
+        "candidate-bound fixture or controlled real data"
+      ],
+      "expected_backend_state": [
+        "contract-correct durable state"
+      ],
+      "expected_frontend_state": [
+        "backend-authoritative state rendered without inference"
+      ],
+      "expected_events": [
+        "only frozen normalized events"
+      ],
+      "expected_persistence": [
+        "PostgreSQL state survives restart"
+      ],
+      "expected_identity": [
+        "exact Object/Run/Task/Claim/Review/Artifact closure as applicable"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "FUTURE_PHASE5"
+      ],
+      "data_class": [
+        "FUTURE_GOVERNED"
+      ],
+      "automation": "NOT_ACTIVATED",
+      "manual_required": true,
+      "evidence": [
+        "future evidence"
+      ],
+      "blocking": "NOT_PHASE4_BLOCKING",
+      "owner": "QAO/PJO",
+      "status": "DEFINED_NOT_ACTIVATED",
+      "result": null
+    },
+    {
+      "id": "IG-00",
+      "layer": "L0",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_UAC_001",
+      "vertical_slice": null,
+      "backend_surface": [
+        "FINAL CONTRACT FREEZE"
+      ],
+      "frontend_surface": [],
+      "user_action": "Gate authority evaluates FINAL CONTRACT FREEZE",
+      "precondition": [
+        "UAC-001 SATISFIED",
+        "UAC-002 SATISFIED",
+        "final hashes published"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E0"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-01",
+      "layer": "L3-L7",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": "VS-01",
+      "backend_surface": [
+        "REAL RESEARCH START"
+      ],
+      "frontend_surface": [
+        "REAL RESEARCH START"
+      ],
+      "user_action": "Gate authority evaluates REAL RESEARCH START",
+      "precondition": [
+        "IG-00 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-02",
+      "layer": "L3-L7",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": "VS-02",
+      "backend_surface": [
+        "RESULT / REVIEW"
+      ],
+      "frontend_surface": [
+        "RESULT / REVIEW"
+      ],
+      "user_action": "Gate authority evaluates RESULT / REVIEW",
+      "precondition": [
+        "IG-01 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-03",
+      "layer": "L3-L7",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": "VS-03",
+      "backend_surface": [
+        "DYNAMIC PATH"
+      ],
+      "frontend_surface": [
+        "DYNAMIC PATH"
+      ],
+      "user_action": "Gate authority evaluates DYNAMIC PATH",
+      "precondition": [
+        "IG-02 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-04",
+      "layer": "L3-L7",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": "VS-04",
+      "backend_surface": [
+        "TRACE"
+      ],
+      "frontend_surface": [
+        "TRACE"
+      ],
+      "user_action": "Gate authority evaluates TRACE",
+      "precondition": [
+        "IG-03 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-05",
+      "layer": "L3-L7",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": "VS-05",
+      "backend_surface": [
+        "ARTIFACT"
+      ],
+      "frontend_surface": [
+        "ARTIFACT"
+      ],
+      "user_action": "Gate authority evaluates ARTIFACT",
+      "precondition": [
+        "IG-04 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-06",
+      "layer": "L8-L9",
+      "scene": [
+        "SCENE-01",
+        "SCENE-02",
+        "SCENE-03",
+        "SCENE-04"
+      ],
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": null,
+      "backend_surface": [
+        "SCENE 01–04 PRODUCT JOURNEY PASS"
+      ],
+      "frontend_surface": [
+        "SCENE 01–04 PRODUCT JOURNEY PASS"
+      ],
+      "user_action": "Gate authority evaluates SCENE 01–04 PRODUCT JOURNEY PASS",
+      "precondition": [
+        "IG-05 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-07",
+      "layer": "L10",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": null,
+      "backend_surface": [
+        "TECHNICAL SYSTEM ACCEPTANCE PASS"
+      ],
+      "frontend_surface": [
+        "TECHNICAL SYSTEM ACCEPTANCE PASS"
+      ],
+      "user_action": "Gate authority evaluates TECHNICAL SYSTEM ACCEPTANCE PASS",
+      "precondition": [
+        "IG-06 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-08",
+      "layer": "L10",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": null,
+      "backend_surface": [
+        "PHASE4A ACCEPTED"
+      ],
+      "frontend_surface": [
+        "PHASE4A ACCEPTED"
+      ],
+      "user_action": "Gate authority evaluates PHASE4A ACCEPTED",
+      "precondition": [
+        "IG-07 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E2"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-09",
+      "layer": "L11",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": null,
+      "backend_surface": [
+        "PREVIEW PARITY"
+      ],
+      "frontend_surface": [
+        "PREVIEW PARITY"
+      ],
+      "user_action": "Gate authority evaluates PREVIEW PARITY",
+      "precondition": [
+        "IG-08 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E3"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-10",
+      "layer": "L11",
+      "scene": null,
+      "phase": "PHASE4",
+      "activation": "BLOCKED_BY_PREDECESSOR",
+      "vertical_slice": null,
+      "backend_surface": [
+        "PHASE4B RELEASE READY"
+      ],
+      "frontend_surface": [
+        "PHASE4B RELEASE READY"
+      ],
+      "user_action": "Gate authority evaluates PHASE4B RELEASE READY",
+      "precondition": [
+        "IG-09 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "E4"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "RELEASE_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "BLOCKED_NOT_EXECUTED"
+    },
+    {
+      "id": "IG-11",
+      "layer": "L11",
+      "scene": "SCENE-05",
+      "phase": "PHASE5",
+      "activation": "DEFINED_NOT_ACTIVATED",
+      "vertical_slice": null,
+      "backend_surface": [
+        "PHASE5 SCENE 05 ACTIVATION"
+      ],
+      "frontend_surface": [
+        "PHASE5 SCENE 05 ACTIVATION"
+      ],
+      "user_action": "Gate authority evaluates PHASE5 SCENE 05 ACTIVATION",
+      "precondition": [
+        "IG-10 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "FUTURE_PHASE5"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "NOT_PHASE4_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "DEFINED_NOT_ACTIVATED",
+      "result": null
+    },
+    {
+      "id": "IG-12",
+      "layer": "L11",
+      "scene": "SCENE-06",
+      "phase": "PHASE5",
+      "activation": "DEFINED_NOT_ACTIVATED",
+      "vertical_slice": null,
+      "backend_surface": [
+        "PHASE5 SCENE 06 ACTIVATION"
+      ],
+      "frontend_surface": [
+        "PHASE5 SCENE 06 ACTIVATION"
+      ],
+      "user_action": "Gate authority evaluates PHASE5 SCENE 06 ACTIVATION",
+      "precondition": [
+        "IG-11 PASS"
+      ],
+      "input": [
+        "same immutable candidate and gate evidence"
+      ],
+      "expected_backend_state": [
+        "no state advancement without complete PASS receipt"
+      ],
+      "expected_frontend_state": [
+        "no release claim before applicable gate PASS"
+      ],
+      "expected_events": [
+        "gate evaluation does not synthesize business events"
+      ],
+      "expected_persistence": [
+        "append-only gate and evidence record"
+      ],
+      "expected_identity": [
+        "candidate, contract and evidence hashes exact"
+      ],
+      "negative_oracle": [
+        "explicit safe failure; no mutation, leak, duplicate, fallback or false success"
+      ],
+      "environment": [
+        "FUTURE_PHASE5"
+      ],
+      "data_class": [
+        "AUTHORITATIVE_ACCEPTANCE"
+      ],
+      "automation": "GATE_AGGREGATION",
+      "manual_required": true,
+      "evidence": [
+        "gate manifest",
+        "four-parent sign-off where applicable",
+        "independent audit where required"
+      ],
+      "blocking": "NOT_PHASE4_BLOCKING",
+      "owner": "RCO/QAO",
+      "status": "DEFINED_NOT_ACTIVATED",
+      "result": null
+    }
+  ],
+  "coverage": {
+    "items": 77,
+    "layers": "12/12",
+    "backend_test_layers": "9/8 minimum",
+    "backend_matrix_rows": 210,
+    "p4_be": "30/30",
+    "p4_sse": "20/20",
+    "p4_id_core": "001..020,023..028",
+    "p4_e2e_core": 99,
+    "contracts": "13/13",
+    "frontend_families": "12/12",
+    "cross_layer_families": "8/8",
+    "product_journeys": "6/6",
+    "scenes": "6/6",
+    "vertical_slices": "7/7",
+    "integration_gates": "13/13",
+    "phase4_real_scenes": "4/4",
+    "phase5_future_scenes": "2/2",
+    "phase5_leakage_in_phase4_real_acceptance": 0,
+    "demo_as_real_evidence": 0,
+    "frontend_financial_authority": 0,
+    "cross_object_fallback": 0,
+    "cross_run_fallback": 0
+  },
+  "validation_rules": [
+    "Every item has every required field",
+    "Scene 05/06, PJ-05/06, VS-06/07 and IG-11/12 are DEFINED_NOT_ACTIVATED with result null",
+    "Phase 5 rows are excluded from Phase 4 aggregate",
+    "No PASS may be inferred from design status",
+    "No Demo evidence satisfies a real gate"
+  ]
+}
