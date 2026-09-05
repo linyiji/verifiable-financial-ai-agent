@@ -1,0 +1,20 @@
+{
+  "name": "@vfas/phase4-vs01-browser-acceptance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "check": "npm run test:self && npm run test:policy && npm run test:real:list",
+    "test:self": "node --test tests/contract-helpers.test.mjs tests/scenario.test.mjs",
+    "test:policy": "node --test tests/real-spec-policy.test.mjs",
+    "test:real:list": "playwright test --config=playwright.config.mjs --list",
+    "test:real": "playwright test --config=playwright.config.mjs",
+    "install:chromium": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}
