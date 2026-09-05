@@ -102,7 +102,15 @@ class DependencyScheduler:
                     await self._event_store.emit(
                         run_id=state.run_id,
                         event_type=RuntimeEventType.RUN_FAILED,
-                        payload={"reason": "dependency_deadlock_or_failed_dependency"},
+                        payload={
+                            "status": RunStatus.FAILED.value,
+                            "failure_stage": "TASK_EXECUTION",
+                            "failure_code": "TASK_EXECUTION_FAILED",
+                            "safe_message": (
+                                "No runnable tasks remain because a dependency failed "
+                                "or the graph could not progress."
+                            ),
+                        },
                     )
                     await self._checkpoint(state)
                     raise DependencyDeadlockError(
@@ -113,15 +121,33 @@ class DependencyScheduler:
                     *(self._execute_task(state, task, executor) for task in ready),
                     return_exceptions=True,
                 )
+                if any(isinstance(result, asyncio.CancelledError) for result in results):
+                    raise asyncio.CancelledError
                 await self._checkpoint(state)
                 errors = [result for result in results if isinstance(result, BaseException)]
                 if errors:
                     self._block_failed_dependents(state)
                     state.run_status = RunStatus.FAILED
+                    generated_capability_failed = any(
+                        task.status is TaskStatus.CAPABILITY_BUILD_FAILED
+                        for task in state.actual_graph.tasks
+                    )
                     await self._event_store.emit(
                         run_id=state.run_id,
                         event_type=RuntimeEventType.RUN_FAILED,
-                        payload={"failed_task_count": len(errors)},
+                        payload={
+                            "status": RunStatus.FAILED.value,
+                            "failure_stage": (
+                                "GENERATED_CAPABILITY"
+                                if generated_capability_failed
+                                else "TASK_EXECUTION"
+                            ),
+                            "failure_code": (
+                                "GENERATED_CAPABILITY_FAILED"
+                                if generated_capability_failed
+                                else "TASK_EXECUTION_FAILED"
+                            ),
+                        },
                     )
                     await self._checkpoint(state)
                     raise ExceptionGroup("one or more runtime tasks failed", errors)
@@ -135,6 +161,15 @@ class DependencyScheduler:
                     TaskStatus.CANCELLED,
                 }:
                     task.status = TaskStatus.CANCELLED
+            await self._event_store.emit(
+                run_id=state.run_id,
+                event_type=RuntimeEventType.RUN_FAILED,
+                payload={
+                    "status": RunStatus.CANCELLED.value,
+                    "failure_stage": "CANCELLATION",
+                    "failure_code": "RUN_CANCELLED",
+                },
+            )
             await self._checkpoint(state)
             raise
 
@@ -218,7 +253,7 @@ class DependencyScheduler:
                         event_type=RuntimeEventType.TASK_FAILED,
                         payload={
                             "attempt": attempt,
-                            "error_type": type(error).__name__,
+                            "failure_code": "CAPABILITY_BUILD_FAILED",
                             "status": TaskStatus.CAPABILITY_BUILD_FAILED.value,
                             "retry_suppressed": True,
                         },
@@ -231,9 +266,12 @@ class DependencyScheduler:
                         task_id=task.task_id,
                         event_type=RuntimeEventType.TASK_PROGRESS,
                         payload={
+                            # Retained in the durable Phase 3 payload for backward
+                            # compatibility. The Phase 4 public event adapter
+                            # structurally normalizes this to RETRY_SCHEDULED.
                             "action": "retry_scheduled",
                             "attempt": attempt,
-                            "error_type": type(error).__name__,
+                            "error_code": "TASK_EXECUTION_FAILED",
                         },
                     )
                     if self._retry_policy.backoff_seconds:
@@ -244,7 +282,10 @@ class DependencyScheduler:
                     run_id=state.run_id,
                     task_id=task.task_id,
                     event_type=RuntimeEventType.TASK_FAILED,
-                    payload={"attempt": attempt, "error_type": type(error).__name__},
+                    payload={
+                        "attempt": attempt,
+                        "failure_code": "TASK_EXECUTION_FAILED",
+                    },
                 )
                 raise
             else:

@@ -1,9 +1,61 @@
+from dataclasses import dataclass
+from enum import StrEnum
+
 from src.domain.enums import TaskStatus
 from src.domain.task import Task
 
 
 class InvalidTaskTransition(RuntimeError):
     pass
+
+
+class TaskProjectionStage(StrEnum):
+    """Frozen Phase 4 task-stage vocabulary exposed by Run projections."""
+
+    QUEUED = "QUEUED"
+    READY = "READY"
+    ACTIVE = "ACTIVE"
+    WAITING_SUPPORT = "WAITING_SUPPORT"
+    CORRECTING = "CORRECTING"
+    BLOCKED = "BLOCKED"
+    REVIEW = "REVIEW"
+    COMPLETE = "COMPLETE"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+@dataclass(frozen=True, slots=True)
+class TaskLifecycleProjection:
+    """Lossless raw Task status plus its frozen display stage and terminal bit."""
+
+    status: TaskStatus
+    stage: TaskProjectionStage
+    terminal: bool
+
+
+_TASK_STAGE_BY_STATUS: dict[TaskStatus, TaskProjectionStage] = {
+    TaskStatus.CREATED: TaskProjectionStage.QUEUED,
+    TaskStatus.WAITING: TaskProjectionStage.QUEUED,
+    TaskStatus.READY: TaskProjectionStage.READY,
+    TaskStatus.RUNNING: TaskProjectionStage.ACTIVE,
+    TaskStatus.WAITING_FOR_CAPABILITY: TaskProjectionStage.WAITING_SUPPORT,
+    TaskStatus.SELF_CORRECTING: TaskProjectionStage.CORRECTING,
+    TaskStatus.BLOCKED: TaskProjectionStage.BLOCKED,
+    TaskStatus.REVIEW: TaskProjectionStage.REVIEW,
+    TaskStatus.COMPLETED: TaskProjectionStage.COMPLETE,
+    TaskStatus.FAILED: TaskProjectionStage.FAILED,
+    TaskStatus.CAPABILITY_BUILD_FAILED: TaskProjectionStage.FAILED,
+    TaskStatus.CANCELLED: TaskProjectionStage.CANCELLED,
+}
+
+_TERMINAL_TASK_STATUSES = frozenset(
+    {
+        TaskStatus.COMPLETED,
+        TaskStatus.FAILED,
+        TaskStatus.CAPABILITY_BUILD_FAILED,
+        TaskStatus.CANCELLED,
+    }
+)
 
 
 _ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
@@ -46,6 +98,16 @@ _ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     ),
     TaskStatus.CANCELLED: frozenset(),
 }
+
+
+def project_task_lifecycle(status: TaskStatus) -> TaskLifecycleProjection:
+    """Project the exact raw status without creating a second lifecycle authority."""
+
+    return TaskLifecycleProjection(
+        status=status,
+        stage=_TASK_STAGE_BY_STATUS[status],
+        terminal=status in _TERMINAL_TASK_STATUSES,
+    )
 
 
 def transition_task(task: Task, target: TaskStatus) -> None:

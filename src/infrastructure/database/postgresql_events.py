@@ -14,7 +14,15 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionm
 from src.application.persistence import RuntimeEventRow
 from src.domain.base import utc_now
 from src.domain.runtime_event import RuntimeEvent, RuntimeEventType
-from src.runtime.events import EventSequenceError
+from src.runtime.events import (
+    CursorPreflight,
+    EventReconciliationRequired,
+    EventRecoveryReason,
+    EventSequenceError,
+    RuntimeEventCursor,
+    _validate_after_sequence,
+    build_cursor_preflight,
+)
 
 POSTGRES_EVENT_SEQUENCE_FUNCTION_SQL = """
 CREATE OR REPLACE FUNCTION allocate_runtime_event_sequence()
@@ -58,6 +66,10 @@ POSTGRES_EVENT_SEQUENCE_TRIGGER_SQL = """
 CREATE TRIGGER runtime_events_allocate_sequence
 BEFORE INSERT ON runtime_events
 FOR EACH ROW EXECUTE FUNCTION allocate_runtime_event_sequence();
+"""
+
+POSTGRES_RUN_EVENT_WRITE_LOCK_SQL = """
+SELECT pg_advisory_xact_lock(hashtextextended(:run_id, 0))
 """
 
 
@@ -112,6 +124,8 @@ class PostgresRuntimeEventStore:
         try:
             async with self._sessions() as session, session.begin():
                 self._require_postgresql(session)
+                await self._lock_run_event_writes(session, run_id)
+                await self._reject_post_terminal_write(session, run_id)
                 statement = (
                     insert(RuntimeEventRow)
                     .values(
@@ -144,8 +158,7 @@ class PostgresRuntimeEventStore:
             raise EventSequenceError("database rejected runtime event sequence") from exc
 
     async def replay(self, run_id: str, *, after_sequence: int = 0) -> list[RuntimeEvent]:
-        if after_sequence < 0:
-            raise ValueError("after_sequence cannot be negative")
+        _validate_after_sequence(after_sequence)
         async with self._sessions() as session:
             self._require_postgresql(session)
             statement = (
@@ -157,7 +170,11 @@ class PostgresRuntimeEventStore:
                 .order_by(RuntimeEventRow.sequence)
             )
             rows = (await session.scalars(statement)).all()
-        return [RuntimeEvent.model_validate(row.payload) for row in rows]
+        return self._decode_rows(
+            run_id=run_id,
+            rows=rows,
+            committed_sequence=after_sequence,
+        )
 
     async def wait_for_events(
         self,
@@ -179,29 +196,30 @@ class PostgresRuntimeEventStore:
             await asyncio.sleep(min(self._poll_interval_seconds, remaining))
 
     async def resolve_resume_sequence(self, run_id: str, last_event_id: str | None) -> int:
-        if not last_event_id:
-            return 0
-        try:
-            sequence = int(last_event_id)
-        except ValueError:
-            async with self._sessions() as session:
-                self._require_postgresql(session)
-                statement = select(RuntimeEventRow.sequence).where(
-                    RuntimeEventRow.run_id == run_id,
-                    RuntimeEventRow.event_id == last_event_id,
-                )
-                sequence = await session.scalar(statement)
-            if sequence is None:
-                raise KeyError(f"event id not found for run {run_id}: {last_event_id}") from None
-            return sequence
-        if sequence < 0:
-            raise ValueError("Last-Event-ID sequence cannot be negative")
-        return sequence
+        return (await self.preflight_cursor(run_id, last_event_id)).sequence
+
+    async def preflight_cursor(self, run_id: str, last_event_id: str | None) -> CursorPreflight:
+        async with self._sessions() as session, session.begin():
+            self._require_postgresql(session)
+            statement = (
+                select(RuntimeEventRow)
+                .where(RuntimeEventRow.run_id == run_id)
+                .order_by(RuntimeEventRow.sequence)
+            )
+            rows = (await session.scalars(statement)).all()
+            events = self._decode_rows(run_id=run_id, rows=rows, committed_sequence=0)
+            return build_cursor_preflight(
+                run_id=run_id,
+                last_event_id=last_event_id,
+                events=events,
+            )
 
     async def _insert_event(self, *, event: RuntimeEvent, requested_sequence: int) -> None:
         try:
             async with self._sessions() as session, session.begin():
                 self._require_postgresql(session)
+                await self._lock_run_event_writes(session, event.run_id)
+                await self._reject_post_terminal_write(session, event.run_id)
                 await session.execute(
                     insert(RuntimeEventRow).values(
                         event_id=event.event_id,
@@ -218,3 +236,66 @@ class PostgresRuntimeEventStore:
         bind = session.get_bind()
         if bind.dialect.name != "postgresql":
             raise RuntimeError("PostgresRuntimeEventStore requires a PostgreSQL session")
+
+    @staticmethod
+    async def _lock_run_event_writes(session: AsyncSession, run_id: str) -> None:
+        await session.execute(text(POSTGRES_RUN_EVENT_WRITE_LOCK_SQL), {"run_id": run_id})
+
+    @staticmethod
+    async def _reject_post_terminal_write(session: AsyncSession, run_id: str) -> None:
+        statement = (
+            select(RuntimeEventRow)
+            .where(RuntimeEventRow.run_id == run_id)
+            .order_by(RuntimeEventRow.sequence.desc())
+            .limit(1)
+        )
+        row = (await session.scalars(statement)).first()
+        if row is None:
+            return
+        event = PostgresRuntimeEventStore._decode_row(run_id, row)
+        if event.type in {RuntimeEventType.RUN_COMPLETED, RuntimeEventType.RUN_FAILED}:
+            raise EventSequenceError(f"run {run_id} is already terminal")
+
+    @staticmethod
+    def _decode_row(run_id: str, row: RuntimeEventRow) -> RuntimeEvent:
+        try:
+            event = RuntimeEvent.model_validate(row.payload)
+        except (TypeError, ValueError) as exc:
+            raise EventReconciliationRequired(
+                EventRecoveryReason.MALFORMED_EVENT,
+                run_id=run_id,
+                committed_sequence=max(row.sequence - 1, 0),
+                received_sequence=row.sequence,
+            ) from exc
+        if (
+            row.run_id != run_id
+            or event.run_id != run_id
+            or event.event_id != row.event_id
+            or event.sequence != row.sequence
+        ):
+            raise EventReconciliationRequired(
+                EventRecoveryReason.PERSISTED_EVENT_MISMATCH,
+                run_id=run_id,
+                committed_sequence=max(row.sequence - 1, 0),
+                received_sequence=row.sequence,
+            )
+        return event
+
+    @classmethod
+    def _decode_rows(
+        cls,
+        *,
+        run_id: str,
+        rows: Sequence[RuntimeEventRow],
+        committed_sequence: int,
+    ) -> list[RuntimeEvent]:
+        cursor = RuntimeEventCursor(
+            run_id=run_id,
+            committed_sequence=committed_sequence,
+        )
+        events: list[RuntimeEvent] = []
+        for row in rows:
+            event = cls._decode_row(run_id, row)
+            cursor.accept(event)
+            events.append(event)
+        return events
