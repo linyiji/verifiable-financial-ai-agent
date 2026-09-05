@@ -1,6 +1,8 @@
 from datetime import date, datetime
 
-from src.domain.base import TimestampedModel
+from pydantic import Field
+
+from src.domain.base import TimestampedModel, utc_now
 from src.domain.enums import RunStatus
 
 
@@ -16,3 +18,4 @@ class ResearchRun(TimestampedModel):
     execution_target: str = "SERVER_SANDBOX"
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utc_now)

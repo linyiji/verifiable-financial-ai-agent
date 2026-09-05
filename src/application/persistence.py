@@ -52,6 +52,12 @@ class ResearchRunDraftRow(Base):
     object_id: Mapped[str] = mapped_column(String(128), index=True)
     payload: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    draft_version: Mapped[int] = mapped_column(BigInteger, default=1)
+    draft_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_admission_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    consumed_run_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class ResearchRunAggregateRow(Base):
@@ -62,6 +68,8 @@ class ResearchRunAggregateRow(Base):
     status: Mapped[str] = mapped_column(String(32), index=True)
     payload: Mapped[dict] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    projection_revision: Mapped[int] = mapped_column(BigInteger, default=1)
+    projection_sequence: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class ResearchGoalRow(Base):

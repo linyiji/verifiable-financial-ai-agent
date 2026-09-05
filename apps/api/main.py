@@ -24,6 +24,7 @@ from src.infrastructure.config.settings import get_settings
 from src.infrastructure.database.base import Base
 from src.infrastructure.database.composition import create_postgresql_persistence
 from src.phase4_product.api import install_phase4_error_handlers
+from src.phase4_product.postgresql_backend import PostgreSQLPhase4ProductBackend
 
 
 def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
@@ -56,9 +57,15 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 event_store=persistence.event_store,
                 checkpoint_store=persistence.checkpoint_store,
             )
+            app.state.phase4_product_backend = PostgreSQLPhase4ProductBackend(
+                sessions=persistence.sessions,
+                service=app.state.research_service,
+            )
+            await app.state.phase4_product_backend.start()
             try:
                 yield
             finally:
+                await app.state.phase4_product_backend.close()
                 await persistence.close()
             return
         engine = create_async_engine(

@@ -278,7 +278,12 @@ class ResearchApplicationService:
         self._remember("confirm_run", idempotency_key, aggregate)
         return aggregate
 
-    async def execute_run(self, run_id: str) -> RunAggregate:
+    async def execute_run(
+        self,
+        run_id: str,
+        *,
+        emit_run_started: bool = True,
+    ) -> RunAggregate:
         aggregate = await self._aggregate(run_id)
         if aggregate.run.status is RunStatus.RELEASED:
             return aggregate
@@ -291,7 +296,11 @@ class ResearchApplicationService:
                     event_store=self.event_store,
                     checkpoint_store=self.checkpoint_store,
                 )
-                await scheduler.execute(state=aggregate.runtime, executor=executor)
+                await scheduler.execute(
+                    state=aggregate.runtime,
+                    executor=executor,
+                    emit_run_started=emit_run_started,
+                )
                 aggregate.artifacts.parallel_task_peak = executor.parallel_peak
                 await self._assure_and_release(aggregate)
         except Exception:

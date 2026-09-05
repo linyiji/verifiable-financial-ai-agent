@@ -584,6 +584,10 @@ class AtomicRunProjectionV1(FrozenWireModel):
     def exact_identity(self) -> AtomicRunProjectionV1:
         run_id = self.run.run_id
         object_id = self.object.object_id
+        if self.projection_revision != self.run.projection_revision:
+            raise ValueError("torn projection revision disagrees with embedded run")
+        if self.projection_sequence != self.run.projection_sequence:
+            raise ValueError("torn projection sequence disagrees with embedded run")
         if self.run.research_object_id != object_id:
             raise ValueError("run and object identity disagree")
         if self.goal.research_object_id != object_id or self.goal.goal_id != self.run.goal_id:

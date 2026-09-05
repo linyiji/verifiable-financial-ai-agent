@@ -1,0 +1,747 @@
+"""Production PostgreSQL composition for the Phase 4 Product HTTP surface."""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from src.application.persistence import (
+    ResearchObjectRow,
+    ResearchRunAggregateRow,
+    RuntimeEventRow,
+)
+from src.application.service import ResearchApplicationService
+from src.domain.enums import RunStatus
+from src.domain.research_goal import ResearchGoal
+from src.domain.research_object import ResearchObject
+from src.domain.research_run import ResearchRun
+from src.domain.research_scheme import ResearchSchemeSnapshot
+from src.domain.runtime_event import RuntimeEvent, RuntimeEventType, normalize_runtime_event_v1
+from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph
+from src.infrastructure.database.phase4_product import (
+    Phase4RunProjectionRow,
+    PostgreSQLProductUnitOfWorkFactory,
+)
+from src.phase4_product.admission import (
+    CONFIRM_ROUTE_TEMPLATE,
+    CREATE_OBJECT_ROUTE_TEMPLATE,
+    PREPARE_ROUTE_TEMPLATE,
+    ResearchRunDraftRecordV1,
+    build_confirm_response,
+    build_prepare_draft,
+    build_run_admission,
+    build_scheduler_admission,
+    confirmation_request_hash,
+    create_object_request_hash,
+    mark_draft_consumed,
+    prepare_request_hash,
+    validate_confirm_request,
+)
+from src.phase4_product.contracts import (
+    AvailabilityStatus,
+    AvailabilityV1,
+    ConfirmResearchRunRequestV1,
+    ConfirmRunResponseV1,
+    CreateResearchObjectRequestV1,
+    PrepareResearchRunRequestV1,
+    ProofSummaryV1,
+    ResearchObjectCollectionV1,
+    ResearchObjectDetailV1,
+    ResearchRunCollectionV1,
+    ResearchRunDetailV1,
+    ResearchRunDraftV1,
+)
+from src.phase4_product.durability import (
+    AtomicConfirmCommit,
+    AtomicObjectCreateCommit,
+    AtomicPrepareCommit,
+    DurableIdempotencyOutcomeV1,
+    DurableObjectCreateOutcomeV1,
+    DurablePrepareOutcomeV1,
+    ProjectionCommitFence,
+    ProjectionWriteSet,
+    acknowledge_scheduler_admission,
+    lease_scheduler_admission,
+    record_scheduler_run_start,
+)
+from src.phase4_product.errors import ProductError, product_error
+from src.phase4_product.hashing import idempotency_key_digest
+from src.phase4_product.projections import (
+    RunCollectionSource,
+    build_atomic_run_projection,
+    build_run_collection,
+    project_goal,
+    project_object,
+    project_run_detail,
+    project_scheme,
+)
+from src.runtime.state import RuntimeState
+
+_CURSOR_SIGNING_KEY = b"phase4-vs01-local-run-collection-v1"
+
+
+class PostgreSQLPhase4ProductBackend:
+    """Exact-identity Product backend backed by one PostgreSQL database."""
+
+    def __init__(
+        self,
+        *,
+        sessions: async_sessionmaker[AsyncSession],
+        service: ResearchApplicationService,
+    ) -> None:
+        self.sessions = sessions
+        self.service = service
+        self.uow_factory = PostgreSQLProductUnitOfWorkFactory(sessions)
+        self._worker_id = f"phase4-worker-{uuid4()}"
+        self._worker: asyncio.Task[None] | None = None
+        self._wake = asyncio.Event()
+
+    async def start(self) -> None:
+        if self._worker is None:
+            self._worker = asyncio.create_task(self._scheduler_loop())
+            self._wake.set()
+
+    async def close(self) -> None:
+        worker, self._worker = self._worker, None
+        if worker is not None:
+            worker.cancel()
+            try:
+                await worker
+            except asyncio.CancelledError:
+                pass
+
+    async def create_object(
+        self,
+        payload: CreateResearchObjectRequestV1,
+        *,
+        idempotency_key: str,
+        request_id: str | None,
+    ) -> ResearchObjectDetailV1:
+        del request_id
+        request_hash = create_object_request_hash(payload)
+        key_digest = idempotency_key_digest(
+            idempotency_key, method="POST", route_template=CREATE_OBJECT_ROUTE_TEMPLATE
+        )
+        async with self.uow_factory() as uow:
+            stored = await uow.admission.get_idempotency_outcome_for_update(
+                effective_access_scope_key="LOCAL_SINGLE_USER",
+                method="POST",
+                route_template=CREATE_OBJECT_ROUTE_TEMPLATE,
+                idempotency_key_digest=key_digest,
+            )
+            if stored is not None:
+                if (
+                    not isinstance(stored, DurableObjectCreateOutcomeV1)
+                    or stored.request_hash != request_hash
+                ):
+                    raise self._idempotency_conflict()
+                await uow.rollback()
+                return await self.get_object(stored.object_id)
+            object_id = f"OBJ-{payload.symbol}"
+            if await uow.session.get(ResearchObjectRow, object_id) is not None:
+                raise product_error(
+                    "CONFLICT",
+                    "research object already exists",
+                    resource_type="research_object",
+                    resource_id=object_id,
+                )
+            entity = ResearchObject(object_id=object_id, **payload.model_dump())
+            outcome = DurableObjectCreateOutcomeV1(
+                outcome_id=f"OUT-{uuid4()}",
+                effective_access_scope_key="LOCAL_SINGLE_USER",
+                idempotency_key_digest=key_digest,
+                method="POST",
+                route_template=CREATE_OBJECT_ROUTE_TEMPLATE,
+                request_hash=request_hash,
+                object_id=object_id,
+                created_at=entity.created_at,
+            )
+            commit = AtomicObjectCreateCommit(
+                outcome=outcome,
+                idempotency_key=idempotency_key,
+                request=payload,
+                research_object=entity,
+            )
+            await uow.admission.insert_object_create_commit(commit)
+            await uow.commit()
+        return self._object_detail(entity, run_count=0)
+
+    async def list_objects(
+        self,
+        *,
+        symbol: str | None,
+        query: str | None,
+        cursor: str | None,
+        limit: int,
+    ) -> ResearchObjectCollectionV1:
+        if cursor is not None:
+            raise product_error("INVALID_CURSOR", "object cursor is invalid")
+        async with self.sessions() as session:
+            rows = list((await session.scalars(select(ResearchObjectRow))).all())
+            details: list[ResearchObjectDetailV1] = []
+            for row in rows:
+                entity = ResearchObject.model_validate(row.payload)
+                if symbol is not None and entity.symbol != symbol.strip().upper():
+                    continue
+                if (
+                    query is not None
+                    and query.lower() not in (entity.symbol + " " + entity.company_name).lower()
+                ):
+                    continue
+                count = await session.scalar(
+                    select(func.count())
+                    .select_from(ResearchRunAggregateRow)
+                    .where(ResearchRunAggregateRow.object_id == entity.object_id)
+                )
+                details.append(self._object_detail(entity, run_count=int(count or 0)))
+        return ResearchObjectCollectionV1(items=tuple(details[:limit]), next_cursor=None)
+
+    async def get_object(self, object_id: str) -> ResearchObjectDetailV1:
+        async with self.sessions() as session:
+            row = await session.get(ResearchObjectRow, object_id)
+            if row is None:
+                raise self._not_found("research_object", object_id)
+            count = await session.scalar(
+                select(func.count())
+                .select_from(ResearchRunAggregateRow)
+                .where(ResearchRunAggregateRow.object_id == object_id)
+            )
+        return self._object_detail(
+            ResearchObject.model_validate(row.payload), run_count=int(count or 0)
+        )
+
+    async def prepare_run(
+        self,
+        payload: PrepareResearchRunRequestV1,
+        *,
+        idempotency_key: str,
+        request_id: str | None,
+    ) -> ResearchRunDraftV1:
+        del request_id
+        request_hash = prepare_request_hash(payload)
+        key_digest = idempotency_key_digest(
+            idempotency_key, method="POST", route_template=PREPARE_ROUTE_TEMPLATE
+        )
+        async with self.uow_factory() as uow:
+            stored = await uow.admission.get_idempotency_outcome_for_update(
+                effective_access_scope_key="LOCAL_SINGLE_USER",
+                method="POST",
+                route_template=PREPARE_ROUTE_TEMPLATE,
+                idempotency_key_digest=key_digest,
+            )
+            if stored is not None:
+                if (
+                    not isinstance(stored, DurablePrepareOutcomeV1)
+                    or stored.request_hash != request_hash
+                ):
+                    raise self._idempotency_conflict()
+                return stored.draft
+            object_row = await uow.session.get(ResearchObjectRow, payload.research_object_id)
+            if object_row is None:
+                raise self._not_found("research_object", payload.research_object_id)
+            research_object = ResearchObject.model_validate(object_row.payload)
+            goal = ResearchGoal(
+                goal_id=f"GOAL-{uuid4()}",
+                research_object_id=payload.research_object_id,
+                goal_text=payload.research_goal,
+                as_of=payload.as_of,
+                preferences=payload.preferences,
+            )
+            generated = self.service.scheme_generator.generate(
+                research_object=research_object, goal=goal
+            )
+            scheme = await generated if inspect.isawaitable(generated) else generated
+            allowed_assurance = {
+                name: value
+                for name, value in scheme.assurance_requirements.items()
+                if name
+                in {
+                    "financial_review",
+                    "proof_policy",
+                    "required",
+                    "reviewer",
+                    "policy_id",
+                }
+            }
+            scheme = scheme.model_copy(
+                update={"assurance_requirements": allowed_assurance}
+            )
+            goal_projection = project_goal(goal, expected_object_id=payload.research_object_id)
+            scheme_projection = project_scheme(
+                scheme,
+                expected_object_id=payload.research_object_id,
+                expected_goal_id=goal.goal_id,
+                require_confirmed=False,
+            )
+            draft = build_prepare_draft(
+                payload,
+                draft_id=f"DRAFT-{uuid4()}",
+                goal=goal_projection,
+                scheme_snapshot=scheme_projection,
+                created_at=goal.created_at,
+            )
+            outcome = DurablePrepareOutcomeV1(
+                outcome_id=f"OUT-{uuid4()}",
+                effective_access_scope_key="LOCAL_SINGLE_USER",
+                idempotency_key_digest=key_digest,
+                method="POST",
+                route_template=PREPARE_ROUTE_TEMPLATE,
+                request_hash=request_hash,
+                draft=draft,
+                created_at=draft.created_at,
+            )
+            await uow.admission.insert_prepare_commit(
+                AtomicPrepareCommit(
+                    outcome=outcome,
+                    idempotency_key=idempotency_key,
+                    request=payload,
+                    draft_record=ResearchRunDraftRecordV1(draft=draft),
+                    goal=goal,
+                    scheme=scheme,
+                )
+            )
+            await uow.commit()
+            return draft
+
+    async def confirm_run(
+        self,
+        payload: ConfirmResearchRunRequestV1,
+        *,
+        idempotency_key: str,
+        request_id: str | None,
+    ) -> ConfirmRunResponseV1:
+        request_hash = confirmation_request_hash(payload)
+        key_digest = idempotency_key_digest(
+            idempotency_key, method="POST", route_template=CONFIRM_ROUTE_TEMPLATE
+        )
+        async with self.uow_factory() as uow:
+            stored = await uow.admission.get_idempotency_outcome_for_update(
+                effective_access_scope_key="LOCAL_SINGLE_USER",
+                method="POST",
+                route_template=CONFIRM_ROUTE_TEMPLATE,
+                idempotency_key_digest=key_digest,
+            )
+            if stored is not None:
+                if (
+                    not isinstance(stored, DurableIdempotencyOutcomeV1)
+                    or stored.confirmation_request_hash != request_hash
+                ):
+                    raise self._idempotency_conflict()
+                return build_confirm_response(
+                    stored.admission, request_id=request_id, idempotency_replayed=True
+                )
+            draft_record = await uow.admission.get_draft_for_update(payload.draft_id)
+            if draft_record is None:
+                raise self._not_found("research_run_draft", payload.draft_id)
+            validated = validate_confirm_request(draft_record, payload)
+            goal = ResearchGoal.model_validate(validated.draft.goal.model_dump(mode="json"))
+            scheme = ResearchSchemeSnapshot.model_validate(
+                validated.draft.scheme_snapshot.model_dump(mode="json")
+            ).model_copy(update={"confirmed_at": datetime.now(UTC)})
+            run_id = f"RUN-{uuid4()}"
+            planned_value = self.service.planner.plan(run_id=run_id, goal=goal, scheme=scheme)
+            planned = await planned_value if inspect.isawaitable(planned_value) else planned_value
+            runtime = RuntimeState.create(run_id=run_id, planned_graph=planned)
+            admitted_at = datetime.now(UTC)
+            run = ResearchRun(
+                run_id=run_id,
+                research_object_id=validated.draft.object_id,
+                goal_id=goal.goal_id,
+                scheme_id=scheme.scheme_id,
+                status=RunStatus.PLANNING,
+                as_of=goal.as_of,
+                planned_graph_id=planned.graph_id,
+                actual_graph_id=runtime.actual_graph.graph_id,
+                created_at=admitted_at,
+                updated_at=admitted_at,
+            )
+            admission = build_run_admission(
+                validated,
+                admission_id=f"ADM-{uuid4()}",
+                run_id=run_id,
+                planned_graph_id=planned.graph_id,
+                admitted_at=admitted_at,
+            )
+            outcome = DurableIdempotencyOutcomeV1(
+                outcome_id=f"OUT-{uuid4()}",
+                effective_access_scope_key="LOCAL_SINGLE_USER",
+                idempotency_key_digest=key_digest,
+                method="POST",
+                route_template=CONFIRM_ROUTE_TEMPLATE,
+                confirmation_request_hash=request_hash,
+                admission=admission,
+                created_at=admitted_at,
+            )
+            initial_events = self._initial_events(
+                run=run, scheme=scheme, planned=planned, timestamp=admitted_at
+            )
+            commit = AtomicConfirmCommit(
+                consumed_draft=mark_draft_consumed(
+                    draft_record, admission=admission, consumed_at=admitted_at
+                ),
+                idempotency_outcome=outcome,
+                idempotency_key=idempotency_key,
+                request=payload,
+                scheduler_admission=build_scheduler_admission(
+                    admission,
+                    idempotency_outcome_id=outcome.outcome_id,
+                    created_at=admitted_at,
+                ),
+                goal=goal,
+                scheme=scheme,
+                run=run,
+                planned_graph=planned,
+                actual_graph=runtime.actual_graph,
+                tasks=tuple(runtime.actual_graph.tasks),
+                initial_events=initial_events,
+            )
+            await uow.admission.insert_confirm_commit(commit)
+            await uow.commit()
+        self._wake.set()
+        return build_confirm_response(admission, request_id=request_id, idempotency_replayed=False)
+
+    async def get_run(self, run_id: str) -> ResearchRunDetailV1:
+        async with self.sessions() as session:
+            row = await session.get(ResearchRunAggregateRow, run_id)
+            if row is None:
+                raise self._not_found("research_run", run_id)
+            run = ResearchRun.model_validate(row.payload["run"])
+            return project_run_detail(
+                run,
+                projection_revision=row.projection_revision,
+                projection_sequence=row.projection_sequence,
+            )
+
+    async def get_projection(self, run_id: str):
+        async with self.sessions() as session:
+            row = await session.get(ResearchRunAggregateRow, run_id)
+            if row is None:
+                raise self._not_found("research_run", run_id)
+            obj_row = await session.get(ResearchObjectRow, row.object_id)
+            event_rows = list(
+                (
+                    await session.scalars(
+                        select(RuntimeEventRow)
+                        .where(
+                            RuntimeEventRow.run_id == run_id,
+                            RuntimeEventRow.sequence <= row.projection_sequence,
+                        )
+                        .order_by(RuntimeEventRow.sequence)
+                    )
+                ).all()
+            )
+            aggregate = row.payload
+            research_object = ResearchObject.model_validate(obj_row.payload)
+            run = ResearchRun.model_validate(aggregate["run"])
+            goal = ResearchGoal.model_validate(aggregate["goal"])
+            scheme = ResearchSchemeSnapshot.model_validate(aggregate["scheme"])
+            planned = PlannedTaskGraph.model_validate(aggregate["runtime"]["planned_graph"])
+            actual = ActualRuntimeGraph.model_validate(aggregate["runtime"]["actual_graph"])
+            events = tuple(RuntimeEvent.model_validate(item.payload) for item in event_rows)
+            pending = AvailabilityV1.unavailable(AvailabilityStatus.PENDING, "REVIEW_PENDING")
+            not_generated = AvailabilityV1.unavailable(
+                AvailabilityStatus.NOT_GENERATED, "NOT_GENERATED"
+            )
+            projection = build_atomic_run_projection(
+                expected_object_id=row.object_id,
+                expected_run_id=run_id,
+                projection_revision=row.projection_revision,
+                projection_sequence=row.projection_sequence,
+                generated_at=datetime.now(UTC),
+                research_object=research_object,
+                run=run,
+                goal=goal,
+                confirmed_scheme=scheme,
+                planned_graph=planned,
+                actual_graph=actual,
+                proof_summary=ProofSummaryV1(
+                    availability=not_generated, policy="UNKNOWN", status=None
+                ),
+                review_availability=pending,
+                result_availability=not_generated,
+                artifact_availability=not_generated,
+                execution_availability=not_generated,
+                events=tuple(normalize_runtime_event_v1(event) for event in events),
+            )
+            await session.execute(
+                pg_insert(Phase4RunProjectionRow)
+                .values(
+                    run_id=run_id,
+                    object_id=row.object_id,
+                    revision=row.projection_revision,
+                    sequence=row.projection_sequence,
+                    payload=projection.model_dump(mode="json"),
+                    generated_at=projection.generated_at,
+                )
+                .on_conflict_do_update(
+                    index_elements=[Phase4RunProjectionRow.run_id],
+                    set_={
+                        "revision": row.projection_revision,
+                        "sequence": row.projection_sequence,
+                        "payload": projection.model_dump(mode="json"),
+                        "generated_at": projection.generated_at,
+                    },
+                )
+            )
+            await session.commit()
+            return projection
+
+    async def list_runs(
+        self,
+        *,
+        object_id: str | None,
+        statuses: tuple[str, ...],
+        result_availability: str | None,
+        cursor: str | None,
+        limit: int,
+    ) -> ResearchRunCollectionV1:
+        async with self.sessions() as session:
+            statement = select(ResearchRunAggregateRow)
+            if object_id is not None:
+                statement = statement.where(ResearchRunAggregateRow.object_id == object_id)
+            rows = list((await session.scalars(statement)).all())
+            sources: list[RunCollectionSource] = []
+            for row in rows:
+                obj = await session.get(ResearchObjectRow, row.object_id)
+                latest = await session.scalar(
+                    select(RuntimeEventRow)
+                    .where(
+                        RuntimeEventRow.run_id == row.run_id,
+                        RuntimeEventRow.sequence <= row.projection_sequence,
+                    )
+                    .order_by(RuntimeEventRow.sequence.desc())
+                    .limit(1)
+                )
+                sources.append(
+                    RunCollectionSource(
+                        run=ResearchRun.model_validate(row.payload["run"]),
+                        research_object=ResearchObject.model_validate(obj.payload),
+                        actual_graph=ActualRuntimeGraph.model_validate(
+                            row.payload["runtime"]["actual_graph"]
+                        ),
+                        latest_event=(
+                            None if latest is None else RuntimeEvent.model_validate(latest.payload)
+                        ),
+                        projection_revision=row.projection_revision,
+                        projection_sequence=row.projection_sequence,
+                        result_availability=AvailabilityV1.unavailable(
+                            AvailabilityStatus.NOT_GENERATED, "NOT_GENERATED"
+                        ),
+                    )
+                )
+        return build_run_collection(
+            sources=sources,
+            cursor_signing_key=_CURSOR_SIGNING_KEY,
+            limit=limit,
+            object_id=object_id,
+            statuses=statuses,
+            result_availability=result_availability,
+            cursor=cursor,
+        )
+
+    async def list_object_runs(
+        self,
+        object_id: str,
+        *,
+        cursor: str | None,
+        limit: int,
+    ) -> ResearchRunCollectionV1:
+        await self.get_object(object_id)
+        return await self.list_runs(
+            object_id=object_id,
+            statuses=(),
+            result_availability=None,
+            cursor=cursor,
+            limit=limit,
+        )
+
+    async def get_result(self, run_id: str):
+        await self.get_run(run_id)
+        raise self._unavailable("released_result", run_id, "NOT_GENERATED")
+
+    async def get_claim(self, run_id: str, claim_id: str):
+        await self.get_run(run_id)
+        raise self._unavailable("claim", claim_id, "NOT_GENERATED")
+
+    async def get_review(self, run_id: str):
+        await self.get_run(run_id)
+        raise self._unavailable("financial_review", run_id, "REVIEW_PENDING")
+
+    async def get_execution(self, run_id: str, **_kwargs):
+        await self.get_run(run_id)
+        raise self._unavailable("canonical_execution", run_id, "NOT_GENERATED")
+
+    async def get_trace(self, run_id: str, claim_id: str):
+        await self.get_run(run_id)
+        raise self._unavailable("trace_bundle", claim_id, "NOT_GENERATED")
+
+    async def get_artifacts(self, run_id: str):
+        await self.get_run(run_id)
+        raise self._unavailable("report_artifact", run_id, "NOT_GENERATED")
+
+    async def get_artifact_content(self, run_id: str, artifact_id: str):
+        await self.get_run(run_id)
+        raise self._unavailable("report_artifact", artifact_id, "NOT_GENERATED")
+
+    async def get_released_object(self, object_id: str):
+        await self.get_object(object_id)
+        raise self._unavailable("released_object", object_id, "NOT_RELEASED")
+
+    async def _scheduler_loop(self) -> None:
+        while True:
+            try:
+                await asyncio.wait_for(self._wake.wait(), timeout=0.25)
+            except TimeoutError:
+                pass
+            self._wake.clear()
+            async with self.uow_factory() as uow:
+                due = await uow.scheduler.list_due_admission_ids(due_at=datetime.now(UTC), limit=16)
+            for admission_id in due:
+                try:
+                    await self._start_admitted_run(admission_id)
+                except ProductError:
+                    continue
+
+    async def _start_admitted_run(self, admission_id: str) -> None:
+        now = datetime.now(UTC)
+        async with self.uow_factory() as uow:
+            current = await uow.scheduler.get_for_update(admission_id)
+            if current is None:
+                return
+            leased, fence = lease_scheduler_admission(
+                current,
+                worker_id=self._worker_id,
+                leased_at=now,
+                lease_duration=timedelta(minutes=5),
+            )
+            if not await uow.scheduler.replace_fenced(
+                leased, expected_lease_generation=current.lease_generation
+            ):
+                return
+            row = await uow.session.get(ResearchRunAggregateRow, leased.run_id)
+            if row is None:
+                raise self._not_found("research_run", leased.run_id)
+            run = ResearchRun.model_validate(row.payload["run"]).model_copy(
+                update={
+                    "status": RunStatus.RUNNING,
+                    "started_at": now,
+                    "updated_at": now,
+                }
+            )
+            event = RuntimeEvent(
+                event_id=f"EVT-{uuid4()}",
+                run_id=run.run_id,
+                type=RuntimeEventType.RUN_STARTED,
+                timestamp=now,
+                sequence=row.projection_sequence + 1,
+                payload={"actual_graph_version": row.payload["runtime"]["actual_graph"]["version"]},
+            )
+            await uow.projection.publish(
+                ProjectionWriteSet(
+                    fence=ProjectionCommitFence(
+                        run_id=run.run_id, expected_revision=row.projection_revision
+                    ),
+                    run=run,
+                    events=(event,),
+                )
+            )
+            started = record_scheduler_run_start(
+                leased,
+                fence,
+                started_at=now,
+                run_started_event_id=event.event_id,
+                run_started_sequence=event.sequence,
+            )
+            acknowledged = acknowledge_scheduler_admission(started, fence, acknowledged_at=now)
+            if not await uow.scheduler.replace_fenced(
+                acknowledged, expected_lease_generation=fence.generation
+            ):
+                raise product_error("CONFLICT", "scheduler fence was lost")
+            await uow.commit()
+
+    @staticmethod
+    def _initial_events(*, run, scheme, planned, timestamp: datetime) -> tuple[RuntimeEvent, ...]:
+        specs = [
+            (RuntimeEventType.RUN_CREATED, None, {"object_id": run.research_object_id}),
+            (
+                RuntimeEventType.SCHEME_GENERATED,
+                None,
+                {
+                    "scheme_id": scheme.scheme_id,
+                    "generated_by": scheme.generated_by,
+                    "generated_at": scheme.created_at.isoformat(),
+                    "generation_stage": "prepare",
+                    "retrospective": True,
+                },
+            ),
+            (RuntimeEventType.SCHEME_CONFIRMED, None, {"scheme_id": scheme.scheme_id}),
+            (
+                RuntimeEventType.PLAN_GENERATED,
+                None,
+                {"graph_id": planned.graph_id, "task_count": len(planned.tasks)},
+            ),
+            *(
+                (RuntimeEventType.TASK_CREATED, task.task_id, {"task_type": task.task_type})
+                for task in planned.tasks
+            ),
+        ]
+        return tuple(
+            RuntimeEvent(
+                event_id=f"EVT-{uuid4()}",
+                run_id=run.run_id,
+                task_id=task_id,
+                type=event_type,
+                timestamp=timestamp,
+                sequence=index,
+                payload=payload,
+            )
+            for index, (event_type, task_id, payload) in enumerate(specs, start=1)
+        )
+
+    @staticmethod
+    def _object_detail(entity: ResearchObject, *, run_count: int) -> ResearchObjectDetailV1:
+        return ResearchObjectDetailV1(
+            object=project_object(entity),
+            latest_released_run_id=None,
+            released_result_availability=AvailabilityV1.unavailable(
+                AvailabilityStatus.NOT_RELEASED, "NO_RELEASED_RUN"
+            ),
+            run_count=run_count,
+            last_activity=None,
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+        )
+
+    @staticmethod
+    def _not_found(resource_type: str, resource_id: str) -> ProductError:
+        return product_error(
+            "NOT_FOUND",
+            "the exact requested resource was not found",
+            resource_type=resource_type,
+            resource_id=resource_id,
+        )
+
+    @staticmethod
+    def _unavailable(resource_type: str, resource_id: str, reason: str) -> ProductError:
+        code = "NOT_RELEASED" if reason == "NOT_RELEASED" else "NOT_GENERATED"
+        return product_error(
+            code,
+            "the exact requested resource is not available",
+            resource_type=resource_type,
+            resource_id=resource_id,
+            details={"reason_code": reason},
+        )
+
+    @staticmethod
+    def _idempotency_conflict() -> ProductError:
+        return product_error(
+            "CONFLICT",
+            "Idempotency-Key was already used for a different request",
+            details={"reason_code": "IDEMPOTENCY_REQUEST_MISMATCH"},
+        )

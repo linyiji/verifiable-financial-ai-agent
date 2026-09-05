@@ -65,14 +65,21 @@ class DependencyScheduler:
         self._checkpoint_store = checkpoint_store
         self._retry_policy = retry_policy or RetryPolicy()
 
-    async def execute(self, *, state: RuntimeState, executor: TaskExecutor) -> RuntimeState:
+    async def execute(
+        self,
+        *,
+        state: RuntimeState,
+        executor: TaskExecutor,
+        emit_run_started: bool = True,
+    ) -> RuntimeState:
         self._admit_created_tasks(state)
         state.run_status = RunStatus.RUNNING
-        await self._event_store.emit(
-            run_id=state.run_id,
-            event_type=RuntimeEventType.RUN_STARTED,
-            payload={"actual_graph_version": state.actual_graph.version},
-        )
+        if emit_run_started:
+            await self._event_store.emit(
+                run_id=state.run_id,
+                event_type=RuntimeEventType.RUN_STARTED,
+                payload={"actual_graph_version": state.actual_graph.version},
+            )
 
         try:
             while True:

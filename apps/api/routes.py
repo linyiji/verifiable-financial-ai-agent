@@ -38,7 +38,11 @@ async def stream_events(
         )
     service = _service(request)
     try:
-        await service.get_run(run_id)
+        backend = getattr(request.app.state, "phase4_product_backend", None)
+        if backend is not None:
+            await backend.get_run(run_id)
+        else:
+            await service.get_run(run_id)
         prepared = await prepare_completed_run_event_stream(
             store=service.event_store,
             run_id=run_id,
