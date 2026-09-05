@@ -41,6 +41,26 @@ class RuntimeState:
         if planned_graph.run_id != run_id:
             raise RuntimeStateError("planned graph belongs to a different run")
 
+        foreign_tasks = sorted(
+            task.task_id for task in planned_graph.tasks if task.run_id != run_id
+        )
+        if foreign_tasks:
+            raise RuntimeStateError(
+                f"planned graph contains tasks from a different run: {foreign_tasks}"
+            )
+
+        remaining = {task.task_id for task in planned_graph.tasks}
+        dependencies = {task.task_id: set(task.dependencies) for task in planned_graph.tasks}
+        while remaining:
+            ready = {
+                task_id
+                for task_id in remaining
+                if not dependencies[task_id].intersection(remaining)
+            }
+            if not ready:
+                raise RuntimeStateError("planned graph contains a dependency cycle")
+            remaining.difference_update(ready)
+
         planned_snapshot = planned_graph.model_copy(deep=True)
         actual = ActualRuntimeGraph(
             graph_id=actual_graph_id or f"{planned_graph.graph_id}-actual",

@@ -1,39 +1,317 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://verifiable-financial.local/contracts/runtime-event-v1.json",
-  "title": "RuntimeEvent",
+  "title": "NormalizedRuntimeEventV1",
+  "description": "Frozen Phase 4 public runtime event. The durable raw vocabulary remains complete, while eight values are explicitly unsupported as normalized V1 output.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["event_id", "run_id", "type", "timestamp", "sequence", "payload"],
+  "required": [
+    "event_contract_version", "event_id", "run_id", "task_id", "type", "timestamp",
+    "sequence", "payload_schema_version", "payload", "graph_version", "effect",
+    "projection_refresh_required"
+  ],
   "properties": {
-    "event_id": {"type": "string", "minLength": 1},
-    "run_id": {"type": "string", "minLength": 1},
-    "task_id": {"type": ["string", "null"]},
+    "event_contract_version": {"const": "phase4-runtime-event/v1"},
+    "event_id": {"$ref": "#/$defs/safeString"},
+    "run_id": {"$ref": "#/$defs/safeString"},
+    "task_id": {"oneOf": [{"$ref": "#/$defs/safeString"}, {"type": "null"}]},
     "type": {
       "type": "string",
       "enum": [
         "run.created", "run.started", "run.status_changed", "run.completed", "run.failed",
         "scheme.generation_started", "scheme.generated", "scheme.confirmed", "plan.generated",
         "task.created", "task.ready", "task.started", "task.progress",
-        "task.waiting_for_capability", "task.resumed",
-        "task.self_correcting", "task.correction_resolved", "task.completed", "task.failed",
+        "task.waiting_for_capability", "task.resumed", "task.self_correcting",
+        "task.correction_resolved", "task.completed", "task.failed",
         "replan.requested", "replan.approved", "replan.rejected",
         "graph.task_added", "graph.edge_added", "graph.edge_removed", "graph.version_changed",
-        "evidence.accepted", "evidence.conflict",
-        "calculation.started", "calculation.completed", "capability.gap_detected",
-        "capability.build_requested", "capability.build_started", "capability.generated",
-        "capability.static_validated", "capability.sandbox_started",
-        "capability.test_passed", "capability.test_failed",
-        "capability.financial_validated", "capability.approved",
-        "capability.registered", "capability.build_failed",
+        "evidence.accepted", "evidence.conflict", "calculation.started", "calculation.completed",
+        "capability.gap_detected", "capability.build_requested", "capability.build_started",
+        "capability.generated", "capability.static_validated", "capability.sandbox_started",
+        "capability.test_passed", "capability.test_failed", "capability.financial_validated",
+        "capability.approved", "capability.registered", "capability.build_failed",
         "workspace.created", "capability.generation_started", "capability.tested",
-        "capability.validated", "review.started", "review.required",
-        "review.resolved", "proof.required", "proof.started", "proof.generated",
-        "proof.verified", "proof.failed", "release.completed"
+        "capability.validated", "review.started", "review.required", "review.resolved",
+        "proof.started", "proof.required", "proof.generated", "proof.verified", "proof.failed",
+        "release.completed"
       ]
     },
-    "timestamp": {"type": "string", "format": "date-time"},
-    "sequence": {"type": "integer", "minimum": 1},
-    "payload": {"type": "object"}
+    "timestamp": {"$ref": "#/$defs/utcTimestamp"},
+    "sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+    "payload_schema_version": {"const": 1},
+    "payload": {"type": "object"},
+    "graph_version": {"oneOf": [{"$ref": "#/$defs/positiveInteger"}, {"type": "null"}]},
+    "effect": {"enum": ["PATCH_PROJECTION", "REFRESH_PROJECTION", "OBSERVATION_ONLY", "TERMINAL"]},
+    "projection_refresh_required": {"type": "boolean"}
+  },
+  "allOf": [
+    {
+      "not": {
+        "properties": {"type": {"enum": [
+          "scheme.generation_started", "replan.rejected", "evidence.conflict",
+          "workspace.created", "capability.generation_started", "capability.tested",
+          "capability.validated", "review.required"
+        ]}},
+        "required": ["type"]
+      }
+    },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {"enum": [
+              "run.started", "run.status_changed", "task.ready", "task.started",
+              "task.progress", "task.waiting_for_capability", "task.resumed",
+              "task.self_correcting", "task.completed", "task.failed"
+            ]},
+            "effect": {"const": "PATCH_PROJECTION"},
+            "projection_refresh_required": {"const": false}
+          }
+        },
+        {
+          "properties": {
+            "type": {"enum": [
+              "run.created", "scheme.generated", "scheme.confirmed", "plan.generated",
+              "task.created", "task.correction_resolved", "replan.requested", "replan.approved",
+              "graph.task_added", "graph.edge_added", "graph.edge_removed",
+              "graph.version_changed", "review.started", "review.resolved", "proof.started",
+              "proof.required", "proof.generated", "proof.verified", "proof.failed",
+              "release.completed"
+            ]},
+            "effect": {"const": "REFRESH_PROJECTION"},
+            "projection_refresh_required": {"const": true}
+          }
+        },
+        {
+          "properties": {
+            "type": {"enum": [
+              "evidence.accepted", "calculation.started", "calculation.completed",
+              "capability.gap_detected", "capability.build_requested", "capability.build_started",
+              "capability.generated", "capability.static_validated", "capability.sandbox_started",
+              "capability.test_passed", "capability.test_failed",
+              "capability.financial_validated", "capability.approved",
+              "capability.registered", "capability.build_failed"
+            ]},
+            "effect": {"const": "OBSERVATION_ONLY"},
+            "projection_refresh_required": {"const": false}
+          }
+        },
+        {
+          "properties": {
+            "type": {"enum": ["run.completed", "run.failed"]},
+            "effect": {"const": "TERMINAL"},
+            "projection_refresh_required": {"const": true}
+          }
+        }
+      ]
+    },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {"enum": ["run.started", "graph.task_added", "graph.edge_added", "graph.edge_removed", "graph.version_changed"]},
+            "graph_version": {"$ref": "#/$defs/positiveInteger"}
+          }
+        },
+        {
+          "properties": {
+            "type": {"enum": [
+              "run.created", "run.status_changed", "run.completed", "run.failed",
+              "scheme.generated", "scheme.confirmed", "plan.generated", "task.created",
+              "task.ready", "task.started", "task.progress", "task.waiting_for_capability",
+              "task.resumed", "task.self_correcting", "task.correction_resolved",
+              "task.completed", "task.failed", "replan.requested", "replan.approved",
+              "evidence.accepted", "calculation.started", "calculation.completed",
+              "capability.gap_detected", "capability.build_requested", "capability.build_started",
+              "capability.generated", "capability.static_validated", "capability.sandbox_started",
+              "capability.test_passed", "capability.test_failed",
+              "capability.financial_validated", "capability.approved",
+              "capability.registered", "capability.build_failed", "review.started",
+              "review.resolved", "proof.started", "proof.required", "proof.generated",
+              "proof.verified", "proof.failed", "release.completed"
+            ]},
+            "graph_version": {"type": "null"}
+          }
+        }
+      ]
+    },
+    {
+      "if": {
+        "properties": {"type": {"enum": [
+          "task.created", "task.ready", "task.started", "task.progress",
+          "task.waiting_for_capability", "task.resumed", "task.self_correcting",
+          "task.correction_resolved", "task.completed", "task.failed", "replan.requested",
+          "replan.approved", "graph.task_added", "graph.edge_added", "graph.edge_removed",
+          "calculation.started", "calculation.completed",
+          "capability.gap_detected", "capability.build_requested", "capability.build_started",
+          "capability.generated", "capability.static_validated", "capability.sandbox_started",
+          "capability.test_passed", "capability.test_failed",
+          "capability.financial_validated", "capability.approved", "capability.registered",
+          "capability.build_failed"
+        ]}}
+      },
+      "then": {"properties": {"task_id": {"$ref": "#/$defs/safeString"}}}
+    },
+    {
+      "oneOf": [
+        {"properties": {"type": {"const": "run.created"}, "payload": {"$ref": "#/$defs/runCreated"}}},
+        {"properties": {"type": {"const": "run.started"}, "payload": {"$ref": "#/$defs/empty"}}},
+        {"properties": {"type": {"const": "run.status_changed"}, "payload": {"$ref": "#/$defs/runStatusChanged"}}},
+        {"properties": {"type": {"const": "run.completed"}, "payload": {"$ref": "#/$defs/runCompleted"}}},
+        {"properties": {"type": {"const": "run.failed"}, "payload": {"$ref": "#/$defs/runFailed"}}},
+        {"properties": {"type": {"const": "scheme.generated"}, "payload": {"$ref": "#/$defs/schemeGenerated"}}},
+        {"properties": {"type": {"const": "scheme.confirmed"}, "payload": {"$ref": "#/$defs/schemeConfirmed"}}},
+        {"properties": {"type": {"const": "plan.generated"}, "payload": {"$ref": "#/$defs/planGenerated"}}},
+        {"properties": {"type": {"const": "task.created"}, "payload": {"$ref": "#/$defs/taskCreated"}}},
+        {"properties": {"type": {"const": "task.ready"}, "payload": {"$ref": "#/$defs/empty"}}},
+        {"properties": {"type": {"const": "task.started"}, "payload": {"$ref": "#/$defs/taskStarted"}}},
+        {"properties": {"type": {"const": "task.progress"}, "payload": {"$ref": "#/$defs/taskProgress"}}},
+        {"properties": {"type": {"const": "task.waiting_for_capability"}, "payload": {"$ref": "#/$defs/taskWaiting"}}},
+        {"properties": {"type": {"const": "task.resumed"}, "payload": {"$ref": "#/$defs/taskResumed"}}},
+        {"properties": {"type": {"const": "task.self_correcting"}, "payload": {"$ref": "#/$defs/taskSelfCorrecting"}}},
+        {"properties": {"type": {"const": "task.correction_resolved"}, "payload": {"$ref": "#/$defs/taskCorrectionResolved"}}},
+        {"properties": {"type": {"const": "task.completed"}, "payload": {"$ref": "#/$defs/taskCompleted"}}},
+        {"properties": {"type": {"const": "task.failed"}, "payload": {"$ref": "#/$defs/taskFailed"}}},
+        {"properties": {"type": {"const": "replan.requested"}, "payload": {"$ref": "#/$defs/replanRequested"}}},
+        {"properties": {"type": {"const": "replan.approved"}, "payload": {"$ref": "#/$defs/replanApproved"}}},
+        {"properties": {"type": {"const": "graph.task_added"}, "payload": {"$ref": "#/$defs/graphTaskAdded"}}},
+        {"properties": {"type": {"const": "graph.edge_added"}, "payload": {"$ref": "#/$defs/graphEdge"}}},
+        {"properties": {"type": {"const": "graph.edge_removed"}, "payload": {"$ref": "#/$defs/graphEdge"}}},
+        {"properties": {"type": {"const": "graph.version_changed"}, "payload": {"$ref": "#/$defs/graphVersionChanged"}}},
+        {"properties": {"type": {"const": "evidence.accepted"}, "payload": {"$ref": "#/$defs/evidenceAccepted"}}},
+        {"properties": {"type": {"const": "calculation.started"}, "payload": {"$ref": "#/$defs/calculationStarted"}}},
+        {"properties": {"type": {"const": "calculation.completed"}, "payload": {"$ref": "#/$defs/calculationCompleted"}}},
+        {"properties": {"type": {"const": "capability.gap_detected"}, "payload": {"$ref": "#/$defs/capabilityGapDetected"}}},
+        {"properties": {"type": {"const": "capability.build_requested"}, "payload": {"$ref": "#/$defs/capabilityBuildRequested"}}},
+        {"properties": {"type": {"const": "capability.build_started"}, "payload": {"$ref": "#/$defs/capabilityBuildStarted"}}},
+        {"properties": {"type": {"const": "capability.generated"}, "payload": {"$ref": "#/$defs/capabilityGenerated"}}},
+        {"properties": {"type": {"const": "capability.static_validated"}, "payload": {"$ref": "#/$defs/capabilityHash"}}},
+        {"properties": {"type": {"const": "capability.sandbox_started"}, "payload": {"$ref": "#/$defs/capabilityHash"}}},
+        {"properties": {"type": {"const": "capability.test_passed"}, "payload": {"$ref": "#/$defs/capabilityHash"}}},
+        {"properties": {"type": {"const": "capability.test_failed"}, "payload": {"$ref": "#/$defs/capabilityTestFailed"}}},
+        {"properties": {"type": {"const": "capability.financial_validated"}, "payload": {"$ref": "#/$defs/capabilityHash"}}},
+        {"properties": {"type": {"const": "capability.approved"}, "payload": {"$ref": "#/$defs/capabilityApproved"}}},
+        {"properties": {"type": {"const": "capability.registered"}, "payload": {"$ref": "#/$defs/capabilityRegistered"}}},
+        {"properties": {"type": {"const": "capability.build_failed"}, "payload": {"$ref": "#/$defs/capabilityBuildFailed"}}},
+        {"properties": {"type": {"const": "review.started"}, "payload": {"$ref": "#/$defs/empty"}}},
+        {"properties": {"type": {"const": "review.resolved"}, "payload": {"$ref": "#/$defs/reviewResolved"}}},
+        {"properties": {"type": {"const": "proof.started"}, "payload": {"$ref": "#/$defs/proofStarted"}}},
+        {"properties": {"type": {"const": "proof.required"}, "payload": {"$ref": "#/$defs/proofRequired"}}},
+        {"properties": {"type": {"const": "proof.generated"}, "payload": {"$ref": "#/$defs/proofStarted"}}},
+        {"properties": {"type": {"const": "proof.verified"}, "payload": {"$ref": "#/$defs/proofVerified"}}},
+        {"properties": {"type": {"const": "proof.failed"}, "payload": {"$ref": "#/$defs/proofFailed"}}},
+        {"properties": {"type": {"const": "release.completed"}, "payload": {"$ref": "#/$defs/releaseCompleted"}}}
+      ]
+    }
+  ],
+  "$defs": {
+    "safeString": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f]+$"},
+    "utcTimestamp": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|\\+00:00)$"},
+    "positiveInteger": {"type": "integer", "minimum": 1},
+    "nonnegativeInteger": {"type": "integer", "minimum": 0},
+    "ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "empty": {"type": "object", "additionalProperties": false, "maxProperties": 0},
+    "runCreated": {"type": "object", "additionalProperties": false, "required": ["object_id"], "properties": {"object_id": {"$ref": "#/$defs/safeString"}}},
+    "runStatusChanged": {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"enum": ["DRAFT", "SCHEME_GENERATING", "AWAITING_CONFIRMATION", "PLANNING", "RUNNING", "REVIEW", "PROVING"]}}},
+    "runCompleted": {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"const": "RELEASED"}}},
+    "runFailed": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "failure_stage", "failure_code"],
+      "properties": {
+        "status": {"enum": ["FAILED", "CANCELLED"]},
+        "failure_stage": {"enum": ["PLANNING", "DATA_EVIDENCE", "TASK_EXECUTION", "GENERATED_CAPABILITY", "FINANCIAL_REVIEW", "PROOF", "ARTIFACT_GENERATION", "RELEASE", "POST_SCHEDULER", "PERSISTENCE", "CANCELLATION"]},
+        "failure_code": {"$ref": "#/$defs/safeString"},
+        "safe_message": {"oneOf": [{"$ref": "#/$defs/safeString"}, {"type": "null"}]}
+      }
+    },
+    "schemeGenerated": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scheme_id", "generated_by", "generated_at", "generation_stage", "retrospective"],
+      "properties": {
+        "scheme_id": {"$ref": "#/$defs/safeString"}, "generated_by": {"$ref": "#/$defs/safeString"},
+        "generated_at": {"$ref": "#/$defs/utcTimestamp"}, "generation_stage": {"$ref": "#/$defs/safeString"},
+        "retrospective": {"type": "boolean"}
+      }
+    },
+    "schemeConfirmed": {"type": "object", "additionalProperties": false, "required": ["scheme_id"], "properties": {"scheme_id": {"$ref": "#/$defs/safeString"}}},
+    "planGenerated": {"type": "object", "additionalProperties": false, "required": ["graph_id", "task_count"], "properties": {"graph_id": {"$ref": "#/$defs/safeString"}, "task_count": {"$ref": "#/$defs/nonnegativeInteger"}}},
+    "taskCreated": {"type": "object", "additionalProperties": false, "required": ["task_type"], "properties": {"task_type": {"$ref": "#/$defs/safeString"}}},
+    "taskStarted": {"type": "object", "additionalProperties": false, "required": ["attempt"], "properties": {"attempt": {"$ref": "#/$defs/positiveInteger"}}},
+    "taskProgress": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["progress", "progress_scale"],
+          "properties": {
+            "progress": {"$ref": "#/$defs/ratio"}, "progress_scale": {"const": "RATIO_0_1"},
+            "stage": {"$ref": "#/$defs/safeString"}, "message_code": {"$ref": "#/$defs/safeString"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["attempt", "error_code"],
+          "properties": {"attempt": {"$ref": "#/$defs/positiveInteger"}, "error_code": {"$ref": "#/$defs/safeString"}}
+        }
+      ]
+    },
+    "taskWaiting": {"type": "object", "additionalProperties": false, "required": ["gap_id"], "properties": {"gap_id": {"$ref": "#/$defs/safeString"}}},
+    "taskResumed": {"type": "object", "additionalProperties": false, "required": ["gap_id", "registration_id", "status"], "properties": {"gap_id": {"$ref": "#/$defs/safeString"}, "registration_id": {"$ref": "#/$defs/safeString"}, "status": {"const": "RUNNING"}}},
+    "taskSelfCorrecting": {"type": "object", "additionalProperties": false, "required": ["problem_code"], "properties": {"problem_code": {"$ref": "#/$defs/safeString"}}},
+    "taskCorrectionResolved": {"type": "object", "additionalProperties": false, "required": ["correction_id"], "properties": {"correction_id": {"$ref": "#/$defs/safeString"}}},
+    "taskCompleted": {"type": "object", "additionalProperties": false, "required": ["attempt"], "properties": {"attempt": {"$ref": "#/$defs/positiveInteger"}, "result_ref": {"oneOf": [{"$ref": "#/$defs/safeString"}, {"type": "null"}]}}},
+    "taskFailed": {"type": "object", "additionalProperties": false, "required": ["attempt", "failure_code"], "properties": {"attempt": {"$ref": "#/$defs/positiveInteger"}, "failure_code": {"$ref": "#/$defs/safeString"}, "status": {"enum": ["FAILED", "CAPABILITY_BUILD_FAILED", "CANCELLED"]}, "retry_suppressed": {"type": "boolean"}}},
+    "replanRequested": {"type": "object", "additionalProperties": false, "required": ["replan_id", "decision"], "properties": {"replan_id": {"$ref": "#/$defs/safeString"}, "decision": {"enum": ["PENDING", "APPROVED", "REJECTED"]}}},
+    "replanApproved": {"type": "object", "additionalProperties": false, "required": ["replan_id", "decided_by"], "properties": {"replan_id": {"$ref": "#/$defs/safeString"}, "decided_by": {"$ref": "#/$defs/safeString"}}},
+    "graphTaskAdded": {"type": "object", "additionalProperties": false, "required": ["replan_id"], "properties": {"replan_id": {"$ref": "#/$defs/safeString"}}},
+    "graphEdge": {"type": "object", "additionalProperties": false, "required": ["replan_id", "source_task_id", "target_task_id"], "properties": {"replan_id": {"$ref": "#/$defs/safeString"}, "source_task_id": {"$ref": "#/$defs/safeString"}, "target_task_id": {"$ref": "#/$defs/safeString"}}},
+    "graphVersionChanged": {"type": "object", "additionalProperties": false, "required": ["replan_id", "version_before"], "properties": {"replan_id": {"$ref": "#/$defs/safeString"}, "version_before": {"$ref": "#/$defs/positiveInteger"}}},
+    "evidenceAccepted": {
+      "type": "object", "additionalProperties": false, "required": ["evidence_id", "field"],
+      "properties": {
+        "evidence_id": {"$ref": "#/$defs/safeString"}, "field": {"$ref": "#/$defs/safeString"},
+        "producer_task_id": {"$ref": "#/$defs/safeString"}, "source_endpoint": {"$ref": "#/$defs/safeString"},
+        "evidence_purpose": {"$ref": "#/$defs/safeString"}, "evidence_category": {"$ref": "#/$defs/safeString"}
+      }
+    },
+    "calculationStarted": {"type": "object", "additionalProperties": false, "required": ["capability_id"], "properties": {"capability_id": {"$ref": "#/$defs/safeString"}}},
+    "calculationCompleted": {"type": "object", "additionalProperties": false, "required": ["calculation_id"], "properties": {"calculation_id": {"$ref": "#/$defs/safeString"}, "capability_id": {"$ref": "#/$defs/safeString"}}},
+    "capabilityGapDetected": {"type": "object", "additionalProperties": false, "required": ["gap_id", "capability_id", "skill_id", "requested_by"], "properties": {"gap_id": {"$ref": "#/$defs/safeString"}, "capability_id": {"$ref": "#/$defs/safeString"}, "skill_id": {"$ref": "#/$defs/safeString"}, "requested_by": {"$ref": "#/$defs/safeString"}}},
+    "capabilityBuildRequested": {"type": "object", "additionalProperties": false, "required": ["gap_id", "build_id", "attempt", "max_attempts", "approved_by"], "properties": {"gap_id": {"$ref": "#/$defs/safeString"}, "build_id": {"$ref": "#/$defs/safeString"}, "attempt": {"$ref": "#/$defs/positiveInteger"}, "max_attempts": {"$ref": "#/$defs/positiveInteger"}, "approved_by": {"$ref": "#/$defs/safeString"}}},
+    "capabilityBuildStarted": {"type": "object", "additionalProperties": false, "required": ["build_id", "attempt"], "properties": {"build_id": {"$ref": "#/$defs/safeString"}, "attempt": {"$ref": "#/$defs/positiveInteger"}}},
+    "capabilityGenerated": {"type": "object", "additionalProperties": false, "required": ["build_id", "generated_capability_id", "implementation_hash"], "properties": {"build_id": {"$ref": "#/$defs/safeString"}, "generated_capability_id": {"$ref": "#/$defs/safeString"}, "implementation_hash": {"$ref": "#/$defs/safeString"}}},
+    "capabilityHash": {"type": "object", "additionalProperties": false, "required": ["build_id", "implementation_hash"], "properties": {"build_id": {"$ref": "#/$defs/safeString"}, "implementation_hash": {"$ref": "#/$defs/safeString"}}},
+    "capabilityTestFailed": {"type": "object", "additionalProperties": false, "required": ["build_id", "attempt", "failure_code"], "properties": {"build_id": {"$ref": "#/$defs/safeString"}, "attempt": {"$ref": "#/$defs/positiveInteger"}, "failure_code": {"$ref": "#/$defs/safeString"}}},
+    "capabilityApproved": {"type": "object", "additionalProperties": false, "required": ["build_id", "registration_id", "approved_by", "scope"], "properties": {"build_id": {"$ref": "#/$defs/safeString"}, "registration_id": {"$ref": "#/$defs/safeString"}, "approved_by": {"$ref": "#/$defs/safeString"}, "scope": {"enum": ["TASK", "RUN"]}}},
+    "capabilityRegistered": {"type": "object", "additionalProperties": false, "required": ["registration_id", "capability_id", "capability_version", "scope"], "properties": {"registration_id": {"$ref": "#/$defs/safeString"}, "capability_id": {"$ref": "#/$defs/safeString"}, "capability_version": {"$ref": "#/$defs/safeString"}, "scope": {"enum": ["TASK", "RUN"]}}},
+    "capabilityBuildFailed": {"type": "object", "additionalProperties": false, "required": ["failure_code", "terminal"], "properties": {"gap_id": {"$ref": "#/$defs/safeString"}, "build_id": {"$ref": "#/$defs/safeString"}, "attempt": {"$ref": "#/$defs/positiveInteger"}, "max_attempts": {"$ref": "#/$defs/positiveInteger"}, "failure_code": {"$ref": "#/$defs/safeString"}, "terminal": {"type": "boolean"}}},
+    "reviewResolved": {"type": "object", "additionalProperties": false, "required": ["review_id", "status"], "properties": {"review_id": {"$ref": "#/$defs/safeString"}, "status": {"enum": ["PASS", "REVIEW", "BLOCK"]}}},
+    "proofStarted": {"type": "object", "additionalProperties": false, "required": ["proof_id", "backend"], "properties": {"proof_id": {"$ref": "#/$defs/safeString"}, "backend": {"$ref": "#/$defs/safeString"}}},
+    "proofRequired": {"type": "object", "additionalProperties": false, "required": ["proof_id", "calculation_id", "formula_id", "policy_id"], "properties": {"proof_id": {"$ref": "#/$defs/safeString"}, "calculation_id": {"$ref": "#/$defs/safeString"}, "formula_id": {"$ref": "#/$defs/safeString"}, "policy_id": {"$ref": "#/$defs/safeString"}}},
+    "proofVerified": {"type": "object", "additionalProperties": false, "required": ["proof_id", "image_id", "receipt_hash", "journal_hash", "verified", "dev_mode"], "properties": {"proof_id": {"$ref": "#/$defs/safeString"}, "image_id": {"$ref": "#/$defs/safeString"}, "receipt_hash": {"$ref": "#/$defs/safeString"}, "journal_hash": {"$ref": "#/$defs/safeString"}, "verified": {"const": true}, "dev_mode": {"type": "boolean"}}},
+    "proofFailed": {"type": "object", "additionalProperties": false, "required": ["proof_id", "failure_code", "status"], "properties": {"proof_id": {"$ref": "#/$defs/safeString"}, "failure_code": {"$ref": "#/$defs/safeString"}, "status": {"enum": ["INVALID", "FAILED", "ERROR", "UNSUPPORTED", "NOT_IMPLEMENTED"]}}},
+    "releaseCompleted": {"type": "object", "additionalProperties": false, "required": ["canonical_record_id", "result_id"], "properties": {"canonical_record_id": {"$ref": "#/$defs/safeString"}, "result_id": {"$ref": "#/$defs/safeString"}}}
+  },
+  "x-runtime-event-disposition": {
+    "raw_type_count": 55,
+    "supported_v1_count": 47,
+    "unsupported_v1": [
+      "scheme.generation_started", "replan.rejected", "evidence.conflict",
+      "workspace.created", "capability.generation_started", "capability.tested",
+      "capability.validated", "review.required"
+    ],
+    "graph_version_required_v1": [
+      "run.started", "graph.task_added", "graph.edge_added", "graph.edge_removed",
+      "graph.version_changed"
+    ],
+    "task_id_required_v1": [
+      "task.created", "task.ready", "task.started", "task.progress",
+      "task.waiting_for_capability", "task.resumed", "task.self_correcting",
+      "task.correction_resolved", "task.completed", "task.failed", "replan.requested",
+      "replan.approved", "graph.task_added", "graph.edge_added", "graph.edge_removed",
+      "calculation.started", "calculation.completed", "capability.gap_detected",
+      "capability.build_requested", "capability.build_started", "capability.generated",
+      "capability.static_validated", "capability.sandbox_started", "capability.test_passed",
+      "capability.test_failed", "capability.financial_validated", "capability.approved",
+      "capability.registered", "capability.build_failed"
+    ],
+    "effect_counts": {"PATCH_PROJECTION": 10, "REFRESH_PROJECTION": 20, "OBSERVATION_ONLY": 15, "TERMINAL": 2}
   }
 }
