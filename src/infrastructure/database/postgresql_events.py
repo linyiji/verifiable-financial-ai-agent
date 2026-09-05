@@ -28,7 +28,7 @@ POSTGRES_EVENT_SEQUENCE_FUNCTION_SQL = """
 CREATE OR REPLACE FUNCTION allocate_runtime_event_sequence()
 RETURNS trigger AS $$
 DECLARE
-    allocated_sequence integer;
+    allocated_sequence bigint;
 BEGIN
     IF NEW.sequence IS NULL THEN
         INSERT INTO runtime_event_counters (run_id, last_sequence)

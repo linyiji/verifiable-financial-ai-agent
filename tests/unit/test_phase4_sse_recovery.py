@@ -11,6 +11,9 @@ from src.domain.runtime_event import RuntimeEvent, RuntimeEventType
 from src.domain.task import PlannedTaskGraph
 from src.infrastructure.database.checkpoints import SQLAlchemyCheckpointStore
 from src.infrastructure.database.models import RuntimeCheckpointRow
+from src.infrastructure.database.postgresql_events import (
+    POSTGRES_EVENT_SEQUENCE_FUNCTION_SQL,
+)
 from src.runtime.checkpoint import RuntimeCheckpoint, RuntimeCheckpointIntegrityError
 from src.runtime.events import (
     CursorErrorCode,
@@ -95,6 +98,10 @@ def test_cursor_parser_rejects_oversized_numeric_input_with_typed_error() -> Non
 
     assert exc_info.value.code is CursorErrorCode.INVALID_CURSOR
     assert exc_info.value.status_code == 400
+
+
+def test_postgresql_allocator_uses_signed_64_bit_local() -> None:
+    assert "allocated_sequence bigint" in POSTGRES_EVENT_SEQUENCE_FUNCTION_SQL
 
 
 @pytest.mark.asyncio

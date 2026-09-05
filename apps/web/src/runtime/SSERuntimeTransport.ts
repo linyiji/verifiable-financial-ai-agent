@@ -586,6 +586,7 @@ export class SSERuntimeTransport implements RuntimeTransport {
     });
     const decoder = new TextDecoder("utf-8", { fatal: true });
     let terminal = false;
+    let projectionRefreshRequired = false;
     const parser = new SSEFrameParser(
       {
         onComment: (comment) => {
@@ -600,7 +601,7 @@ export class SSERuntimeTransport implements RuntimeTransport {
           });
         },
         onFrame: (frame) => {
-          if (!input.isActive()) return;
+          if (!input.isActive() || projectionRefreshRequired) return;
           if (frame.id === undefined || frame.event === undefined) {
             throw new RuntimeIngestionError("MALFORMED_EVENT", "Business SSE frame requires id and event fields");
           }
@@ -613,6 +614,14 @@ export class SSERuntimeTransport implements RuntimeTransport {
           const result = input.guard.ingest(wire, frame, input.onEvent);
           if (result.kind === "DUPLICATE") {
             input.options.onDuplicate?.(result.event);
+            return;
+          }
+          if (result.event.projectionRefreshRequired && result.event.effect !== "TERMINAL") {
+            // The reducer has synchronously retained this event as a pending refresh.
+            // Stop this stream before another frame can move the transport guard beyond
+            // the atomic snapshot boundary. Parent composition now only needs to fetch
+            // and reconcile the exact same-Run projection before resubscribing.
+            projectionRefreshRequired = true;
             return;
           }
           if (result.event.effect === "TERMINAL") {
@@ -646,7 +655,7 @@ export class SSERuntimeTransport implements RuntimeTransport {
         if (error instanceof RuntimeIngestionError) throw error;
         throw new RuntimeIngestionError("MALFORMED_EVENT", "Runtime SSE is not valid UTF-8");
       }
-      if (terminal) {
+      if (terminal || projectionRefreshRequired) {
         await reader.cancel().catch(() => undefined);
         break;
       }
@@ -655,6 +664,7 @@ export class SSERuntimeTransport implements RuntimeTransport {
       await reader.cancel();
       return;
     }
+    if (projectionRefreshRequired) return;
     try {
       parser.push(decoder.decode());
     } catch (error) {

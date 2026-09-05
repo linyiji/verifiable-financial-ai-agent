@@ -651,6 +651,36 @@ check(transportEvents[0].payload.messageCode, "进展", "incremental UTF-8 decod
 check(transportStates.at(-1).kind, "TERMINAL", "terminal event closes transport authoritatively");
 check(transportErrors.length, 0, "valid terminal stream has no transport error");
 
+// A projection-refresh boundary closes the current stream before a later frame can run ahead.
+const refresh11 = wireEvent({
+  eventId: "REFRESH-11",
+  taskId: TASK_A,
+  type: "replan.requested",
+  sequence: 11,
+  payload: { replan_id: "REPLAN-11", decision: "PENDING" }
+});
+const afterRefresh12 = wireEvent({
+  eventId: "AFTER-REFRESH-12",
+  taskId: TASK_A,
+  type: "task.progress",
+  sequence: 12,
+  payload: { progress: 0.7, progress_scale: "RATIO_0_1", message_code: "later" }
+});
+const refreshEvents = [];
+const refreshErrors = [];
+const refreshTransport = new SSERuntimeTransport({
+  fetchImplementation: async () => eventStreamResponse([refresh11, afterRefresh12])
+});
+const refreshSubscription = refreshTransport.subscribe(
+  RUN_A,
+  (event) => refreshEvents.push(event),
+  (error) => refreshErrors.push(error),
+  { initialSequence: 10, authoritativeTaskIds: [TASK_A] }
+);
+await refreshSubscription.closed;
+check(refreshEvents.map((event) => event.sequence), [11], "refresh closes transport before a later frame advances its guard");
+check(refreshErrors.length, 0, "intentional projection refresh is not a transport failure");
+
 // A pre-terminal EOF is transport backoff, never an invented Run failure/completion.
 const disconnectStates = [];
 const disconnectErrors = [];
