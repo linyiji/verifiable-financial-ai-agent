@@ -187,6 +187,10 @@ def _task(
         "dependencies": dependencies or [],
         "task_type": "fundamental",
         "goal": "authoritative goal",
+        "assigned_agent": "fundamental_analyst",
+        "skill_id": "fundamental-analysis-v1",
+        "origin": "PLAN",
+        "reason_code": None,
     }
 
 
@@ -200,24 +204,51 @@ def _snapshot(
     status: str = "RUNNING",
     terminal_event_id: str | None = None,
 ) -> dict[str, Any]:
-    task_rows = deepcopy(tasks or [_task("TASK-A")])
     terminal = status in {"RELEASED", "FAILED", "CANCELLED"}
     outcome = {"RELEASED": "SUCCESS", "FAILED": "FAILURE", "CANCELLED": "CANCELLED"}.get(status)
+    task_rows = deepcopy(tasks or [_task("TASK-A")])
+    if terminal:
+        terminal_task_status = {
+            "RELEASED": "COMPLETED",
+            "FAILED": "FAILED",
+            "CANCELLED": "CANCELLED",
+        }[status]
+        for task in task_rows:
+            task["status"] = terminal_task_status
+            task["progress"] = 1.0
     planned_tasks = [
         {**deepcopy(task), "status": "CREATED"}
         for task in task_rows
         if not task.get("origin") or task.get("origin") == "PLAN"
     ]
-    planned_edges = [
-        {"source_task_id": dependency, "target_task_id": task["task_id"]}
-        for task in planned_tasks
-        for dependency in task["dependencies"]
-    ]
-    actual_edges = [
-        {"source_task_id": dependency, "target_task_id": task["task_id"]}
-        for task in task_rows
-        for dependency in task["dependencies"]
-    ]
+    available = {"status": "AVAILABLE", "reason_code": None, "retryable": False}
+    unavailable = {
+        "status": "NOT_GENERATED",
+        "reason_code": "RUN_TERMINAL_UNSUCCESSFUL",
+        "retryable": False,
+    }
+    pending = {"status": "PENDING", "reason_code": "RUN_NONTERMINAL", "retryable": False}
+    released = status == "RELEASED"
+    terminal_activity = (
+        [
+            {
+                "event_id": terminal_event_id,
+                "type": "run.completed"
+                if status == "RELEASED"
+                else ("run.failed" if status == "FAILED" else "run.cancelled"),
+                "sequence": sequence,
+                "timestamp": NOW,
+                "task_id": None,
+                "message_code": {
+                    "RELEASED": "RUN_RELEASED",
+                    "FAILED": "RUN_FAILED",
+                    "CANCELLED": "RUN_CANCELLED",
+                }[status],
+            }
+        ]
+        if terminal
+        else []
+    )
     return {
         "projection_schema_version": "phase4-run-projection/v1",
         "projection_revision": revision,
@@ -254,11 +285,30 @@ def _snapshot(
             "completed_at": NOW if terminal else None,
             "updated_at": NOW,
         },
-        "goal": {"goal_id": "GOAL-A", "research_object_id": OBJECT_ID},
-        "confirmed_scheme": {
-            "scheme_id": "SCHEME-A",
+        "goal": {
             "goal_id": "GOAL-A",
             "research_object_id": OBJECT_ID,
+            "goal_type": "comprehensive_equity_research",
+            "goal_text": "authoritative research goal",
+            "as_of": "2026-09-05",
+            "preferences": {},
+            "created_at": NOW,
+        },
+        "confirmed_scheme": {
+            "scheme_id": "SCHEME-A",
+            "research_object_id": OBJECT_ID,
+            "goal_id": "GOAL-A",
+            "research_scope": ["fundamentals"],
+            "data_requirements": ["filings"],
+            "agent_requirements": ["fundamental_analyst"],
+            "skill_requirements": [],
+            "calculation_requirements": [],
+            "assurance_requirements": {},
+            "report_requirements": ["HTML"],
+            "limitations": [],
+            "generated_by": "research_lead_agent",
+            "generated_model": None,
+            "created_at": NOW,
             "confirmed_at": NOW,
         },
         "planned_graph": {
@@ -266,19 +316,17 @@ def _snapshot(
             "run_id": RUN_ID,
             "version": 1,
             "tasks": planned_tasks,
-            "edges": planned_edges,
         },
         "actual_graph": {
             "graph_id": "GRAPH-ACTUAL-A",
             "run_id": RUN_ID,
             "version": graph_version,
             "tasks": deepcopy(task_rows),
-            "edges": actual_edges,
         },
         "graph_version": graph_version,
         "tasks": task_rows,
         "path_changes": deepcopy(path_changes or []),
-        "activity": [],
+        "activity": terminal_activity,
         "lifecycle": {
             "status": status,
             "stage": {
@@ -291,57 +339,60 @@ def _snapshot(
                 "method": "ACTUAL_TASK_MEAN_V1",
                 "completed_tasks": sum(task["status"] == "COMPLETED" for task in task_rows),
                 "total_tasks": len(task_rows),
-                "fraction": sum(task["progress"] for task in task_rows) / len(task_rows),
+                "fraction": 1.0
+                if terminal
+                else sum(task["progress"] for task in task_rows) / len(task_rows),
             },
             "terminal": terminal,
             "terminal_outcome": outcome,
-            "safe_failure": {"failure_code": "ACCEPTANCE_FAILURE"} if status == "FAILED" else None,
+            "safe_failure": (
+                {
+                    "status": status,
+                    "failure_stage": "TASK_EXECUTION" if status == "FAILED" else "CANCELLATION",
+                    "failure_code": "TASK_EXECUTION_FAILED"
+                    if status == "FAILED"
+                    else "RUN_CANCELLED",
+                    "safe_message": "The run ended without release.",
+                }
+                if status in {"FAILED", "CANCELLED"}
+                else None
+            ),
         },
         "review": {
-            "availability": {
-                "status": "PENDING",
-                "reason_code": "RUN_NONTERMINAL",
-                "retryable": False,
-            },
-            "review_id": None,
-            "status": None,
+            "availability": available if released else (unavailable if terminal else pending),
+            "review_id": "REVIEW-A" if released else None,
+            "status": "PASS" if released else None,
         },
         "result": {
-            "availability": {
-                "status": "PENDING",
-                "reason_code": "RUN_NONTERMINAL",
-                "retryable": False,
-            },
-            "released_result_id": None,
-            "canonical_record_id": None,
-            "released_at": None,
+            "availability": available
+            if released
+            else (
+                {
+                    "status": "NOT_RELEASED",
+                    "reason_code": "RUN_TERMINAL_UNSUCCESSFUL",
+                    "retryable": False,
+                }
+                if terminal
+                else pending
+            ),
+            "released_result_id": "RESULT-A" if released else None,
+            "canonical_record_id": "CANONICAL-A" if released else None,
+            "released_at": NOW if released else None,
         },
         "artifacts": {
-            "availability": {
-                "status": "NOT_GENERATED",
-                "reason_code": "RUN_NONTERMINAL",
-                "retryable": False,
-            },
-            "report_id": None,
-            "representation_ids": [],
+            "availability": available if released else unavailable,
+            "report_id": "REPORT-A" if released else None,
+            "representation_ids": ["REPRESENTATION-A"] if released else [],
         },
         "proof": {
-            "availability": {
-                "status": "NOT_GENERATED",
-                "reason_code": "RUN_NONTERMINAL",
-                "retryable": False,
-            },
-            "policy": "UNKNOWN",
-            "status": None,
+            "availability": available if released else unavailable,
+            "policy": "NOT_REQUIRED" if released else "UNKNOWN",
+            "status": "NOT_REQUIRED" if released else None,
             "proof_refs": [],
         },
         "execution": {
-            "availability": {
-                "status": "NOT_GENERATED",
-                "reason_code": "RUN_NONTERMINAL",
-                "retryable": False,
-            },
-            "canonical_record_id": None,
+            "availability": available if released else unavailable,
+            "canonical_record_id": "CANONICAL-A" if released else None,
         },
         "terminal": {
             "is_terminal": terminal,
@@ -762,7 +813,6 @@ def test_approved_replan_follows_lead_approval_and_applies_exactly_once() -> Non
     before = _snapshot(sequence=30)
     operations = [
         {"operation": "add_node", "task_id": "TASK-B"},
-        {"operation": "add_edge", "source_task_id": "TASK-A", "target_task_id": "TASK-B"},
     ]
     change = _path_change(
         "REPLAN-A",
@@ -775,21 +825,20 @@ def test_approved_replan_follows_lead_approval_and_applies_exactly_once() -> Non
         after=2,
     )
     after = _snapshot(
-        sequence=35,
+        sequence=34,
         revision=2,
         graph_version=2,
-        tasks=[_task("TASK-A"), {**_task("TASK-B", ["TASK-A"]), "origin": "REPLAN"}],
+        tasks=[_task("TASK-A"), {**_task("TASK-B"), "origin": "REPLAN"}],
         path_changes=[change],
     )
     events = [
         _validated("replan.requested", 31),
         _validated("replan.approved", 32),
         _validated("graph.task_added", 33, task_id="TASK-B", graph_version=2),
-        _validated("graph.edge_added", 34, task_id="TASK-B", graph_version=2),
-        _validated("graph.version_changed", 35, task_id=None, graph_version=2),
+        _validated("graph.version_changed", 34, task_id=None, graph_version=2),
     ]
     assert_controlled_replan(before, events, after, expected_decision="APPROVED")
-    wrong_order = [events[0], events[2], events[1], events[3], events[4]]
+    wrong_order = [events[0], events[2], events[1], events[3]]
     with pytest.raises(SSEAcceptanceError):
         assert_controlled_replan(before, wrong_order, after, expected_decision="APPROVED")
 

@@ -551,7 +551,7 @@ test("terminal unsuccessful lifecycle reaches one only after every authoritative
     canonical_record_id: "CANONICAL-FAILED",
     released_at: "2026-09-05T00:00:02Z"
   };
-  assert.throws(() => decodeAtomicRunProjection(releasedResult), /only RELEASED Run/);
+  assert.throws(() => decodeAtomicRunProjection(releasedResult), /non-RELEASED Run/);
 
   const availableArtifacts = structuredClone(wire);
   availableArtifacts.artifacts = {

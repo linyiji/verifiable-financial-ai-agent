@@ -103,7 +103,6 @@ def _dynamic_scenarios() -> dict[str, Any]:
     )
     operations = [
         {"operation": "add_node", "task_id": "TASK-B"},
-        {"operation": "add_edge", "source_task_id": "TASK-A", "target_task_id": "TASK-B"},
     ]
     approved = _path_change(
         "REPLAN-A",
@@ -147,17 +146,16 @@ def _dynamic_scenarios() -> dict[str, Any]:
                     _frame("replan.requested", 31),
                     _frame("replan.approved", 32),
                     _frame("graph.task_added", 33, task_id="TASK-B", graph_version=2),
-                    _frame("graph.edge_added", 34, task_id="TASK-B", graph_version=2),
-                    _frame("graph.version_changed", 35, task_id=None, graph_version=2),
+                    _frame("graph.version_changed", 34, task_id=None, graph_version=2),
                 ],
                 cursor="30",
             ),
             "after_projection": _projection(
                 _snapshot(
-                    sequence=35,
+                    sequence=34,
                     revision=2,
                     graph_version=2,
-                    tasks=[_task("TASK-A"), {**_task("TASK-B", ["TASK-A"]), "origin": "REPLAN"}],
+                    tasks=[_task("TASK-A"), {**_task("TASK-B"), "origin": "REPLAN"}],
                     path_changes=[approved],
                 )
             ),
@@ -719,6 +717,9 @@ def test_postgresql_causal_probe_requires_success_then_database_induced_failure(
         "updated_at": NOW,
         "started_at": NOW,
         "completed_at": None,
+        "terminal": False,
+        "projection_revision": 1,
+        "projection_sequence": 0,
     }
 
     class Isolation:
