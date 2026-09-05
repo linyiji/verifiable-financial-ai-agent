@@ -304,11 +304,20 @@ class ResearchApplicationService:
                 aggregate.artifacts.parallel_task_peak = executor.parallel_peak
                 await self._assure_and_release(aggregate)
         except Exception as exc:
-            aggregate.run.status = RunStatus.FAILED
-            aggregate.run.completed_at = datetime.now(UTC)
             durable_events = list(await self.event_store.replay(run_id))
-            if not durable_events or durable_events[-1].type is not RuntimeEventType.RUN_FAILED:
-                await self.event_store.emit(
+            terminal_event = (
+                durable_events[-1]
+                if durable_events and durable_events[-1].type is RuntimeEventType.RUN_FAILED
+                else None
+            )
+            if terminal_event is None:
+                terminal_at = datetime.now(UTC)
+                self._apply_terminal_lifecycle(
+                    aggregate,
+                    status=RunStatus.FAILED,
+                    terminal_at=terminal_at,
+                )
+                terminal_event = await self.event_store.emit(
                     run_id=run_id,
                     event_type=RuntimeEventType.RUN_FAILED,
                     payload={
@@ -317,7 +326,14 @@ class ResearchApplicationService:
                         "failure_code": type(exc).__name__.upper(),
                         "safe_message": "The Run could not complete its release checks.",
                     },
+                    timestamp=terminal_at,
                 )
+            terminal_status = RunStatus(str(terminal_event.payload.get("status", "")))
+            self._apply_terminal_lifecycle(
+                aggregate,
+                status=terminal_status,
+                terminal_at=terminal_event.timestamp,
+            )
             await self.repository.save_run(aggregate)
             await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
             raise
@@ -671,9 +687,6 @@ class ResearchApplicationService:
             aggregate.artifacts.projections = projections
             aggregate.artifacts.report = report
             aggregate.artifacts.writeback = writeback
-            aggregate.run.status = RunStatus.RELEASED
-            aggregate.runtime.run_status = RunStatus.RELEASED
-            aggregate.run.completed_at = datetime.now(UTC)
             await self.event_store.emit(
                 run_id=run_id,
                 event_type=RuntimeEventType.RELEASE_COMPLETED,
@@ -682,11 +695,33 @@ class ResearchApplicationService:
                     "result_id": result.result_id,
                 },
             )
+            terminal_at = datetime.now(UTC)
+            self._apply_terminal_lifecycle(
+                aggregate,
+                status=RunStatus.RELEASED,
+                terminal_at=terminal_at,
+            )
             await self.event_store.emit(
                 run_id=run_id,
                 event_type=RuntimeEventType.RUN_COMPLETED,
                 payload={"status": RunStatus.RELEASED.value},
+                timestamp=terminal_at,
             )
+
+    @staticmethod
+    def _apply_terminal_lifecycle(
+        aggregate: RunAggregate,
+        *,
+        status: RunStatus,
+        terminal_at: datetime,
+    ) -> None:
+        if status not in {RunStatus.RELEASED, RunStatus.FAILED, RunStatus.CANCELLED}:
+            raise ValueError("terminal lifecycle requires a terminal Run status")
+        aggregate.run.status = status
+        aggregate.runtime.run_status = status
+        aggregate.run.completed_at = terminal_at
+        if aggregate.run.updated_at < terminal_at:
+            aggregate.run.updated_at = terminal_at
 
     async def _execute_proof_workflow(
         self,
