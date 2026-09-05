@@ -617,8 +617,8 @@ class AuditedTraceAdapter:
                     self._active_trace_ids.pop()
 
     async def event(self, name: str, *, attributes: dict[str, Any] | None = None) -> None:
-        await self._delegate.event(name, attributes=attributes)
-        self._record("event", name, attributes, None)
+        handle = await self._delegate.event(name, attributes=attributes)
+        self._record("event", name, attributes, handle)
 
     @asynccontextmanager
     async def generation(
@@ -666,6 +666,7 @@ class AuditedTraceAdapter:
         trace_id = getattr(handle, "trace_id", None)
         if not trace_id and self._active_trace_ids:
             trace_id = self._active_trace_ids[-1]
+        observation_id = getattr(handle, "span_id", None) or getattr(handle, "id", None)
         self.observations.append(
             {
                 "kind": kind,
@@ -675,6 +676,7 @@ class AuditedTraceAdapter:
                 "tool_name": values.get("tool_name"),
                 "trace_id": trace_id,
                 "span_id": getattr(handle, "span_id", None),
+                "observation_id": observation_id,
             }
         )
 
@@ -2614,13 +2616,14 @@ async def _run_authoritative(
                 exchange="NASDAQ",
                 idempotency_key=f"phase3-object-{run_id}",
             )
+            run_as_of = datetime.now(UTC).date()
             draft = await service.prepare_run(
                 research_object_id=research_object.object_id,
                 research_goal=(
                     "Assess NVDA fundamentals, deterministic technical context, material risks, "
                     "and verification limitations with governed generated capability execution."
                 ),
-                as_of=date(2026, 9, 4),
+                as_of=run_as_of,
                 preferences={"depth": "standard", "provider": "live_fmp", "phase": 3},
                 observation_run_id=run_id,
             )
@@ -2878,12 +2881,20 @@ async def _run_authoritative(
             trace_id = trace.trace_id
 
         await instrumentation.flush()
-        if trace_build.audit_reader is None:
-            raise RuntimeError("Langfuse trace read-back audit is unavailable")
+        if trace_build.drain_barrier is None:
+            raise RuntimeError("Langfuse telemetry drain barrier is unavailable")
+        expected_observation_identities = tuple(
+            str(item.get("observation_id") or "") for item in audited_trace.observations
+        )
+        local_observation_identities_valid = (
+            bool(expected_observation_identities)
+            and all(expected_observation_identities)
+            and len(set(expected_observation_identities)) == len(expected_observation_identities)
+        )
         langfuse_redaction_audit = await asyncio.to_thread(
-            trace_build.audit_reader.audit,
+            trace_build.drain_barrier.audit,
             trace_id,
-            expected_observation_count=len(audited_trace.observations),
+            expected_observation_identities=expected_observation_identities,
         )
         events = list(await persistence.event_store.replay(run_id))
         event_sequences = [item.sequence for item in events]
@@ -3082,6 +3093,7 @@ async def _run_authoritative(
             and required_tool_observations.issubset(observed_tool_names)
             and observation_trace_ids == {trace_id}
             and all(item.get("run_id") == run_id for item in audited_trace.observations)
+            and local_observation_identities_valid
         )
         langfuse_evidence = {
             "passed": trace_passed
@@ -3097,6 +3109,21 @@ async def _run_authoritative(
             "observation_names": sorted(observation_names),
             "tool_observations": sorted(observed_tool_names),
             "observation_trace_ids": sorted(observation_trace_ids),
+            "local_observation_identities_valid": local_observation_identities_valid,
+            "expected_observation_count": (langfuse_redaction_audit.expected_observation_count),
+            "observed_observation_count": langfuse_redaction_audit.observation_count,
+            "missing_observation_identities": list(
+                langfuse_redaction_audit.missing_observation_identities
+            ),
+            "unexpected_observation_identities": list(
+                langfuse_redaction_audit.unexpected_observation_identities
+            ),
+            "unexpected_duplicate_identities": list(
+                langfuse_redaction_audit.unexpected_duplicate_identities
+            ),
+            "one_root_trace": langfuse_redaction_audit.one_root_trace,
+            "force_flush_succeeded": langfuse_redaction_audit.force_flush_succeeded,
+            "drain_elapsed_seconds": langfuse_redaction_audit.elapsed_seconds,
             "credential_redaction": {
                 "policy_id": langfuse_redaction_audit.policy_id,
                 "passed": langfuse_redaction_audit.passed,
@@ -3108,6 +3135,18 @@ async def _run_authoritative(
                 "expected_observation_count": (langfuse_redaction_audit.expected_observation_count),
                 "attempts": langfuse_redaction_audit.attempts,
                 "inspected_surfaces": list(langfuse_redaction_audit.inspected_surfaces),
+                "missing_observation_identities": list(
+                    langfuse_redaction_audit.missing_observation_identities
+                ),
+                "unexpected_observation_identities": list(
+                    langfuse_redaction_audit.unexpected_observation_identities
+                ),
+                "unexpected_duplicate_identities": list(
+                    langfuse_redaction_audit.unexpected_duplicate_identities
+                ),
+                "one_root_trace": langfuse_redaction_audit.one_root_trace,
+                "force_flush_succeeded": langfuse_redaction_audit.force_flush_succeeded,
+                "elapsed_seconds": langfuse_redaction_audit.elapsed_seconds,
             },
         }
         audit_state["langfuse"] = langfuse_evidence

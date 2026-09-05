@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -73,10 +73,11 @@ async def run(output: Path) -> dict[str, Any]:
         exchange="NASDAQ",
         idempotency_key="phase2-live-object-nvda",
     )
+    run_as_of = datetime.now(UTC).date()
     draft = await service.prepare_run(
         research_object_id=research_object.object_id,
         research_goal="Assess NVDA fundamentals, evidence quality, material risks, and limitations",
-        as_of=date(2026, 9, 4),
+        as_of=run_as_of,
         preferences={"depth": "standard", "provider": "live_fmp"},
     )
     aggregate = await service.confirm_run(

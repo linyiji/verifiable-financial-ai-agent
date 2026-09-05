@@ -471,14 +471,16 @@ async def test_audited_trace_events_inherit_active_root_trace_id() -> None:
             del name, attributes
             yield Handle()
 
-        async def event(self, name: str, *, attributes: object = None) -> None:
+        async def event(self, name: str, *, attributes: object = None) -> object:
             del name, attributes
+            return SimpleNamespace(id="EVENT-1")
 
     audited = acceptance_runner.AuditedTraceAdapter(Delegate())
     async with audited.span("vfas.run", attributes={"run_id": "RUN-1"}):
         await audited.event("vfas.proof.verified", attributes={"run_id": "RUN-1"})
     event = next(item for item in audited.observations if item["kind"] == "event")
     assert event["trace_id"] == "TRACE-ROOT"
+    assert event["observation_id"] == "EVENT-1"
 
 
 def test_failure_envelope_refuses_to_overwrite_unknown_run_directory(
