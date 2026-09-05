@@ -100,11 +100,22 @@ function taskWire(taskId, status, dependencies = [], progress = 0, parentTaskId 
   return {
     task_id: taskId,
     run_id: "RUN-A",
-    research_object_id: "OBJ-A",
     parent_task_id: parentTaskId,
+    task_type: "fundamental_analysis",
+    goal: "Analyze the exact public company",
+    assigned_agent: "fundamental_analyst",
+    skill_id: "fundamental_analysis_v1",
+    dependencies,
+    origin: "PLAN",
+    reason_code: null,
     status,
     progress,
-    dependencies
+    attempt_count: 1,
+    task_input_evidence_ids: [],
+    task_output_evidence_ids: [],
+    evidence_acquisition_status: null,
+    evidence_source_coverage: {},
+    created_at: "2026-09-05T00:00:01Z"
   };
 }
 
@@ -295,7 +306,9 @@ test("confirmation decoder rejects false auto-start and every changed admission 
     (wire) => { wire.admission.goal_id = "GOAL-B"; },
     (wire) => { wire.admission.scheme_id = "SCHEME-B"; },
     (wire) => { wire.admission.draft_hash = hash("d"); },
-    (wire) => { wire.admission.projection_ref = "/api/research-runs/RUN-B/projection"; }
+    (wire) => { wire.admission.projection_ref = "/api/research-runs/RUN-B/projection"; },
+    (wire) => { wire.admission.projection_ref = "/prefix/api/research-runs/RUN-A/projection"; },
+    (wire) => { wire.admission.events_ref = "/prefix/api/research-runs/RUN-A/events"; }
   ]) {
     const wire = confirmWire();
     mutate(wire);
@@ -348,6 +361,8 @@ test("projection Task status/dependency truth is mandatory, unique, same-Run, an
     (wire) => { delete wire.tasks[0].progress; },
     (wire) => { wire.tasks[0].progress = 1.01; wire.actual_graph.tasks[0].progress = 1.01; },
     (wire) => { delete wire.tasks[0].parent_task_id; },
+    (wire) => { delete wire.tasks[0].attempt_count; },
+    (wire) => { wire.tasks[0].research_object_id = "OBJ-A"; },
     (wire) => { wire.tasks[1].parent_task_id = "TASK-FOREIGN"; wire.actual_graph.tasks[1].parent_task_id = "TASK-FOREIGN"; },
     (wire) => { wire.tasks[1].parent_task_id = "TASK-B"; wire.actual_graph.tasks[1].parent_task_id = "TASK-B"; },
     (wire) => { wire.tasks[1].dependencies = ["TASK-A", "TASK-A"]; },
@@ -392,10 +407,17 @@ test("projection decoder closes exact top/object/run/Goal/Scheme/graph/lifecycle
     (wire) => { wire.lifecycle.progress.fraction = 0.5; },
     (wire) => { wire.review.availability.extra = true; },
     (wire) => { wire.review.availability.reason_code = null; },
+    (wire) => { wire.review.review_id = "REVIEW-A"; wire.review.status = "PASS"; },
     (wire) => { delete wire.result.released_at; },
+    (wire) => { wire.result.released_result_id = "RESULT-A"; wire.result.canonical_record_id = "CANONICAL-A"; wire.result.released_at = "2026-09-05T00:00:02Z"; },
     (wire) => { wire.artifacts.availability = availability("AVAILABLE", null); },
+    (wire) => { wire.artifacts.report_id = "REPORT-A"; wire.artifacts.representation_ids = ["REPRESENTATION-A"]; },
     (wire) => { wire.proof.policy = "INFERRED"; },
     (wire) => { wire.execution.availability = availability("AVAILABLE", null); },
+    (wire) => { wire.execution.canonical_record_id = "CANONICAL-A"; },
+    (wire) => { wire.activity = [{ event_id: "EVENT-1", type: "task.progress", sequence: 1, timestamp: "2026-09-05T00:00:01Z", task_id: "TASK-A", message_code: "TASK_PROGRESS", extra: true }]; },
+    (wire) => { wire.activity = [{ event_id: "EVENT-3", type: "task.progress", sequence: 3, timestamp: "2026-09-05T00:00:01Z", task_id: "TASK-A", message_code: "TASK_PROGRESS" }]; },
+    (wire) => { wire.activity = [{ event_id: "EVENT-1", type: "task.progress", sequence: 1, timestamp: "2026-09-05T00:00:01Z", task_id: "TASK-FOREIGN", message_code: "TASK_PROGRESS" }]; },
     (wire) => { wire.terminal.extra = true; },
     (wire) => { wire.terminal.outcome = "SUCCESS"; }
   ];
@@ -491,6 +513,15 @@ test("released terminal projection requires complete explicit release identity a
     availability: availability("AVAILABLE", null),
     canonical_record_id: "CANONICAL-A"
   };
+  wire.activity = [{
+    event_id: "EVENT-A",
+    type: "run.completed",
+    sequence: 2,
+    timestamp: "2026-09-05T00:00:02Z",
+    task_id: null,
+    message_code: "RUN_COMPLETED",
+    status: "RELEASED"
+  }];
   wire.terminal = { is_terminal: true, outcome: "SUCCESS", event_id: "EVENT-A", sequence: 2 };
   assert.equal(decodeAtomicRunProjection(wire).terminal.outcome, "SUCCESS");
   for (const mutate of [
@@ -533,10 +564,24 @@ test("terminal unsuccessful lifecycle reaches one only after every authoritative
     progress: { method: "ACTUAL_TASK_MEAN_V1", completed_tasks: 1, total_tasks: 2, fraction: 1 },
     terminal: true,
     terminal_outcome: "FAILURE",
-    safe_failure: { failure_code: "SAFE_FAILURE" }
+    safe_failure: {
+      status: "FAILED",
+      failure_stage: "TASK_EXECUTION",
+      failure_code: "TASK_EXECUTION_FAILED",
+      safe_message: "The Run failed safely"
+    }
   });
   wire.review = { availability: availability("NOT_GENERATED"), review_id: null, status: null };
   wire.result.availability = availability("NOT_RELEASED");
+  wire.activity = [{
+    event_id: "EVENT-FAILED",
+    type: "run.failed",
+    sequence: 2,
+    timestamp: "2026-09-05T00:00:02Z",
+    task_id: null,
+    message_code: "RUN_FAILED",
+    status: "FAILED"
+  }];
   wire.terminal = { is_terminal: true, outcome: "FAILURE", event_id: "EVENT-FAILED", sequence: 2 };
   assert.equal(decodeAtomicRunProjection(wire).lifecycle.progress.fraction, 1);
   const nonterminalTask = structuredClone(wire);
@@ -609,6 +654,15 @@ test("typed error vocabulary enforces its HTTP, retry, recovery, and safe-detail
   const providerLeak = structuredClone(wire);
   providerLeak.error.message = "Langfuse provider response failed";
   assert.throws(() => decodeErrorEnvelope(providerLeak, 404), /PUBLIC_SURFACE_LEAK/);
+  for (const mutate of [
+    (candidate) => { candidate.extra = true; },
+    (candidate) => { candidate.error.extra = true; },
+    (candidate) => { candidate.error.resource.extra = true; }
+  ]) {
+    const candidate = structuredClone(wire);
+    mutate(candidate);
+    assert.throws(() => decodeErrorEnvelope(candidate, 404), ContractViolation);
+  }
 });
 
 test("one Confirm admits the Run and no separate Start/Execute mutation exists", () => {
@@ -672,28 +726,49 @@ test("released financial decoder captures one real adversarial wire decimal as a
     corporate_action_guard_refs: [],
     limitations: []
   };
-  const response = { result: { released_metrics: [metric] }, report: {} };
+  const response = {
+    object_id: "OBJ-C",
+    run_id: metric.run_id,
+    released_result_id: "RESULT-C",
+    canonical_record_id: "CANONICAL-C",
+    released_at: "2026-09-05T00:05:00Z",
+    metrics: [metric],
+    claims: [],
+    material_calculation_dispositions: [],
+    research_source_coverage: null,
+    limitations: [],
+    availability: availability("AVAILABLE", null)
+  };
   assert.equal(isAdversarialCanonicalDecimal(metric.canonical_value), true);
   assert.equal(isAdversarialCanonicalDecimal("0.6547"), false);
   const decoded = decodeReleasedFinancialMetricEvidence(response, {
     runId: metric.run_id,
+    objectId: "OBJ-C",
     metricId: metric.metric_id,
     adversarialProperty: "NUMBER_STRING_ROUNDTRIP_CHANGES"
   });
   assert.equal(decoded.canonicalValue, "0.6547000000000000");
   assert.notEqual(String(Number(decoded.canonicalValue)), decoded.canonicalValue);
+  assert.throws(() => decodeReleasedFinancialMetricEvidence(
+    { result: { released_metrics: [metric] }, report: {} },
+    { runId: metric.run_id, objectId: "OBJ-C", metricId: metric.metric_id }
+  ), ContractViolation);
   for (const mutate of [
-    (wire) => { wire.result.released_metrics[0].canonical_value = 0.6547; },
-    (wire) => { wire.result.released_metrics[0].canonical_value = "0.6547"; },
-    (wire) => { wire.result.released_metrics[0].run_id = "RUN-FOREIGN"; },
-    (wire) => { wire.result.released_metrics[0].proof.status = "VALID"; },
-    (wire) => { wire.result.released_metrics[0].extra = true; },
-    (wire) => { wire.result.released_metrics.push(structuredClone(wire.result.released_metrics[0])); }
+    (wire) => { wire.extra = true; },
+    (wire) => { wire.object_id = "OBJ-FOREIGN"; },
+    (wire) => { wire.availability = availability("NOT_RELEASED", "NO_RELEASED_RUN"); },
+    (wire) => { wire.metrics[0].canonical_value = 0.6547; },
+    (wire) => { wire.metrics[0].canonical_value = "0.6547"; },
+    (wire) => { wire.metrics[0].run_id = "RUN-FOREIGN"; },
+    (wire) => { wire.metrics[0].proof.status = "VALID"; },
+    (wire) => { wire.metrics[0].extra = true; },
+    (wire) => { wire.metrics.push(structuredClone(wire.metrics[0])); }
   ]) {
     const wire = structuredClone(response);
     mutate(wire);
     assert.throws(() => decodeReleasedFinancialMetricEvidence(wire, {
       runId: metric.run_id,
+      objectId: "OBJ-C",
       metricId: metric.metric_id,
       adversarialProperty: "NUMBER_STRING_ROUNDTRIP_CHANGES"
     }), ContractViolation);

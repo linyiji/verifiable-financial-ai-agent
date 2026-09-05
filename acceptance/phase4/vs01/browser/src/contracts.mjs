@@ -112,10 +112,37 @@ const PATH_CHANGE_KEYS = Object.freeze([
   "path_change_id", "source_kind", "source_id", "change_kind", "status", "decision", "reason_code",
   "task_refs", "operations", "graph_version_before", "graph_version_after", "created_at", "resolved_at"
 ]);
+const TASK_KEYS = Object.freeze([
+  "task_id", "run_id", "parent_task_id", "task_type", "goal", "assigned_agent", "skill_id",
+  "dependencies", "origin", "reason_code", "status", "progress", "attempt_count",
+  "task_input_evidence_ids", "task_output_evidence_ids", "evidence_acquisition_status",
+  "evidence_source_coverage", "created_at"
+]);
+const ACTIVITY_REQUIRED_KEYS = Object.freeze([
+  "event_id", "type", "sequence", "timestamp", "task_id", "message_code"
+]);
+const ACTIVITY_OPTIONAL_KEYS = Object.freeze([
+  "status", "actor_id", "actor_type", "duration_ms", "input_refs", "output_refs",
+  "evidence_refs", "calculation_refs", "claim_refs", "judgment_refs", "review_refs",
+  "proof_refs", "artifact_refs", "trace_bundle_refs"
+]);
 const TERMINAL_OUTCOME_BY_STATUS = Object.freeze({
   RELEASED: "SUCCESS",
   FAILED: "FAILURE",
   CANCELLED: "CANCELLED"
+});
+const FAILURE_CODES_BY_STAGE = Object.freeze({
+  PLANNING: new Set(["PLANNING_FAILED"]),
+  DATA_EVIDENCE: new Set(["DATA_EVIDENCE_FAILED"]),
+  TASK_EXECUTION: new Set(["TASK_EXECUTION_FAILED"]),
+  GENERATED_CAPABILITY: new Set(["GENERATED_CAPABILITY_FAILED"]),
+  FINANCIAL_REVIEW: new Set(["FINANCIAL_REVIEW_BLOCKED", "FINANCIAL_REVIEW_FAILED"]),
+  PROOF: new Set(["PROOF_INVALID", "PROOF_FAILED"]),
+  ARTIFACT_GENERATION: new Set(["REQUIRED_ARTIFACT_GENERATION_FAILED"]),
+  RELEASE: new Set(["RELEASE_GATE_BLOCKED", "RELEASE_FAILED"]),
+  POST_SCHEDULER: new Set(["POST_SCHEDULER_FAILED"]),
+  PERSISTENCE: new Set(["PERSISTENCE_FINALIZATION_FAILED"]),
+  CANCELLATION: new Set(["RUN_CANCELLED"])
 });
 
 export const PUBLIC_SURFACE_PATTERNS = Object.freeze([
@@ -501,10 +528,10 @@ export function decodeConfirmRunResponse(value, expectedDraft) {
   const runId = idAt(admission.run_id, "confirm.admission.run_id");
   const projectionRef = stringAt(admission.projection_ref, "confirm.admission.projection_ref");
   const eventsRef = stringAt(admission.events_ref, "confirm.admission.events_ref");
-  if (!new URL(projectionRef, "http://contract.invalid").pathname.endsWith(`/research-runs/${encodeURIComponent(runId)}/projection`)) {
+  if (projectionRef !== `/api/research-runs/${encodeURIComponent(runId)}/projection`) {
     violation("IDENTITY_MISMATCH", "confirm.admission.projection_ref", "reference does not identify admitted Run");
   }
-  if (!new URL(eventsRef, "http://contract.invalid").pathname.endsWith(`/research-runs/${encodeURIComponent(runId)}/events`)) {
+  if (eventsRef !== `/api/research-runs/${encodeURIComponent(runId)}/events`) {
     violation("IDENTITY_MISMATCH", "confirm.admission.events_ref", "reference does not identify admitted Run");
   }
 
@@ -541,16 +568,30 @@ export function decodeConfirmRunResponse(value, expectedDraft) {
 
 function readTask(value, path, expectedRunId, expectedObjectId) {
   const task = objectAt(value, path);
+  exactKeysAt(task, TASK_KEYS, path);
   const taskId = idAt(task.task_id, `${path}.task_id`);
   const runId = equalAt(idAt(task.run_id, `${path}.run_id`), expectedRunId, `${path}.run_id`);
-  if (Object.hasOwn(task, "research_object_id")) {
-    equalAt(idAt(task.research_object_id, `${path}.research_object_id`), expectedObjectId, `${path}.research_object_id`);
-  }
+  void expectedObjectId;
   const status = stringAt(task.status, `${path}.status`);
   if (!TASK_STATUSES.has(status)) violation("SCHEMA_INCOMPATIBLE", `${path}.status`, "unsupported Task status");
   const progress = numberAt(task.progress, `${path}.progress`, 0, 1);
   const parentTaskId = nullableIdAt(task.parent_task_id, `${path}.parent_task_id`);
   const dependencyIds = uniqueIdsAt(task.dependencies, `${path}.dependencies`);
+  stringAt(task.task_type, `${path}.task_type`);
+  stringAt(task.goal, `${path}.goal`);
+  stringAt(task.assigned_agent, `${path}.assigned_agent`);
+  idAt(task.skill_id, `${path}.skill_id`);
+  if (!new Set(["PLAN", "REPLAN", "REVIEW_FIX"]).has(stringAt(task.origin, `${path}.origin`))) {
+    violation("SCHEMA_INCOMPATIBLE", `${path}.origin`, "unsupported Task origin");
+  }
+  nullableStringAt(task.reason_code, `${path}.reason_code`);
+  integerAt(task.attempt_count, `${path}.attempt_count`, 0);
+  uniqueIdsAt(task.task_input_evidence_ids, `${path}.task_input_evidence_ids`);
+  uniqueIdsAt(task.task_output_evidence_ids, `${path}.task_output_evidence_ids`);
+  nullableStringAt(task.evidence_acquisition_status, `${path}.evidence_acquisition_status`);
+  objectAt(task.evidence_source_coverage, `${path}.evidence_source_coverage`);
+  assertSafePublicJson(task.evidence_source_coverage, `${path}.evidence_source_coverage`);
+  timestampAt(task.created_at, `${path}.created_at`);
   if (parentTaskId === taskId) violation("SCHEMA_INCOMPATIBLE", `${path}.parent_task_id`, "Task cannot parent itself");
   if (dependencyIds.includes(taskId)) violation("SCHEMA_INCOMPATIBLE", `${path}.dependencies`, "Task cannot depend on itself");
   assertSafePublicJson(task, path);
@@ -595,18 +636,7 @@ function taskEdges(tasks) {
 
 function readGraph(value, path, expectedRunId, expectedObjectId, expectedGraphId, expectedVersion) {
   const graph = objectAt(value, path);
-  for (const field of ["graph_id", "run_id", "version", "tasks"]) {
-    if (!Object.hasOwn(graph, field)) {
-      violation("SCHEMA_INCOMPATIBLE", `${path}.${field}`, "required authority-backed graph field is absent");
-    }
-  }
-  if (Object.hasOwn(graph, "edges")) {
-    violation(
-      "SCHEMA_INCOMPATIBLE",
-      `${path}.edges`,
-      "explicit graph-edge wire encoding is not frozen; candidate review is required"
-    );
-  }
+  exactKeysAt(graph, ["graph_id", "run_id", "version", "tasks"], path);
   assertSafePublicJson(graph, path);
   const graphId = equalAt(idAt(graph.graph_id, `${path}.graph_id`), expectedGraphId, `${path}.graph_id`);
   const runId = equalAt(idAt(graph.run_id, `${path}.run_id`), expectedRunId, `${path}.run_id`);
@@ -791,8 +821,24 @@ function readLifecycle(value, run, tasks) {
   equalAt(terminal, expectedOutcome !== null, "projection.lifecycle.terminal", "INTEGRITY_FAILURE");
   equalAt(nullableStringAt(lifecycle.terminal_outcome, "projection.lifecycle.terminal_outcome"), expectedOutcome, "projection.lifecycle.terminal_outcome", "INTEGRITY_FAILURE");
   if (lifecycle.safe_failure !== null) {
-    objectAt(lifecycle.safe_failure, "projection.lifecycle.safe_failure");
-    assertSafePublicJson(lifecycle.safe_failure, "projection.lifecycle.safe_failure");
+    const failure = objectAt(lifecycle.safe_failure, "projection.lifecycle.safe_failure");
+    exactKeysAt(
+      failure,
+      ["status", "failure_stage", "failure_code", "safe_message"],
+      "projection.lifecycle.safe_failure"
+    );
+    equalAt(stringAt(failure.status, "projection.lifecycle.safe_failure.status"), run.status, "projection.lifecycle.safe_failure.status", "INTEGRITY_FAILURE");
+    const stage = stringAt(failure.failure_stage, "projection.lifecycle.safe_failure.failure_stage");
+    const code = stringAt(failure.failure_code, "projection.lifecycle.safe_failure.failure_code");
+    if (run.status === "CANCELLED") {
+      if (stage !== "CANCELLATION" || code !== "RUN_CANCELLED") {
+        violation("INTEGRITY_FAILURE", "projection.lifecycle.safe_failure", "CANCELLED failure tuple is invalid");
+      }
+    } else if (!FAILURE_CODES_BY_STAGE[stage]?.has(code)) {
+      violation("SCHEMA_INCOMPATIBLE", "projection.lifecycle.safe_failure", "unsupported failure stage/code tuple");
+    }
+    nullableStringAt(failure.safe_message, "projection.lifecycle.safe_failure.safe_message");
+    assertSafePublicJson(failure, "projection.lifecycle.safe_failure");
   }
   if (new Set(["FAILED", "CANCELLED"]).has(run.status) && lifecycle.safe_failure === null) {
     violation("INTEGRITY_FAILURE", "projection.lifecycle.safe_failure", "unsuccessful terminal Run requires a safe failure fact");
@@ -822,6 +868,9 @@ function readOwnedSummaries(wire, run) {
   if (reviewAvailability.status === "AVAILABLE" && (reviewId === null || reviewStatus === null)) {
     violation("INTEGRITY_FAILURE", "projection.review", "available Review requires explicit identity and status");
   }
+  if ((reviewAvailability.status === "AVAILABLE") !== (reviewId !== null)) {
+    violation("INTEGRITY_FAILURE", "projection.review", "Review identity/status must be present exactly when AVAILABLE");
+  }
 
   const result = objectAt(wire.result, "projection.result");
   exactKeysAt(result, ["availability", "released_result_id", "canonical_record_id", "released_at"], "projection.result");
@@ -836,6 +885,9 @@ function readOwnedSummaries(wire, run) {
   if (resultAvailability.status === "AVAILABLE" && resultTuplePresent !== 3) {
     violation("INTEGRITY_FAILURE", "projection.result", "available result requires full released identity tuple");
   }
+  if ((resultAvailability.status === "AVAILABLE") !== (resultTuplePresent === 3)) {
+    violation("INTEGRITY_FAILURE", "projection.result", "result identity/time must be present exactly when AVAILABLE");
+  }
   if (run.status !== "RELEASED" && resultTuplePresent !== 0) {
     violation("INTEGRITY_FAILURE", "projection.result", "non-RELEASED Run cannot expose a released result identity tuple");
   }
@@ -847,6 +899,12 @@ function readOwnedSummaries(wire, run) {
   const representationIds = uniqueIdsAt(artifacts.representation_ids, "projection.artifacts.representation_ids");
   if (artifactsAvailability.status === "AVAILABLE" && (reportId === null || representationIds.length === 0)) {
     violation("INTEGRITY_FAILURE", "projection.artifacts", "available artifacts require report and representation identities");
+  }
+  if ((reportId === null) !== (representationIds.length === 0)) {
+    violation("INTEGRITY_FAILURE", "projection.artifacts", "artifact report and representation identities are partial");
+  }
+  if ((artifactsAvailability.status === "AVAILABLE") !== (reportId !== null)) {
+    violation("INTEGRITY_FAILURE", "projection.artifacts", "artifact identities must be present exactly when AVAILABLE");
   }
 
   const proof = objectAt(wire.proof, "projection.proof");
@@ -871,6 +929,9 @@ function readOwnedSummaries(wire, run) {
   const executionCanonicalRecordId = nullableIdAt(execution.canonical_record_id, "projection.execution.canonical_record_id");
   if (executionAvailability.status === "AVAILABLE" && executionCanonicalRecordId === null) {
     violation("INTEGRITY_FAILURE", "projection.execution", "available execution requires canonical identity");
+  }
+  if ((executionAvailability.status === "AVAILABLE") !== (executionCanonicalRecordId !== null)) {
+    violation("INTEGRITY_FAILURE", "projection.execution", "execution identity must be present exactly when AVAILABLE");
   }
   if (executionCanonicalRecordId !== null && canonicalRecordId !== null) {
     equalAt(executionCanonicalRecordId, canonicalRecordId, "projection.execution.canonical_record_id", "INTEGRITY_FAILURE");
@@ -915,6 +976,32 @@ function readTerminal(value, run, projectionSequence) {
     violation("INTEGRITY_FAILURE", "projection.terminal", "nonterminal projection cannot carry terminal metadata");
   }
   return { isTerminal, outcome, eventId, sequence };
+}
+
+function readActivity(value, path, expectedRunTaskIds) {
+  const activity = objectAt(value, path);
+  const presentOptional = ACTIVITY_OPTIONAL_KEYS.filter((key) => Object.hasOwn(activity, key));
+  exactKeysAt(activity, [...ACTIVITY_REQUIRED_KEYS, ...presentOptional], path);
+  const eventId = idAt(activity.event_id, `${path}.event_id`);
+  const type = stringAt(activity.type, `${path}.type`);
+  const sequence = integerAt(activity.sequence, `${path}.sequence`, 1);
+  const timestamp = timestampAt(activity.timestamp, `${path}.timestamp`);
+  const taskId = nullableIdAt(activity.task_id, `${path}.task_id`);
+  if (taskId !== null && !expectedRunTaskIds.has(taskId)) {
+    violation("IDENTITY_MISMATCH", `${path}.task_id`, "activity references an unknown Task");
+  }
+  stringAt(activity.message_code, `${path}.message_code`);
+  for (const key of ["status", "actor_id", "actor_type"]) {
+    if (Object.hasOwn(activity, key)) nullableStringAt(activity[key], `${path}.${key}`);
+  }
+  if (Object.hasOwn(activity, "duration_ms") && activity.duration_ms !== null) {
+    integerAt(activity.duration_ms, `${path}.duration_ms`, 0);
+  }
+  for (const key of ACTIVITY_OPTIONAL_KEYS.filter((key) => key.endsWith("_refs"))) {
+    if (Object.hasOwn(activity, key)) uniqueIdsAt(activity[key], `${path}.${key}`);
+  }
+  assertSafePublicJson(activity, path);
+  return { eventId, type, sequence, timestamp, taskId, status: activity.status ?? null };
 }
 
 export function decodeAtomicRunProjection(value, expectedAdmission = {}) {
@@ -1011,12 +1098,32 @@ export function decodeAtomicRunProjection(value, expectedAdmission = {}) {
   }
 
   const pathChanges = readPathChanges(wire.path_changes, tasks, graphVersion);
-  const activity = arrayAt(wire.activity, "projection.activity");
-  assertSafePublicJson(activity, "projection.activity");
+  const taskIds = new Set(tasks.map((task) => task.taskId));
+  const activity = arrayAt(wire.activity, "projection.activity").map((item, index) =>
+    readActivity(item, `projection.activity[${index}]`, taskIds)
+  );
+  if (new Set(activity.map((item) => item.eventId)).size !== activity.length) {
+    violation("SCHEMA_INCOMPATIBLE", "projection.activity", "duplicate RuntimeEvent identity");
+  }
+  for (const [index, item] of activity.entries()) {
+    if (item.sequence > projectionSequence || (index > 0 && item.sequence <= activity[index - 1].sequence)) {
+      violation("INTEGRITY_FAILURE", `projection.activity[${index}].sequence`, "activity sequence is not strictly ordered within projection watermark");
+    }
+  }
   const lifecycle = readLifecycle(wire.lifecycle, run, tasks);
   const summaries = readOwnedSummaries(wire, run);
   const terminal = readTerminal(wire.terminal, run, projectionSequence);
   equalAt(lifecycle.terminal, terminal.isTerminal, "projection.lifecycle.terminal", "INTEGRITY_FAILURE");
+  if (terminal.isTerminal) {
+    const finalActivity = activity.at(-1);
+    if (!finalActivity || finalActivity.eventId !== terminal.eventId || finalActivity.sequence !== terminal.sequence) {
+      violation("INTEGRITY_FAILURE", "projection.terminal", "terminal state does not close to final activity");
+    }
+    const expectedType = run.status === "RELEASED" ? "run.completed" : "run.failed";
+    if (finalActivity.type !== expectedType || finalActivity.status !== run.status) {
+      violation("INTEGRITY_FAILURE", "projection.activity", "terminal activity contradicts Run status");
+    }
+  }
   if (run.status === "RELEASED") {
     for (const [name, availability] of [
       ["review", summaries.review.availability],
@@ -1100,8 +1207,14 @@ export function assertAtomicProjectionEtag(headerValue, projection) {
 
 export function decodeErrorEnvelope(value, httpStatus) {
   const wire = objectAt(value, "errorEnvelope");
+  exactKeysAt(wire, ["schema_version", "error"], "errorEnvelope");
   literalAt(wire.schema_version, CONTRACT.error, "errorEnvelope.schema_version");
   const error = objectAt(wire.error, "errorEnvelope.error");
+  exactKeysAt(
+    error,
+    ["code", "message", "retryable", "recovery", "request_id", "resource", "details"],
+    "errorEnvelope.error"
+  );
   const code = stringAt(error.code, "errorEnvelope.error.code");
   const protocol = ERROR_PROTOCOL[code];
   if (!protocol) violation("SCHEMA_INCOMPATIBLE", "errorEnvelope.error.code", "unsupported error code");
@@ -1110,6 +1223,7 @@ export function decodeErrorEnvelope(value, httpStatus) {
   equalAt(stringAt(error.recovery, "errorEnvelope.error.recovery"), protocol[2], "errorEnvelope.error.recovery", "SCHEMA_INCOMPATIBLE");
   const resource = error.resource === null ? null : objectAt(error.resource, "errorEnvelope.error.resource");
   if (resource) {
+    exactKeysAt(resource, ["type", "id"], "errorEnvelope.error.resource");
     idAt(resource.type, "errorEnvelope.error.resource.type");
     idAt(resource.id, "errorEnvelope.error.resource.id");
   }
@@ -1226,25 +1340,23 @@ export function isAdversarialCanonicalDecimal(value) {
 
 export function decodeReleasedFinancialMetricEvidence(value, expected = {}) {
   const root = objectAt(value, "releasedResult");
-  const candidates = [];
-  const visit = (item, path, depth) => {
-    if (depth > 32) violation("SCHEMA_INCOMPATIBLE", path, "released result nesting is too deep");
-    if (item === null || typeof item !== "object") return;
-    if (Array.isArray(item)) {
-      item.forEach((entry, index) => visit(entry, `${path}[${index}]`, depth + 1));
-      return;
-    }
-    if (
-      Object.hasOwn(item, "metric_id")
-      && Object.hasOwn(item, "run_id")
-      && Object.hasOwn(item, "canonical_value")
-      && item.metric_id === expected.metricId
-    ) {
-      candidates.push({ item, path });
-    }
-    for (const [key, entry] of Object.entries(item)) visit(entry, `${path}.${key}`, depth + 1);
-  };
-  visit(root, "releasedResult", 0);
+  exactKeysAt(root, [
+    "object_id", "run_id", "released_result_id", "canonical_record_id", "released_at", "metrics",
+    "claims", "material_calculation_dispositions", "research_source_coverage", "limitations", "availability"
+  ], "releasedResult");
+  const rootRunId = equalAt(idAt(root.run_id, "releasedResult.run_id"), expected.runId, "releasedResult.run_id");
+  const objectId = equalAt(idAt(root.object_id, "releasedResult.object_id"), expected.objectId, "releasedResult.object_id");
+  idAt(root.released_result_id, "releasedResult.released_result_id");
+  idAt(root.canonical_record_id, "releasedResult.canonical_record_id");
+  timestampAt(root.released_at, "releasedResult.released_at");
+  const availability = decodeAvailability(root.availability, "releasedResult.availability");
+  if (availability.status !== "AVAILABLE") {
+    violation("INTEGRITY_FAILURE", "releasedResult.availability", "released result body must be AVAILABLE");
+  }
+  const metrics = arrayAt(root.metrics, "releasedResult.metrics");
+  const candidates = metrics
+    .map((item, index) => ({ item: objectAt(item, `releasedResult.metrics[${index}]`), path: `releasedResult.metrics[${index}]` }))
+    .filter(({ item }) => item.metric_id === expected.metricId);
   if (candidates.length !== 1) {
     violation("INTEGRITY_FAILURE", "releasedResult", `expected exactly one metric ${expected.metricId}; found ${candidates.length}`);
   }
@@ -1256,6 +1368,7 @@ export function decodeReleasedFinancialMetricEvidence(value, expected = {}) {
     "corporate_action_status", "corporate_action_guard_refs", "limitations"
   ], path);
   const runId = equalAt(idAt(metric.run_id, `${path}.run_id`), expected.runId, `${path}.run_id`);
+  equalAt(runId, rootRunId, `${path}.run_id`, "INTEGRITY_FAILURE");
   const metricId = equalAt(idAt(metric.metric_id, `${path}.metric_id`), expected.metricId, `${path}.metric_id`);
   const canonicalValue = stringAt(metric.canonical_value, `${path}.canonical_value`);
   if (!CANONICAL_DECIMAL_PATTERN.test(canonicalValue)) {
@@ -1309,6 +1422,18 @@ export function decodeReleasedFinancialMetricEvidence(value, expected = {}) {
     ["corporate_action_status", metric.corporate_action_status]
   ]) {
     if (item !== null) assertSafePublicJson(item, `${path}.${key}`);
+  }
+  for (const [name, collection] of [
+    ["claims", root.claims],
+    ["material_calculation_dispositions", root.material_calculation_dispositions],
+    ["limitations", root.limitations]
+  ]) {
+    arrayAt(collection, `releasedResult.${name}`);
+    assertSafePublicJson(collection, `releasedResult.${name}`);
+  }
+  if (root.research_source_coverage !== null) {
+    objectAt(root.research_source_coverage, "releasedResult.research_source_coverage");
+    assertSafePublicJson(root.research_source_coverage, "releasedResult.research_source_coverage");
   }
   return deepFreeze({
     runId,

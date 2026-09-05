@@ -82,7 +82,7 @@ def _error(
     )
 
 
-def _object_body() -> dict[str, Any]:
+def _object_identity() -> dict[str, Any]:
     return {
         "object_id": OBJECT_ID,
         "object_type": "public_company",
@@ -92,6 +92,16 @@ def _object_body() -> dict[str, Any]:
         "sector": "Technology",
         "currency": "USD",
         "identity_version": 1,
+    }
+
+
+def _object_body() -> dict[str, Any]:
+    return {
+        "object": _object_identity(),
+        "latest_released_run_id": None,
+        "released_result_availability": _availability("NOT_RELEASED", "NO_RELEASED_RUN"),
+        "run_count": 0,
+        "last_activity": None,
         "created_at": NOW,
         "updated_at": NOW,
     }
@@ -211,9 +221,7 @@ def _availability(status: str, reason: str | None) -> dict[str, Any]:
 
 
 def _projection() -> dict[str, Any]:
-    object_identity = _object_body()
-    object_identity.pop("created_at")
-    object_identity.pop("updated_at")
+    object_identity = _object_identity()
     run = _run_detail()
     task = {
         "task_id": "TASK-VS01",
@@ -228,6 +236,12 @@ def _projection() -> dict[str, Any]:
         "reason_code": None,
         "status": "RUNNING",
         "progress": 0.2,
+        "attempt_count": 1,
+        "task_input_evidence_ids": [],
+        "task_output_evidence_ids": [],
+        "evidence_acquisition_status": None,
+        "evidence_source_coverage": {},
+        "created_at": NOW,
     }
     return {
         "projection_schema_version": "phase4-run-projection/v1",
@@ -345,7 +359,14 @@ def _collection(*, with_run: bool) -> dict[str, Any]:
                     "total_tasks": 1,
                     "fraction": 0.2,
                 },
-                "activity": None,
+                "activity": {
+                    "event_id": "EVENT-VS01-5",
+                    "type": "task.progress",
+                    "sequence": 5,
+                    "timestamp": NOW,
+                    "task_id": "TASK-VS01",
+                    "message_code": "TASK_PROGRESS",
+                },
                 "graph_version": 1,
                 "projection_revision": 2,
                 "projection_sequence": 5,
@@ -503,6 +524,23 @@ def test_pre_restart_harness_accepts_only_the_frozen_journey() -> None:
     assert "confirm-key" not in serialized
     assert "prepare-key" not in serialized
     assert "object-key" not in serialized
+
+
+@pytest.mark.parametrize("route", ["/api/objects", "/api/research-runs/prepare"])
+def test_harness_rejects_200_for_fixed_201_creation_routes(route: str) -> None:
+    class WrongStatusTransport(ScriptedContractTransport):
+        def request(self, method: str, path: str, **kwargs: Any) -> HttpObservation:
+            response = super().request(method, path, **kwargs)
+            if method == "POST" and path == route and response.status_code == 201:
+                return HttpObservation(
+                    status_code=200,
+                    headers=response.headers,
+                    body=response.body,
+                )
+            return response
+
+    report = run_backend_vs01(_config(), transport=WrongStatusTransport())
+    assert not report.passed
 
 
 def test_post_restart_harness_requires_and_accepts_postgresql_boundary_evidence() -> None:
@@ -675,9 +713,25 @@ def test_atomic_projection_decoder_fails_closed_for_nested_shape_and_identity_mu
     mutated("lifecycle exact fields")["lifecycle"].pop("terminal_outcome")
     mutated("lifecycle non-failure payload")["lifecycle"]["safe_failure"] = {"code": "UNSAFE"}
     mutated("review exact fields")["review"].pop("status")
+    mutated("review availability identity closure")["review"].update(
+        {"review_id": "review-1", "status": "PASS"}
+    )
     mutated("result timestamp")["result"]["released_at"] = 7
+    mutated("result availability identity closure")["result"].update(
+        {
+            "released_result_id": "result-1",
+            "canonical_record_id": "canonical-1",
+            "released_at": NOW,
+        }
+    )
     mutated("artifact representation type")["artifacts"]["representation_ids"] = [7]
+    mutated("artifact availability identity closure")["artifacts"].update(
+        {"report_id": "report-1", "representation_ids": ["representation-html-1"]}
+    )
     mutated("proof policy")["proof"]["policy"] = "INVENTED"
+    mutated("execution availability identity closure")["execution"][
+        "canonical_record_id"
+    ] = "canonical-1"
     mutated("terminal exact fields")["terminal"]["invented"] = True
     mutated("activity Task closure")["activity"] = [
         {
@@ -716,8 +770,8 @@ def test_atomic_projection_decoder_fails_closed_for_nested_shape_and_identity_mu
 
 def test_object_and_draft_decoders_reject_unsafe_nested_schema_drift() -> None:
     object_body = _object_body()
-    object_body["sector"] = 7
-    with pytest.raises(ContractViolation, match="object.sector"):
+    object_body["object"]["sector"] = 7
+    with pytest.raises(ContractViolation, match="object.*sector"):
         validate_research_object_detail(object_body)
 
     expected = {
@@ -735,6 +789,30 @@ def test_object_and_draft_decoders_reject_unsafe_nested_schema_drift() -> None:
     scheme_drift["scheme_snapshot"].pop("generated_model")
     with pytest.raises(ContractViolation, match="draft.scheme_snapshot fields differ"):
         validate_research_run_draft(scheme_drift, **expected)
+
+
+def test_object_detail_requires_exact_envelope_identity_and_release_closure() -> None:
+    assert validate_research_object_detail(
+        _object_body(), expected_object_id=OBJECT_ID
+    ) == OBJECT_ID
+    flat = {**_object_identity(), "created_at": NOW, "updated_at": NOW}
+    released_state = {
+        "schema_version": "phase4-released-object-core/v1",
+        "object": _object_identity(),
+    }
+    candidates = []
+    wrong_nested = _object_body()
+    wrong_nested["object"]["object_id"] = "OBJ-FOREIGN"
+    candidates.append(wrong_nested)
+    inconsistent_release = _object_body()
+    inconsistent_release["latest_released_run_id"] = "RUN-RELEASED"
+    candidates.append(inconsistent_release)
+    unknown = _object_body()
+    unknown["invented"] = True
+    candidates.extend([flat, released_state, unknown])
+    for candidate in candidates:
+        with pytest.raises(ContractViolation):
+            validate_research_object_detail(candidate, expected_object_id=OBJECT_ID)
 
 
 def test_exact_draft_confirm_collection_and_standalone_shapes_reject_drift() -> None:
@@ -780,6 +858,16 @@ def test_exact_draft_confirm_collection_and_standalone_shapes_reject_drift() -> 
     collection_extra["items"][0]["invented"] = True
     with pytest.raises(ContractViolation, match=r"collection.items\[0\] fields differ"):
         validate_run_collection(collection_extra, expected_object_id=OBJECT_ID)
+    for mutate in (
+        lambda item: item.update({"activity": None}),
+        lambda item: item["activity"].update({"sequence": 4}),
+        lambda item: item.update({"result_availability": _availability("AVAILABLE", None)}),
+        lambda item: item["progress"].update({"fraction": 1.0}),
+    ):
+        candidate = _collection(with_run=True)
+        mutate(candidate["items"][0])
+        with pytest.raises(ContractViolation):
+            validate_run_collection(candidate, expected_object_id=OBJECT_ID)
 
     validate_standalone_run_detail(
         _run_detail(standalone=True),
@@ -818,6 +906,12 @@ def test_projection_task_schema_relationships_cycles_and_nonfinite_numbers_fail_
         "reason_code",
         "status",
         "progress",
+        "attempt_count",
+        "task_input_evidence_ids",
+        "task_output_evidence_ids",
+        "evidence_acquisition_status",
+        "evidence_source_coverage",
+        "created_at",
     }
     for field in required:
         candidate = copy.deepcopy(_projection())
