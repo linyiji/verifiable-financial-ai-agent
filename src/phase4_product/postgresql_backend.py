@@ -67,18 +67,22 @@ from src.phase4_product.contracts import (
     ConfirmResearchRunRequestV1,
     ConfirmRunResponseV1,
     CreateResearchObjectRequestV1,
+    ExecutionRecordSurfaceV1,
     ExecutionSummaryV1,
+    FinancialReviewSurfaceV1,
     PrepareResearchRunRequestV1,
     ProofSummaryV1,
     RendererIdentityV1,
     ReportArtifactGroupV1,
     ReportArtifactRepresentationV1,
+    ReportSurfaceV1,
     ResearchObjectCollectionV1,
     ResearchObjectDetailV1,
     ResearchRunDetailV1,
     ResearchRunDraftV1,
     ResearchRunHistoryCollectionV1,
     ResultSummaryV1,
+    ResultsWorkspaceV1,
     ReviewSummaryV1,
     RunCollectionObjectV1,
     RunLifecycleV1,
@@ -116,6 +120,14 @@ from src.phase4_product.projections import (
     project_run_detail,
     project_run_status,
     project_scheme,
+)
+from src.phase4_product.results import (
+    ResultsIdentityError,
+    ResultsIntegrityError,
+    build_execution_record_surface,
+    build_financial_review_surface,
+    build_report_surface,
+    build_results_workspace,
 )
 from src.runtime.events import CursorPreflight, build_cursor_preflight
 from src.runtime.state import RuntimeState
@@ -1068,13 +1080,150 @@ class PostgreSQLPhase4ProductBackend:
         await self.get_run(run_id)
         raise self._unavailable("claim", claim_id, "NOT_GENERATED")
 
-    async def get_review(self, run_id: str):
-        await self.get_run(run_id)
-        raise self._unavailable("financial_review", run_id, "REVIEW_PENDING")
+    async def _results_surfaces(
+        self, run_id: str
+    ) -> tuple[
+        ResultsWorkspaceV1,
+        ReportSurfaceV1,
+        FinancialReviewSurfaceV1,
+        ExecutionRecordSurfaceV1,
+    ]:
+        """Build every M1 surface from one exact aggregate without latest lookup."""
 
-    async def get_execution(self, run_id: str, **_kwargs):
-        await self.get_run(run_id)
-        raise self._unavailable("canonical_execution", run_id, "NOT_GENERATED")
+        aggregate = await self.service.get_run(run_id)
+        run = aggregate.run
+        artifacts = aggregate.artifacts
+        canonical = artifacts.canonical_record
+        released = artifacts.released_result
+        review = artifacts.review
+        if (
+            run.run_id != run_id
+            or run.status is not RunStatus.RELEASED
+            or canonical is None
+            or released is None
+            or review is None
+        ):
+            raise self._unavailable("results_workspace", run_id, "NOT_RELEASED")
+        actual_graph = aggregate.runtime.actual_graph
+        if actual_graph is None:
+            raise product_error(
+                "INTEGRITY_FAILURE",
+                "released Results Workspace lacks its exact actual graph",
+                resource_type="results_workspace",
+                resource_id=run_id,
+            )
+        research_object = await self.service.get_object(run.research_object_id)
+        events = tuple(await self.service.event_store.replay(run_id))
+        tasks = tuple(actual_graph.tasks)
+        retained_children = (
+            *artifacts.agent_outputs,
+            *artifacts.evidence,
+            *artifacts.calculations,
+            *artifacts.corrections,
+            *artifacts.replans,
+            *artifacts.report_artifacts,
+        )
+        if any(item.run_id != run_id for item in retained_children):
+            raise product_error(
+                "IDENTITY_MISMATCH",
+                "Results Workspace retained child belongs to another Run",
+                resource_type="results_workspace",
+                resource_id=run_id,
+            )
+        html_artifacts = tuple(
+            item
+            for item in artifacts.report_artifacts
+            if item.artifact_type == "text/html"
+        )
+        if len(html_artifacts) != 1:
+            raise product_error(
+                "INTEGRITY_FAILURE",
+                "Results Workspace requires one exact HTML Report representation",
+                resource_type="results_workspace",
+                resource_id=run_id,
+            )
+        authoritative_subject_refs = {
+            run_id,
+            run.research_object_id,
+            run.goal_id,
+            run.scheme_id,
+            canonical.record_id,
+            released.result_id,
+            review.review_id,
+            *(item.task_id for item in tasks),
+            *(item.output_id for item in artifacts.agent_outputs),
+            *(item.event_id for item in events),
+            *(item.evidence_id for item in artifacts.evidence),
+            *(item.calculation_id for item in artifacts.calculations),
+            *(item.correction_id for item in artifacts.corrections),
+            *(item.replan_id for item in artifacts.replans),
+            *canonical.metric_refs,
+            *canonical.claim_refs,
+            *canonical.judgment_refs,
+            *canonical.decision_refs,
+            *canonical.generated_capability_refs,
+            *canonical.proof_refs,
+        }
+        try:
+            report_surface = build_report_surface(
+                expected_run_id=run_id,
+                expected_object_id=run.research_object_id,
+                run=run,
+                research_object=research_object,
+                canonical_record=canonical,
+                released_result=released,
+                report_artifact=html_artifacts[0],
+                tasks=tasks,
+                agent_outputs=tuple(artifacts.agent_outputs),
+                events=events,
+                review=review,
+            )
+            review_surface = build_financial_review_surface(
+                expected_run_id=run_id,
+                expected_object_id=run.research_object_id,
+                review=review,
+                canonical_record=canonical,
+                released_result=released,
+                authoritative_subject_refs=authoritative_subject_refs,
+            )
+            execution_surface = build_execution_record_surface(
+                expected_run_id=run_id,
+                expected_object_id=run.research_object_id,
+                run=run,
+                canonical_record=canonical,
+                released_result=released,
+                review=review,
+                tasks=tasks,
+                agent_outputs=tuple(artifacts.agent_outputs),
+                events=events,
+                report_contributions=report_surface.source_contributions,
+            )
+            workspace = build_results_workspace(
+                run=run,
+                report=report_surface,
+                review=review_surface,
+                execution=execution_surface,
+            )
+        except (ResultsIdentityError, ResultsIntegrityError, ValidationError) as exc:
+            raise product_error(
+                "INTEGRITY_FAILURE",
+                "exact-Run Results Workspace integrity validation failed",
+                resource_type="results_workspace",
+                resource_id=run_id,
+            ) from exc
+        return workspace, report_surface, review_surface, execution_surface
+
+    async def get_results(self, run_id: str) -> ResultsWorkspaceV1:
+        return (await self._results_surfaces(run_id))[0]
+
+    async def get_report(self, run_id: str) -> ReportSurfaceV1:
+        return (await self._results_surfaces(run_id))[1]
+
+    async def get_review(self, run_id: str) -> FinancialReviewSurfaceV1:
+        return (await self._results_surfaces(run_id))[2]
+
+    async def get_execution(self, run_id: str, **_kwargs) -> ExecutionRecordSurfaceV1:
+        return (await self._results_surfaces(run_id))[3]
 
     async def get_trace(self, run_id: str, claim_id: str):
         await self.get_run(run_id)

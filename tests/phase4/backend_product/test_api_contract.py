@@ -16,24 +16,24 @@ from src.phase4_product.api import (
     install_phase4_error_handlers,
 )
 from src.phase4_product.contracts import (
+    ArtifactSummaryV1,
     AtomicRunProjectionV1,
     AvailabilityStatus,
     AvailabilityV1,
     ConfirmResearchRunRequestV1,
     ConfirmRunResponseV1,
     ErrorCodeV1,
+    ExecutionSummaryV1,
     GoalProjectionV1,
     GraphProjectionV1,
     ObjectIdentityV1,
-    ArtifactSummaryV1,
-    ExecutionSummaryV1,
     PrepareResearchRunRequestV1,
     ProofSummaryV1,
-    ResultSummaryV1,
-    ReviewSummaryV1,
     ResearchObjectDetailV1,
     ResearchRunDetailV1,
     ResponseMetaV1,
+    ResultSummaryV1,
+    ReviewSummaryV1,
     RunAdmissionV1,
     RunLifecycleV1,
     RunProgressV1,
@@ -57,7 +57,9 @@ EXPECTED_A_ROUTES = {
     ("POST", "/api/research-runs"),
     ("GET", "/api/research-runs/{run_id}"),
     ("GET", "/api/research-runs/{run_id}/projection"),
+    ("GET", "/api/research-runs/{run_id}/results"),
     ("GET", "/api/research-runs/{run_id}/result"),
+    ("GET", "/api/research-runs/{run_id}/report-view"),
     ("GET", "/api/research-runs/{run_id}/claims/{claim_id}"),
     ("GET", "/api/research-runs/{run_id}/review-view"),
     ("GET", "/api/research-runs/{run_id}/execution-view"),
@@ -279,7 +281,7 @@ def _client() -> tuple[TestClient, StubBackend]:
     return TestClient(app, raise_server_exceptions=False), backend
 
 
-def test_isolated_router_exposes_exactly_the_frozen_17_a_routes() -> None:
+def test_isolated_router_exposes_exactly_the_frozen_19_a_routes() -> None:
     router = create_phase4_product_router()
     observed = {
         (method, route.path)

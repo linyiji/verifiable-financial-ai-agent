@@ -1333,4 +1333,385 @@ class ReleasedObjectCoreV1(FrozenWireModel):
         return self
 
 
+# Phase 4.5 exact-Run Results Workspace contracts.  These deliberately remain
+# small navigation/projection contracts rather than another aggregate model.
+ResultsSurfaceNameV1 = Literal[
+    "A_REPORT",
+    "B_FINANCIAL_REVIEW",
+    "C_EXECUTION_RECORD",
+]
+ResultsSurfaceStatusV1 = Literal["READY", "PARTIAL", "UNAVAILABLE"]
+ResultsRelationStatusV1 = Literal["AVAILABLE", "UNAVAILABLE", "NOT_APPLICABLE"]
+ExecutionActorTypeV1 = Literal["RESEARCH_LEAD", "SPECIALIST", "SUPPORTING_EXECUTION"]
+
+
+class ResultsSurfaceAvailabilityV1(FrozenWireModel):
+    status: ResultsSurfaceStatusV1
+    reason_code: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def reason_closes(self) -> ResultsSurfaceAvailabilityV1:
+        if self.status == "READY" and self.reason_code is not None:
+            raise ValueError("READY Results surface cannot carry a reason")
+        if self.status != "READY" and self.reason_code is None:
+            raise ValueError("non-READY Results surface requires an authoritative reason")
+        return self
+
+
+class ReviewCheckSelectorV1(FrozenWireModel):
+    """Non-durable locator scoped to one exact persisted ReviewRecord."""
+
+    review_id: NonBlank
+    check_code: NonBlank
+    subject_refs: tuple[NonBlank, ...]
+
+    @field_validator("subject_refs")
+    @classmethod
+    def canonical_exact_refs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(value)) != len(value):
+            raise ValueError("Review selector subject refs must be unique")
+        return tuple(sorted(value))
+
+
+class ResultsRelationRefV1(FrozenWireModel):
+    run_id: NonBlank
+    relation_type: Literal[
+        "REVIEW_SUBJECT",
+        "CORRECTION",
+        "REPLAN",
+        "PROOF",
+        "TASK",
+        "AGENT_OUTPUT",
+        "EXECUTION_EVENT",
+        "REPORT_CONTRIBUTION",
+    ]
+    status: Literal["AVAILABLE", "NOT_APPLICABLE", "NOT_OBSERVED"]
+    target_ref: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def target_matches_status(self) -> ResultsRelationRefV1:
+        if (self.status == "AVAILABLE") != (self.target_ref is not None):
+            raise ValueError("relation target is present exactly when AVAILABLE")
+        return self
+
+
+class ReportAnchorRefV1(FrozenWireModel):
+    run_id: NonBlank
+    report_id: NonBlank
+    artifact_id: NonBlank
+    anchor: NonBlank
+
+
+class ReportContributionRefV1(FrozenWireModel):
+    run_id: NonBlank
+    report_id: NonBlank
+    artifact_id: NonBlank
+    report_anchor: NonBlank
+    task_id: NonBlank
+    actor_id: NonBlank
+    agent_output_id: NonBlank
+    execution_event_id: NonBlank | None = None
+    calculation_id: NonBlank | None = None
+    evidence_refs: tuple[NonBlank, ...] = ()
+    review_id: NonBlank | None = None
+
+
+class ReportSectionRefV1(FrozenWireModel):
+    section_key: NonBlank
+    title: NonBlank
+    anchor: ReportAnchorRefV1 | None = None
+
+
+class ReportSurfaceV1(FrozenWireModel):
+    schema_version: Literal["phase4.5-report-surface/v1"] = "phase4.5-report-surface/v1"
+    run_id: NonBlank
+    object_id: NonBlank
+    released_result_id: NonBlank
+    canonical_execution_record_id: NonBlank
+    report_id: NonBlank
+    artifact_id: NonBlank
+    title: NonBlank
+    company_name: NonBlank
+    symbol: NonBlank
+    as_of: date
+    sections: tuple[ReportSectionRefV1, ...]
+    anchors: tuple[ReportAnchorRefV1, ...]
+    source_contributions: tuple[ReportContributionRefV1, ...]
+    availability: ResultsSurfaceAvailabilityV1
+
+    @model_validator(mode="after")
+    def exact_report_identity(self) -> ReportSurfaceV1:
+        if self.report_id != self.released_result_id:
+            raise ValueError("Report identity must equal its exact ReleasedResult identity")
+        if any(
+            anchor.run_id != self.run_id
+            or anchor.report_id != self.report_id
+            or anchor.artifact_id != self.artifact_id
+            for anchor in self.anchors
+        ):
+            raise ValueError("Report anchor crossed Run/Report/representation identity")
+        if any(
+            section.anchor is not None
+            and (
+                section.anchor.run_id != self.run_id
+                or section.anchor.report_id != self.report_id
+                or section.anchor.artifact_id != self.artifact_id
+            )
+            for section in self.sections
+        ):
+            raise ValueError("Report section crossed Run/Report/representation identity")
+        if any(
+            contribution.run_id != self.run_id
+            or contribution.report_id != self.report_id
+            or contribution.artifact_id != self.artifact_id
+            for contribution in self.source_contributions
+        ):
+            raise ValueError("Report contribution crossed Run/Report/representation identity")
+        if len({item.anchor for item in self.anchors}) != len(self.anchors):
+            raise ValueError("Report representation anchors must be unique")
+        return self
+
+
+class FinancialReviewCheckV1(FrozenWireModel):
+    selector: ReviewCheckSelectorV1
+    status: Literal["PASS", "REVIEW", "BLOCK"]
+    safe_explanation: str | None = None
+    input_refs: tuple[ResultsRelationRefV1, ...]
+    output_refs: tuple[ResultsRelationRefV1, ...] = ()
+
+
+class FinancialReviewSurfaceV1(FrozenWireModel):
+    schema_version: Literal["phase4.5-financial-review-surface/v1"] = (
+        "phase4.5-financial-review-surface/v1"
+    )
+    run_id: NonBlank
+    object_id: NonBlank
+    released_result_id: NonBlank
+    canonical_execution_record_id: NonBlank
+    review_id: NonBlank
+    reviewer: NonBlank
+    verdict: Literal["PASS", "REVIEW", "BLOCK"]
+    checks: tuple[FinancialReviewCheckV1, ...]
+    availability: ResultsSurfaceAvailabilityV1
+
+    @model_validator(mode="after")
+    def exact_review_identity(self) -> FinancialReviewSurfaceV1:
+        if not self.checks:
+            raise ValueError("available Financial Review requires persisted checks")
+        selectors = set()
+        for check in self.checks:
+            if check.selector.review_id != self.review_id:
+                raise ValueError("Review selector belongs to another ReviewRecord")
+            if any(ref.run_id != self.run_id for ref in (*check.input_refs, *check.output_refs)):
+                raise ValueError("Review relation crossed Run identity")
+            key = (check.selector.check_code, check.selector.subject_refs)
+            if key in selectors:
+                raise ValueError("ambiguous scoped Review selector")
+            selectors.add(key)
+        return self
+
+
+class ExecutionInputRefV1(FrozenWireModel):
+    run_id: NonBlank
+    ref_id: NonBlank
+
+
+class ExecutionObservableRecordV1(FrozenWireModel):
+    run_id: NonBlank
+    event_id: NonBlank
+    task_id: NonBlank | None = None
+    event_type: NonBlank
+    status: NonBlank
+
+
+class ExecutionOutputRecordV1(FrozenWireModel):
+    run_id: NonBlank
+    output_id: NonBlank
+    task_id: NonBlank
+    status: Literal["SUCCESS", "FAILED"]
+    summary: str | None = None
+    key_findings: tuple[str, ...] = ()
+    risks: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
+
+
+class ExecutionActorSummaryV1(FrozenWireModel):
+    run_id: NonBlank
+    actor_id: NonBlank
+    actor_type: ExecutionActorTypeV1
+    display_role: NonBlank
+    status: NonBlank
+    event_count: int = Field(ge=0)
+    record_count: int = Field(ge=0)
+
+
+class ExecutionActorDetailV1(FrozenWireModel):
+    run_id: NonBlank
+    actor_id: NonBlank
+    actor_type: ExecutionActorTypeV1
+    input_refs: tuple[ExecutionInputRefV1, ...]
+    observable_process: tuple[ExecutionObservableRecordV1, ...]
+    outputs: tuple[ExecutionOutputRecordV1, ...]
+    report_contributions: tuple[ReportContributionRefV1, ...]
+    quarantined_input_ref_count: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def exact_actor_identity(self) -> ExecutionActorDetailV1:
+        if any(item.run_id != self.run_id for item in self.input_refs):
+            raise ValueError("Execution input crossed Run identity")
+        if any(item.run_id != self.run_id for item in self.observable_process):
+            raise ValueError("Execution process record crossed Run identity")
+        if any(item.run_id != self.run_id for item in self.outputs):
+            raise ValueError("Execution output crossed Run identity")
+        if any(
+            item.run_id != self.run_id or item.actor_id != self.actor_id
+            for item in self.report_contributions
+        ):
+            raise ValueError("Execution contribution crossed Run/Actor identity")
+        return self
+
+
+class ExecutionRecordSurfaceV1(FrozenWireModel):
+    schema_version: Literal["phase4.5-execution-record-surface/v1"] = (
+        "phase4.5-execution-record-surface/v1"
+    )
+    run_id: NonBlank
+    object_id: NonBlank
+    released_result_id: NonBlank
+    canonical_execution_record_id: NonBlank
+    actors: tuple[ExecutionActorSummaryV1, ...]
+    actor_details: tuple[ExecutionActorDetailV1, ...]
+    availability: ResultsSurfaceAvailabilityV1
+
+    @model_validator(mode="after")
+    def exact_execution_identity(self) -> ExecutionRecordSurfaceV1:
+        actor_keys = {(item.actor_type, item.actor_id) for item in self.actors}
+        detail_keys = {(item.actor_type, item.actor_id) for item in self.actor_details}
+        if len(actor_keys) != len(self.actors):
+            raise ValueError("Execution actor catalog contains duplicate identities")
+        if len(detail_keys) != len(self.actor_details):
+            raise ValueError("Execution actor detail contains duplicate identities")
+        if any(item.run_id != self.run_id for item in self.actors):
+            raise ValueError("Execution actor crossed Run identity")
+        if any(
+            item.run_id != self.run_id or (item.actor_type, item.actor_id) not in actor_keys
+            for item in self.actor_details
+        ):
+            raise ValueError("Execution actor detail is not owned by this catalog/Run")
+        return self
+
+
+class CrossViewEndpointV1(FrozenWireModel):
+    surface: ResultsSurfaceNameV1
+    run_id: NonBlank
+    identity_id: NonBlank
+    artifact_id: NonBlank | None = None
+    target_anchor: NonBlank | None = None
+    check_selector: ReviewCheckSelectorV1 | None = None
+
+    @model_validator(mode="after")
+    def scoped_fields_match_surface(self) -> CrossViewEndpointV1:
+        if self.artifact_id is not None and self.surface != "A_REPORT":
+            raise ValueError("Report artifact identity is valid only on the Report surface")
+        if self.target_anchor is not None and (
+            self.surface != "A_REPORT" or self.artifact_id is None
+        ):
+            raise ValueError("Report anchor requires an exact Report representation")
+        if self.check_selector is not None and (
+            self.surface != "B_FINANCIAL_REVIEW"
+            or self.check_selector.review_id != self.identity_id
+        ):
+            raise ValueError("Review selector is scoped to its exact Review endpoint")
+        return self
+
+
+class CrossViewRefV1(FrozenWireModel):
+    run_id: NonBlank
+    source: CrossViewEndpointV1
+    target: CrossViewEndpointV1
+    status: ResultsRelationStatusV1
+    reason_code: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def exact_cross_view_identity(self) -> CrossViewRefV1:
+        if self.source.run_id != self.run_id or self.target.run_id != self.run_id:
+            raise ValueError("CrossViewRef crossed Run identity")
+        if self.status == "AVAILABLE" and self.reason_code is not None:
+            raise ValueError("AVAILABLE CrossViewRef cannot carry a reason")
+        if self.status != "AVAILABLE" and self.reason_code is None:
+            raise ValueError("unavailable CrossViewRef requires an authoritative reason")
+        return self
+
+
+class ResultsSurfaceRefV1(FrozenWireModel):
+    surface: ResultsSurfaceNameV1
+    run_id: NonBlank
+    object_id: NonBlank
+    released_result_id: NonBlank
+    canonical_execution_record_id: NonBlank
+    surface_id: NonBlank
+    href: NonBlank
+    availability: ResultsSurfaceAvailabilityV1
+
+    @model_validator(mode="after")
+    def href_is_exact_run_relative(self) -> ResultsSurfaceRefV1:
+        expected_suffix = {
+            "A_REPORT": "report-view",
+            "B_FINANCIAL_REVIEW": "review-view",
+            "C_EXECUTION_RECORD": "execution-view",
+        }[self.surface]
+        if self.href != f"/api/research-runs/{self.run_id}/{expected_suffix}":
+            raise ValueError("Results surface href is not scoped to its exact Run/surface")
+        return self
+
+
+class ResultsWorkspaceV1(FrozenWireModel):
+    schema_version: Literal["phase4.5-results-workspace/v1"] = (
+        "phase4.5-results-workspace/v1"
+    )
+    run_id: NonBlank
+    object_id: NonBlank
+    as_of: date
+    run_status: RunStatusV1
+    released_result_id: NonBlank
+    canonical_execution_record_id: NonBlank
+    report_surface: ResultsSurfaceRefV1
+    review_surface: ResultsSurfaceRefV1
+    execution_surface: ResultsSurfaceRefV1
+    cross_view_refs: tuple[CrossViewRefV1, ...]
+
+    @model_validator(mode="after")
+    def exact_workspace_identity(self) -> ResultsWorkspaceV1:
+        expected_surfaces = (
+            (self.report_surface, "A_REPORT"),
+            (self.review_surface, "B_FINANCIAL_REVIEW"),
+            (self.execution_surface, "C_EXECUTION_RECORD"),
+        )
+        for surface, expected_name in expected_surfaces:
+            if surface.surface != expected_name:
+                raise ValueError("Results surface is in the wrong workspace slot")
+            if (
+                surface.run_id != self.run_id
+                or surface.object_id != self.object_id
+                or surface.released_result_id != self.released_result_id
+                or surface.canonical_execution_record_id
+                != self.canonical_execution_record_id
+            ):
+                raise ValueError("Results surface crossed exact workspace identity")
+        if any(item.run_id != self.run_id for item in self.cross_view_refs):
+            raise ValueError("Results cross-view navigation crossed Run identity")
+        surface_ids = {
+            "A_REPORT": self.report_surface.surface_id,
+            "B_FINANCIAL_REVIEW": self.review_surface.surface_id,
+            "C_EXECUTION_RECORD": self.execution_surface.surface_id,
+        }
+        if any(
+            endpoint.identity_id != surface_ids[endpoint.surface]
+            for item in self.cross_view_refs
+            for endpoint in (item.source, item.target)
+        ):
+            raise ValueError("Results cross-view navigation names another surface identity")
+        return self
+
+
 ResearchObjectDetailV1.model_rebuild()

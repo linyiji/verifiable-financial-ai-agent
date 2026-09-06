@@ -25,17 +25,19 @@ from src.phase4_product.contracts import (
     ConfirmResearchRunRequestV1,
     ConfirmRunResponseV1,
     CreateResearchObjectRequestV1,
-    ExecutionProjectionV1,
-    FinancialReviewProjectionV1,
+    ExecutionRecordSurfaceV1,
+    FinancialReviewSurfaceV1,
     PrepareResearchRunRequestV1,
     ReleasedObjectCoreV1,
     ReleasedResultProjectionV1,
     ReportArtifactGroupV1,
+    ReportSurfaceV1,
     ResearchObjectCollectionV1,
     ResearchObjectDetailV1,
     ResearchRunDetailV1,
     ResearchRunDraftV1,
     ResearchRunHistoryCollectionV1,
+    ResultsWorkspaceV1,
     TraceBundleV1,
 )
 from src.phase4_product.errors import ProductError, product_error
@@ -340,11 +342,15 @@ class Phase4ProductBackend(Protocol):
 
     async def get_projection(self, run_id: str) -> AtomicRunProjectionV1: ...
 
+    async def get_results(self, run_id: str) -> ResultsWorkspaceV1: ...
+
     async def get_result(self, run_id: str) -> ReleasedResultProjectionV1: ...
+
+    async def get_report(self, run_id: str) -> ReportSurfaceV1: ...
 
     async def get_claim(self, run_id: str, claim_id: str) -> ClaimDetailV1: ...
 
-    async def get_review(self, run_id: str) -> FinancialReviewProjectionV1: ...
+    async def get_review(self, run_id: str) -> FinancialReviewSurfaceV1: ...
 
     async def get_execution(
         self,
@@ -355,7 +361,7 @@ class Phase4ProductBackend(Protocol):
         event_types: tuple[str, ...],
         task_id: str | None,
         query: str | None,
-    ) -> ExecutionProjectionV1: ...
+    ) -> ExecutionRecordSurfaceV1: ...
 
     async def get_trace(self, run_id: str, claim_id: str) -> TraceBundleV1: ...
 
@@ -409,6 +415,19 @@ def _admit_contract(request: Request, response: Response) -> str:
     selected = _select_contract(request)
     response.headers[CONTRACT_HEADER] = selected
     return selected
+
+
+def _require_exact_run_response(run_id: str, value: object, resource_type: str):
+    """Reject a self-consistent foreign response before FastAPI serializes it."""
+
+    if getattr(value, "run_id", None) != run_id:
+        raise product_error(
+            "IDENTITY_MISMATCH",
+            f"{resource_type} does not belong to the requested exact Run",
+            resource_type=resource_type,
+            resource_id=run_id,
+        )
+    return value
 
 
 def _idempotency_key(request: Request) -> str:
@@ -563,6 +582,16 @@ def create_phase4_product_router() -> APIRouter:
         )
         return result
 
+    @router.get("/research-runs/{run_id}/results", response_model=ResultsWorkspaceV1)
+    async def get_results(
+        run_id: str,
+        request: Request,
+        response: Response,
+    ) -> ResultsWorkspaceV1:
+        _admit_contract(request, response)
+        result = await _backend(request).get_results(run_id)
+        return _require_exact_run_response(run_id, result, "results_workspace")
+
     @router.get("/research-runs/{run_id}/result", response_model=ReleasedResultProjectionV1)
     async def get_result(
         run_id: str,
@@ -570,7 +599,18 @@ def create_phase4_product_router() -> APIRouter:
         response: Response,
     ) -> ReleasedResultProjectionV1:
         _admit_contract(request, response)
-        return await _backend(request).get_result(run_id)
+        result = await _backend(request).get_result(run_id)
+        return _require_exact_run_response(run_id, result, "released_result")
+
+    @router.get("/research-runs/{run_id}/report-view", response_model=ReportSurfaceV1)
+    async def get_report(
+        run_id: str,
+        request: Request,
+        response: Response,
+    ) -> ReportSurfaceV1:
+        _admit_contract(request, response)
+        result = await _backend(request).get_report(run_id)
+        return _require_exact_run_response(run_id, result, "report")
 
     @router.get(
         "/research-runs/{run_id}/claims/{claim_id}",
@@ -587,19 +627,20 @@ def create_phase4_product_router() -> APIRouter:
 
     @router.get(
         "/research-runs/{run_id}/review-view",
-        response_model=FinancialReviewProjectionV1,
+        response_model=FinancialReviewSurfaceV1,
     )
     async def get_review(
         run_id: str,
         request: Request,
         response: Response,
-    ) -> FinancialReviewProjectionV1:
+    ) -> FinancialReviewSurfaceV1:
         _admit_contract(request, response)
-        return await _backend(request).get_review(run_id)
+        result = await _backend(request).get_review(run_id)
+        return _require_exact_run_response(run_id, result, "review")
 
     @router.get(
         "/research-runs/{run_id}/execution-view",
-        response_model=ExecutionProjectionV1,
+        response_model=ExecutionRecordSurfaceV1,
     )
     async def get_execution(
         run_id: str,
@@ -610,9 +651,9 @@ def create_phase4_product_router() -> APIRouter:
         type: tuple[str, ...] = Query(default=()),
         task_id: str | None = None,
         query: str | None = None,
-    ) -> ExecutionProjectionV1:
+    ) -> ExecutionRecordSurfaceV1:
         _admit_contract(request, response)
-        return await _backend(request).get_execution(
+        result = await _backend(request).get_execution(
             run_id,
             cursor=cursor,
             limit=limit,
@@ -620,6 +661,7 @@ def create_phase4_product_router() -> APIRouter:
             task_id=task_id,
             query=query,
         )
+        return _require_exact_run_response(run_id, result, "canonical_execution")
 
     @router.get("/research-runs/{run_id}/trace/{claim_id}", response_model=TraceBundleV1)
     async def get_trace(

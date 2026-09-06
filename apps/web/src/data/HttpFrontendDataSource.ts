@@ -6,21 +6,29 @@ import {
 } from "../api/client";
 import {
   decodeConfirmRunResponse,
+  decodeExecutionRecordSurface,
+  decodeFinancialReviewSurface,
   decodePreparedResearchDraft,
+  decodeReportSurface,
   decodeResearchObjectCollection,
   decodeResearchObjectDetail,
   decodeResearchRunDetail,
   decodeReleasedResultProjection,
   decodeRunCollection,
   decodeRunProjection,
+  decodeResultsWorkspace,
   decodeSafeJsonObject,
   type ConfirmRunResponseV1,
+  type ExecutionRecordSurfaceV1,
+  type FinancialReviewSurfaceV1,
   type GlobalRunCollectionProjection,
   type Phase4ResearchObjectDetail,
   type PreparedResearchDraft,
+  type ReportSurfaceV1,
   type ResearchObjectCollection,
   type ResearchRunDetailV1,
   type ReleasedResultProjectionV1,
+  type ResultsWorkspaceV1,
   type RunProjection
 } from "../types/domain";
 import type {
@@ -302,6 +310,66 @@ export class HttpFrontendDataSource implements Phase4FrontendDataSource {
       expectedStatuses: [200],
       signal: options?.signal,
       decode: (value) => decodeReleasedResultProjection(value, expectedRunId, expectedObjectId)
+    });
+  }
+
+  getResultsWorkspace(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ResultsWorkspaceV1> {
+    const expectedRunId = requiredText(runId, "runId");
+    return this.client.requestJson({
+      method: "GET",
+      path: phase4ApiRoutes.runResults(expectedRunId),
+      expectedStatuses: [200],
+      signal: options?.signal,
+      decode: (value) => decodeResultsWorkspace(value, expectedRunId, expectedObjectId)
+    });
+  }
+
+  getReportSurface(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ReportSurfaceV1> {
+    const expectedRunId = requiredText(runId, "runId");
+    return this.client.requestJson({
+      method: "GET",
+      path: phase4ApiRoutes.runReport(expectedRunId),
+      expectedStatuses: [200],
+      signal: options?.signal,
+      decode: (value) => decodeReportSurface(value, expectedRunId, expectedObjectId)
+    });
+  }
+
+  getFinancialReviewSurface(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<FinancialReviewSurfaceV1> {
+    const expectedRunId = requiredText(runId, "runId");
+    return this.client.requestJson({
+      method: "GET",
+      path: phase4ApiRoutes.runReview(expectedRunId),
+      expectedStatuses: [200],
+      signal: options?.signal,
+      decode: (value) => decodeFinancialReviewSurface(value, expectedRunId, expectedObjectId)
+    });
+  }
+
+  getExecutionRecordSurface(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ExecutionRecordSurfaceV1> {
+    const expectedRunId = requiredText(runId, "runId");
+    return this.client.requestJson({
+      method: "GET",
+      path: phase4ApiRoutes.runExecution(expectedRunId),
+      expectedStatuses: [200],
+      signal: options?.signal,
+      decode: (value) => decodeExecutionRecordSurface(value, expectedRunId, expectedObjectId)
     });
   }
 

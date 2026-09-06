@@ -33,6 +33,7 @@ _PUBLIC_RESOURCE_TYPES = frozenset(
         "research_run",
         "research_run_draft",
         "research_scheme",
+        "results_workspace",
         "review",
         "scheduler_admission",
         "task",

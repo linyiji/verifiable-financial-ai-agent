@@ -602,6 +602,183 @@ export interface ReleasedResultProjectionV1 {
   readonly availability: Availability;
 }
 
+export type ResultsSurfaceName =
+  | "A_REPORT"
+  | "B_FINANCIAL_REVIEW"
+  | "C_EXECUTION_RECORD";
+export type ResultsSurfaceStatus = "READY" | "PARTIAL" | "UNAVAILABLE";
+
+export interface ResultsSurfaceAvailability {
+  readonly status: ResultsSurfaceStatus;
+  readonly reasonCode: string | null;
+}
+
+export interface ReviewCheckSelectorV1 {
+  readonly reviewId: string;
+  readonly checkCode: string;
+  readonly subjectRefs: readonly string[];
+}
+
+export interface ResultsRelationRefV1 {
+  readonly runId: string;
+  readonly relationType: string;
+  readonly status: "AVAILABLE" | "NOT_APPLICABLE" | "NOT_OBSERVED";
+  readonly targetRef: string | null;
+}
+
+export interface ReportAnchorRefV1 {
+  readonly runId: string;
+  readonly reportId: string;
+  readonly artifactId: string;
+  readonly anchor: string;
+}
+
+export interface ReportContributionRefV1 {
+  readonly runId: string;
+  readonly reportId: string;
+  readonly artifactId: string;
+  readonly reportAnchor: string;
+  readonly taskId: string;
+  readonly actorId: string;
+  readonly agentOutputId: string;
+  readonly executionEventId: string | null;
+  readonly calculationId: string | null;
+  readonly evidenceRefs: readonly string[];
+  readonly reviewId: string | null;
+}
+
+export interface ReportSurfaceV1 {
+  readonly schemaVersion: "phase4.5-report-surface/v1";
+  readonly runId: string;
+  readonly objectId: string;
+  readonly releasedResultId: string;
+  readonly canonicalExecutionRecordId: string;
+  readonly reportId: string;
+  readonly artifactId: string;
+  readonly title: string;
+  readonly companyName: string;
+  readonly symbol: string;
+  readonly asOf: string;
+  readonly sections: readonly Readonly<{
+    sectionKey: string;
+    title: string;
+    anchor: ReportAnchorRefV1 | null;
+  }>[];
+  readonly anchors: readonly ReportAnchorRefV1[];
+  readonly sourceContributions: readonly ReportContributionRefV1[];
+  readonly availability: ResultsSurfaceAvailability;
+}
+
+export interface FinancialReviewCheckV1 {
+  readonly selector: ReviewCheckSelectorV1;
+  readonly status: Phase4ReviewStatus;
+  readonly safeExplanation: string | null;
+  readonly inputRefs: readonly ResultsRelationRefV1[];
+  readonly outputRefs: readonly ResultsRelationRefV1[];
+}
+
+export interface FinancialReviewSurfaceV1 {
+  readonly schemaVersion: "phase4.5-financial-review-surface/v1";
+  readonly runId: string;
+  readonly objectId: string;
+  readonly releasedResultId: string;
+  readonly canonicalExecutionRecordId: string;
+  readonly reviewId: string;
+  readonly reviewer: string;
+  readonly verdict: Phase4ReviewStatus;
+  readonly checks: readonly FinancialReviewCheckV1[];
+  readonly availability: ResultsSurfaceAvailability;
+}
+
+export interface ExecutionActorSummaryV1 {
+  readonly runId: string;
+  readonly actorId: string;
+  readonly actorType: "RESEARCH_LEAD" | "SPECIALIST" | "SUPPORTING_EXECUTION";
+  readonly displayRole: string;
+  readonly status: string;
+  readonly eventCount: number;
+  readonly recordCount: number;
+}
+
+export interface ExecutionActorDetailV1 {
+  readonly runId: string;
+  readonly actorId: string;
+  readonly actorType: "RESEARCH_LEAD" | "SPECIALIST" | "SUPPORTING_EXECUTION";
+  readonly inputRefs: readonly Readonly<{ runId: string; refId: string }>[];
+  readonly observableProcess: readonly Readonly<{
+    runId: string;
+    eventId: string;
+    taskId: string | null;
+    eventType: string;
+    status: string;
+  }>[];
+  readonly outputs: readonly Readonly<{
+    runId: string;
+    outputId: string;
+    taskId: string;
+    status: "SUCCESS" | "FAILED";
+    summary: string | null;
+    keyFindings: readonly string[];
+    risks: readonly string[];
+    limitations: readonly string[];
+  }>[];
+  readonly reportContributions: readonly ReportContributionRefV1[];
+  readonly quarantinedInputRefCount: number;
+}
+
+export interface ExecutionRecordSurfaceV1 {
+  readonly schemaVersion: "phase4.5-execution-record-surface/v1";
+  readonly runId: string;
+  readonly objectId: string;
+  readonly releasedResultId: string;
+  readonly canonicalExecutionRecordId: string;
+  readonly actors: readonly ExecutionActorSummaryV1[];
+  readonly actorDetails: readonly ExecutionActorDetailV1[];
+  readonly availability: ResultsSurfaceAvailability;
+}
+
+export interface CrossViewEndpointV1 {
+  readonly surface: ResultsSurfaceName;
+  readonly runId: string;
+  readonly identityId: string;
+  readonly artifactId: string | null;
+  readonly targetAnchor: string | null;
+  readonly checkSelector: ReviewCheckSelectorV1 | null;
+}
+
+export interface CrossViewRefV1 {
+  readonly runId: string;
+  readonly source: CrossViewEndpointV1;
+  readonly target: CrossViewEndpointV1;
+  readonly status: "AVAILABLE" | "UNAVAILABLE" | "NOT_APPLICABLE";
+  readonly reasonCode: string | null;
+}
+
+export interface ResultsSurfaceRefV1 {
+  readonly surface: ResultsSurfaceName;
+  readonly runId: string;
+  readonly objectId: string;
+  readonly releasedResultId: string;
+  readonly canonicalExecutionRecordId: string;
+  readonly surfaceId: string;
+  readonly href: string;
+  readonly availability: ResultsSurfaceAvailability;
+}
+
+export interface ResultsWorkspaceV1 {
+  readonly schemaVersion: "phase4.5-results-workspace/v1";
+  readonly runId: string;
+  readonly objectId: string;
+  readonly asOf: string;
+  readonly runStatus: BackendRunStatus;
+  readonly releasedResultId: string;
+  readonly canonicalExecutionRecordId: string;
+  readonly reportSurface: ResultsSurfaceRefV1;
+  readonly reviewSurface: ResultsSurfaceRefV1;
+  readonly executionSurface: ResultsSurfaceRefV1;
+  readonly crossViewRefs: readonly CrossViewRefV1[];
+}
+
 export interface ConfirmAdmissionExpectation {
   readonly objectId: string;
   readonly draftId: string;
@@ -3270,6 +3447,454 @@ export function decodeReleasedResultProjection(
     researchSourceCoverage: rawCoverage === null ? null : decodeSafeJsonObject(rawCoverage, "$.research_source_coverage"),
     limitations: decodePublicTextArray(field(input, "limitations", path), "$.limitations"),
     availability
+  });
+}
+
+const RESULTS_SURFACES = ["A_REPORT", "B_FINANCIAL_REVIEW", "C_EXECUTION_RECORD"] as const;
+const RESULTS_SURFACE_STATUSES = ["READY", "PARTIAL", "UNAVAILABLE"] as const;
+const RESULTS_RELATION_STATUSES = ["AVAILABLE", "UNAVAILABLE", "NOT_APPLICABLE"] as const;
+const REVIEW_RELATION_STATUSES = ["AVAILABLE", "NOT_APPLICABLE", "NOT_OBSERVED"] as const;
+const EXECUTION_ACTOR_TYPES = ["RESEARCH_LEAD", "SPECIALIST", "SUPPORTING_EXECUTION"] as const;
+
+function decodeResultsAvailability(value: unknown, path: string): ResultsSurfaceAvailability {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["status", "reason_code"], path);
+  const status = decodeEnum(field(input, "status", path), RESULTS_SURFACE_STATUSES, `${path}.status`);
+  const rawReason = field(input, "reason_code", path);
+  const reasonCode = rawReason === null ? null : decodeOpaqueId(rawReason, `${path}.reason_code`);
+  if ((status === "READY") !== (reasonCode === null)) {
+    return fail(path, "READY has no reason; PARTIAL/UNAVAILABLE require one");
+  }
+  return freezeDeep({ status, reasonCode });
+}
+
+function decodeReviewCheckSelector(value: unknown, path: string): ReviewCheckSelectorV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["review_id", "check_code", "subject_refs"], path);
+  const subjectRefs = decodeStringArray(field(input, "subject_refs", path), `${path}.subject_refs`);
+  const canonical = [...subjectRefs].sort();
+  if (subjectRefs.some((item, index) => item !== canonical[index])) {
+    return fail(`${path}.subject_refs`, "selector refs must use deterministic exact ordering");
+  }
+  return freezeDeep({
+    reviewId: decodeOpaqueId(field(input, "review_id", path), `${path}.review_id`),
+    checkCode: decodeOpaqueId(field(input, "check_code", path), `${path}.check_code`),
+    subjectRefs
+  });
+}
+
+function decodeResultsRelation(value: unknown, path: string, expectedRunId: string): ResultsRelationRefV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["run_id", "relation_type", "status", "target_ref"], path);
+  const runId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
+  if (runId !== expectedRunId) return fail(`${path}.run_id`, "relation belongs to another Run");
+  const status = decodeEnum(field(input, "status", path), REVIEW_RELATION_STATUSES, `${path}.status`);
+  const rawTarget = field(input, "target_ref", path);
+  const targetRef = rawTarget === null ? null : decodeOpaqueId(rawTarget, `${path}.target_ref`);
+  if ((status === "AVAILABLE") !== (targetRef !== null)) {
+    return fail(path, "relation target is present exactly when AVAILABLE");
+  }
+  return freezeDeep({
+    runId,
+    relationType: decodeEnum(field(input, "relation_type", path), [
+      "REVIEW_SUBJECT", "CORRECTION", "REPLAN", "PROOF", "TASK", "AGENT_OUTPUT",
+      "EXECUTION_EVENT", "REPORT_CONTRIBUTION"
+    ] as const, `${path}.relation_type`),
+    status,
+    targetRef
+  });
+}
+
+function decodeReportAnchor(value: unknown, path: string, expectedRunId: string): ReportAnchorRefV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["run_id", "report_id", "artifact_id", "anchor"], path);
+  const runId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
+  if (runId !== expectedRunId) return fail(`${path}.run_id`, "Report anchor belongs to another Run");
+  return freezeDeep({
+    runId,
+    reportId: decodeOpaqueId(field(input, "report_id", path), `${path}.report_id`),
+    artifactId: decodeOpaqueId(field(input, "artifact_id", path), `${path}.artifact_id`),
+    anchor: decodeOpaqueId(field(input, "anchor", path), `${path}.anchor`)
+  });
+}
+
+function decodeReportContribution(
+  value: unknown,
+  path: string,
+  expectedRunId: string
+): ReportContributionRefV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "run_id", "report_id", "artifact_id", "report_anchor", "task_id", "actor_id",
+    "agent_output_id", "execution_event_id", "calculation_id", "evidence_refs", "review_id"
+  ], path);
+  const runId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
+  if (runId !== expectedRunId) return fail(`${path}.run_id`, "Report contribution belongs to another Run");
+  const nullableId = (key: string) => {
+    const raw = field(input, key, path);
+    return raw === null ? null : decodeOpaqueId(raw, `${path}.${key}`);
+  };
+  return freezeDeep({
+    runId,
+    reportId: decodeOpaqueId(field(input, "report_id", path), `${path}.report_id`),
+    artifactId: decodeOpaqueId(field(input, "artifact_id", path), `${path}.artifact_id`),
+    reportAnchor: decodeOpaqueId(field(input, "report_anchor", path), `${path}.report_anchor`),
+    taskId: decodeOpaqueId(field(input, "task_id", path), `${path}.task_id`),
+    actorId: decodeOpaqueId(field(input, "actor_id", path), `${path}.actor_id`),
+    agentOutputId: decodeOpaqueId(field(input, "agent_output_id", path), `${path}.agent_output_id`),
+    executionEventId: nullableId("execution_event_id"),
+    calculationId: nullableId("calculation_id"),
+    evidenceRefs: decodeStringArray(field(input, "evidence_refs", path), `${path}.evidence_refs`).map(
+      (item, index) => decodeOpaqueId(item, `${path}.evidence_refs[${index}]`)
+    ),
+    reviewId: nullableId("review_id")
+  });
+}
+
+export function decodeReportSurface(
+  value: unknown,
+  expectedRunId: string,
+  expectedObjectId?: string
+): ReportSurfaceV1 {
+  const path = "$";
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "schema_version", "run_id", "object_id", "released_result_id",
+    "canonical_execution_record_id", "report_id", "artifact_id", "title", "company_name",
+    "symbol", "as_of", "sections", "anchors", "source_contributions", "availability"
+  ], path);
+  if (field(input, "schema_version", path) !== "phase4.5-report-surface/v1") {
+    return fail("$.schema_version", "unsupported Report surface schema");
+  }
+  const runId = decodeOpaqueId(field(input, "run_id", path), "$.run_id");
+  if (runId !== decodeOpaqueId(expectedRunId, "expectedRunId")) return fail("$.run_id", "Report belongs to another Run");
+  const objectId = decodeOpaqueId(field(input, "object_id", path), "$.object_id");
+  if (expectedObjectId !== undefined && objectId !== decodeOpaqueId(expectedObjectId, "expectedObjectId")) {
+    return fail("$.object_id", "Report belongs to another Object");
+  }
+  const reportId = decodeOpaqueId(field(input, "report_id", path), "$.report_id");
+  const releasedResultId = decodeOpaqueId(field(input, "released_result_id", path), "$.released_result_id");
+  const artifactId = decodeOpaqueId(field(input, "artifact_id", path), "$.artifact_id");
+  if (reportId !== releasedResultId) return fail("$.report_id", "Report and ReleasedResult identities differ");
+  const anchors = decodeArray(field(input, "anchors", path), "$.anchors").map((item, index) =>
+    decodeReportAnchor(item, `$.anchors[${index}]`, runId)
+  );
+  if (new Set(anchors.map((item) => item.anchor)).size !== anchors.length) {
+    return fail("$.anchors", "duplicate representation anchor identity");
+  }
+  if (anchors.some((item) => item.reportId !== reportId || item.artifactId !== artifactId)) {
+    return fail("$.anchors", "Report anchor crossed Report/artifact identity");
+  }
+  const contributions = decodeArray(field(input, "source_contributions", path), "$.source_contributions").map((item, index) =>
+    decodeReportContribution(item, `$.source_contributions[${index}]`, runId)
+  );
+  if (contributions.some((item) => item.reportId !== reportId || item.artifactId !== artifactId)) {
+    return fail("$.source_contributions", "Report contribution crossed Report/artifact identity");
+  }
+  const sections = decodeArray(field(input, "sections", path), "$.sections").map((item, index) => {
+    const sectionPath = `$.sections[${index}]`;
+    const section = decodeObject(item, sectionPath);
+    assertOnlyKeys(section, ["section_key", "title", "anchor"], sectionPath);
+    const rawAnchor = field(section, "anchor", sectionPath);
+    return freezeDeep({
+      sectionKey: decodeOpaqueId(field(section, "section_key", sectionPath), `${sectionPath}.section_key`),
+      title: decodePublicText(field(section, "title", sectionPath), `${sectionPath}.title`, false, 800),
+      anchor: rawAnchor === null ? null : decodeReportAnchor(rawAnchor, `${sectionPath}.anchor`, runId)
+    });
+  });
+  if (sections.some((item) => item.anchor !== null &&
+    (item.anchor.reportId !== reportId || item.anchor.artifactId !== artifactId))) {
+    return fail("$.sections", "Report section anchor crossed Report/artifact identity");
+  }
+  return freezeDeep({
+    schemaVersion: "phase4.5-report-surface/v1",
+    runId, objectId, releasedResultId,
+    canonicalExecutionRecordId: decodeOpaqueId(field(input, "canonical_execution_record_id", path), "$.canonical_execution_record_id"),
+    reportId, artifactId,
+    title: decodePublicText(field(input, "title", path), "$.title", false, 800),
+    companyName: decodePublicText(field(input, "company_name", path), "$.company_name", false, 800),
+    symbol: decodeOpaqueId(field(input, "symbol", path), "$.symbol"),
+    asOf: decodeDate(field(input, "as_of", path), "$.as_of"),
+    sections, anchors, sourceContributions: contributions,
+    availability: decodeResultsAvailability(field(input, "availability", path), "$.availability")
+  });
+}
+
+export function decodeFinancialReviewSurface(
+  value: unknown,
+  expectedRunId: string,
+  expectedObjectId?: string
+): FinancialReviewSurfaceV1 {
+  const path = "$";
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "schema_version", "run_id", "object_id", "released_result_id",
+    "canonical_execution_record_id", "review_id", "reviewer", "verdict", "checks", "availability"
+  ], path);
+  if (field(input, "schema_version", path) !== "phase4.5-financial-review-surface/v1") {
+    return fail("$.schema_version", "unsupported Financial Review surface schema");
+  }
+  const runId = decodeOpaqueId(field(input, "run_id", path), "$.run_id");
+  if (runId !== decodeOpaqueId(expectedRunId, "expectedRunId")) return fail("$.run_id", "Review belongs to another Run");
+  const objectId = decodeOpaqueId(field(input, "object_id", path), "$.object_id");
+  if (expectedObjectId !== undefined && objectId !== decodeOpaqueId(expectedObjectId, "expectedObjectId")) return fail("$.object_id", "Review belongs to another Object");
+  const reviewId = decodeOpaqueId(field(input, "review_id", path), "$.review_id");
+  const selectors = new Set<string>();
+  const checks = decodeArray(field(input, "checks", path), "$.checks").map((item, index) => {
+    const checkPath = `$.checks[${index}]`;
+    const check = decodeObject(item, checkPath);
+    assertOnlyKeys(check, ["selector", "status", "safe_explanation", "input_refs", "output_refs"], checkPath);
+    const selector = decodeReviewCheckSelector(field(check, "selector", checkPath), `${checkPath}.selector`);
+    if (selector.reviewId !== reviewId) return fail(`${checkPath}.selector.review_id`, "selector names another ReviewRecord");
+    const key = JSON.stringify([selector.checkCode, selector.subjectRefs]);
+    if (selectors.has(key)) return fail(`${checkPath}.selector`, "ambiguous scoped selector");
+    selectors.add(key);
+    const explanation = field(check, "safe_explanation", checkPath);
+    return freezeDeep({
+      selector,
+      status: decodeEnum(field(check, "status", checkPath), ["PASS", "REVIEW", "BLOCK"] as const, `${checkPath}.status`),
+      safeExplanation: explanation === null ? null : decodePublicText(explanation, `${checkPath}.safe_explanation`, false, 800),
+      inputRefs: decodeArray(field(check, "input_refs", checkPath), `${checkPath}.input_refs`).map((ref, refIndex) => decodeResultsRelation(ref, `${checkPath}.input_refs[${refIndex}]`, runId)),
+      outputRefs: decodeArray(field(check, "output_refs", checkPath), `${checkPath}.output_refs`).map((ref, refIndex) => decodeResultsRelation(ref, `${checkPath}.output_refs[${refIndex}]`, runId))
+    });
+  });
+  if (checks.length === 0) return fail("$.checks", "Financial Review requires persisted checks");
+  return freezeDeep({
+    schemaVersion: "phase4.5-financial-review-surface/v1",
+    runId, objectId,
+    releasedResultId: decodeOpaqueId(field(input, "released_result_id", path), "$.released_result_id"),
+    canonicalExecutionRecordId: decodeOpaqueId(field(input, "canonical_execution_record_id", path), "$.canonical_execution_record_id"),
+    reviewId,
+    reviewer: decodePublicText(field(input, "reviewer", path), "$.reviewer", false, 800),
+    verdict: decodeEnum(field(input, "verdict", path), ["PASS", "REVIEW", "BLOCK"] as const, "$.verdict"),
+    checks,
+    availability: decodeResultsAvailability(field(input, "availability", path), "$.availability")
+  });
+}
+
+function decodeExecutionActorSummary(value: unknown, path: string, runId: string): ExecutionActorSummaryV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["run_id", "actor_id", "actor_type", "display_role", "status", "event_count", "record_count"], path);
+  const ownedRunId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
+  if (ownedRunId !== runId) return fail(`${path}.run_id`, "actor belongs to another Run");
+  return freezeDeep({
+    runId: ownedRunId,
+    actorId: decodeOpaqueId(field(input, "actor_id", path), `${path}.actor_id`),
+    actorType: decodeEnum(field(input, "actor_type", path), EXECUTION_ACTOR_TYPES, `${path}.actor_type`),
+    displayRole: decodePublicText(field(input, "display_role", path), `${path}.display_role`, false, 800),
+    status: decodeOpaqueId(field(input, "status", path), `${path}.status`),
+    eventCount: decodeInteger(field(input, "event_count", path), 0, `${path}.event_count`),
+    recordCount: decodeInteger(field(input, "record_count", path), 0, `${path}.record_count`)
+  });
+}
+
+function decodeExecutionActorDetail(value: unknown, path: string, runId: string): ExecutionActorDetailV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "run_id", "actor_id", "actor_type", "input_refs", "observable_process", "outputs",
+    "report_contributions", "quarantined_input_ref_count"
+  ], path);
+  const ownedRunId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
+  if (ownedRunId !== runId) return fail(`${path}.run_id`, "actor detail belongs to another Run");
+  const inputRefs = decodeArray(field(input, "input_refs", path), `${path}.input_refs`).map((item, index) => {
+    const itemPath = `${path}.input_refs[${index}]`;
+    const ref = decodeObject(item, itemPath);
+    assertOnlyKeys(ref, ["run_id", "ref_id"], itemPath);
+    const refRunId = decodeOpaqueId(field(ref, "run_id", itemPath), `${itemPath}.run_id`);
+    if (refRunId !== runId) return fail(`${itemPath}.run_id`, "input ref belongs to another Run");
+    return freezeDeep({ runId: refRunId, refId: decodeOpaqueId(field(ref, "ref_id", itemPath), `${itemPath}.ref_id`) });
+  });
+  const observableProcess = decodeArray(field(input, "observable_process", path), `${path}.observable_process`).map((item, index) => {
+    const itemPath = `${path}.observable_process[${index}]`;
+    const record = decodeObject(item, itemPath);
+    assertOnlyKeys(record, ["run_id", "event_id", "task_id", "event_type", "status"], itemPath);
+    const recordRunId = decodeOpaqueId(field(record, "run_id", itemPath), `${itemPath}.run_id`);
+    if (recordRunId !== runId) return fail(`${itemPath}.run_id`, "process record belongs to another Run");
+    const rawTask = field(record, "task_id", itemPath);
+    return freezeDeep({
+      runId: recordRunId,
+      eventId: decodeOpaqueId(field(record, "event_id", itemPath), `${itemPath}.event_id`),
+      taskId: rawTask === null ? null : decodeOpaqueId(rawTask, `${itemPath}.task_id`),
+      eventType: decodeOpaqueId(field(record, "event_type", itemPath), `${itemPath}.event_type`),
+      status: decodeOpaqueId(field(record, "status", itemPath), `${itemPath}.status`)
+    });
+  });
+  const outputs = decodeArray(field(input, "outputs", path), `${path}.outputs`).map((item, index) => {
+    const itemPath = `${path}.outputs[${index}]`;
+    const output = decodeObject(item, itemPath);
+    assertOnlyKeys(output, ["run_id", "output_id", "task_id", "status", "summary", "key_findings", "risks", "limitations"], itemPath);
+    const outputRunId = decodeOpaqueId(field(output, "run_id", itemPath), `${itemPath}.run_id`);
+    if (outputRunId !== runId) return fail(`${itemPath}.run_id`, "output belongs to another Run");
+    const rawSummary = field(output, "summary", itemPath);
+    return freezeDeep({
+      runId: outputRunId,
+      outputId: decodeOpaqueId(field(output, "output_id", itemPath), `${itemPath}.output_id`),
+      taskId: decodeOpaqueId(field(output, "task_id", itemPath), `${itemPath}.task_id`),
+      status: decodeEnum(field(output, "status", itemPath), ["SUCCESS", "FAILED"] as const, `${itemPath}.status`),
+      summary: rawSummary === null ? null : decodePublicText(rawSummary, `${itemPath}.summary`, false, 800),
+      keyFindings: decodePublicTextArray(field(output, "key_findings", itemPath), `${itemPath}.key_findings`),
+      risks: decodePublicTextArray(field(output, "risks", itemPath), `${itemPath}.risks`),
+      limitations: decodePublicTextArray(field(output, "limitations", itemPath), `${itemPath}.limitations`)
+    });
+  });
+  const actorId = decodeOpaqueId(field(input, "actor_id", path), `${path}.actor_id`);
+  const reportContributions = decodeArray(
+    field(input, "report_contributions", path),
+    `${path}.report_contributions`
+  ).map((item, index) =>
+    decodeReportContribution(item, `${path}.report_contributions[${index}]`, runId)
+  );
+  if (reportContributions.some((item) => item.actorId !== actorId)) {
+    return fail(`${path}.report_contributions`, "Report contribution belongs to another actor");
+  }
+  return freezeDeep({
+    runId: ownedRunId,
+    actorId,
+    actorType: decodeEnum(field(input, "actor_type", path), EXECUTION_ACTOR_TYPES, `${path}.actor_type`),
+    inputRefs,
+    observableProcess,
+    outputs,
+    reportContributions,
+    quarantinedInputRefCount: decodeInteger(field(input, "quarantined_input_ref_count", path), 0, `${path}.quarantined_input_ref_count`)
+  });
+}
+
+export function decodeExecutionRecordSurface(
+  value: unknown,
+  expectedRunId: string,
+  expectedObjectId?: string
+): ExecutionRecordSurfaceV1 {
+  const path = "$";
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "schema_version", "run_id", "object_id", "released_result_id",
+    "canonical_execution_record_id", "actors", "actor_details", "availability"
+  ], path);
+  if (field(input, "schema_version", path) !== "phase4.5-execution-record-surface/v1") return fail("$.schema_version", "unsupported Execution surface schema");
+  const runId = decodeOpaqueId(field(input, "run_id", path), "$.run_id");
+  if (runId !== decodeOpaqueId(expectedRunId, "expectedRunId")) return fail("$.run_id", "Execution belongs to another Run");
+  const objectId = decodeOpaqueId(field(input, "object_id", path), "$.object_id");
+  if (expectedObjectId !== undefined && objectId !== decodeOpaqueId(expectedObjectId, "expectedObjectId")) return fail("$.object_id", "Execution belongs to another Object");
+  const actors = decodeArray(field(input, "actors", path), "$.actors").map((item, index) => decodeExecutionActorSummary(item, `$.actors[${index}]`, runId));
+  const actorKeys = new Set(actors.map((item) => `${item.actorType}:${item.actorId}`));
+  if (actorKeys.size !== actors.length) return fail("$.actors", "duplicate execution actor identity");
+  const actorDetails = decodeArray(field(input, "actor_details", path), "$.actor_details").map((item, index) => decodeExecutionActorDetail(item, `$.actor_details[${index}]`, runId));
+  const detailKeys = new Set(actorDetails.map((item) => `${item.actorType}:${item.actorId}`));
+  if (detailKeys.size !== actorDetails.length) return fail("$.actor_details", "duplicate actor detail identity");
+  if (actorDetails.some((item) => !actorKeys.has(`${item.actorType}:${item.actorId}`))) return fail("$.actor_details", "actor detail is absent from catalog");
+  return freezeDeep({
+    schemaVersion: "phase4.5-execution-record-surface/v1",
+    runId, objectId,
+    releasedResultId: decodeOpaqueId(field(input, "released_result_id", path), "$.released_result_id"),
+    canonicalExecutionRecordId: decodeOpaqueId(field(input, "canonical_execution_record_id", path), "$.canonical_execution_record_id"),
+    actors, actorDetails,
+    availability: decodeResultsAvailability(field(input, "availability", path), "$.availability")
+  });
+}
+
+function decodeCrossViewEndpoint(value: unknown, path: string, runId: string): CrossViewEndpointV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["surface", "run_id", "identity_id", "artifact_id", "target_anchor", "check_selector"], path);
+  const ownedRunId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
+  if (ownedRunId !== runId) return fail(`${path}.run_id`, "CrossView endpoint belongs to another Run");
+  const nullableId = (key: string) => {
+    const raw = field(input, key, path);
+    return raw === null ? null : decodeOpaqueId(raw, `${path}.${key}`);
+  };
+  const surface = decodeEnum(field(input, "surface", path), RESULTS_SURFACES, `${path}.surface`);
+  const identityId = decodeOpaqueId(field(input, "identity_id", path), `${path}.identity_id`);
+  const artifactId = nullableId("artifact_id");
+  const targetAnchor = nullableId("target_anchor");
+  const rawSelector = field(input, "check_selector", path);
+  const checkSelector = rawSelector === null ? null : decodeReviewCheckSelector(rawSelector, `${path}.check_selector`);
+  if (artifactId !== null && surface !== "A_REPORT") return fail(path, "Report artifact identity belongs on another surface");
+  if (targetAnchor !== null && (surface !== "A_REPORT" || artifactId === null)) return fail(path, "Report anchor lacks representation identity");
+  if (checkSelector !== null && (surface !== "B_FINANCIAL_REVIEW" || checkSelector.reviewId !== identityId)) return fail(path, "selector names another Review endpoint");
+  return freezeDeep({ surface, runId: ownedRunId, identityId, artifactId, targetAnchor, checkSelector });
+}
+
+function decodeSurfaceRef(value: unknown, path: string, runId: string, objectId: string, resultId: string, canonicalId: string): ResultsSurfaceRefV1 {
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, ["surface", "run_id", "object_id", "released_result_id", "canonical_execution_record_id", "surface_id", "href", "availability"], path);
+  const ownedRunId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
+  const ownedObjectId = decodeOpaqueId(field(input, "object_id", path), `${path}.object_id`);
+  const ownedResultId = decodeOpaqueId(field(input, "released_result_id", path), `${path}.released_result_id`);
+  const ownedCanonicalId = decodeOpaqueId(field(input, "canonical_execution_record_id", path), `${path}.canonical_execution_record_id`);
+  if (ownedRunId !== runId || ownedObjectId !== objectId || ownedResultId !== resultId || ownedCanonicalId !== canonicalId) return fail(path, "Results surface crossed workspace identity");
+  const surface = decodeEnum(field(input, "surface", path), RESULTS_SURFACES, `${path}.surface`);
+  const href = decodeNonBlankString(field(input, "href", path), `${path}.href`);
+  const suffix = surface === "A_REPORT" ? "report-view" :
+    surface === "B_FINANCIAL_REVIEW" ? "review-view" : "execution-view";
+  if (href !== `/api/research-runs/${encodeURIComponent(runId)}/${suffix}`) {
+    return fail(`${path}.href`, "surface href must be exact-run same-origin");
+  }
+  return freezeDeep({
+    surface,
+    runId: ownedRunId, objectId: ownedObjectId, releasedResultId: ownedResultId,
+    canonicalExecutionRecordId: ownedCanonicalId,
+    surfaceId: decodeOpaqueId(field(input, "surface_id", path), `${path}.surface_id`),
+    href,
+    availability: decodeResultsAvailability(field(input, "availability", path), `${path}.availability`)
+  });
+}
+
+export function decodeResultsWorkspace(
+  value: unknown,
+  expectedRunId: string,
+  expectedObjectId?: string
+): ResultsWorkspaceV1 {
+  const path = "$";
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "schema_version", "run_id", "object_id", "as_of", "run_status", "released_result_id",
+    "canonical_execution_record_id", "report_surface", "review_surface", "execution_surface", "cross_view_refs"
+  ], path);
+  if (field(input, "schema_version", path) !== "phase4.5-results-workspace/v1") return fail("$.schema_version", "unsupported Results Workspace schema");
+  const runId = decodeOpaqueId(field(input, "run_id", path), "$.run_id");
+  if (runId !== decodeOpaqueId(expectedRunId, "expectedRunId")) return fail("$.run_id", "Results Workspace belongs to another Run");
+  const objectId = decodeOpaqueId(field(input, "object_id", path), "$.object_id");
+  if (expectedObjectId !== undefined && objectId !== decodeOpaqueId(expectedObjectId, "expectedObjectId")) return fail("$.object_id", "Results Workspace belongs to another Object");
+  const resultId = decodeOpaqueId(field(input, "released_result_id", path), "$.released_result_id");
+  const canonicalId = decodeOpaqueId(field(input, "canonical_execution_record_id", path), "$.canonical_execution_record_id");
+  const reportSurface = decodeSurfaceRef(field(input, "report_surface", path), "$.report_surface", runId, objectId, resultId, canonicalId);
+  const reviewSurface = decodeSurfaceRef(field(input, "review_surface", path), "$.review_surface", runId, objectId, resultId, canonicalId);
+  const executionSurface = decodeSurfaceRef(field(input, "execution_surface", path), "$.execution_surface", runId, objectId, resultId, canonicalId);
+  if (reportSurface.surface !== "A_REPORT" || reviewSurface.surface !== "B_FINANCIAL_REVIEW" || executionSurface.surface !== "C_EXECUTION_RECORD") return fail("$", "Results surfaces occupy incorrect slots");
+  const crossViewRefs = decodeArray(field(input, "cross_view_refs", path), "$.cross_view_refs").map((item, index) => {
+    const refPath = `$.cross_view_refs[${index}]`;
+    const ref = decodeObject(item, refPath);
+    assertOnlyKeys(ref, ["run_id", "source", "target", "status", "reason_code"], refPath);
+    const refRunId = decodeOpaqueId(field(ref, "run_id", refPath), `${refPath}.run_id`);
+    if (refRunId !== runId) return fail(`${refPath}.run_id`, "CrossViewRef belongs to another Run");
+    const status = decodeEnum(field(ref, "status", refPath), RESULTS_RELATION_STATUSES, `${refPath}.status`);
+    const rawReason = field(ref, "reason_code", refPath);
+    const reasonCode = rawReason === null ? null : decodeOpaqueId(rawReason, `${refPath}.reason_code`);
+    if ((status === "AVAILABLE") !== (reasonCode === null)) return fail(refPath, "CrossView status/reason mismatch");
+    return freezeDeep({
+      runId: refRunId,
+      source: decodeCrossViewEndpoint(field(ref, "source", refPath), `${refPath}.source`, runId),
+      target: decodeCrossViewEndpoint(field(ref, "target", refPath), `${refPath}.target`, runId),
+      status,
+      reasonCode
+    });
+  });
+  const surfaceIds: Readonly<Record<ResultsSurfaceName, string>> = {
+    A_REPORT: reportSurface.surfaceId,
+    B_FINANCIAL_REVIEW: reviewSurface.surfaceId,
+    C_EXECUTION_RECORD: executionSurface.surfaceId
+  };
+  if (crossViewRefs.some((item) =>
+    item.source.identityId !== surfaceIds[item.source.surface] ||
+    item.target.identityId !== surfaceIds[item.target.surface]
+  )) return fail("$.cross_view_refs", "CrossViewRef names another surface identity");
+  return freezeDeep({
+    schemaVersion: "phase4.5-results-workspace/v1",
+    runId, objectId,
+    asOf: decodeDate(field(input, "as_of", path), "$.as_of"),
+    runStatus: decodeEnum(field(input, "run_status", path), BACKEND_RUN_STATUSES, "$.run_status"),
+    releasedResultId: resultId,
+    canonicalExecutionRecordId: canonicalId,
+    reportSurface, reviewSurface, executionSurface, crossViewRefs
   });
 }
 

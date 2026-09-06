@@ -16,7 +16,15 @@ export const phase4ApiRoutes = {
   runProjection: (runId: string) =>
     `/api/research-runs/${encodeURIComponent(runId)}/projection`,
   runResult: (runId: string) =>
-    `/api/research-runs/${encodeURIComponent(runId)}/result`
+    `/api/research-runs/${encodeURIComponent(runId)}/result`,
+  runResults: (runId: string) =>
+    `/api/research-runs/${encodeURIComponent(runId)}/results`,
+  runReport: (runId: string) =>
+    `/api/research-runs/${encodeURIComponent(runId)}/report-view`,
+  runReview: (runId: string) =>
+    `/api/research-runs/${encodeURIComponent(runId)}/review-view`,
+  runExecution: (runId: string) =>
+    `/api/research-runs/${encodeURIComponent(runId)}/execution-view`
 } as const;
 
 export type Phase4HttpMethod = "GET" | "POST";

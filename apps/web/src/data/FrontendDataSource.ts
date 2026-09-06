@@ -2,11 +2,14 @@ import type {
   AvailabilityStatus,
   ConfirmRunResponseV1,
   ExecutionView,
+  ExecutionRecordSurfaceV1,
+  FinancialReviewSurfaceV1,
   FinancialMetric,
   GlobalRunCollectionProjection,
   Phase4ResearchObjectDetail,
   PreparedResearchDraft,
   ReportArtifact,
+  ReportSurfaceV1,
   ResearchClaim,
   ResearchObject,
   ResearchObjectCollection,
@@ -15,6 +18,7 @@ import type {
   ResearchRun,
   ResearchRunDetailV1,
   ReleasedResultProjectionV1,
+  ResultsWorkspaceV1,
   RunProjection,
   RuntimeEvent,
   RuntimeProjection,
@@ -229,6 +233,26 @@ export interface Phase4FrontendDataSource {
     expectedObjectId?: string,
     options?: Phase4RequestOptions
   ): Promise<ReleasedResultProjectionV1>;
+  getResultsWorkspace(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ResultsWorkspaceV1>;
+  getReportSurface(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ReportSurfaceV1>;
+  getFinancialReviewSurface(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<FinancialReviewSurfaceV1>;
+  getExecutionRecordSurface(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ExecutionRecordSurfaceV1>;
 
   prepareResearchRun(
     mutation: Phase4Mutation<Phase4PrepareResearchRunInput>,
