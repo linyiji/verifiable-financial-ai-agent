@@ -21,6 +21,7 @@ import textwrap
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
@@ -30,7 +31,11 @@ from src.adapters.finrobot.audit import FINROBOT_PINNED_COMMIT
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
 from src.domain.financial_semantics import metric_semantics_hash
 from src.domain.released_research_result import ReleasedResearchResult
-from src.domain.report import CanonicalReportDTO, ReportArtifactRecord
+from src.domain.report import (
+    CanonicalReportDTO,
+    ReportArtifactRecord,
+    ReportSourceContribution,
+)
 
 RENDERER_VERSION = f"finrobot-professional-port/1.0.0+{FINROBOT_PINNED_COMMIT[:12]}"
 REPORT_SEMANTIC_SCHEMA = "canonical-report-presentation/v1"
@@ -55,6 +60,11 @@ class CanonicalReportMapper:
     def map(
         released: ReleasedResearchResult,
         canonical: CanonicalExecutionRecord,
+        *,
+        company_name: str | None = None,
+        symbol: str | None = None,
+        as_of: date | None = None,
+        source_contributions: Sequence[ReportSourceContribution] = (),
     ) -> CanonicalReportDTO:
         if released.run_id != canonical.run_id:
             raise CanonicalReportMappingError(
@@ -72,6 +82,17 @@ class CanonicalReportMapper:
             raise CanonicalReportMappingError(
                 "released structured_financial_results must contain research_object"
             )
+        if any(
+            source.run_id != canonical.run_id or source.report_id != released.result_id
+            for source in source_contributions
+        ):
+            raise CanonicalReportMappingError(
+                "report source contributions must share the exact Run and Report identity"
+            )
+        if len({source.report_anchor for source in source_contributions}) != len(
+            source_contributions
+        ):
+            raise CanonicalReportMappingError("report source anchors must be unique")
 
         provenance = {
             "semantic_schema": REPORT_SEMANTIC_SCHEMA,
@@ -82,6 +103,7 @@ class CanonicalReportMapper:
             "scheme_ref": canonical.scheme_ref,
             "evidence_refs": list(canonical.evidence_refs),
             "decision_refs": list(canonical.decision_refs),
+            "agent_output_refs": list(canonical.agent_output_refs),
             "review_refs": list(canonical.review_refs),
             "trace_refs": list(canonical.trace_refs),
             "generated_capability_refs": list(canonical.generated_capability_refs),
@@ -92,6 +114,9 @@ class CanonicalReportMapper:
             released_result_id=released.result_id,
             run_id=canonical.run_id,
             research_object=research_object.strip(),
+            company_name=company_name,
+            symbol=symbol,
+            as_of=as_of,
             structured_financial_results=deepcopy(released.structured_financial_results),
             released_claims=deepcopy(released.released_claims),
             released_metrics=[
@@ -113,6 +138,7 @@ class CanonicalReportMapper:
             calculation_refs=list(canonical.calculation_refs),
             proof_refs=list(canonical.proof_refs),
             provenance=provenance,
+            source_contributions=tuple(source_contributions),
         )
 
 
@@ -144,6 +170,11 @@ class ControlledArtifactStore:
         resolved_parent.mkdir(parents=True, exist_ok=True)
         self._reject_symlink_path(target)
 
+        if target.exists():
+            if not target.is_file() or target.read_bytes() != content:
+                raise ArtifactPathError("report artifact bindings are immutable")
+            return f"artifact://{relative.as_posix()}", target
+
         file_descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{target.name}.", suffix=".tmp", dir=resolved_parent
         )
@@ -153,12 +184,27 @@ class ControlledArtifactStore:
                 stream.write(content)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.chmod(temporary, 0o600)
-            os.replace(temporary, target)
+            os.chmod(temporary, 0o400)
+            try:
+                os.link(temporary, target)
+            except FileExistsError:
+                if not target.is_file() or target.read_bytes() != content:
+                    raise ArtifactPathError("report artifact bindings are immutable") from None
         finally:
             if temporary.exists():
                 temporary.unlink()
         return f"artifact://{relative.as_posix()}", target
+
+    def read_verified(self, record: ReportArtifactRecord) -> bytes:
+        target = self.resolve(record.artifact_ref)
+        self._reject_symlink_path(target)
+        try:
+            content = target.read_bytes()
+        except OSError as exc:
+            raise ArtifactPathError("report artifact is unavailable") from exc
+        if len(content) != record.size_bytes or _sha256(content) != record.content_hash:
+            raise ArtifactPathError("report artifact failed exact-byte verification")
+        return content
 
     def resolve(self, artifact_ref: str) -> Path:
         prefix = "artifact://"
@@ -189,7 +235,7 @@ class ProfessionalHTMLRenderer:
     renderer_version = RENDERER_VERSION
 
     def render(self, report: CanonicalReportDTO) -> bytes:
-        sections = (
+        technical_sections = (
             _html_section("Released financial metrics", report.released_metrics),
             _html_section("Material claims", report.material_claims),
             _html_section("Research source coverage", report.research_source_coverage),
@@ -207,7 +253,10 @@ class ProfessionalHTMLRenderer:
                 },
             ),
         )
-        title = _html_text(report.research_object)
+        demo_sections = _html_demo_sections(report)
+        title = _html_text(report.company_name or report.research_object)
+        symbol = _html_text(report.symbol or report.research_object)
+        as_of = _html_text(report.as_of.isoformat() if report.as_of is not None else "Not recorded")
         canonical_id = _html_text(report.canonical_record_id)
         released_id = _html_text(report.released_result_id)
         run_id = _html_text(report.run_id)
@@ -249,6 +298,20 @@ class ProfessionalHTMLRenderer:
              overflow-wrap:anywhere; }}
     dt {{ background:var(--wash); font-weight:700; }}
     ul {{ margin:6px 0; padding-left:22px; }}
+    .metric-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+                    gap:12px; }}
+    .metric-card {{ border:1px solid var(--line); border-radius:8px; padding:16px;
+                    scroll-margin-top:18px; }}
+    .metric-card strong {{ display:block; color:var(--navy); font-size:24px; }}
+    .source-link,.back-link {{ display:inline-block; margin-top:10px; color:#173f75;
+                               font-weight:700; text-decoration:none;
+                               border-bottom:1px solid #173f75; }}
+    .execution-panel {{ border:1px solid #c9d7e8; border-left:5px solid var(--gold);
+                        background:#f8fafc; border-radius:8px; padding:18px;
+                        scroll-margin-top:18px; }}
+    .execution-panel .status {{ color:#197044; font-weight:700; }}
+    .technical-report {{ margin-top:30px; border-top:1px solid var(--line); padding-top:18px; }}
+    .technical-report summary {{ cursor:pointer; color:var(--muted); font-weight:700; }}
     .empty {{ color:var(--muted); font-style:italic; }}
     footer {{ border-top:1px solid var(--line); padding:18px 52px 28px;
               color:var(--muted); font-size:11px; }}
@@ -263,14 +326,24 @@ class ProfessionalHTMLRenderer:
   <header>
     <div class="eyebrow">Verifiable financial research</div>
     <h1>{title}</h1>
-    <p>Professional released-result report</p>
+    <p>{symbol} · Professional released-result report</p>
   </header>
   <div class="identity">
     <div><span class="label">Run</span>{run_id}</div>
     <div><span class="label">Canonical record</span>{canonical_id}</div>
     <div><span class="label">Released result</span>{released_id}</div>
   </div>
-  <main>{"".join(sections)}</main>
+  <main>
+    <div class="identity">
+      <div><span class="label">Company</span>{title}</div>
+      <div><span class="label">Symbol</span>{symbol}</div>
+      <div><span class="label">As-of</span>{as_of}</div>
+    </div>
+    {demo_sections}
+    <details class="technical-report"><summary>查看完整验证记录</summary>
+      {"".join(technical_sections)}
+    </details>
+  </main>
   <footer>{attribution}<br>
     This document presents released research data only; it is not financial advice.
   </footer>
@@ -346,6 +419,33 @@ class ProfessionalReportPublisher:
             ),
         )
 
+    def publish_html(self, report: CanonicalReportDTO) -> ReportArtifactRecord:
+        """Materialize only the release-required HTML representation."""
+
+        before = _canonical_dto_bytes(report)
+        semantic_hash = _sha256(before)
+        stem = _safe_segment(report.research_object)
+        run_segment = _safe_segment(report.run_id)
+        canonical_segment = _safe_segment(report.canonical_record_id)
+        base = f"reports/{run_segment}/{stem}-{canonical_segment}"
+        html_bytes = self._html.render(report)
+        if _canonical_dto_bytes(report) != before:
+            raise RuntimeError("presentation renderer mutated CanonicalReportDTO")
+        html_ref, html_path = self._store.write(f"{base}.html", html_bytes)
+        record = _artifact_record(
+            report,
+            artifact_type="text/html",
+            artifact_ref=html_ref,
+            content=html_bytes,
+            size_bytes=html_path.stat().st_size,
+            semantic_hash=semantic_hash,
+        )
+        self._store.read_verified(record)
+        return record
+
+    def read_verified(self, record: ReportArtifactRecord) -> bytes:
+        return self._store.read_verified(record)
+
 
 def _artifact_record(
     report: CanonicalReportDTO,
@@ -358,6 +458,9 @@ def _artifact_record(
 ) -> ReportArtifactRecord:
     content_hash = _sha256(content)
     artifact_kind = "HTML" if artifact_type == "text/html" else "PDF"
+    manifest_hash = (
+        _sha256(_source_manifest_bytes(report)) if report.source_contributions else None
+    )
     return ReportArtifactRecord(
         artifact_id=f"RPT-{artifact_kind}-{content_hash.removeprefix('sha256:')[:20]}",
         run_id=report.run_id,
@@ -370,6 +473,156 @@ def _artifact_record(
         size_bytes=size_bytes,
         semantic_hash=semantic_hash,
         metric_semantics_hash=metric_semantics_hash(tuple(report.released_metrics)),
+        anchor_manifest_id=(
+            f"RPT-ANCHORS-{manifest_hash.removeprefix('sha256:')[:20]}"
+            if manifest_hash is not None
+            else None
+        ),
+        anchor_manifest_hash=manifest_hash,
+        source_contributions=list(report.source_contributions),
+    )
+
+
+def _html_demo_sections(report: CanonicalReportDTO) -> str:
+    if report.company_name is None and report.symbol is None and not report.source_contributions:
+        return ""
+    financial_results = report.structured_financial_results
+    thesis = financial_results.get("investment_thesis", {})
+    if not isinstance(thesis, Mapping):
+        thesis = {}
+    summary = thesis.get("summary")
+    summary_html = (
+        f"<p>{_html_text(summary)}</p>"
+        if isinstance(summary, str) and summary.strip()
+        else '<p class="empty">No released synthesis summary.</p>'
+    )
+    findings = thesis.get("key_findings", ())
+    if not isinstance(findings, Sequence) or isinstance(findings, (str, bytes, bytearray)):
+        findings = ()
+    risks = thesis.get("risks", ())
+    if not isinstance(risks, Sequence) or isinstance(risks, (str, bytes, bytearray)):
+        risks = ()
+    if not risks:
+        risk_value = report.risk_output.get("risks", ())
+        if isinstance(risk_value, Sequence) and not isinstance(
+            risk_value, (str, bytes, bytearray)
+        ):
+            risks = risk_value
+
+    source_by_calculation = {
+        source.calculation_id: source
+        for source in report.source_contributions
+        if source.calculation_id is not None
+    }
+    metric_cards: list[str] = []
+    wanted_capabilities = {"revenue_growth", "ebitda_margin", "free_cash_flow_margin"}
+    for metric in report.released_metrics:
+        if metric.capability_id not in wanted_capabilities:
+            continue
+        source = source_by_calculation.get(metric.calculation_id)
+        anchor = source.report_anchor if source is not None else f"metric-{metric.capability_id}"
+        link = (
+            f'<a class="source-link" href="#{_html_text(source.execution_anchor)}">'
+            "查看研究来源</a>"
+            if source is not None
+            else ""
+        )
+        metric_cards.append(
+            f'<article class="metric-card" id="{_html_text(anchor)}" '
+            f'data-calculation-id="{_html_text(metric.calculation_id)}">'
+            f'<span class="label">{_html_text(metric.name)}</span>'
+            f'<strong>{_html_text(metric.display_value)} {_html_text(metric.display_unit)}</strong>'
+            f'<span>{_html_text(metric.period)} · {_html_text(metric.actuality.value)}</span>{link}'
+            "</article>"
+        )
+    metrics_html = (
+        '<div class="metric-grid">' + "".join(metric_cards) + "</div>"
+        if metric_cards
+        else '<p class="empty">No authoritative released metrics.</p>'
+    )
+    source_panels = "".join(_html_source_panel(source) for source in report.source_contributions)
+    return "".join(
+        (
+            (
+                '<section id="research-summary"><h2>研究结论 / Research Summary</h2>'
+                f"{summary_html}</section>"
+            ),
+            f'<section id="key-findings"><h2>Key Findings</h2>{_html_value(findings)}</section>',
+            f'<section id="key-risks"><h2>Key Risks</h2>{_html_value(risks)}</section>',
+            f'<section id="key-metrics"><h2>Key Metrics</h2>{metrics_html}</section>',
+            (
+                '<section id="execution-sources"><h2>Report ↔ Execution</h2>'
+                f"{source_panels}</section>"
+                if source_panels
+                else ""
+            ),
+        )
+    )
+
+
+def _html_source_panel(source: ReportSourceContribution) -> str:
+    token_usage = (
+        f"{source.input_tokens if source.input_tokens is not None else 'N/A'} input / "
+        f"{source.output_tokens if source.output_tokens is not None else 'N/A'} output"
+    )
+    output = {
+        "summary": source.output_summary,
+        "key_findings": source.key_findings,
+        "risks": source.risks,
+        "limitations": source.limitations,
+    }
+    metric = (
+        f"{source.metric_name}: {source.metric_value} {source.metric_unit}"
+        if source.metric_name and source.metric_value and source.metric_unit
+        else "Not attached"
+    )
+    process = (
+        source.observable_process
+        or (
+            "Provider-backed Agent invocation completed.",
+            "Strict structured output validated.",
+            "Content-addressed output retained.",
+        )
+    )
+    details = {
+        "Actor / Agent": source.actor_id,
+        "Task": source.task_id,
+        "Status": source.status,
+        "Input": source.input_refs,
+        "Observable Process": process,
+        "Output": output,
+        "Report Contribution": f"{source.report_section} · {metric}",
+        "Provider / Model": f"{source.provider} / {source.actual_model}",
+        "Token Usage": token_usage,
+        "Duration": f"{source.duration_ms} ms",
+        "Agent Output ID": source.agent_output_id,
+        "Agent Output Artifact": source.agent_output_artifact_id,
+        "Execution Event ID": source.execution_event_id,
+        "Calculation ID": source.calculation_id,
+        "Formula ID": source.formula_id,
+        "Evidence Refs": source.evidence_refs,
+        "Review": (
+            f"{source.review_id} / {source.review_status}"
+            if source.review_id and source.review_status
+            else "Not attached"
+        ),
+        "Proof": (
+            f"{source.proof_id} / {source.proof_status}"
+            if source.proof_id and source.proof_status
+            else "Not attached"
+        ),
+    }
+    return (
+        f'<article class="execution-panel" id="{_html_text(source.execution_anchor)}" '
+        f'data-run-id="{_html_text(source.run_id)}" '
+        f'data-task-id="{_html_text(source.task_id)}" '
+        f'data-agent-output-id="{_html_text(source.agent_output_id)}" '
+        f'data-execution-event-id="{_html_text(source.execution_event_id)}">'
+        f'<h3>{_html_text(source.report_section)} · Exact Execution Record</h3>'
+        '<p class="status">SUCCESS · exact same-Run identity verified</p>'
+        f"{_html_value(details)}"
+        f'<a class="back-link" href="#{_html_text(source.report_anchor)}">返回报告</a>'
+        "</article>"
     )
 
 
@@ -621,6 +874,16 @@ def _safe_segment(value: str) -> str:
 def _canonical_dto_bytes(report: CanonicalReportDTO) -> bytes:
     return json.dumps(
         report.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _source_manifest_bytes(report: CanonicalReportDTO) -> bytes:
+    return json.dumps(
+        [source.model_dump(mode="json") for source in report.source_contributions],
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

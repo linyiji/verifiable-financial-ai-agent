@@ -2,15 +2,73 @@
 
 > Foundation runtime baseline: backend Python `>=3.11,<3.12`, frontend Node.js `>=24,<25`.
 
+## Flux Minimum Demo
+
+The `phase4` branch contains the competition path demonstrated end to end:
+
+```text
+real FMP evidence → provider-backed Research Agents → Research Lead synthesis
+→ immutable HTML report ↔ exact observable execution record
+```
+
+Accepted reference Demo Run: `RUN-57aed683-75d6-4b47-acc6-a73053ea492e`. This is
+an environment-specific reference only. Runtime and report lookups use the exact newly created
+Run/Task/output identities; the reference ID is not hardcoded as a production fallback.
+
+Prerequisites are Python 3.11, Node.js 24, PostgreSQL, Docker for generated-capability validation,
+and the RISC Zero toolchain described in `zk/revenue_growth/README.md`.
+
+1. Install the backend and frontend dependencies.
+
+   ```bash
+   python3.11 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install -e '.[dev,postgres]'
+   cd apps/web && npm ci && cd ../..
+   ```
+
+2. Copy `.env.example` to the ignored `.env.local`. Configure a PostgreSQL `DATABASE_URL`, an
+   `FMP_API_KEY`, and `TEAMOROUTER_API_KEY`. The example contains names and placeholders only.
+   Mimo and Langfuse credentials are optional for this minimum path.
+
+3. Prepare PostgreSQL and the formal proof host.
+
+   ```bash
+   PYTHONPATH=. python scripts/postgresql_migrate.py
+   ./zk/revenue_growth/build-host.sh
+   ```
+
+4. Start the API on port 8010. Its application lifespan starts the PostgreSQL-backed runtime
+   worker; no separate scheduler command is required.
+
+   ```bash
+   PYTHONPATH=. uvicorn apps.api.main:app --host 127.0.0.1 --port 8010
+   ```
+
+5. In another shell, start the frontend. Port 4173 uses the local 8010 API by default;
+   `VITE_API_BASE_URL` can explicitly select another API origin.
+
+   ```bash
+   cd apps/web
+   npm exec vite -- --host 127.0.0.1 --port 4173
+   ```
+
+6. Open `http://127.0.0.1:4173`, create an NVIDIA Research Run, generate the plan, and confirm it.
+   After the exact Run reaches `RELEASED`, select `05 · 完成` and open `查看研究结果`.
+7. In the generated HTML report, select `Revenue Growth → 查看研究来源`. The source panel shows
+   the same Run's Agent, Task, safe input references, observable actions, persisted structured
+   output, calculation, and execution event. Select `返回报告` to return to the exact Revenue
+   Growth anchor.
+
+The report never exposes prompts, raw provider payloads, secrets, or hidden chain-of-thought.
+
 ## Current backend status
 
-Phase 1 and the Phase-2 backend integration are implemented. Phase 2 adds unified secret-safe
-settings, live FMP evidence collection, TeamoRouter structured Scheme/Planner adapters, a pinned
-FinRobot reuse audit, PostgreSQL migrations/durable repository paths, and optional fail-open
-Langfuse instrumentation. The controlled Phase-1 fixture remains the default API composition.
-
-Frontend implementation is explicitly `DEFERRED_PENDING_FINAL_UX_BASELINE`. Existing HTML
-prototypes remain references only; none is declared final or canonical.
+Phase 4 adds the product API, PostgreSQL-backed runtime worker, live FMP evidence collection,
+provider-backed specialist and Research Lead execution, immutable structured Agent outputs,
+independent release assurance, formal Revenue Growth proof, and a content-addressed HTML report.
+The React frontend presents Research Objects, Run history, live SSE execution, planned/actual
+research paths, completion, and the report-to-execution source bridge.
 
 ## Quickstart
 

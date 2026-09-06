@@ -32,6 +32,7 @@ from src.infrastructure.database.base import Base
 from src.infrastructure.database.models import (
     CorrectionRecordRow,
     ReplanRecordRow,
+    ReportArtifactRecordRow,
     TaskDependencyRow,
 )
 from src.runtime.state import RuntimeState
@@ -501,6 +502,20 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             else:
                 row.payload = result.model_dump(mode="json")
 
+        for artifact in aggregate.artifacts.report_artifacts:
+            row = await session.get(ReportArtifactRecordRow, artifact.artifact_id)
+            payload = artifact.model_dump(mode="json")
+            if row is None:
+                session.add(
+                    ReportArtifactRecordRow(
+                        artifact_id=artifact.artifact_id,
+                        run_id=aggregate.run.run_id,
+                        payload=payload,
+                    )
+                )
+            elif row.run_id != aggregate.run.run_id or row.payload != payload:
+                raise ValueError("report artifact records are immutable and exact-Run bound")
+
     @staticmethod
     def _to_aggregate(payload: dict) -> RunAggregate:
         runtime_payload = payload["runtime"]
@@ -523,4 +538,38 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             runtime=runtime,
         )
         aggregate.artifacts = CompletedRunArtifacts.model_validate(payload["artifacts"])
+        task_by_id = {task.task_id: task for task in aggregate.runtime.actual_graph.tasks}
+        output_task_ids: set[str] = set()
+        for output in aggregate.artifacts.agent_outputs:
+            task = task_by_id.get(output.task_id)
+            if (
+                output.run_id != aggregate.run.run_id
+                or task is None
+                or task.run_id != output.run_id
+                or task.assigned_agent != output.actor
+                or output.task_id in output_task_ids
+            ):
+                raise ValueError(
+                    "persisted research Agent output is not uniquely bound to its exact Run/Task"
+                )
+            output_task_ids.add(output.task_id)
+        canonical = aggregate.artifacts.canonical_record
+        if canonical is not None and set(canonical.agent_output_refs) != {
+            output.output_id
+            for output in aggregate.artifacts.agent_outputs
+            if output.status == "SUCCESS"
+        }:
+            raise ValueError(
+                "canonical Agent output refs do not match the exact persisted success set"
+            )
+        released = aggregate.artifacts.released_result
+        for artifact in aggregate.artifacts.report_artifacts:
+            if (
+                artifact.run_id != aggregate.run.run_id
+                or canonical is None
+                or released is None
+                or artifact.canonical_record_id != canonical.record_id
+                or artifact.released_result_id != released.result_id
+            ):
+                raise ValueError("persisted report artifact crossed its released Run identity")
         return aggregate

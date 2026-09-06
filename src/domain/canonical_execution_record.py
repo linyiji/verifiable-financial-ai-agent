@@ -18,6 +18,7 @@ class CanonicalExecutionRecord(TimestampedModel):
     claim_refs: list[str] = Field(default_factory=list)
     judgment_refs: list[str] = Field(default_factory=list)
     decision_refs: list[str] = Field(default_factory=list)
+    agent_output_refs: list[str] = Field(default_factory=list)
     correction_refs: list[str] = Field(default_factory=list)
     replan_refs: list[str] = Field(default_factory=list)
     generated_capability_refs: list[str] = Field(default_factory=list)

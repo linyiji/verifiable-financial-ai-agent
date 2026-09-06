@@ -57,6 +57,7 @@ from src.phase4_product.admission import (
     prepare_request_hash,
     validate_confirm_request,
 )
+from src.phase4_product.api import VerifiedArtifactBytes
 from src.phase4_product.contracts import (
     ArtifactSummaryV1,
     AtomicRunProjectionV1,
@@ -69,6 +70,9 @@ from src.phase4_product.contracts import (
     ExecutionSummaryV1,
     PrepareResearchRunRequestV1,
     ProofSummaryV1,
+    RendererIdentityV1,
+    ReportArtifactGroupV1,
+    ReportArtifactRepresentationV1,
     ResearchObjectCollectionV1,
     ResearchObjectDetailV1,
     ResearchRunDetailV1,
@@ -768,6 +772,8 @@ class PostgreSQLPhase4ProductBackend:
                             and artifacts.projections.canonical_record_id
                             == artifacts.canonical_record.record_id
                             and artifacts.report is not None
+                            and len(artifacts.report_artifacts) == 1
+                            and artifacts.report_artifacts[0].run_id == run.run_id
                         ),
                     )
                     history_items.append(
@@ -850,6 +856,38 @@ class PostgreSQLPhase4ProductBackend:
                 "INTEGRITY_FAILURE",
                 "released Run is missing its authoritative release records",
             )
+        html_artifacts = [
+            artifact
+            for artifact in artifacts.report_artifacts
+            if artifact.artifact_type == "text/html"
+            and artifact.run_id == run.run_id
+            and artifact.canonical_record_id == canonical.record_id
+            and artifact.released_result_id == released.result_id
+        ]
+        if len(html_artifacts) != 1:
+            raise product_error(
+                "INTEGRITY_FAILURE",
+                "released Run requires exactly one retained HTML report artifact",
+            )
+        html_artifact = html_artifacts[0]
+        proof_records = [
+            proof
+            for proof in artifacts.proofs
+            if isinstance(proof, ProofRecord) and proof.run_id == run.run_id
+        ]
+        if set(canonical.proof_refs) != {proof.proof_id for proof in proof_records}:
+            raise product_error(
+                "INTEGRITY_FAILURE",
+                "released Run Proof summary does not match the canonical record",
+            )
+        proof_policy = "MUST_PROVE" if proof_records else "NOT_REQUIRED"
+        proof_status = (
+            "VERIFIED"
+            if proof_records and all(proof.status.value == "VERIFIED" for proof in proof_records)
+            else "NOT_REQUIRED"
+            if not proof_records
+            else proof_records[0].status.value
+        )
         available = AvailabilityV1.available()
         run_status = project_run_status(run.status)
         planned_projection = project_graph(
@@ -930,12 +968,13 @@ class PostgreSQLPhase4ProductBackend:
             artifacts=ArtifactSummaryV1(
                 availability=available,
                 report_id=released.result_id,
-                representation_ids=(f"REPORT-{run.run_id}-HTML",),
+                representation_ids=(html_artifact.artifact_id,),
             ),
             proof=ProofSummaryV1(
                 availability=available,
-                policy="NOT_REQUIRED",
-                status="NOT_REQUIRED",
+                policy=proof_policy,
+                status=proof_status,
+                proof_refs=tuple(proof.proof_id for proof in proof_records),
             ),
             execution=ExecutionSummaryV1(
                 availability=available,
@@ -1042,12 +1081,138 @@ class PostgreSQLPhase4ProductBackend:
         raise self._unavailable("trace_bundle", claim_id, "NOT_GENERATED")
 
     async def get_artifacts(self, run_id: str):
-        await self.get_run(run_id)
-        raise self._unavailable("report_artifact", run_id, "NOT_GENERATED")
+        aggregate = await self.service.get_run(run_id)
+        if aggregate.run.status is not RunStatus.RELEASED:
+            raise self._unavailable("report_artifact", run_id, "NOT_RELEASED")
+        canonical = aggregate.artifacts.canonical_record
+        released = aggregate.artifacts.released_result
+        html_records = [
+            record
+            for record in aggregate.artifacts.report_artifacts
+            if record.artifact_type == "text/html"
+        ]
+        if canonical is None or released is None or not html_records:
+            raise self._unavailable("report_artifact", run_id, "NOT_GENERATED")
+        if len(html_records) != 1:
+            raise product_error(
+                "INTEGRITY_FAILURE",
+                "the exact Run must have one HTML report representation",
+                resource_type="report_artifact",
+                resource_id=run_id,
+            )
+        record = html_records[0]
+        if (
+            record.run_id != run_id
+            or record.canonical_record_id != canonical.record_id
+            or record.released_result_id != released.result_id
+            or record.anchor_manifest_id is None
+            or record.anchor_manifest_hash is None
+        ):
+            raise product_error(
+                "IDENTITY_MISMATCH",
+                "report artifact does not close to the exact released Run",
+                resource_type="report_artifact",
+                resource_id=record.artifact_id,
+            )
+        available = AvailabilityV1.available()
+        return ReportArtifactGroupV1(
+            object_id=aggregate.run.research_object_id,
+            run_id=run_id,
+            report_id=released.result_id,
+            canonical_record_id=canonical.record_id,
+            released_result_id=released.result_id,
+            anchor_manifest_id=record.anchor_manifest_id,
+            anchor_manifest_sha256=record.anchor_manifest_hash,
+            availability=available,
+            representations=(
+                ReportArtifactRepresentationV1(
+                    format="HTML",
+                    required_for_release=True,
+                    content_type="text/html; charset=utf-8",
+                    availability=available,
+                    artifact_id=record.artifact_id,
+                    safe_failure_code=None,
+                    generation_attempt_id=f"ATTEMPT-{record.artifact_id}",
+                    generation_attempt_count=1,
+                    sha256=record.content_hash,
+                    size_bytes=record.size_bytes,
+                    renderer=RendererIdentityV1(
+                        renderer_id="professional-html",
+                        renderer_version=record.renderer_version,
+                    ),
+                    generated_at=record.created_at,
+                    authorized_ref=(
+                        f"/api/research-runs/{run_id}/artifacts/"
+                        f"{record.artifact_id}/content"
+                    ),
+                ),
+                ReportArtifactRepresentationV1(
+                    format="PDF",
+                    required_for_release=False,
+                    content_type="application/pdf",
+                    availability=AvailabilityV1.unavailable(
+                        AvailabilityStatus.NOT_GENERATED,
+                        "PDF_DEFERRED_MINIMUM_DEMO",
+                    ),
+                    artifact_id=None,
+                    safe_failure_code=None,
+                    generation_attempt_id=None,
+                    generation_attempt_count=0,
+                    sha256=None,
+                    size_bytes=None,
+                    renderer=None,
+                    generated_at=None,
+                    authorized_ref=None,
+                ),
+            ),
+        )
 
     async def get_artifact_content(self, run_id: str, artifact_id: str):
-        await self.get_run(run_id)
-        raise self._unavailable("report_artifact", artifact_id, "NOT_GENERATED")
+        aggregate = await self.service.get_run(run_id)
+        if aggregate.run.status is not RunStatus.RELEASED:
+            raise self._unavailable("report_artifact", artifact_id, "NOT_RELEASED")
+        records = [
+            record
+            for record in aggregate.artifacts.report_artifacts
+            if record.artifact_id == artifact_id and record.artifact_type == "text/html"
+        ]
+        if not records:
+            raise self._not_found("report_artifact", artifact_id)
+        if len(records) != 1 or records[0].run_id != run_id:
+            raise product_error(
+                "IDENTITY_MISMATCH",
+                "report artifact does not belong to the exact requested Run",
+                resource_type="report_artifact",
+                resource_id=artifact_id,
+            )
+        publisher = self.service.report_publisher
+        if publisher is None:
+            raise self._unavailable("report_artifact", artifact_id, "NOT_GENERATED")
+        record = records[0]
+        canonical = aggregate.artifacts.canonical_record
+        released = aggregate.artifacts.released_result
+        if (
+            canonical is None
+            or released is None
+            or record.canonical_record_id != canonical.record_id
+            or record.released_result_id != released.result_id
+        ):
+            raise product_error(
+                "IDENTITY_MISMATCH",
+                "report artifact does not close to the exact released result",
+                resource_type="report_artifact",
+                resource_id=artifact_id,
+            )
+        content = publisher.read_verified(record)
+        return VerifiedArtifactBytes(
+            run_id=run_id,
+            artifact_id=artifact_id,
+            content=content,
+            content_type="text/html; charset=utf-8",
+            sha256=record.content_hash,
+            filename="report.html",
+            disposition="inline",
+        )
 
     async def get_released_object(self, object_id: str):
         await self.get_object(object_id)

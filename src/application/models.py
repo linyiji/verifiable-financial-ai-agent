@@ -1,5 +1,6 @@
 from pydantic import Field
 
+from src.domain.agent_output import ResearchAgentOutputRecord
 from src.domain.base import DomainModel, JsonObject
 from src.domain.calculation import CalculationRecord
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
@@ -27,6 +28,7 @@ class ResearchRunDraft(DomainModel):
 
 
 class CompletedRunArtifacts(DomainModel):
+    agent_outputs: list[ResearchAgentOutputRecord] = Field(default_factory=list)
     evidence: list[EvidenceRecord] = Field(default_factory=list)
     calculations: list[CalculationRecord] = Field(default_factory=list)
     corrections: list[CorrectionRecord] = Field(default_factory=list)

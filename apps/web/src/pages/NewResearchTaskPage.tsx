@@ -35,7 +35,7 @@ const PLAN_LABELS: Readonly<Record<string, string>> = {
   valuation_analysis: "Valuation Analysis · 估值分析",
   risk_analysis: "Risk Analysis · 风险分析",
   risk_follow_up: "风险跟进验证",
-  report_synthesis: "Report Synthesis · 研究汇总"
+  report_synthesis: "Research Synthesis · 研究汇总"
 };
 
 export function researchPlanLabel(value: string): string {

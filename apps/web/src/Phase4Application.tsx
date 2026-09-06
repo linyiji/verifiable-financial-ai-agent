@@ -10,6 +10,13 @@ import { ResearchRunPage } from "./pages/ResearchRunPage";
 import { ResearchRunsPage } from "./pages/ResearchRunsPage";
 import { SSERuntimeTransport } from "./runtime/SSERuntimeTransport";
 import {
+  createRunRuntimeState,
+  reconcileRunRuntimeState,
+  reduceRuntimeEvent,
+  selectRunProjection,
+  type RunRuntimeState
+} from "./state/runtimeEventReducer";
+import {
   type ConnectionState,
   type ErrorEnvelope,
   type NormalizedObjectIdentity,
@@ -19,9 +26,10 @@ import {
   type RunProjection
 } from "./types/domain";
 
-const backendOrigin = window.location.port === "4174"
+const configuredBackendOrigin = import.meta.env.VITE_API_BASE_URL?.trim();
+const backendOrigin = configuredBackendOrigin || (window.location.port === "4174"
   ? "http://127.0.0.1:61999"
-  : "http://127.0.0.1:8010";
+  : "http://127.0.0.1:8010");
 const apiBase = `${backendOrigin}/api`;
 
 const ROUTE_CHANGE_EVENT = "phase4-routechange";
@@ -113,6 +121,7 @@ export function Phase4Application() {
   const confirmPending = useRef(false);
   const retryLoad = useRef<(() => void) | null>(null);
   const currentProjection = useRef<RunProjection | null>(null);
+  const runtimeState = useRef<RunRuntimeState | null>(null);
 
   useEffect(() => { currentProjection.current = selectedRunProjection; }, [selectedRunProjection]);
 
@@ -175,6 +184,7 @@ export function Phase4Application() {
 
   const loadRun = useCallback((runId: string) => {
     subscription.current?.unsubscribe();
+    if (runtimeState.current?.runId !== runId) runtimeState.current = null;
     activeRun.current = runId;
     setError(null);
     setSelectedRunError(null);
@@ -205,7 +215,20 @@ export function Phase4Application() {
           }) : prior);
           return;
         }
-        setSelectedRunProjection(value);
+        const priorRuntime = runtimeState.current;
+        const initializedRuntime = priorRuntime?.runId === runId
+          ? reconcileRunRuntimeState(priorRuntime, value)
+          : createRunRuntimeState(value, {
+              runId,
+              objectId: value.object.objectId,
+              goalId: value.goal.goalId,
+              schemeId: value.confirmedScheme.schemeId,
+              plannedGraphId: value.plannedGraph.graphId,
+              actualGraphId: value.actualGraph?.graphId ?? null,
+              canonicalRecordId: value.execution.canonicalRecordId
+            });
+        runtimeState.current = initializedRuntime;
+        setSelectedRunProjection(selectRunProjection(initializedRuntime));
         setConnection(initialConnection(runId, value.projectionSequence));
         setLifecycle((prior) => ({
           runId,
@@ -250,12 +273,22 @@ export function Phase4Application() {
         }
         window.setTimeout(() => {
           if (activeRun.current !== runId || requestEpoch !== epoch.current) return;
-          const refresh = () => loadRun(runId);
+          const refresh = () => {
+            if (activeRun.current === runId && requestEpoch === epoch.current) loadRun(runId);
+          };
           const stream = transport.subscribe(
             runId,
             (event) => {
               if (activeRun.current !== runId) return;
-              if (event.projectionRefreshRequired || event.effect === "TERMINAL") {
+              const current = runtimeState.current;
+              if (current === null || current.runId !== runId) {
+                window.setTimeout(refresh, 0);
+                return;
+              }
+              const next = reduceRuntimeEvent(current, event);
+              runtimeState.current = next;
+              setSelectedRunProjection(selectRunProjection(next));
+              if (next.stale || event.projectionRefreshRequired || event.effect === "TERMINAL") {
                 window.setTimeout(refresh, 0);
               }
             },
@@ -264,10 +297,12 @@ export function Phase4Application() {
               initialSequence: value.projectionSequence,
               authoritativeTaskIds: value.tasks.map((task) => task.taskId),
               onStateChange: (state) => {
-                if (activeRun.current === runId) setConnection(state);
+                if (activeRun.current !== runId || requestEpoch !== epoch.current) return;
+                setConnection(state);
+                if (state.kind === "BACKOFF") window.setTimeout(refresh, 500);
               },
               onTerminalAtCursor: () => {
-                if (activeRun.current === runId) loadRun(runId);
+                if (activeRun.current === runId && requestEpoch === epoch.current) loadRun(runId);
               }
             }
           );
@@ -275,6 +310,7 @@ export function Phase4Application() {
         }, 50);
       } catch (caught) {
         if (activeRun.current !== runId || requestEpoch !== epoch.current) return;
+        runtimeState.current = null;
         setSelectedRunProjection(null);
         setSelectedRunError(safeEnvelope(caught, runId));
         setHistoryState({ phase: "UNAVAILABLE", selectedRunId: runId, items: [] });
@@ -308,6 +344,7 @@ export function Phase4Application() {
       subscription.current?.unsubscribe();
       subscription.current = null;
       activeRun.current = null;
+      runtimeState.current = null;
       epoch.current += 1;
       setSelectedRunProjection(null);
       setSelectedRunError(null);
@@ -419,6 +456,7 @@ export function Phase4Application() {
         projection={selectedRunProjection}
         connection={connection ?? initialConnection(selectedRunProjection.run.runId, selectedRunProjection.projectionSequence)}
         lifecycle={lifecycle}
+        reportBaseUrl={backendOrigin}
       />}
       {!selectedRunProjection && !selectedRunError && <div className="card app-loading" role="status"><div className="spinner" aria-hidden="true" /><span>正在载入当前 Research Run…</span></div>}
     </div>;

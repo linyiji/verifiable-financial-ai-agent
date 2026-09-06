@@ -6,8 +6,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from src.adapters.finrobot.professional_reporting import (
+    CanonicalReportMapper,
+    ProfessionalReportPublisher,
+)
 from src.adapters.risc0 import PendingProofAdapter
-from src.agentic import DeterministicSchemeGenerator, ResearchLeadPlanner, SchemeGenerator
+from src.agentic import (
+    AgentRegistry,
+    DeterministicSchemeGenerator,
+    ResearchLeadPlanner,
+    SchemeGenerator,
+)
 from src.application.errors import ApplicationError, NotFoundError
 from src.application.evidence_collection import EvidenceCollector, FixtureEvidenceCollector
 from src.application.evidence_routing import (
@@ -33,6 +42,7 @@ from src.data.ingestion import EvidenceIngestionResult
 from src.data.repository import EvidenceRepository, InMemoryEvidenceRepository
 from src.domain.enums import CapabilityBackend, ProofRequirement, ProofStatus, RunStatus
 from src.domain.proof import ProofRecord, ProofRequest
+from src.domain.report import ReportSourceContribution
 from src.domain.research_goal import ResearchGoal
 from src.domain.research_object import ResearchObject
 from src.domain.research_run import ResearchRun
@@ -90,6 +100,8 @@ class ResearchApplicationService:
         run_id_factory: Callable[[], str] | None = None,
         calculation_extensions: Sequence[TaskCalculationExtension] = (),
         proof_workflow: ProofWorkflow | None = None,
+        agent_registry: AgentRegistry | None = None,
+        report_publisher: ProfessionalReportPublisher | None = None,
     ) -> None:
         self.repository = repository or InMemoryApplicationRepository()
         self.event_store = event_store or InMemoryRuntimeEventStore()
@@ -115,6 +127,8 @@ class ResearchApplicationService:
         self._idempotency: dict[tuple[str, str], object] = {}
         self.calculation_extensions = list(calculation_extensions)
         self.proof_workflow = proof_workflow
+        self.agent_registry = agent_registry or AgentRegistry()
+        self.report_publisher = report_publisher
 
         registry = CapabilityRegistry()
         registry.register(RevenueGrowthCapability())
@@ -521,6 +535,9 @@ class ResearchApplicationService:
             if self.trace_reference_repository is not None
             else []
         )
+        successful_agent_outputs = [
+            output for output in aggregate.artifacts.agent_outputs if output.status == "SUCCESS"
+        ]
         record = CanonicalExecutionRecordBuilder.build(
             record_id=f"CER-{run_id}",
             run_id=run_id,
@@ -541,12 +558,18 @@ class ResearchApplicationService:
                 for judgment in judgments
                 if isinstance(judgment.get("judgment_id"), str)
             ],
+            agent_output_refs=[output.output_id for output in successful_agent_outputs],
             generated_capability_refs=aggregate.artifacts.generated_capability_refs,
             correction_refs=[item.correction_id for item in aggregate.artifacts.corrections],
             replan_refs=[item.replan_id for item in aggregate.artifacts.replans],
             review_refs=[review.review_id],
             proof_refs=[proof.proof_id for proof in proof_outcome.proofs.values()],
             trace_refs=[reference.reference_id for reference in trace_references],
+            token_usage=sum(
+                (output.input_tokens or 0) + (output.output_tokens or 0)
+                for output in successful_agent_outputs
+            ),
+            latency_ms=sum(output.duration_ms for output in successful_agent_outputs),
             runtime_outcome=RunStatus.RELEASED.value,
         )
         aggregate.artifacts.calculations = link_calculation_lineage(
@@ -573,13 +596,26 @@ class ResearchApplicationService:
                 )
         calculations = {item.capability_id: item for item in aggregate.artifacts.calculations}
         live_evidence = any(item.provider == "fmp" for item in aggregate.artifacts.evidence)
-        risk_result = next(
-            (
-                output
-                for task_id, output in aggregate.artifacts.task_outputs.items()
-                if task_id.endswith(":risk-follow-up")
-            ),
-            {"finding": "No additional quantified risk conclusion is available."},
+        agent_output_by_type = {
+            aggregate.runtime.task(output.task_id).task_type: output
+            for output in successful_agent_outputs
+            if output.structured_output is not None
+        }
+        synthesis_output = agent_output_by_type.get("report_synthesis")
+        if self.agent_registry.registered_ids() and synthesis_output is None:
+            raise ApplicationError(
+                "REQUIRED_RESEARCH_OUTPUT_MISSING",
+                "Research Lead synthesis output is required before release",
+            )
+        fundamental_output = agent_output_by_type.get("fundamental_analysis")
+        valuation_output = agent_output_by_type.get("valuation_analysis")
+        risk_output = agent_output_by_type.get("risk_follow_up") or agent_output_by_type.get(
+            "risk_analysis"
+        )
+        risk_result = (
+            risk_output.structured_output.model_dump(mode="json")
+            if risk_output is not None and risk_output.structured_output is not None
+            else {"finding": "No additional quantified risk conclusion is available."}
         )
         structured = {
             "research_object": aggregate.run.research_object_id,
@@ -587,7 +623,15 @@ class ResearchApplicationService:
                 "revenue_growth": str(calculations["revenue_growth"].output_value),
                 "ebitda_margin": str(calculations["ebitda_margin"].output_value),
             },
-            "fundamental_result": {"calculation_refs": fundamental_calculation_refs},
+            "fundamental_result": {
+                "calculation_refs": fundamental_calculation_refs,
+                **(
+                    fundamental_output.structured_output.model_dump(mode="json")
+                    if fundamental_output is not None
+                    and fundamental_output.structured_output is not None
+                    else {}
+                ),
+            },
             "peer_result": next(
                 (
                     output
@@ -597,8 +641,16 @@ class ResearchApplicationService:
                 {"status": "not_available"},
             ),
             "research_news_result": research_news_result,
-            "valuation_result": {"status": "not_quantified_in_current_scope"},
-            "investment_thesis": {"status": "reviewed_execution"},
+            "valuation_result": (
+                valuation_output.structured_output.model_dump(mode="json")
+                if valuation_output is not None and valuation_output.structured_output is not None
+                else {"status": "not_quantified_in_current_scope"}
+            ),
+            "investment_thesis": (
+                synthesis_output.structured_output.model_dump(mode="json")
+                if synthesis_output is not None and synthesis_output.structured_output is not None
+                else {"status": "reviewed_execution"}
+            ),
         }
         if strict_financial_release:
             structured["technical_result"] = {
@@ -639,6 +691,38 @@ class ResearchApplicationService:
         )
         object_id = aggregate.run.research_object_id
         report = FinancialReportRenderer.render(result, research_object=object_id)
+        research_object = await self._object(object_id)
+        if self.report_publisher is not None:
+            source_contribution = await self._revenue_growth_source_contribution(
+                aggregate=aggregate,
+                result=result,
+                review_id=review.review_id,
+                review_status=review.status.value,
+                proof_records=tuple(
+                    proof
+                    for proof in proof_outcome.proofs.values()
+                    if isinstance(proof, ProofRecord)
+                ),
+            )
+            canonical_report = CanonicalReportMapper.map(
+                result,
+                record,
+                company_name=research_object.company_name,
+                symbol=research_object.symbol,
+                as_of=aggregate.run.as_of,
+                source_contributions=(source_contribution,),
+            )
+            html_artifact = self.report_publisher.publish_html(canonical_report)
+            if (
+                html_artifact.run_id != run_id
+                or html_artifact.canonical_record_id != record.record_id
+                or html_artifact.released_result_id != result.result_id
+            ):
+                raise ApplicationError(
+                    "REPORT_IDENTITY_MISMATCH",
+                    "HTML report artifact does not close to the exact released Run",
+                )
+            aggregate.artifacts.report_artifacts = [html_artifact]
         projections = build_canonical_record_projections(record)
         evidence = aggregate.artifacts.evidence
         current_revenue = max(
@@ -710,6 +794,137 @@ class ResearchApplicationService:
                 payload={"status": RunStatus.RELEASED.value},
                 timestamp=terminal_at,
             )
+
+    async def _revenue_growth_source_contribution(
+        self,
+        *,
+        aggregate: RunAggregate,
+        result: object,
+        review_id: str,
+        review_status: str,
+        proof_records: tuple[ProofRecord, ...],
+    ) -> ReportSourceContribution:
+        """Close one demo report anchor to one exact observable execution record."""
+
+        run_id = aggregate.run.run_id
+        fundamental_outputs = [
+            output
+            for output in aggregate.artifacts.agent_outputs
+            if output.status == "SUCCESS"
+            and aggregate.runtime.task(output.task_id).task_type == "fundamental_analysis"
+        ]
+        if len(fundamental_outputs) != 1:
+            raise ApplicationError(
+                "REPORT_SOURCE_MAP_INCOMPLETE",
+                "Revenue Growth requires exactly one retained Fundamental Analyst output",
+            )
+        output = fundamental_outputs[0]
+        if output.structured_output is None or not output.actual_model:
+            raise ApplicationError(
+                "REPORT_SOURCE_MAP_INCOMPLETE",
+                "Revenue Growth Agent output lacks validated observable metadata",
+            )
+        task = aggregate.runtime.task(output.task_id)
+        growth_calculations = [
+            calculation
+            for calculation in aggregate.artifacts.calculations
+            if calculation.capability_id == "revenue_growth"
+        ]
+        if len(growth_calculations) != 1:
+            raise ApplicationError(
+                "REPORT_SOURCE_MAP_INCOMPLETE",
+                "Revenue Growth requires exactly one authoritative Calculation record",
+            )
+        calculation = growth_calculations[0]
+        released_metrics = getattr(result, "released_metrics", ())
+        metrics = [
+            metric
+            for metric in released_metrics
+            if metric.calculation_id == calculation.calculation_id
+            and metric.capability_id == "revenue_growth"
+        ]
+        if len(metrics) != 1:
+            raise ApplicationError(
+                "REPORT_SOURCE_MAP_INCOMPLETE",
+                "Revenue Growth requires exactly one released metric",
+            )
+        metric = metrics[0]
+        if (
+            task.run_id != run_id
+            or calculation.run_id != run_id
+            or calculation.task_id != task.task_id
+            or output.run_id != run_id
+            or task.result_ref != output.artifact_ref
+            or output.output_id
+            not in aggregate.runtime.completed_output_refs.get(task.task_id, [])
+            or calculation.calculation_id
+            not in aggregate.runtime.completed_output_refs.get(task.task_id, [])
+        ):
+            raise ApplicationError(
+                "REPORT_SOURCE_IDENTITY_MISMATCH",
+                "Revenue Growth source records do not share the exact Run/Task identity",
+            )
+        completed_events = [
+            event
+            for event in await self.event_store.replay(run_id)
+            if event.type is RuntimeEventType.TASK_COMPLETED
+            and event.task_id == task.task_id
+            and event.payload.get("result_ref") == output.artifact_ref
+        ]
+        if len(completed_events) != 1:
+            raise ApplicationError(
+                "REPORT_SOURCE_MAP_INCOMPLETE",
+                "Revenue Growth requires exactly one matching Task completion event",
+            )
+        proof = next(
+            (
+                record
+                for record in proof_records
+                if record.run_id == run_id
+                and record.calculation_id == calculation.calculation_id
+            ),
+            None,
+        )
+        report_id = str(result.result_id)
+        return ReportSourceContribution(
+            run_id=run_id,
+            report_id=report_id,
+            report_anchor="metric-revenue-growth",
+            execution_anchor=f"execution-{output.output_id}",
+            report_section="Financial Analysis / Revenue Growth",
+            actor_id=output.actor,
+            task_id=task.task_id,
+            agent_output_id=output.output_id,
+            agent_output_artifact_id=output.artifact_id,
+            execution_event_id=completed_events[0].event_id,
+            provider=output.provider,
+            actual_model=output.actual_model,
+            input_tokens=output.input_tokens,
+            output_tokens=output.output_tokens,
+            duration_ms=output.duration_ms,
+            input_refs=tuple(output.input_refs),
+            observable_process=(
+                "Provider-backed Agent invocation completed.",
+                "Strict structured output validation passed.",
+                "Content-addressed Agent output was retained.",
+                "Authoritative Revenue Growth CalculationRecord was linked without "
+                "UI recalculation.",
+            ),
+            output_summary=output.structured_output.summary,
+            key_findings=tuple(output.structured_output.key_findings),
+            risks=tuple(output.structured_output.risks),
+            limitations=tuple(output.structured_output.limitations),
+            metric_name=metric.name,
+            metric_value=metric.display_value,
+            metric_unit=metric.display_unit,
+            calculation_id=calculation.calculation_id,
+            formula_id=calculation.formula_id,
+            evidence_refs=tuple(calculation.input_evidence_ids),
+            review_id=review_id,
+            review_status=review_status,
+            proof_id=proof.proof_id if proof is not None else None,
+            proof_status=proof.status.value if proof is not None else None,
+        )
 
     @staticmethod
     def _apply_terminal_lifecycle(

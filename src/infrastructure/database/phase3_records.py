@@ -187,8 +187,8 @@ class SQLAlchemyPhase3RecordRepository:
             return
         if row.run_id != resolved_run_id:
             raise ValueError(f"record {entity_id} cannot move between runs")
-        if isinstance(entity, GeneratedCapabilityArtifactRecord):
+        if isinstance(entity, (GeneratedCapabilityArtifactRecord, ReportArtifactRecord)):
             if row.payload != payload:
-                raise ValueError("generated capability artifact bindings are immutable")
+                raise ValueError("artifact record bindings are immutable")
             return
         row.payload = payload

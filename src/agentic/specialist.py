@@ -4,6 +4,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import Field, model_validator
 
+from src.domain.agent_output import ResearchAgentOutputRecord
 from src.domain.base import DomainModel, JsonObject
 from src.domain.decision import StructuredAgentDecision
 from src.domain.enums import ReplanDecision
@@ -22,9 +23,16 @@ class SpecialistResult(DomainModel):
     output: JsonObject = Field(default_factory=dict)
     decision: StructuredAgentDecision
     replan_request: ReplanRequest | None = None
+    agent_output: ResearchAgentOutputRecord | None = None
 
     @model_validator(mode="after")
     def request_must_match_decision_task(self) -> "SpecialistResult":
+        if self.agent_output is not None:
+            if (
+                self.agent_output.run_id != self.decision.run_id
+                or self.agent_output.task_id != self.decision.task_id
+            ):
+                raise ValueError("Agent output and decision must reference the same task")
         if self.replan_request is not None:
             if self.decision.task_id != self.replan_request.requesting_task_id:
                 raise ValueError("replan request and decision must reference the same task")

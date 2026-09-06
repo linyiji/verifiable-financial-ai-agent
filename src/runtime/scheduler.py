@@ -266,7 +266,9 @@ class DependencyScheduler:
                         },
                     )
                     raise
-                if attempt < self._retry_policy.max_attempts:
+                if attempt < self._retry_policy.max_attempts and getattr(
+                    error, "retryable", True
+                ):
                     transition_task(task, TaskStatus.READY)
                     await self._event_store.emit(
                         run_id=state.run_id,

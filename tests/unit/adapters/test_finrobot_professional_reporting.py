@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -21,7 +21,10 @@ from src.adapters.finrobot.professional_reporting import (
     ProfessionalReportPublisher,
 )
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
+from src.domain.enums import FinancialActuality, FinancialPeriodBasis, FinancialUnit
+from src.domain.financial_semantics import ReleasedFinancialMetric
 from src.domain.released_research_result import ReleasedResearchResult
+from src.domain.report import ReportSourceContribution
 
 
 class StructureParser(HTMLParser):
@@ -176,6 +179,89 @@ def test_publisher_writes_controlled_nonempty_artifacts_with_stable_hashes(
     assert first.pdf.released_result_id == released.result_id
     assert _hash(html_path.read_bytes()) == first.html.content_hash
     assert _hash(pdf_path.read_bytes()) == first.pdf.content_hash
+
+
+def test_html_only_report_links_metric_to_exact_safe_execution_and_back(tmp_path: Path) -> None:
+    released, canonical = records()
+    source = ReportSourceContribution(
+        run_id="RUN-1",
+        report_id="REL-1",
+        report_anchor="metric-revenue-growth",
+        execution_anchor="execution-AGOUT-1",
+        report_section="Financial Analysis / Revenue Growth",
+        actor_id="fundamental_analyst",
+        task_id="TASK-1",
+        agent_output_id="AGOUT-1",
+        agent_output_artifact_id=f"sha256:{'a' * 64}",
+        execution_event_id="EVENT-TASK-1-COMPLETED",
+        provider="test-provider",
+        actual_model="test-model",
+        input_tokens=100,
+        output_tokens=40,
+        duration_ms=12,
+        input_refs=("EVD-REVENUE", "CALC-GROWTH"),
+        observable_process=("Strict structured output validation passed.",),
+        output_summary="收入增长由权威计算支持。",
+        key_findings=("当前收入高于上期。",),
+        metric_name="Revenue Growth",
+        metric_value="65.47",
+        metric_unit="%",
+        calculation_id="CALC-GROWTH",
+        formula_id="revenue_growth_v1",
+        evidence_refs=("EVD-REVENUE",),
+        review_id="REVIEW-1",
+        review_status="PASS",
+        proof_id="PROOF-GROWTH",
+        proof_status="VERIFIED",
+    )
+    dto = CanonicalReportMapper.map(
+        released,
+        canonical,
+        company_name="NVIDIA Corporation",
+        symbol="NVDA",
+        as_of=date(2026, 9, 4),
+        source_contributions=(source,),
+    ).model_copy(
+        update={
+            "released_metrics": (
+                ReleasedFinancialMetric(
+                    metric_id="METRIC-GROWTH",
+                    calculation_id="CALC-GROWTH",
+                    name="Revenue Growth",
+                    canonical_value="0.6547",
+                    canonical_unit=FinancialUnit.RATIO,
+                    display_value="65.47",
+                    display_unit="%",
+                    period="FY2026",
+                    period_basis=FinancialPeriodBasis.FY,
+                    actuality=FinancialActuality.ACTUAL,
+                    as_of=date(2026, 1, 31),
+                    currency="USD",
+                    formula_id="revenue_growth_v1",
+                    capability_id="revenue_growth",
+                    evidence_ids=("EVD-REVENUE",),
+                ),
+            )
+        }
+    )
+    store = ControlledArtifactStore(tmp_path / "artifacts")
+    publisher = ProfessionalReportPublisher(store)
+
+    artifact = publisher.publish_html(dto)
+    rendered = publisher.read_verified(artifact).decode("utf-8")
+
+    assert 'id="metric-revenue-growth"' in rendered
+    assert 'href="#execution-AGOUT-1">查看研究来源</a>' in rendered
+    assert 'id="execution-AGOUT-1"' in rendered
+    assert 'href="#metric-revenue-growth">返回报告</a>' in rendered
+    assert "NVIDIA Corporation" in rendered
+    assert "65.47 %" in rendered
+    assert "EVENT-TASK-1-COMPLETED" in rendered
+    assert artifact.run_id == "RUN-1"
+    assert artifact.anchor_manifest_hash is not None
+    assert artifact.source_contributions == [source]
+    assert "prompt" not in rendered.lower()
+    assert "chain-of-thought" not in rendered.lower()
 
 
 def test_artifact_store_rejects_path_escape_and_symlink(tmp_path: Path) -> None:

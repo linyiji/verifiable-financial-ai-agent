@@ -13,9 +13,16 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from apps.api.routes import router
+from src.adapters.finrobot.professional_reporting import (
+    ControlledArtifactStore,
+    ProfessionalReportPublisher,
+)
 from src.adapters.fmp import FinancialProviderMode, FMPProvider, select_financial_provider
 from src.adapters.llm.teamorouter import TeamoRouterClient
 from src.adapters.risc0 import RiscZeroProofAdapter
+from src.agentic import AgentRegistry
+from src.agentic.research_agent import LLMResearchAgent
+from src.agentic.research_output_artifacts import ResearchAgentOutputArtifactStore
 from src.application.errors import ApplicationError
 from src.application.evidence_collection import LiveFMPEvidenceCollector
 from src.application.persistence import (
@@ -67,6 +74,36 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 repository=persistence.evidence_repository,
                 artifact_root=Path(settings.artifact_root) / "phase4-raw",
             )
+            model_provider = TeamoRouterClient(settings.llm)
+            forbidden_values = tuple(
+                secret.get_secret_value()
+                for secret in (*settings.fmp.credentials, settings.llm.api_key)
+                if secret is not None
+            )
+            research_output_artifacts = ResearchAgentOutputArtifactStore(
+                Path(settings.artifact_root) / "phase4-agent-outputs",
+                forbidden_values=forbidden_values,
+            )
+            research_agents = AgentRegistry()
+            for agent_id, task_types in (
+                ("fundamental_analyst", frozenset({"fundamental_analysis"})),
+                ("peer_analyst", frozenset({"peer_analysis"})),
+                (
+                    "research_news_analyst",
+                    frozenset({"research_news_analysis"}),
+                ),
+                ("valuation_analyst", frozenset({"valuation_analysis"})),
+                ("risk_analyst", frozenset({"risk_analysis", "risk_follow_up"})),
+                ("research_lead", frozenset({"report_synthesis"})),
+            ):
+                research_agents.register(
+                    LLMResearchAgent(
+                        agent_id=agent_id,
+                        supported_task_types=task_types,
+                        provider=model_provider,
+                        artifacts=research_output_artifacts,
+                    )
+                )
             app.state.postgresql_persistence = persistence
             research_service = ResearchApplicationService(
                 repository=persistence.application_repository,
@@ -74,6 +111,10 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 evidence_collector=evidence_collector,
                 event_store=persistence.event_store,
                 checkpoint_store=persistence.checkpoint_store,
+                agent_registry=research_agents,
+                report_publisher=ProfessionalReportPublisher(
+                    ControlledArtifactStore(Path(settings.artifact_root) / "phase4-report")
+                ),
             )
             proof_root = Path(settings.artifact_root) / "phase4-proof"
             research_service.proof_workflow = RevenueGrowthRiscZeroProofWorkflow(
@@ -96,7 +137,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
             generated = GeneratedCapabilityOrchestrator(
                 registry=ScopedCapabilityRegistry(research_service.capability_registry),
                 research_lead=Phase3ResearchLeadCapabilityAuthority(),
-                code_builder=PlannerProviderCodeBuilder(TeamoRouterClient(settings.llm)),
+                code_builder=PlannerProviderCodeBuilder(model_provider),
                 validator=GeneratedCapabilityValidator(
                     sandbox=DockerSandboxBackend(),
                     plans=FreeCashFlowMarginValidationPlanProvider(),
@@ -106,11 +147,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                     persistence.phase3_record_repository,
                     artifact_store=GeneratedCapabilityArtifactStore(
                         Path(settings.artifact_root) / "phase4-generated",
-                        forbidden_values=tuple(
-                            secret.get_secret_value()
-                            for secret in (*settings.fmp.credentials, settings.llm.api_key)
-                            if secret is not None
-                        ),
+                        forbidden_values=forbidden_values,
                     ),
                 ),
                 max_attempts=2,

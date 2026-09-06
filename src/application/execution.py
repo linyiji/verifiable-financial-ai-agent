@@ -3,10 +3,15 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
+from enum import Enum
+from typing import Any
 
 from src.agentic.decisions import ResearchLeadReplanDecider
-from src.agentic.specialist import SpecialistResult
+from src.agentic.registry import RegistrationNotFoundError
+from src.agentic.research_agent import ResearchAgentInvocationError
+from src.agentic.specialist import SpecialistExecutionContext, SpecialistResult
 from src.data.peers import PeerCompanyFacts, PeerSelectionService
+from src.domain.agent_output import ResearchAgentOutputRecord
 from src.domain.capability import CapabilityContext
 from src.domain.correction import CorrectionRecord
 from src.domain.decision import StructuredAgentDecision
@@ -283,18 +288,32 @@ class IntegratedTaskExecutor:
             event_type=RuntimeEventType.CALCULATION_COMPLETED,
             payload={"calculation_id": margin.calculation_id},
         )
-        self._aggregate.artifacts.task_outputs[task.task_id] = {
+        supporting_output = {
             "revenue_growth": str(growth.output_value),
             "ebitda_margin": str(margin.output_value),
             **extension_output,
         }
+        calculation_refs = (
+            growth.calculation_id,
+            margin.calculation_id,
+            *(item.calculation_id for item in extension_calculations),
+        )
+        agent_result = await self._invoke_research_agent(
+            task,
+            supporting_output=supporting_output,
+            additional_input_refs=calculation_refs,
+        )
+        if agent_result is not None:
+            return self._accept_research_agent_output(
+                task,
+                agent_result,
+                supporting_output=supporting_output,
+                additional_output_refs=calculation_refs,
+            )
+        self._aggregate.artifacts.task_outputs[task.task_id] = supporting_output
         return TaskExecutionResult(
             result_ref=f"analysis://{task.task_id}",
-            output_refs=(
-                growth.calculation_id,
-                margin.calculation_id,
-                *(item.calculation_id for item in extension_calculations),
-            ),
+            output_refs=calculation_refs,
         )
 
     async def _execute_calculation(
@@ -326,6 +345,23 @@ class IntegratedTaskExecutor:
                 )
 
     async def _execute_risk_analysis(self, task: Task) -> TaskExecutionResult:
+        agent_result = await self._invoke_research_agent(
+            task,
+            supporting_output={"status": "agent_assessment_required"},
+        )
+        if agent_result is not None:
+            execution = self._accept_research_agent_output(
+                task,
+                agent_result,
+                supporting_output={},
+            )
+            if agent_result.replan_request is not None:
+                await self._apply_risk_replan(task, agent_result.replan_request)
+            return execution
+
+        return await self._execute_deterministic_risk_analysis(task)
+
+    async def _execute_deterministic_risk_analysis(self, task: Task) -> TaskExecutionResult:
         synthesis = next(
             candidate
             for candidate in self._aggregate.runtime.actual_graph.tasks
@@ -366,6 +402,23 @@ class IntegratedTaskExecutor:
         )
         pending = specialist_result.replan_request
         assert pending is not None and pending.decision is ReplanDecision.PENDING
+        self._aggregate.artifacts.task_outputs[task.task_id] = specialist_result.output
+        await self._apply_risk_replan(task, pending)
+        return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
+
+    async def _apply_risk_replan(self, task: Task, pending: ReplanRequest) -> None:
+        synthesis = next(
+            candidate
+            for candidate in self._aggregate.runtime.actual_graph.tasks
+            if candidate.task_type == "report_synthesis"
+        )
+        if (
+            pending.run_id != task.run_id
+            or pending.requesting_task_id != task.task_id
+            or pending.requested_by != task.assigned_agent
+            or pending.decision is not ReplanDecision.PENDING
+        ):
+            raise ValueError("risk replan request does not close to its authoritative task")
         self._aggregate.artifacts.replans.append(pending)
         # Preserve one short pre-request observation window for snapshot/SSE
         # composition without introducing a public mutation control.
@@ -404,9 +457,7 @@ class IntegratedTaskExecutor:
                 origin=TaskOrigin.REPLAN,
                 reason_code=pending.reason_code,
             )
-            approved = decision.request.model_copy(
-                update={"created_task_ids": [child.task_id]}
-            )
+            approved = decision.request.model_copy(update={"created_task_ids": [child.task_id]})
             self._aggregate.artifacts.replans[-1] = approved
             await self._service.event_store.emit(
                 run_id=task.run_id,
@@ -427,8 +478,6 @@ class IntegratedTaskExecutor:
                 actor=GraphMutationActor("research_lead", GraphMutationRole.RESEARCH_LEAD),
             )
             await asyncio.sleep(10.0)
-        self._aggregate.artifacts.task_outputs[task.task_id] = specialist_result.output
-        return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
     async def _execute_peer_analysis(self, task: Task) -> TaskExecutionResult:
         routed_task = self._aggregate.runtime.task(task.task_id)
@@ -461,7 +510,7 @@ class IntegratedTaskExecutor:
             business_relevance={},
             required_metrics=frozenset({"revenue", "ebitda", "provider_reference_pe"}),
         )
-        self._aggregate.artifacts.task_outputs[task.task_id] = {
+        supporting_output = {
             "candidate_source": "fmp.stock_peers",
             "candidates": [item.model_dump(mode="json") for item in selection.candidates],
             "selection_decisions": [item.model_dump(mode="json") for item in selection.decisions],
@@ -474,15 +523,37 @@ class IntegratedTaskExecutor:
                 else "no_selected_comparables_due_missing_enrichment"
             ),
         }
+        agent_result = await self._invoke_research_agent(
+            task,
+            supporting_output=supporting_output,
+        )
+        if agent_result is not None:
+            return self._accept_research_agent_output(
+                task,
+                agent_result,
+                supporting_output=supporting_output,
+            )
+        self._aggregate.artifacts.task_outputs[task.task_id] = supporting_output
         return TaskExecutionResult(result_ref=f"peer-selection://{task.task_id}")
 
     async def _execute_risk_follow_up(self, task: Task) -> TaskExecutionResult:
-        self._aggregate.artifacts.task_outputs[task.task_id] = {
+        supporting_output = {
             "finding": (
                 "No additional quantified risk can be supported by the available accepted evidence."
             ),
             "limitation": True,
         }
+        agent_result = await self._invoke_research_agent(
+            task,
+            supporting_output=supporting_output,
+        )
+        if agent_result is not None:
+            return self._accept_research_agent_output(
+                task,
+                agent_result,
+                supporting_output=supporting_output,
+            )
+        self._aggregate.artifacts.task_outputs[task.task_id] = supporting_output
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
     async def _execute_research_news_analysis(self, task: Task) -> TaskExecutionResult:
@@ -556,11 +627,244 @@ class IntegratedTaskExecutor:
         }
         if reason is not None:
             output["reason_code"] = reason
+        agent_result = await self._invoke_research_agent(
+            task,
+            supporting_output=output,
+            additional_input_refs=tuple(record.evidence_id for record in accepted),
+        )
+        if agent_result is not None:
+            return self._accept_research_agent_output(
+                task,
+                agent_result,
+                supporting_output=output,
+                additional_output_refs=tuple(record.evidence_id for record in accepted),
+            )
         self._aggregate.artifacts.task_outputs[task.task_id] = output
         return TaskExecutionResult(
             result_ref=f"research-news://{task.task_id}/{status}",
             output_refs=tuple(record.evidence_id for record in accepted),
         )
+
+    async def _execute_valuation_analysis(self, task: Task) -> TaskExecutionResult:
+        supporting_output = {
+            "status": "not_quantified_in_current_scope",
+            "quantified_valuation_available": False,
+        }
+        agent_result = await self._invoke_research_agent(
+            task,
+            supporting_output=supporting_output,
+        )
+        if agent_result is not None:
+            return self._accept_research_agent_output(
+                task,
+                agent_result,
+                supporting_output=supporting_output,
+            )
+        self._aggregate.artifacts.task_outputs[task.task_id] = supporting_output
+        return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
+
+    async def _execute_report_synthesis(self, task: Task) -> TaskExecutionResult:
+        supporting_output = {"status": "specialist_outputs_ready"}
+        agent_result = await self._invoke_research_agent(
+            task,
+            supporting_output=supporting_output,
+        )
+        if agent_result is not None:
+            required_actors = {
+                "fundamental_analyst",
+                "peer_analyst",
+                "research_news_analyst",
+                "valuation_analyst",
+                "risk_analyst",
+            }
+            consumed_actors = {
+                output.actor
+                for output in self._upstream_agent_outputs(task)
+                if output.output_id in agent_result.agent_output.input_refs
+            }
+            missing = required_actors - consumed_actors
+            if missing:
+                raise ValueError(
+                    "research synthesis did not consume every required specialist output: "
+                    f"{sorted(missing)}"
+                )
+            return self._accept_research_agent_output(
+                task,
+                agent_result,
+                supporting_output=supporting_output,
+            )
+        self._aggregate.artifacts.task_outputs[task.task_id] = supporting_output
+        return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
+
+    async def _invoke_research_agent(
+        self,
+        task: Task,
+        *,
+        supporting_output: dict[str, object],
+        additional_input_refs: tuple[str, ...] = (),
+    ) -> SpecialistResult | None:
+        try:
+            agent = self._service.agent_registry.get(task.assigned_agent)
+        except RegistrationNotFoundError:
+            if self._service.agent_registry.registered_ids():
+                raise
+            return None
+        if task.task_type not in agent.supported_task_types:
+            raise ValueError(
+                f"registered research Agent does not support task type {task.task_type}"
+            )
+        if task.run_id != self._aggregate.run.run_id:
+            raise ValueError("research Agent dispatch attempted cross-Run execution")
+        current_task = self._aggregate.runtime.task(task.task_id)
+        if current_task.run_id != task.run_id or current_task.assigned_agent != task.assigned_agent:
+            raise ValueError("research Agent dispatch does not match authoritative Task identity")
+
+        normalized_evidence = self._normalized_evidence_for_task(task)
+        upstream_outputs = self._upstream_agent_outputs(task)
+        input_refs = list(
+            dict.fromkeys(
+                [
+                    self._aggregate.goal.goal_id,
+                    self._aggregate.scheme.scheme_id,
+                    *(item["evidence_id"] for item in normalized_evidence),
+                    *(item.output_id for item in upstream_outputs),
+                    *additional_input_refs,
+                ]
+            )
+        )
+        context = SpecialistExecutionContext(
+            task=task,
+            accepted_evidence_ids=[item["evidence_id"] for item in normalized_evidence],
+            inputs={
+                "research_object_id": self._aggregate.run.research_object_id,
+                "goal_id": self._aggregate.goal.goal_id,
+                "scheme_id": self._aggregate.scheme.scheme_id,
+                "as_of": self._aggregate.run.as_of.isoformat(),
+                "research_goal": self._aggregate.goal.goal_text,
+                "normalized_evidence": normalized_evidence,
+                "deterministic_support": _compact_json_value(supporting_output),
+                "upstream_agent_outputs": [
+                    {
+                        "output_id": output.output_id,
+                        "task_id": output.task_id,
+                        "actor": output.actor,
+                        **output.structured_output.model_dump(mode="json"),
+                    }
+                    for output in upstream_outputs
+                    if output.structured_output is not None
+                ],
+                "input_refs": input_refs,
+            },
+        )
+        try:
+            result = await agent.execute(context)
+        except ResearchAgentInvocationError as exc:
+            self._append_agent_output(exc.record, task)
+            raise
+        record = result.agent_output
+        if record is None or record.status != "SUCCESS":
+            raise ValueError("research Agent did not return a successful output record")
+        self._append_agent_output(record, task)
+        if result.decision.run_id != task.run_id or result.decision.task_id != task.task_id:
+            raise ValueError("research Agent decision does not match authoritative Task identity")
+        return result
+
+    def _accept_research_agent_output(
+        self,
+        task: Task,
+        result: SpecialistResult,
+        *,
+        supporting_output: dict[str, object],
+        additional_output_refs: tuple[str, ...] = (),
+    ) -> TaskExecutionResult:
+        record = result.agent_output
+        if record is None or record.run_id != task.run_id or record.task_id != task.task_id:
+            raise ValueError("research Agent output does not close to its authoritative Task")
+        self._aggregate.artifacts.task_outputs[task.task_id] = {
+            **supporting_output,
+            **result.output,
+        }
+        return TaskExecutionResult(
+            result_ref=record.artifact_ref,
+            output_refs=tuple(dict.fromkeys([*additional_output_refs, record.output_id])),
+        )
+
+    def _append_agent_output(
+        self,
+        record: ResearchAgentOutputRecord,
+        task: Task,
+    ) -> None:
+        if (
+            record.run_id != self._aggregate.run.run_id
+            or record.run_id != task.run_id
+            or record.task_id != task.task_id
+            or record.actor != task.assigned_agent
+        ):
+            raise ValueError("research Agent output attempted cross-Run or cross-Task persistence")
+        if any(
+            candidate.output_id == record.output_id
+            for candidate in self._aggregate.artifacts.agent_outputs
+        ):
+            raise ValueError("research Agent output identity must be unique within a Run")
+        self._aggregate.artifacts.agent_outputs.append(record)
+
+    def _upstream_agent_outputs(self, task: Task) -> list[ResearchAgentOutputRecord]:
+        upstream_task_ids = self._upstream_task_ids(task)
+        outputs = [
+            output
+            for output in self._aggregate.artifacts.agent_outputs
+            if output.status == "SUCCESS" and output.task_id in upstream_task_ids
+        ]
+        foreign = [output.output_id for output in outputs if output.run_id != task.run_id]
+        if foreign:
+            raise ValueError(f"upstream research Agent outputs crossed Run identity: {foreign}")
+        return sorted(outputs, key=lambda output: (output.created_at, output.output_id))
+
+    def _upstream_task_ids(self, task: Task) -> set[str]:
+        dependencies_by_id = {
+            candidate.task_id: tuple(candidate.dependencies)
+            for candidate in self._aggregate.runtime.actual_graph.tasks
+        }
+        result: set[str] = set()
+        pending = list(task.dependencies)
+        while pending:
+            task_id = pending.pop()
+            if task_id in result:
+                continue
+            result.add(task_id)
+            pending.extend(dependencies_by_id.get(task_id, ()))
+        return result
+
+    def _normalized_evidence_for_task(self, task: Task) -> list[dict[str, object]]:
+        permitted_ids = set(self._aggregate.runtime.task(task.task_id).task_input_evidence_ids)
+        permitted_ids.update(self._aggregate.runtime.task(task.task_id).task_output_evidence_ids)
+        candidates = [
+            record
+            for record in self._aggregate.artifacts.evidence
+            if record.evidence_id in permitted_ids
+        ]
+        if any(
+            record.run_id != task.run_id
+            or record.object_id != self._aggregate.run.research_object_id
+            for record in candidates
+        ):
+            raise ValueError("research Agent evidence crossed Run or Object identity")
+        selected = _select_agent_evidence(task.task_type, candidates)
+        return [
+            {
+                "evidence_id": record.evidence_id,
+                "provider": record.provider,
+                "category": record.evidence_category.value,
+                "field": record.normalized_field,
+                "value": _compact_json_value(record.normalized_value),
+                "unit": record.unit,
+                "currency": record.currency,
+                "period": record.period,
+                "as_of": record.as_of.isoformat(),
+                "actuality": record.actuality.value,
+            }
+            for record in selected
+        ]
 
     async def _execute_generic(self, task: Task) -> TaskExecutionResult:
         input_ids = list(self._aggregate.runtime.task(task.task_id).task_input_evidence_ids)
@@ -645,3 +949,131 @@ def _optional_decimal(value: object) -> Decimal | None:
         return Decimal(str(value))
     except Exception:
         return None
+
+
+_COMMON_AGENT_FIELDS = {
+    "symbol",
+    "company_name",
+    "industry",
+    "sector",
+    "revenue",
+    "ebitda",
+    "operating_cash_flow",
+    "capital_expenditure",
+    "provider_reference_free_cash_flow",
+    "total_assets",
+    "total_debt",
+    "total_stockholders_equity",
+    "provider_reference_market_cap",
+    "price",
+}
+_AGENT_FIELDS_BY_TASK = {
+    "fundamental_analysis": _COMMON_AGENT_FIELDS - {"price"},
+    "peer_analysis": {
+        "symbol",
+        "company_name",
+        "industry",
+        "sector",
+        "provider_reference_market_cap",
+        "price",
+    },
+    "research_news_analysis": set(),
+    "valuation_analysis": _COMMON_AGENT_FIELDS
+    | {"buy", "hold", "sell", "strong_buy", "strong_sell"},
+    "risk_analysis": _COMMON_AGENT_FIELDS | {"buy", "hold", "sell", "strong_buy", "strong_sell"},
+    "risk_follow_up": _COMMON_AGENT_FIELDS,
+    "report_synthesis": _COMMON_AGENT_FIELDS | {"buy", "hold", "sell", "strong_buy", "strong_sell"},
+}
+_FIELD_PRIORITY = {
+    field: index
+    for index, field in enumerate(
+        (
+            "symbol",
+            "company_name",
+            "industry",
+            "sector",
+            "revenue",
+            "ebitda",
+            "operating_cash_flow",
+            "capital_expenditure",
+            "provider_reference_free_cash_flow",
+            "total_assets",
+            "total_debt",
+            "total_stockholders_equity",
+            "provider_reference_market_cap",
+            "price",
+            "strong_buy",
+            "buy",
+            "hold",
+            "sell",
+            "strong_sell",
+        )
+    )
+}
+
+
+def _select_agent_evidence(task_type: str, records: list) -> list:
+    """Return a bounded, task-relevant normalized evidence slice for an Agent."""
+
+    allowed = _AGENT_FIELDS_BY_TASK.get(task_type, _COMMON_AGENT_FIELDS)
+    if task_type == "research_news_analysis":
+        relevant = [
+            record
+            for record in records
+            if record.evidence_category in {EvidenceCategory.NEWS, EvidenceCategory.TRANSCRIPT}
+        ]
+    else:
+        relevant = [
+            record
+            for record in records
+            if record.normalized_field in allowed
+            or (task_type == "peer_analysis" and record.normalized_field.startswith("peer_symbol_"))
+        ]
+    relevant.sort(
+        key=lambda record: (
+            _FIELD_PRIORITY.get(
+                record.normalized_field,
+                100 if record.normalized_field.startswith("peer_symbol_") else 200,
+            ),
+            -record.as_of.toordinal(),
+            record.period,
+            record.evidence_id,
+        )
+    )
+    selected: list = []
+    counts: dict[str, int] = {}
+    for record in relevant:
+        field = record.normalized_field
+        maximum = 9 if field.startswith("peer_symbol_") else 5
+        if counts.get(field, 0) >= maximum:
+            continue
+        counts[field] = counts.get(field, 0) + 1
+        selected.append(record)
+        if len(selected) == 40:
+            break
+    return selected
+
+
+def _compact_json_value(value: Any, *, depth: int = 0) -> Any:
+    """Normalize bounded provider inputs without carrying raw artifacts or payloads."""
+
+    if depth > 4:
+        return "[bounded]"
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, str):
+        return value if len(value) <= 1000 else f"{value[:997]}..."
+    if isinstance(value, dict):
+        return {
+            str(key): _compact_json_value(item, depth=depth + 1)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))[:30]
+        }
+    if isinstance(value, (list, tuple)):
+        return [_compact_json_value(item, depth=depth + 1) for item in value[:30]]
+    return _compact_json_value(str(value), depth=depth + 1)
