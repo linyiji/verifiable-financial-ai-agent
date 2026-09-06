@@ -9,6 +9,7 @@ import type {
   Phase4ResearchObjectDetail,
   PreparedResearchDraft,
   ReportArtifact,
+  ReportArtifactGroupV1,
   ReportSurfaceV1,
   ResearchClaim,
   ResearchObject,
@@ -243,6 +244,11 @@ export interface Phase4FrontendDataSource {
     expectedObjectId?: string,
     options?: Phase4RequestOptions
   ): Promise<ReportSurfaceV1>;
+  getReportArtifacts(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ReportArtifactGroupV1>;
   getFinancialReviewSurface(
     runId: string,
     expectedObjectId?: string,

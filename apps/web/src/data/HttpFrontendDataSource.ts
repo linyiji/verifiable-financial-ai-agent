@@ -10,6 +10,7 @@ import {
   decodeFinancialReviewSurface,
   decodePreparedResearchDraft,
   decodeReportSurface,
+  decodeReportArtifactGroup,
   decodeResearchObjectCollection,
   decodeResearchObjectDetail,
   decodeResearchRunDetail,
@@ -25,6 +26,7 @@ import {
   type Phase4ResearchObjectDetail,
   type PreparedResearchDraft,
   type ReportSurfaceV1,
+  type ReportArtifactGroupV1,
   type ResearchObjectCollection,
   type ResearchRunDetailV1,
   type ReleasedResultProjectionV1,
@@ -340,6 +342,21 @@ export class HttpFrontendDataSource implements Phase4FrontendDataSource {
       expectedStatuses: [200],
       signal: options?.signal,
       decode: (value) => decodeReportSurface(value, expectedRunId, expectedObjectId)
+    });
+  }
+
+  getReportArtifacts(
+    runId: string,
+    expectedObjectId?: string,
+    options?: Phase4RequestOptions
+  ): Promise<ReportArtifactGroupV1> {
+    const expectedRunId = requiredText(runId, "runId");
+    return this.client.requestJson({
+      method: "GET",
+      path: phase4ApiRoutes.runArtifacts(expectedRunId),
+      expectedStatuses: [200],
+      signal: options?.signal,
+      decode: (value) => decodeReportArtifactGroup(value, expectedRunId, expectedObjectId)
     });
   }
 

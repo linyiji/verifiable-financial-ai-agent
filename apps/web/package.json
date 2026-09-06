@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && vite build",
+    "test:m3": "node --experimental-strip-types scripts/m3-report.test.mjs",
     "preview": "vite"
   },
   "dependencies": {

@@ -588,6 +588,24 @@ export interface ReleasedFinancialMetricProjectionV1 {
   readonly limitations: readonly string[];
 }
 
+export interface ReleasedClaimProjectionV1 {
+  readonly claimId: string;
+  readonly runId: string;
+  readonly claimType: string;
+  readonly statement: string;
+  readonly metricId: string;
+  readonly value: string;
+  readonly unit: string;
+  readonly period: string;
+  readonly periodBasis: string;
+  readonly actuality: string;
+  readonly asOf: string;
+  readonly currency: string | null;
+  readonly calculationRefs: readonly string[];
+  readonly evidenceRefs: readonly string[];
+  readonly judgmentRefs: readonly string[];
+}
+
 export interface ReleasedResultProjectionV1 {
   readonly objectId: string;
   readonly runId: string;
@@ -595,7 +613,7 @@ export interface ReleasedResultProjectionV1 {
   readonly canonicalRecordId: string;
   readonly releasedAt: string;
   readonly metrics: readonly ReleasedFinancialMetricProjectionV1[];
-  readonly claims: readonly SafeJsonObject[];
+  readonly claims: readonly ReleasedClaimProjectionV1[];
   readonly materialCalculationDispositions: readonly SafeJsonObject[];
   readonly researchSourceCoverage: SafeJsonObject | null;
   readonly limitations: readonly string[];
@@ -667,6 +685,33 @@ export interface ReportSurfaceV1 {
   readonly anchors: readonly ReportAnchorRefV1[];
   readonly sourceContributions: readonly ReportContributionRefV1[];
   readonly availability: ResultsSurfaceAvailability;
+}
+
+export interface RendererIdentityV1 {
+  readonly rendererId: string;
+  readonly rendererVersion: string;
+}
+
+export interface ReportArtifactRepresentationV1 {
+  readonly format: "HTML" | "PDF";
+  readonly requiredForRelease: boolean;
+  readonly contentType: "text/html; charset=utf-8" | "application/pdf";
+  readonly availability: Availability;
+  readonly artifactId: string | null;
+  readonly generationAttemptCount: number;
+  readonly authorizedRef: string | null;
+  readonly renderer: RendererIdentityV1 | null;
+}
+
+export interface ReportArtifactGroupV1 {
+  readonly schemaVersion: "phase4-report-artifacts/v1";
+  readonly objectId: string;
+  readonly runId: string;
+  readonly reportId: string;
+  readonly canonicalRecordId: string;
+  readonly releasedResultId: string;
+  readonly availability: Availability;
+  readonly representations: readonly [ReportArtifactRepresentationV1, ReportArtifactRepresentationV1];
 }
 
 export interface FinancialReviewCheckV1 {
@@ -3378,7 +3423,7 @@ function decodeReleasedMetric(
   });
 }
 
-function decodeReleasedClaim(value: unknown, path: string, expectedRunId: string): SafeJsonObject {
+function decodeReleasedClaim(value: unknown, path: string, expectedRunId: string): ReleasedClaimProjectionV1 {
   const input = decodeObject(value, path);
   assertOnlyKeys(input, [
     "claim_id", "run_id", "claim_type", "statement", "metric_id", "value", "unit", "period",
@@ -3386,19 +3431,26 @@ function decodeReleasedClaim(value: unknown, path: string, expectedRunId: string
   ], path);
   const runId = decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`);
   if (runId !== expectedRunId) return fail(`${path}.run_id`, "claim belongs to another Run");
-  for (const key of ["claim_id", "claim_type", "statement", "metric_id", "value", "period"] as const) {
-    decodeNonBlankString(field(input, key, path), `${path}.${key}`);
-  }
-  decodeEnum(field(input, "unit", path), FINANCIAL_UNITS, `${path}.unit`);
-  decodeEnum(field(input, "period_basis", path), FINANCIAL_PERIOD_BASES, `${path}.period_basis`);
-  decodeEnum(field(input, "actuality", path), FINANCIAL_ACTUALITIES, `${path}.actuality`);
-  decodeDate(field(input, "as_of", path), `${path}.as_of`);
+  const claimId = decodeOpaqueId(field(input, "claim_id", path), `${path}.claim_id`);
+  const claimType = decodeNonBlankString(field(input, "claim_type", path), `${path}.claim_type`);
+  const statement = decodePublicText(field(input, "statement", path), `${path}.statement`, false, 4000);
+  const metricId = decodeOpaqueId(field(input, "metric_id", path), `${path}.metric_id`);
+  const claimValue = decodeNonBlankString(field(input, "value", path), `${path}.value`);
+  const period = decodeNonBlankString(field(input, "period", path), `${path}.period`);
+  const unit = decodeEnum(field(input, "unit", path), FINANCIAL_UNITS, `${path}.unit`);
+  const periodBasis = decodeEnum(field(input, "period_basis", path), FINANCIAL_PERIOD_BASES, `${path}.period_basis`);
+  const actuality = decodeEnum(field(input, "actuality", path), FINANCIAL_ACTUALITIES, `${path}.actuality`);
+  const asOf = decodeDate(field(input, "as_of", path), `${path}.as_of`);
   const currency = field(input, "currency", path);
-  if (currency !== null) decodeNonBlankString(currency, `${path}.currency`);
-  for (const key of ["calculation_refs", "evidence_refs", "judgment_refs"] as const) {
+  const decodedCurrency = currency === null ? null : decodeNonBlankString(currency, `${path}.currency`);
+  const refs = (key: "calculation_refs" | "evidence_refs" | "judgment_refs") =>
     decodeStringArray(field(input, key, path), `${path}.${key}`);
-  }
-  return decodeSafeJsonObject(input, path);
+  return freezeDeep({
+    claimId, runId, claimType, statement, metricId, value: claimValue, unit, period,
+    periodBasis, actuality, asOf, currency: decodedCurrency,
+    calculationRefs: refs("calculation_refs"), evidenceRefs: refs("evidence_refs"),
+    judgmentRefs: refs("judgment_refs")
+  });
 }
 
 export function decodeReleasedResultProjection(
@@ -3617,6 +3669,88 @@ export function decodeReportSurface(
     asOf: decodeDate(field(input, "as_of", path), "$.as_of"),
     sections, anchors, sourceContributions: contributions,
     availability: decodeResultsAvailability(field(input, "availability", path), "$.availability")
+  });
+}
+
+export function decodeReportArtifactGroup(
+  value: unknown,
+  expectedRunId: string,
+  expectedObjectId?: string
+): ReportArtifactGroupV1 {
+  const path = "$";
+  const input = decodeObject(value, path);
+  assertOnlyKeys(input, [
+    "schema_version", "object_id", "run_id", "report_id", "canonical_record_id",
+    "released_result_id", "release_policy_version", "artifact_policy_version",
+    "anchor_manifest_id", "anchor_manifest_sha256", "availability", "representations"
+  ], path);
+  if (field(input, "schema_version", path) !== "phase4-report-artifacts/v1") {
+    return fail("$.schema_version", "unsupported Report artifact schema");
+  }
+  const runId = decodeOpaqueId(field(input, "run_id", path), "$.run_id");
+  if (runId !== decodeOpaqueId(expectedRunId, "expectedRunId")) return fail("$.run_id", "artifacts belong to another Run");
+  const objectId = decodeOpaqueId(field(input, "object_id", path), "$.object_id");
+  if (expectedObjectId !== undefined && objectId !== decodeOpaqueId(expectedObjectId, "expectedObjectId")) {
+    return fail("$.object_id", "artifacts belong to another Object");
+  }
+  const reportId = decodeOpaqueId(field(input, "report_id", path), "$.report_id");
+  const releasedResultId = decodeOpaqueId(field(input, "released_result_id", path), "$.released_result_id");
+  if (reportId !== releasedResultId) return fail("$.report_id", "Report and ReleasedResult identities differ");
+  if (field(input, "release_policy_version", path) !== "phase4-release-eligibility/v1" ||
+      field(input, "artifact_policy_version", path) !== "phase4-html-required-pdf-optional/v1") {
+    return fail(path, "unsupported Report artifact policy");
+  }
+  const rawRepresentations = decodeArray(field(input, "representations", path), "$.representations");
+  if (rawRepresentations.length !== 2) return fail("$.representations", "exact HTML/PDF slots are required");
+  const representations = rawRepresentations.map((item, index): ReportArtifactRepresentationV1 => {
+    const itemPath = `$.representations[${index}]`;
+    const representation = decodeObject(item, itemPath);
+    assertOnlyKeys(representation, [
+      "format", "required_for_release", "content_type", "availability", "artifact_id",
+      "safe_failure_code", "generation_attempt_id", "generation_attempt_count", "sha256",
+      "size_bytes", "renderer", "generated_at", "authorized_ref"
+    ], itemPath);
+    const format = decodeEnum(field(representation, "format", itemPath), ["HTML", "PDF"] as const, `${itemPath}.format`);
+    const availability = decodeAvailability(field(representation, "availability", itemPath), `${itemPath}.availability`);
+    const nullableText = (key: string) => {
+      const raw = field(representation, key, itemPath);
+      return raw === null ? null : decodeNonBlankString(raw, `${itemPath}.${key}`);
+    };
+    const rawRenderer = field(representation, "renderer", itemPath);
+    let renderer: RendererIdentityV1 | null = null;
+    if (rawRenderer !== null) {
+      const rendererInput = decodeObject(rawRenderer, `${itemPath}.renderer`);
+      assertOnlyKeys(rendererInput, ["renderer_id", "renderer_version"], `${itemPath}.renderer`);
+      renderer = freezeDeep({
+        rendererId: decodeOpaqueId(field(rendererInput, "renderer_id", `${itemPath}.renderer`), `${itemPath}.renderer.renderer_id`),
+        rendererVersion: decodeNonBlankString(field(rendererInput, "renderer_version", `${itemPath}.renderer`), `${itemPath}.renderer.renderer_version`)
+      });
+    }
+    const requiredForRelease = decodeBoolean(field(representation, "required_for_release", itemPath), `${itemPath}.required_for_release`);
+    const contentType = decodeEnum(field(representation, "content_type", itemPath), ["text/html; charset=utf-8", "application/pdf"] as const, `${itemPath}.content_type`);
+    if ((format === "HTML") !== requiredForRelease || (format === "HTML") !== (contentType === "text/html; charset=utf-8")) {
+      return fail(itemPath, "representation format policy mismatch");
+    }
+    const artifactId = nullableText("artifact_id");
+    const authorizedRef = nullableText("authorized_ref");
+    const attempts = decodeInteger(field(representation, "generation_attempt_count", itemPath), 0, `${itemPath}.generation_attempt_count`);
+    if (availability.status === "AVAILABLE" && (artifactId === null || authorizedRef === null || attempts < 1 || renderer === null)) {
+      return fail(itemPath, "AVAILABLE representation lacks immutable metadata");
+    }
+    if (authorizedRef !== null && (!authorizedRef.startsWith(`/api/research-runs/${encodeURIComponent(runId)}/`) || authorizedRef.includes("://") || authorizedRef.includes("?"))) {
+      return fail(`${itemPath}.authorized_ref`, "authorized_ref must be an exact same-origin Run resource");
+    }
+    return freezeDeep({ format, requiredForRelease, contentType, availability, artifactId,
+      generationAttemptCount: attempts, authorizedRef, renderer });
+  });
+  if (representations[0].format !== "HTML" || representations[1].format !== "PDF") {
+    return fail("$.representations", "representations are not in canonical HTML/PDF order");
+  }
+  return freezeDeep({
+    schemaVersion: "phase4-report-artifacts/v1", objectId, runId, reportId,
+    canonicalRecordId: decodeOpaqueId(field(input, "canonical_record_id", path), "$.canonical_record_id"),
+    releasedResultId, availability: decodeAvailability(field(input, "availability", path), "$.availability"),
+    representations: representations as unknown as readonly [ReportArtifactRepresentationV1, ReportArtifactRepresentationV1]
   });
 }
 

@@ -21,6 +21,8 @@ export const phase4ApiRoutes = {
     `/api/research-runs/${encodeURIComponent(runId)}/results`,
   runReport: (runId: string) =>
     `/api/research-runs/${encodeURIComponent(runId)}/report-view`,
+  runArtifacts: (runId: string) =>
+    `/api/research-runs/${encodeURIComponent(runId)}/artifacts`,
   runReview: (runId: string) =>
     `/api/research-runs/${encodeURIComponent(runId)}/review-view`,
   runExecution: (runId: string) =>

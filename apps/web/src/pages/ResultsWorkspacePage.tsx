@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Phase4FrontendDataSource } from "../data/FrontendDataSource";
-import { RESULTS_SURFACES, resultsPath, runPath, type ResultsSurfaceRoute } from "../routing/resultsRoute";
+import { InteractiveResearchReport } from "../components/results/InteractiveResearchReport";
+import { executionFocusMatches, reportBundleMatches, selectorMatches } from "../components/results/reportModel";
+import { RESULTS_SURFACES, parseResultsFocus, resultsPath, runPath, type ResultsFocus, type ResultsSurfaceRoute } from "../routing/resultsRoute";
 import type {
   ExecutionRecordSurfaceV1,
   FinancialReviewSurfaceV1,
   Phase4ResearchObjectDetail,
+  ReleasedResultProjectionV1,
+  ReportArtifactGroupV1,
   ReportSurfaceV1,
   ResultsSurfaceStatus,
   ResultsWorkspaceV1
@@ -25,6 +29,11 @@ type Loadable<T> =
   | Readonly<{ status: "ERROR"; value: null }>;
 
 type SurfacePayload = ReportSurfaceV1 | FinancialReviewSurfaceV1 | ExecutionRecordSurfaceV1;
+type ReportSupplement = Readonly<{
+  result: ReleasedResultProjectionV1;
+  artifacts: ReportArtifactGroupV1;
+  review: FinancialReviewSurfaceV1;
+}>;
 
 const SURFACE_META: Readonly<Record<ResultsSurfaceRoute, Readonly<{ label: string; eyebrow: string; description: string }>>> = {
   report: {
@@ -87,6 +96,7 @@ export function ResultsWorkspacePage({ source, backendOrigin, runId, surface, on
   const [root, setRoot] = useState<Loadable<ResultsWorkspaceV1>>(initialLoad);
   const [object, setObject] = useState<Loadable<Phase4ResearchObjectDetail>>(initialLoad);
   const [payload, setPayload] = useState<Loadable<SurfacePayload>>(initialLoad);
+  const [reportSupplement, setReportSupplement] = useState<Loadable<ReportSupplement>>(initialLoad);
   const [retryRevision, setRetryRevision] = useState(0);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -144,6 +154,26 @@ export function ResultsWorkspacePage({ source, backendOrigin, runId, surface, on
     };
   }, [source, runId, surface, root]);
 
+  useEffect(() => {
+    if (root.status !== "READY" || surface !== "report") return;
+    const controller = new AbortController();
+    let current = true;
+    setReportSupplement(initialLoad());
+    void Promise.all([
+      source.getReleasedResult(runId, root.value.objectId, { signal: controller.signal }),
+      source.getReportArtifacts(runId, root.value.objectId, { signal: controller.signal }),
+      source.getFinancialReviewSurface(runId, root.value.objectId, { signal: controller.signal })
+    ]).then(([result, artifacts, review]) => {
+      if (current) setReportSupplement({ status: "READY", value: { result, artifacts, review } });
+    }).catch(() => {
+      if (current) setReportSupplement({ status: "ERROR", value: null });
+    });
+    return () => {
+      current = false;
+      controller.abort();
+    };
+  }, [source, runId, surface, root, retryRevision]);
+
   const navigateSurface = (next: ResultsSurfaceRoute) => {
     if (next === surface) return;
     if (root.status === "READY" && availabilityFor(root.value, next).status === "UNAVAILABLE") return;
@@ -195,6 +225,7 @@ export function ResultsWorkspacePage({ source, backendOrigin, runId, surface, on
   const companyName = object.value.object.companyName;
   const symbol = object.value.object.symbol;
   const meta = SURFACE_META[surface];
+  const focus = parseResultsFocus(surface, window.location.search);
 
   return <section
     className="results-shell"
@@ -255,7 +286,11 @@ export function ResultsWorkspacePage({ source, backendOrigin, runId, surface, on
             ? <div className="result-surface-state error" role="alert"><strong>当前视图暂时无法载入</strong><span>已保留此 Run 身份；不会显示其他运行的数据。</span><button type="button" className="btn sm" onClick={() => setRetryRevision((value) => value + 1)}>重试</button></div>
             : !payloadMatchesSurface(payload.value, surface)
               ? <div className="result-surface-state" role="status"><div className="spinner" aria-hidden="true" /><span>正在切换当前视图…</span></div>
-              : <SurfaceHost surface={surface} payload={payload.value} backendOrigin={backendOrigin} />}
+              : surface === "report" && reportSupplement.status === "LOADING"
+                ? <div className="result-surface-state" role="status"><div className="spinner" aria-hidden="true" /><span>正在装配结构化报告…</span></div>
+                : surface === "report" && reportSupplement.status === "ERROR"
+                  ? <div className="result-surface-state error" role="alert"><strong>报告结构化内容暂时无法载入</strong><span>未使用 HTML 解析或其他 Run 数据作为替代。</span><button type="button" className="btn sm" onClick={() => setRetryRevision((value) => value + 1)}>重试</button></div>
+                  : <SurfaceHost surface={surface} payload={payload.value} supplement={reportSupplement.status === "READY" ? reportSupplement.value : null} backendOrigin={backendOrigin} focus={focus} runId={runId} onNavigate={onNavigate} onReplace={onReplace} />}
     </section>
   </section>;
 }
@@ -264,23 +299,58 @@ function UnavailableSurface({ reasonCode }: { readonly reasonCode: string | null
   return <div className="result-surface-state unavailable" role="status"><strong>此结果视图暂不可用</strong><span>当前 Research Run 未提供可安全呈现的该类结果。</span>{reasonCode && <code>{reasonCode}</code>}</div>;
 }
 
-function SurfaceHost({ surface, payload, backendOrigin }: {
+function SurfaceHost({ surface, payload, supplement, backendOrigin, focus, runId, onNavigate, onReplace }: {
   readonly surface: ResultsSurfaceRoute;
   readonly payload: SurfacePayload;
+  readonly supplement: ReportSupplement | null;
   readonly backendOrigin: string;
+  readonly focus: ResultsFocus;
+  readonly runId: string;
+  readonly onNavigate: (path: string) => void;
+  readonly onReplace: (path: string) => void;
 }) {
   if (surface === "report") {
     const report = payload as ReportSurfaceV1;
-    const reportUrl = `${backendOrigin}/api/research-runs/${encodeURIComponent(report.runId)}/artifacts/${encodeURIComponent(report.artifactId)}/content`;
-    return <div className="result-product-host" data-testid="report-product-host"><div className="result-host-copy"><span>已发布报告</span><h3>{report.title}</h3><p>{report.availability.status === "PARTIAL" ? "HTML 报告已生成；部分来源映射尚未完整覆盖。" : "HTML 报告与来源映射均已就绪。"}</p></div><div className="result-host-facts"><div><span>报告章节</span><strong>{report.sections.length}</strong></div><div><span>来源映射</span><strong>{report.sourceContributions.length}</strong></div></div><a className="btn primary result-open-action" data-testid="open-report-representation" href={reportUrl} target="_blank" rel="noreferrer">打开报告</a></div>;
+    if (supplement === null) return null;
+    if (!reportBundleMatches(report, supplement.result, supplement.artifacts, supplement.review)) {
+      return <div className="result-surface-state unavailable" role="alert"><strong>报告身份闭包不一致</strong><span>系统已停止组合这些结果；未尝试跨 Run 回退。</span></div>;
+    }
+    const requestedAnchor = focus !== null && "anchor" in focus ? focus.anchor : null;
+    const preserveReportAnchor = (anchor: string) => onReplace(resultsPath(runId, "report", { anchor }));
+    return <InteractiveResearchReport report={report} result={supplement.result} artifacts={supplement.artifacts} review={supplement.review} backendOrigin={backendOrigin} requestedAnchor={requestedAnchor}
+      onOpenExecution={(contribution) => {
+        if (contribution.executionEventId === null) return;
+        preserveReportAnchor(contribution.reportAnchor);
+        onNavigate(resultsPath(runId, "execution", {
+          actorId: contribution.actorId,
+          outputId: contribution.agentOutputId,
+          eventId: contribution.executionEventId,
+          returnAnchor: contribution.reportAnchor
+        }));
+      }}
+      onOpenReview={(selector) => {
+        preserveReportAnchor(report.anchors[0]?.anchor ?? "metric-revenue-growth");
+        onNavigate(resultsPath(runId, "review", {
+          reviewId: selector.reviewId,
+          checkCode: selector.checkCode,
+          subjectRefs: selector.subjectRefs,
+          returnAnchor: report.anchors[0]?.anchor ?? null
+        }));
+      }} />;
   }
   if (surface === "review") {
     const review = payload as FinancialReviewSurfaceV1;
     const verdict = review.verdict === "PASS" ? "复核通过" : review.verdict === "REVIEW" ? "需要复核" : "已阻断";
-    return <div className="result-product-host" data-testid="review-product-host"><div className="result-host-copy"><span>复核结论</span><h3>{verdict}</h3><p>仅展示结果级摘要；完整检查明细将在后续阶段接入。</p></div><div className="result-host-facts single"><div><span>检查总量</span><strong>{review.checks.length}</strong></div></div></div>;
+    const requested = focus !== null && "reviewId" in focus ? focus : null;
+    const exact = requested === null ? null : review.checks.find((check) => selectorMatches(check.selector, {
+      reviewId: requested.reviewId, checkCode: requested.checkCode, subjectRefs: requested.subjectRefs
+    })) ?? null;
+    return <div className="result-product-host" data-testid="review-product-host"><div className="result-host-copy"><span>复核结论</span><h3>{verdict}</h3><p>{exact === null ? "选择报告中的可复核指标，可定位到精确 scoped selector。" : "已从报告定位到同一 Released Run 的精确复核检查。"}</p>{exact !== null && <div className="focus-receipt" data-testid="review-exact-focus"><span>{exact.selector.checkCode} · {exact.status}</span><code>{exact.selector.reviewId}</code>{exact.selector.subjectRefs.map((ref) => <code key={ref}>{ref}</code>)}</div>}{requested !== null && exact === null && <div className="focus-receipt invalid">请求的复核定位与此 Run 不匹配；未展示近似结果。</div>}</div><div className="result-host-facts single"><div><span>检查总量</span><strong>{review.checks.length}</strong></div></div>{requested?.returnAnchor && <button type="button" className="btn" onClick={() => onNavigate(resultsPath(runId, "report", { anchor: requested.returnAnchor! }))}>返回报告位置</button>}</div>;
   }
   const execution = payload as ExecutionRecordSurfaceV1;
   const eventCount = execution.actors.reduce((total, actor) => total + actor.eventCount, 0);
   const recordCount = execution.actors.reduce((total, actor) => total + actor.recordCount, 0);
-  return <div className="result-product-host" data-testid="execution-product-host"><div className="result-host-copy"><span>执行摘要</span><h3>{execution.actors.length} 个参与角色</h3><p>仅展示可观察汇总，不包含原始事件流或内部推理内容。</p></div><div className="result-host-facts"><div><span>事件总量</span><strong>{eventCount}</strong></div><div><span>输出记录</span><strong>{recordCount}</strong></div></div></div>;
+  const requested = focus !== null && "actorId" in focus ? focus : null;
+  const exact = requested === null ? null : executionFocusMatches(execution, requested.actorId, requested.outputId, requested.eventId);
+  return <div className="result-product-host execution-focus-host" data-testid="execution-product-host"><div className="result-host-copy"><span>执行摘要</span><h3>{exact?.actor.displayRole ?? `${execution.actors.length} 个参与角色`}</h3><p>{exact === null ? "仅展示可观察汇总，不包含原始事件流或内部推理内容。" : "已从报告定位到同一 Released Run 的精确 Actor → Output → Event。"}</p>{exact !== null && <div className="focus-receipt" data-testid="execution-exact-focus"><span>{exact.actor.actorId} · {exact.output.status}</span><code>{exact.output.outputId}</code><code>{exact.event.eventId}</code><small>{exact.output.summary}</small></div>}{requested !== null && exact === null && <div className="focus-receipt invalid">请求的执行定位与此 Run 不匹配；未展示近似记录。</div>}</div><div className="result-host-facts"><div><span>事件总量</span><strong>{eventCount}</strong></div><div><span>输出记录</span><strong>{recordCount}</strong></div></div>{requested?.returnAnchor && <button type="button" className="btn" data-testid="execution-return-report" onClick={() => onNavigate(resultsPath(runId, "report", { anchor: requested.returnAnchor! }))}>返回报告位置</button>}</div>;
 }
