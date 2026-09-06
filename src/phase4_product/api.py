@@ -33,9 +33,9 @@ from src.phase4_product.contracts import (
     ReportArtifactGroupV1,
     ResearchObjectCollectionV1,
     ResearchObjectDetailV1,
-    ResearchRunCollectionV1,
     ResearchRunDetailV1,
     ResearchRunDraftV1,
+    ResearchRunHistoryCollectionV1,
     TraceBundleV1,
 )
 from src.phase4_product.errors import ProductError, product_error
@@ -310,7 +310,7 @@ class Phase4ProductBackend(Protocol):
         result_availability: str | None,
         cursor: str | None,
         limit: int,
-    ) -> ResearchRunCollectionV1: ...
+    ) -> ResearchRunHistoryCollectionV1: ...
 
     async def list_object_runs(
         self,
@@ -318,7 +318,7 @@ class Phase4ProductBackend(Protocol):
         *,
         cursor: str | None,
         limit: int,
-    ) -> ResearchRunCollectionV1: ...
+    ) -> ResearchRunHistoryCollectionV1: ...
 
     async def prepare_run(
         self,
@@ -469,14 +469,14 @@ def create_phase4_product_router() -> APIRouter:
         _admit_contract(request, response)
         return await _backend(request).get_object(object_id)
 
-    @router.get("/objects/{object_id}/runs", response_model=ResearchRunCollectionV1)
+    @router.get("/objects/{object_id}/runs", response_model=ResearchRunHistoryCollectionV1)
     async def list_object_runs(
         object_id: str,
         request: Request,
         response: Response,
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    ) -> ResearchRunCollectionV1:
+    ) -> ResearchRunHistoryCollectionV1:
         _admit_contract(request, response)
         return await _backend(request).list_object_runs(
             object_id,
@@ -493,7 +493,7 @@ def create_phase4_product_router() -> APIRouter:
         _admit_contract(request, response)
         return await _backend(request).get_released_object(object_id)
 
-    @router.get("/research-runs", response_model=ResearchRunCollectionV1)
+    @router.get("/research-runs", response_model=ResearchRunHistoryCollectionV1)
     async def list_runs(
         request: Request,
         response: Response,
@@ -502,7 +502,7 @@ def create_phase4_product_router() -> APIRouter:
         result_availability: str | None = None,
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    ) -> ResearchRunCollectionV1:
+    ) -> ResearchRunHistoryCollectionV1:
         _admit_contract(request, response)
         return await _backend(request).list_runs(
             object_id=object_id,

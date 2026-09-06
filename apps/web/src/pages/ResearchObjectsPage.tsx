@@ -24,8 +24,8 @@ export function ResearchObjectsPage({
     <div className="page-head">
       <div>
         <div className="breadcrumb">Research › 研究对象</div>
-        <h1 className="page-title" id="research-objects-title">研究对象</h1>
-        <div className="page-sub">每个对象卡片来自已解码的后端身份与对象级 Run 摘要；页面不会补算财务值或回退到其他对象。</div>
+        <h1 className="page-title" id="research-objects-title">Research Object</h1>
+        <div className="page-sub">管理公司研究对象，查看历史研究，并从同一公司身份发起新的 Research Run。</div>
       </div>
       <button type="button" className="btn primary" onClick={onCreate}>+ 创建研究对象</button>
     </div>
@@ -57,22 +57,21 @@ function ObjectCard({ detail, onOpen }: { readonly detail: Phase4ResearchObjectD
     <span className="object-card-head">
       <span>
         <strong>{object.companyName}</strong>
-        <span className="small option-sub">{object.symbol} · {object.exchange} · {object.sector ?? "Sector unavailable"}</span>
+        <span className="small option-sub">{object.symbol} · {object.exchange} · {object.sector ?? "行业信息暂不可用"}</span>
       </span>
       <span className={`badge ${availabilityColor(availability.status)}`}>{availabilityLabel(availability.status)}</span>
     </span>
-    <span className="object-identity mono-value">{object.objectId}</span>
     <span className="object-metrics">
-      <Metric label="Research Runs" value={String(detail.runCount)} />
-      <Metric label="Latest Released Run" value={detail.latestReleasedRunId ?? "Not released"} mono />
-      <Metric label="Currency" value={object.currency} />
-      <Metric label="Identity Version" value={`v${object.identityVersion}`} />
+      <Metric label="研究次数" value={String(detail.runCount)} />
+      <Metric label="最近完成" value={detail.latestReleasedRunId ? "已有发布结果" : "尚未发布"} />
+      <Metric label="计价货币" value={object.currency} />
+      <Metric label="对象状态" value="可研究" />
     </span>
     {detail.lastActivity
       ? <span className="object-last-activity">
-          <span className="micro">LAST ACTIVITY</span>
-          <strong>{detail.lastActivity.messageCode}</strong>
-          <span className="small">{detail.lastActivity.type} · seq {detail.lastActivity.sequence} · {formatTimestamp(detail.lastActivity.timestamp)}</span>
+          <span className="micro">最近活动</span>
+          <strong>Research Run 状态已更新</strong>
+          <span className="small">{formatTimestamp(detail.lastActivity.timestamp)}</span>
         </span>
       : <span className="object-last-activity small">尚无 Run 活动。</span>}
     <span className="object-card-action">打开研究对象 →</span>

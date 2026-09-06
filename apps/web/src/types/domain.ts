@@ -6,7 +6,7 @@
  * none of the legacy V8 demo shapes below participates in this boundary.
  */
 export const PHASE4_CONTRACT_VERSION = "phase4-core/v1" as const;
-export const RUN_COLLECTION_SCHEMA_VERSION = "phase4-run-collection/v1" as const;
+export const RUN_HISTORY_COLLECTION_SCHEMA_VERSION = "phase4-run-history-collection/v1" as const;
 export const RUN_DRAFT_SCHEMA_VERSION = "phase4-run-draft/v1" as const;
 export const CONFIRM_RESPONSE_SCHEMA_VERSION = "phase4-confirm-response/v1" as const;
 export const RUN_ADMISSION_SCHEMA_VERSION = "phase4-run-admission/v1" as const;
@@ -360,9 +360,25 @@ export interface RunCollectionItem {
   readonly resultAvailability: Availability;
 }
 
+export interface AvailableRunHistoryItem {
+  readonly availability: "AVAILABLE";
+  readonly run: RunCollectionItem;
+}
+
+export interface UnavailableIncompatibleRunHistoryItem {
+  readonly availability: "UNAVAILABLE_INCOMPATIBLE";
+  readonly runId: string;
+  readonly object: Readonly<{ objectId: string; symbol: string; companyName: string }>;
+  readonly backendStatus: BackendRunStatus;
+  readonly updatedAt: string;
+  readonly reasonCode: "LEGACY_OR_INCOMPATIBLE";
+}
+
+export type RunHistoryItem = AvailableRunHistoryItem | UnavailableIncompatibleRunHistoryItem;
+
 export interface GlobalRunCollectionProjection {
-  readonly schemaVersion: typeof RUN_COLLECTION_SCHEMA_VERSION;
-  readonly items: readonly RunCollectionItem[];
+  readonly schemaVersion: typeof RUN_HISTORY_COLLECTION_SCHEMA_VERSION;
+  readonly items: readonly RunHistoryItem[];
   readonly nextCursor: string | null;
 }
 
@@ -1980,30 +1996,75 @@ function decodeRunCollectionItem(value: unknown, path: string): RunCollectionIte
   });
 }
 
+function decodeRunHistoryItem(value: unknown, path: string): RunHistoryItem {
+  const input = decodeObject(value, path);
+  const availability = field(input, "availability", path);
+  if (availability === "AVAILABLE") {
+    assertOnlyKeys(input, ["availability", "run"], path);
+    return freezeDeep({
+      availability,
+      run: decodeRunCollectionItem(field(input, "run", path), `${path}.run`)
+    });
+  }
+  if (availability !== "UNAVAILABLE_INCOMPATIBLE") {
+    return fail(`${path}.availability`, "unsupported Run history availability variant");
+  }
+  assertOnlyKeys(
+    input,
+    ["availability", "run_id", "object", "status", "updated_at", "reason_code"],
+    path
+  );
+  const rawObject = decodeObject(field(input, "object", path), `${path}.object`);
+  assertOnlyKeys(rawObject, ["object_id", "symbol", "company_name"], `${path}.object`);
+  const reasonCode = field(input, "reason_code", path);
+  if (reasonCode !== "LEGACY_OR_INCOMPATIBLE") {
+    return fail(`${path}.reason_code`, "unsupported incompatible history reason");
+  }
+  return freezeDeep({
+    availability,
+    runId: decodeOpaqueId(field(input, "run_id", path), `${path}.run_id`),
+    object: {
+      objectId: decodeOpaqueId(field(rawObject, "object_id", `${path}.object`), `${path}.object.object_id`),
+      symbol: decodeNonBlankString(field(rawObject, "symbol", `${path}.object`), `${path}.object.symbol`),
+      companyName: decodePublicText(
+        field(rawObject, "company_name", `${path}.object`),
+        `${path}.object.company_name`
+      )
+    },
+    backendStatus: decodeEnum(
+      field(input, "status", path),
+      BACKEND_RUN_STATUSES,
+      `${path}.status`
+    ),
+    updatedAt: decodeRfc3339Utc(field(input, "updated_at", path), `${path}.updated_at`),
+    reasonCode: "LEGACY_OR_INCOMPATIBLE" as const
+  });
+}
+
 export function decodeRunCollection(
   value: unknown,
   expectedObjectId?: string
 ): GlobalRunCollectionProjection {
   const input = decodeObject(value, "$" );
   assertOnlyKeys(input, ["schema_version", "items", "next_cursor"], "$" );
-  if (field(input, "schema_version", "$" ) !== RUN_COLLECTION_SCHEMA_VERSION) {
+  if (field(input, "schema_version", "$" ) !== RUN_HISTORY_COLLECTION_SCHEMA_VERSION) {
     return fail(
       "$.schema_version",
-      `unsupported Run collection schema; expected ${RUN_COLLECTION_SCHEMA_VERSION}`
+      `unsupported Run history collection schema; expected ${RUN_HISTORY_COLLECTION_SCHEMA_VERSION}`
     );
   }
   const items = decodeArray(field(input, "items", "$" ), "$.items").map((item, index) =>
-    decodeRunCollectionItem(item, `$.items[${index}]`)
+    decodeRunHistoryItem(item, `$.items[${index}]`)
   );
-  const runIds = items.map((item) => item.runId);
+  const runIds = items.map((item) => item.availability === "AVAILABLE" ? item.run.runId : item.runId);
   if (new Set(runIds).size !== runIds.length) return fail("$.items", "duplicate Run identity");
   if (expectedObjectId !== undefined) {
     const expected = decodeOpaqueId(expectedObjectId, "expectedObjectId");
-    const mismatch = items.find((item) => item.object.objectId !== expected);
+    const mismatch = items.find((item) => (item.availability === "AVAILABLE" ? item.run.object.objectId : item.object.objectId) !== expected);
     if (mismatch !== undefined) return fail("$.items", "collection contains a Run from another Object");
   }
   return freezeDeep({
-    schemaVersion: RUN_COLLECTION_SCHEMA_VERSION,
+    schemaVersion: RUN_HISTORY_COLLECTION_SCHEMA_VERSION,
     items,
     nextCursor: decodeNullableOpaqueId(field(input, "next_cursor", "$" ), "$.next_cursor")
   });

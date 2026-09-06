@@ -438,6 +438,40 @@ class RunCollectionItemV1(FrozenWireModel):
     result_availability: AvailabilityV1
 
 
+class AvailableRunHistoryItemV1(FrozenWireModel):
+    """One history row that satisfies the full frozen Run collection contract."""
+
+    availability: Literal["AVAILABLE"] = "AVAILABLE"
+    run: RunCollectionItemV1
+
+
+class UnavailableIncompatibleRunHistoryItemV1(FrozenWireModel):
+    """Identity-preserving history row for a payload that cannot be projected safely.
+
+    This deliberately excludes graph, progress, release, event-watermark, Review,
+    Report, proof, and metric claims.  The remaining fields come from the durable
+    aggregate columns and its exact Research Object row.
+    """
+
+    availability: Literal["UNAVAILABLE_INCOMPATIBLE"] = "UNAVAILABLE_INCOMPATIBLE"
+    run_id: NonBlank
+    object: RunCollectionObjectV1
+    status: RunStatusV1
+    updated_at: datetime
+    reason_code: Literal["LEGACY_OR_INCOMPATIBLE"] = "LEGACY_OR_INCOMPATIBLE"
+
+
+RunHistoryItemV1 = AvailableRunHistoryItemV1 | UnavailableIncompatibleRunHistoryItemV1
+
+
+class ResearchRunHistoryCollectionV1(FrozenWireModel):
+    schema_version: Literal["phase4-run-history-collection/v1"] = (
+        "phase4-run-history-collection/v1"
+    )
+    items: tuple[RunHistoryItemV1, ...]
+    next_cursor: str | None = None
+
+
 class ResearchRunCollectionV1(FrozenWireModel):
     schema_version: Literal["phase4-run-collection/v1"] = "phase4-run-collection/v1"
     items: tuple[RunCollectionItemV1, ...]

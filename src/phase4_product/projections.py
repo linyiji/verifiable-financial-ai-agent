@@ -45,6 +45,7 @@ from src.phase4_product.contracts import (
     AtomicRunProjectionV1,
     AvailabilityStatus,
     AvailabilityV1,
+    AvailableRunHistoryItemV1,
     CalculationAvailabilityRefV1,
     ClaimDetailV1,
     ErrorCodeV1,
@@ -69,6 +70,7 @@ from src.phase4_product.contracts import (
     ReportArtifactGroupV1,
     ResearchRunCollectionV1,
     ResearchRunDetailV1,
+    ResearchRunHistoryCollectionV1,
     ResultSummaryV1,
     ReviewAvailabilityRefV1,
     ReviewCorrectionRefV1,
@@ -90,6 +92,7 @@ from src.phase4_product.contracts import (
     TraceRepresentationV1,
     TypedGraphOperationV1,
     TypedReleasedClaimV1,
+    UnavailableIncompatibleRunHistoryItemV1,
 )
 from src.phase4_product.errors import ProductError
 from src.phase4_product.hashing import canonical_json_sha256, require_sha256_identity
@@ -1006,6 +1009,79 @@ def build_run_collection(
         else None
     )
     return ResearchRunCollectionV1(items=page, next_cursor=next_cursor)
+
+
+def build_run_history_collection(
+    *,
+    items: Sequence[AvailableRunHistoryItemV1 | UnavailableIncompatibleRunHistoryItemV1],
+    cursor_signing_key: bytes,
+    limit: int = 50,
+    object_id: str | None = None,
+    statuses: Sequence[object] = (),
+    result_availability: AvailabilityStatus | str | None = None,
+    cursor: str | None = None,
+) -> ResearchRunHistoryCollectionV1:
+    """Page mixed history rows without weakening strict Run projection gates.
+
+    Callers must first project compatible rows through
+    :func:`project_run_collection_item`.  An unavailable row carries only durable
+    identity/status metadata and is excluded when a result-availability filter
+    requires information that the degraded variant intentionally cannot claim.
+    """
+
+    checked_limit = _positive_int(limit, context="Run history collection limit")
+    if checked_limit > 100:
+        raise ProjectionIntegrityError("Run history collection limit must be within 1..100")
+    key = _run_collection_cursor_key(cursor_signing_key)
+    filters = _normalize_run_collection_filters(
+        object_id=object_id,
+        statuses=statuses,
+        result_availability=result_availability,
+    )
+    marker = (
+        _decode_run_collection_cursor(cursor, signing_key=key, filters=filters)
+        if cursor is not None
+        else None
+    )
+
+    checked_items: list[AvailableRunHistoryItemV1 | UnavailableIncompatibleRunHistoryItemV1] = []
+    for item in items:
+        if not isinstance(
+            item,
+            (AvailableRunHistoryItemV1, UnavailableIncompatibleRunHistoryItemV1),
+        ):
+            raise ProjectionIntegrityError("Run history item has an unsupported variant")
+        if _run_history_item_matches(item, filters):
+            checked_items.append(item)
+
+    run_ids = tuple(_run_history_identity(item)[0] for item in checked_items)
+    if len(set(run_ids)) != len(run_ids):
+        raise ProjectionIntegrityError("Run history collection contains duplicate Run identities")
+    ordered = tuple(
+        sorted(checked_items, key=_run_history_order_key, reverse=True)
+    )
+
+    start = 0
+    if marker is not None:
+        positions = tuple(
+            index for index, item in enumerate(ordered) if _run_history_order_key(item) == marker
+        )
+        if len(positions) != 1:
+            _raise_invalid_run_collection_cursor()
+        start = positions[0] + 1
+
+    page = ordered[start : start + checked_limit]
+    has_more = start + len(page) < len(ordered)
+    next_cursor = (
+        _encode_run_history_cursor(
+            item=page[-1],
+            signing_key=key,
+            filters=filters,
+        )
+        if has_more and page
+        else None
+    )
+    return ResearchRunHistoryCollectionV1(items=page, next_cursor=next_cursor)
 
 
 def project_task(task: object, *, expected_run_id: str) -> TaskProjectionV1:
@@ -3767,6 +3843,35 @@ def _run_collection_source_matches(
     return True
 
 
+def _run_history_item_matches(
+    item: AvailableRunHistoryItemV1 | UnavailableIncompatibleRunHistoryItemV1,
+    filters: _RunCollectionFilterSet,
+) -> bool:
+    if isinstance(item, AvailableRunHistoryItemV1):
+        return _run_collection_item_matches(item.run, filters)
+    if filters.object_id is not None and item.object.object_id != filters.object_id:
+        return False
+    if filters.statuses and item.status not in filters.statuses:
+        return False
+    # The degraded variant intentionally makes no result-availability claim.
+    return filters.result_availability is None
+
+
+def _run_history_identity(
+    item: AvailableRunHistoryItemV1 | UnavailableIncompatibleRunHistoryItemV1,
+) -> tuple[str, datetime]:
+    if isinstance(item, AvailableRunHistoryItemV1):
+        return item.run.run_id, item.run.updated_at
+    return item.run_id, item.updated_at
+
+
+def _run_history_order_key(
+    item: AvailableRunHistoryItemV1 | UnavailableIncompatibleRunHistoryItemV1,
+) -> tuple[datetime, bytes]:
+    run_id, updated_at = _run_history_identity(item)
+    return updated_at, run_id.encode("utf-8")
+
+
 def _run_collection_order_key(item: RunCollectionItemV1) -> tuple[datetime, bytes]:
     return (item.updated_at, item.run_id.encode("utf-8"))
 
@@ -3815,6 +3920,31 @@ def _encode_run_collection_cursor(
     token = f"{_RUN_COLLECTION_CURSOR_PREFIX}.{encoded}.{signature}"
     if len(token) > _RUN_COLLECTION_CURSOR_MAX_LENGTH:
         raise ProjectionIntegrityError("Run collection cursor exceeds its bounded encoding")
+    return token
+
+
+def _encode_run_history_cursor(
+    *,
+    item: AvailableRunHistoryItemV1 | UnavailableIncompatibleRunHistoryItemV1,
+    signing_key: bytes,
+    filters: _RunCollectionFilterSet,
+) -> str:
+    run_id, updated_at = _run_history_identity(item)
+    payload = _canonical_cursor_json(
+        {
+            "filters": filters.cursor_value(),
+            "last": {
+                "run_id": run_id,
+                "updated_at": updated_at.isoformat(),
+            },
+            "version": _RUN_COLLECTION_CURSOR_VERSION,
+        }
+    )
+    encoded = base64.urlsafe_b64encode(payload).rstrip(b"=").decode("ascii")
+    signature = hmac.new(signing_key, payload, hashlib.sha256).hexdigest()
+    token = f"{_RUN_COLLECTION_CURSOR_PREFIX}.{encoded}.{signature}"
+    if len(token) > _RUN_COLLECTION_CURSOR_MAX_LENGTH:
+        raise ProjectionIntegrityError("Run history cursor exceeds its bounded encoding")
     return token
 
 
@@ -5146,6 +5276,7 @@ __all__ = [
     "build_claim_detail",
     "build_execution_projection",
     "build_financial_review",
+    "build_run_history_collection",
     "build_run_collection",
     "build_released_metric",
     "build_released_object_core",

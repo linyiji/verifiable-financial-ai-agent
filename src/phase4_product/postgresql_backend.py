@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 from typing import Any
 from uuid import uuid4
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -61,6 +62,7 @@ from src.phase4_product.contracts import (
     AtomicRunProjectionV1,
     AvailabilityStatus,
     AvailabilityV1,
+    AvailableRunHistoryItemV1,
     ConfirmResearchRunRequestV1,
     ConfirmRunResponseV1,
     CreateResearchObjectRequestV1,
@@ -69,13 +71,15 @@ from src.phase4_product.contracts import (
     ProofSummaryV1,
     ResearchObjectCollectionV1,
     ResearchObjectDetailV1,
-    ResearchRunCollectionV1,
     ResearchRunDetailV1,
     ResearchRunDraftV1,
+    ResearchRunHistoryCollectionV1,
     ResultSummaryV1,
     ReviewSummaryV1,
+    RunCollectionObjectV1,
     RunLifecycleV1,
     TerminalStateV1,
+    UnavailableIncompatibleRunHistoryItemV1,
 )
 from src.phase4_product.durability import (
     AtomicConfirmCommit,
@@ -93,16 +97,18 @@ from src.phase4_product.durability import (
 from src.phase4_product.errors import ProductError, product_error
 from src.phase4_product.hashing import idempotency_key_digest
 from src.phase4_product.projections import (
+    ProjectionIntegrityError,
     RunCollectionSource,
     build_atomic_run_projection,
     build_released_result_projection,
-    build_run_collection,
+    build_run_history_collection,
     calculate_run_progress,
     project_event,
     project_goal,
     project_graph,
     project_object,
     project_path_change,
+    project_run_collection_item,
     project_run_detail,
     project_run_status,
     project_scheme,
@@ -111,6 +117,40 @@ from src.runtime.events import CursorPreflight, build_cursor_preflight
 from src.runtime.state import RuntimeState
 
 _CURSOR_SIGNING_KEY = b"phase4-vs01-local-run-collection-v1"
+
+
+def _unavailable_history_item(
+    row: ResearchRunAggregateRow,
+    research_object: ResearchObject,
+) -> UnavailableIncompatibleRunHistoryItemV1:
+    """Retain only durable identity/status fields from an incompatible aggregate."""
+
+    payload = row.payload
+    if not isinstance(payload, Mapping):
+        raise ProjectionIntegrityError("Run history aggregate payload is not an object")
+    raw_run = payload.get("run")
+    if not isinstance(raw_run, Mapping):
+        raise ProjectionIntegrityError("Run history aggregate lacks its exact Run identity")
+    if (
+        raw_run.get("run_id") != row.run_id
+        or raw_run.get("research_object_id") != row.object_id
+        or raw_run.get("status") != row.status
+    ):
+        raise ProjectionIntegrityError("Run history durable identity columns disagree with payload")
+    object_projection = project_object(research_object)
+    if object_projection.object_id != row.object_id:
+        raise ProjectionIntegrityError("Run history Object ownership closure failed")
+    status = project_run_status(row.status).status
+    return UnavailableIncompatibleRunHistoryItemV1(
+        run_id=row.run_id,
+        object=RunCollectionObjectV1(
+            object_id=object_projection.object_id,
+            symbol=object_projection.symbol,
+            company_name=object_projection.company_name,
+        ),
+        status=status,
+        updated_at=row.updated_at,
+    )
 
 
 class _ProjectionPublishingEventStore:
@@ -643,17 +683,22 @@ class PostgreSQLPhase4ProductBackend:
         result_availability: str | None,
         cursor: str | None,
         limit: int,
-    ) -> ResearchRunCollectionV1:
+    ) -> ResearchRunHistoryCollectionV1:
         async with self.sessions() as session:
             statement = select(ResearchRunAggregateRow)
             if object_id is not None:
                 statement = statement.where(ResearchRunAggregateRow.object_id == object_id)
             rows = list((await session.scalars(statement)).all())
-            sources: list[RunCollectionSource] = []
+            history_items: list[
+                AvailableRunHistoryItemV1 | UnavailableIncompatibleRunHistoryItemV1
+            ] = []
             for row in rows:
                 obj = await session.get(ResearchObjectRow, row.object_id)
-                run = ResearchRun.model_validate(row.payload["run"])
-                artifacts = CompletedRunArtifacts.model_validate(row.payload["artifacts"])
+                if obj is None:
+                    raise ProjectionIntegrityError(
+                        "Run history references a missing Research Object"
+                    )
+                research_object = ResearchObject.model_validate(obj.payload)
                 latest = await session.scalar(
                     select(RuntimeEventRow)
                     .where(
@@ -663,12 +708,26 @@ class PostgreSQLPhase4ProductBackend:
                     .order_by(RuntimeEventRow.sequence.desc())
                     .limit(1)
                 )
-                sources.append(
-                    RunCollectionSource(
+                try:
+                    payload = row.payload
+                    if not isinstance(payload, Mapping):
+                        raise ProjectionIntegrityError(
+                            "Run history aggregate payload is not an object"
+                        )
+                    runtime = payload.get("runtime")
+                    if not isinstance(runtime, Mapping):
+                        raise ProjectionIntegrityError(
+                            "Run history aggregate runtime is not an object"
+                        )
+                    run = ResearchRun.model_validate(payload.get("run"))
+                    artifacts = CompletedRunArtifacts.model_validate(
+                        payload.get("artifacts")
+                    )
+                    source = RunCollectionSource(
                         run=run,
-                        research_object=ResearchObject.model_validate(obj.payload),
+                        research_object=research_object,
                         actual_graph=ActualRuntimeGraph.model_validate(
-                            row.payload["runtime"]["actual_graph"]
+                            runtime.get("actual_graph")
                         ),
                         latest_event=(
                             None
@@ -711,9 +770,17 @@ class PostgreSQLPhase4ProductBackend:
                             and artifacts.report is not None
                         ),
                     )
-                )
-        return build_run_collection(
-            sources=sources,
+                    history_items.append(
+                        AvailableRunHistoryItemV1(
+                            run=project_run_collection_item(source)
+                        )
+                    )
+                except (ProjectionIntegrityError, ValidationError):
+                    history_items.append(
+                        _unavailable_history_item(row, research_object)
+                    )
+        return build_run_history_collection(
+            items=history_items,
             cursor_signing_key=_CURSOR_SIGNING_KEY,
             limit=limit,
             object_id=object_id,
@@ -728,7 +795,7 @@ class PostgreSQLPhase4ProductBackend:
         *,
         cursor: str | None,
         limit: int,
-    ) -> ResearchRunCollectionV1:
+    ) -> ResearchRunHistoryCollectionV1:
         await self.get_object(object_id)
         return await self.list_runs(
             object_id=object_id,

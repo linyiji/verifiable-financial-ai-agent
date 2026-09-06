@@ -7,12 +7,20 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from src.phase4_product.contracts import AvailabilityStatus, AvailabilityV1, ErrorCodeV1
+from src.phase4_product.contracts import (
+    AvailabilityStatus,
+    AvailabilityV1,
+    AvailableRunHistoryItemV1,
+    ErrorCodeV1,
+    RunCollectionObjectV1,
+    UnavailableIncompatibleRunHistoryItemV1,
+)
 from src.phase4_product.errors import ProductError
 from src.phase4_product.projections import (
     ProjectionIntegrityError,
     RunCollectionSource,
     build_run_collection,
+    build_run_history_collection,
     project_run_collection_item,
 )
 
@@ -148,6 +156,32 @@ def _corpus() -> list[RunCollectionSource]:
     ]
 
 
+def _available_history(run_id: str, *, updated_at: datetime, status: str = "RUNNING"):
+    return AvailableRunHistoryItemV1(
+        run=project_run_collection_item(
+            _source(run_id, updated_at=updated_at, status=status)
+        )
+    )
+
+
+def _unavailable_history(
+    run_id: str,
+    *,
+    updated_at: datetime,
+    status: str = "RELEASED",
+):
+    return UnavailableIncompatibleRunHistoryItemV1(
+        run_id=run_id,
+        object=RunCollectionObjectV1(
+            object_id="OBJ-A",
+            symbol="ACME",
+            company_name="Acme Corp",
+        ),
+        status=status,
+        updated_at=updated_at,
+    )
+
+
 def test_item_uses_exact_safe_projection_primitives() -> None:
     item = project_run_collection_item(_source("RUN-A", updated_at=NOW, task_progress=0.375))
 
@@ -198,6 +232,74 @@ def test_collection_stably_orders_and_pages_by_updated_at_then_run_id_desc() -> 
 
     assert observed == expected
     assert len(observed) == len(set(observed))
+
+
+def test_history_collection_keeps_incompatible_identity_without_weakening_available_row() -> None:
+    items = (
+        _available_history("RUN-A", updated_at=NOW),
+        _unavailable_history("RUN-LEGACY", updated_at=NOW + timedelta(minutes=1)),
+    )
+
+    page = build_run_history_collection(
+        items=items,
+        cursor_signing_key=CURSOR_KEY,
+    )
+
+    assert page.schema_version == "phase4-run-history-collection/v1"
+    assert [item.availability for item in page.items] == [
+        "UNAVAILABLE_INCOMPATIBLE",
+        "AVAILABLE",
+    ]
+    unavailable = page.items[0]
+    assert isinstance(unavailable, UnavailableIncompatibleRunHistoryItemV1)
+    assert unavailable.model_dump(mode="json") == {
+        "availability": "UNAVAILABLE_INCOMPATIBLE",
+        "run_id": "RUN-LEGACY",
+        "object": {
+            "object_id": "OBJ-A",
+            "symbol": "ACME",
+            "company_name": "Acme Corp",
+        },
+        "status": "RELEASED",
+        "updated_at": "2026-09-05T12:01:00Z",
+        "reason_code": "LEGACY_OR_INCOMPATIBLE",
+    }
+
+
+def test_history_collection_pages_mixed_rows_and_excludes_unknown_result_claims() -> None:
+    items = (
+        _available_history("RUN-A", updated_at=NOW),
+        _available_history(
+            "RUN-RELEASED",
+            updated_at=NOW - timedelta(minutes=1),
+            status="RELEASED",
+        ),
+        _unavailable_history("RUN-LEGACY", updated_at=NOW + timedelta(minutes=1)),
+    )
+    first = build_run_history_collection(
+        items=items,
+        cursor_signing_key=CURSOR_KEY,
+        limit=2,
+    )
+    assert first.next_cursor is not None
+    assert [
+        item.run.run_id if isinstance(item, AvailableRunHistoryItemV1) else item.run_id
+        for item in first.items
+    ] == ["RUN-LEGACY", "RUN-A"]
+
+    resumed = build_run_history_collection(
+        items=tuple(reversed(items)),
+        cursor_signing_key=CURSOR_KEY,
+        cursor=first.next_cursor,
+    )
+    assert [item.run.run_id for item in resumed.items] == ["RUN-RELEASED"]
+
+    released = build_run_history_collection(
+        items=items,
+        cursor_signing_key=CURSOR_KEY,
+        result_availability=AvailabilityStatus.AVAILABLE,
+    )
+    assert [item.run.run_id for item in released.items] == ["RUN-RELEASED"]
 
 
 def test_cursor_replays_identical_suffix_after_process_restart_and_input_reorder() -> None:

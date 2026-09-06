@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { RunCollectionItem, RunProjection } from "../types/domain";
+import type { RunCollectionItem, RunHistoryItem, RunProjection } from "../types/domain";
 import {
   PHASE4_RUN_STATUS_META,
   selectAutoStartState,
@@ -17,11 +17,12 @@ import {
 import "../styles/workspace-pages.css";
 
 export interface ResearchRunsPageProps {
-  readonly runs: readonly RunCollectionItem[];
+  readonly runs: readonly RunHistoryItem[];
   readonly objectCount: number;
   readonly onCreate: () => void;
   readonly onOpen: (runId: string, objectId: string) => void;
   readonly loading?: boolean;
+  readonly unavailable?: boolean;
   readonly stale?: boolean;
   readonly nextCursor?: string | null;
   readonly onLoadMore?: (cursor: string) => void;
@@ -33,20 +34,21 @@ export function ResearchRunsPage({
   onCreate,
   onOpen,
   loading = false,
+  unavailable = false,
   stale = false,
   nextCursor = null,
   onLoadMore
 }: ResearchRunsPageProps) {
-  const active = runs.filter((run) => !run.terminal).length;
-  const completed = runs.filter((run) => run.status === "COMPLETED").length;
-  const unsuccessful = runs.filter((run) => run.status === "FAILED" || run.status === "CANCELLED").length;
+  const active = runs.filter((item) => !["RELEASED", "FAILED", "CANCELLED"].includes(historyStatus(item))).length;
+  const completed = runs.filter((item) => historyStatus(item) === "RELEASED").length;
+  const unsuccessful = runs.filter((item) => ["FAILED", "CANCELLED"].includes(historyStatus(item))).length;
 
   return <section className="workspace-page" aria-labelledby="research-runs-title">
     <div className="page-head">
       <div>
-        <div className="breadcrumb breadcrumb-context">Research / 任务列表</div>
-        <h1 className="page-title" id="research-runs-title">研究任务</h1>
-        <div className="page-sub">列表仅展示后端接纳的 Run 投影；打开任务时始终使用该行的精确 Run 与 Object 身份。</div>
+        <div className="breadcrumb breadcrumb-context">Research / 研究记录</div>
+        <h1 className="page-title" id="research-runs-title">研究记录</h1>
+        <div className="page-sub">查看已创建的 Research Run，并按精确 Run ID 打开对应研究工作区。</div>
       </div>
       <button type="button" className="btn primary" onClick={onCreate}>+ 新建研究任务</button>
     </div>
@@ -59,11 +61,15 @@ export function ResearchRunsPage({
       <Kpi label="研究对象" value={objectCount} foot="当前对象集合" />
     </div>
 
-    {loading && runs.length === 0
+    {unavailable
+      ? null
+      : loading && runs.length === 0
       ? <div className="card loading-row" role="status"><div className="spinner" aria-hidden="true" /><span>正在载入 Run 列表…</span></div>
       : runs.length === 0
         ? <div className="card empty-state" role="status">尚无 Research Run。创建研究任务并确认方案后，Run 会在这里出现。</div>
-        : <div className="run-list">{runs.map((run) => <RunRow key={run.runId} run={run} onOpen={onOpen} />)}</div>}
+        : <div className="run-list">{runs.map((item) => item.availability === "AVAILABLE"
+            ? <RunRow key={item.run.runId} run={item.run} onOpen={onOpen} />
+            : <UnavailableRunRow key={item.runId} item={item} />)}</div>}
 
     {nextCursor && onLoadMore && <div className="collection-footer">
       <button type="button" className="btn" disabled={loading} onClick={() => onLoadMore(nextCursor)}>
@@ -83,28 +89,54 @@ function RunRow({ run, onOpen }: { readonly run: RunCollectionItem; readonly onO
   >
     <span className="run-card-primary">
       <span className={`badge ${meta.color}`}><span className={`dot ${run.status === "RESEARCHING" ? "pulse" : ""}`} />{meta.label}</span>
-      <span className="micro mono-value">{run.runId}</span>
       <span className="run-title">{run.object.companyName} · {run.object.symbol}</span>
-      <span className="run-meta">Object <code>{run.object.objectId}</code> · As of {run.asOf}</span>
-      {run.activity && <span className="run-activity">{run.activity.messageCode} · seq {run.activity.sequence}</span>}
+      <span className="run-purpose">完整公司金融研究</span>
+      <span className="run-meta">Run ID · <code>{run.runId}</code></span>
+      <span className="run-meta">As-of {run.asOf} · {run.progress.completedTasks}/{run.progress.totalTasks} 个研究任务完成</span>
     </span>
     <span className="optional">
-      <span className="stage">{run.stage}</span>
+      <span className="stage">研究进度</span>
       <span className="progress" role="progressbar" aria-label={`${run.object.symbol} Run 进度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={run.progress.percent}>
         <i style={{ width: `${run.progress.percent}%` }} />
       </span>
-      <span className="stage-sub">{formatPercent(run.progress.percent)} · {run.progress.completedTasks}/{run.progress.totalTasks} tasks</span>
+      <span className="stage-sub">{formatPercent(run.progress.percent)}</span>
     </span>
     <span className="optional">
-      <span className="stage">Graph {run.graphVersion === null ? "Unavailable" : `v${run.graphVersion}`}</span>
-      <span className="stage-sub">Projection r{run.projectionRevision} · seq {run.projectionSequence}</span>
+      <span className="stage">{run.graphVersion === null ? "研究路径准备中" : `实际路径 · Graph v${run.graphVersion}`}</span>
       <span className="stage-sub">{formatTimestamp(run.updatedAt)}</span>
     </span>
     <span className="run-card-end">
-      <span className={`badge ${availabilityColor(run.resultAvailability.status)}`}>{run.resultAvailability.status}</span>
-      <span className={`btn sm ${run.status === "COMPLETED" ? "primary" : ""}`}>{run.status === "COMPLETED" ? "查看结果" : "打开任务"}</span>
+      <span className={`badge ${availabilityColor(run.resultAvailability.status)}`}>{availabilityLabel(run.resultAvailability.status)}</span>
+      <span className={`btn sm ${run.status === "COMPLETED" ? "primary" : ""}`}>打开 Research Run</span>
     </span>
   </button>;
+}
+
+function UnavailableRunRow({ item }: {
+  readonly item: Extract<RunHistoryItem, { availability: "UNAVAILABLE_INCOMPATIBLE" }>;
+}) {
+  return <article className="card run-card unavailable-history-row" data-run-id={item.runId}>
+    <div className="run-card-primary">
+      <span className="badge amber">历史记录不可完整读取</span>
+      <span className="run-title">{item.object.companyName} · {item.object.symbol}</span>
+      <span className="run-purpose">完整公司金融研究</span>
+      <span className="run-meta">Run ID · <code>{item.runId}</code></span>
+    </div>
+    <div className="unavailable-history-copy"><strong>legacy / incompatible</strong><span>仅保留可验证的历史身份与状态信息。</span></div>
+    <div className="optional"><span className="stage">历史状态</span><span className="stage-sub">{historyStatusLabel(item.backendStatus)}</span></div>
+    <div className="run-card-end"><button type="button" className="btn sm" disabled>不可打开完整工作区</button></div>
+  </article>;
+}
+
+function historyStatus(item: RunHistoryItem): RunCollectionItem["backendStatus"] {
+  return item.availability === "AVAILABLE" ? item.run.backendStatus : item.backendStatus;
+}
+
+function historyStatusLabel(status: RunCollectionItem["backendStatus"]): string {
+  if (status === "RELEASED") return "已完成";
+  if (status === "FAILED") return "未成功终止";
+  if (status === "CANCELLED") return "已取消";
+  return "进行中";
 }
 
 export interface RunWorkspaceShellProps {
@@ -241,6 +273,17 @@ function availabilityColor(status: RunCollectionItem["resultAvailability"]["stat
   if (status === "FAILED" || status === "UNAVAILABLE") return "red";
   if (status === "PENDING") return "blue";
   return "amber";
+}
+
+function availabilityLabel(status: RunCollectionItem["resultAvailability"]["status"]): string {
+  return {
+    PENDING: "结果准备中",
+    AVAILABLE: "结果可查看",
+    NOT_GENERATED: "结果未生成",
+    NOT_RELEASED: "结果未发布",
+    UNAVAILABLE: "结果暂不可用",
+    FAILED: "结果生成失败"
+  }[status];
 }
 
 function formatTimestamp(value: string): string {
