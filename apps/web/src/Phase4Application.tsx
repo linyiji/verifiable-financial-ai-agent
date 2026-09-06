@@ -8,6 +8,8 @@ import { ResearchObjectDetailPage } from "./pages/ResearchObjectDetailPage";
 import { ResearchObjectsPage } from "./pages/ResearchObjectsPage";
 import { ResearchRunPage } from "./pages/ResearchRunPage";
 import { ResearchRunsPage } from "./pages/ResearchRunsPage";
+import { ResultsWorkspacePage } from "./pages/ResultsWorkspacePage";
+import { parseResultsRoute, resultsPath } from "./routing/resultsRoute";
 import { SSERuntimeTransport } from "./runtime/SSERuntimeTransport";
 import {
   createRunRuntimeState,
@@ -45,8 +47,15 @@ type HistoryError = Readonly<{
 }>;
 
 function pathRunId(): string | null {
+  const results = parseResultsRoute(window.location.pathname);
+  if (results) return results.runId;
   const match = /^\/runs\/([^/]+)$/u.exec(window.location.pathname);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
 }
 
 function pathObjectId(): string | null {
@@ -54,9 +63,10 @@ function pathObjectId(): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-type ProductPage = "NEW" | "RUNS" | "OBJECTS" | "OBJECT" | "RUN";
+type ProductPage = "NEW" | "RUNS" | "OBJECTS" | "OBJECT" | "RUN" | "RESULTS";
 
 function currentPage(): ProductPage {
+  if (parseResultsRoute(window.location.pathname)) return "RESULTS";
   if (pathRunId() !== null) return "RUN";
   if (pathObjectId() !== null) return "OBJECT";
   if (window.location.pathname === "/runs") return "RUNS";
@@ -334,10 +344,18 @@ export function Phase4Application() {
     window.dispatchEvent(new Event(ROUTE_CHANGE_EVENT));
   }, []);
 
+  const replacePath = useCallback((path: string) => {
+    const current = `${window.location.pathname}${window.location.search}`;
+    if (current === path) return;
+    window.history.replaceState({}, "", path);
+    window.dispatchEvent(new Event(ROUTE_CHANGE_EVENT));
+  }, []);
+
   useEffect(() => {
     const onRoute = () => {
+      const page = currentPage();
       const runId = pathRunId();
-      if (runId) {
+      if (page === "RUN" && runId) {
         loadRun(runId);
         return;
       }
@@ -352,7 +370,6 @@ export function Phase4Application() {
       setQuarantine(null);
       setLifecycle(null);
 
-      const page = currentPage();
       if (page === "RUNS") {
         void loadObjects();
         void loadRuns();
@@ -361,7 +378,7 @@ export function Phase4Application() {
       } else if (page === "OBJECT") {
         const objectId = pathObjectId();
         if (objectId) void loadObject(objectId);
-      } else {
+      } else if (page === "NEW") {
         const requestedObject = new URLSearchParams(window.location.search).get("object");
         if (requestedObject === null) {
           setSelected(null);
@@ -447,6 +464,11 @@ export function Phase4Application() {
 
   const page = currentPage();
 
+  if (page === "RESULTS") {
+    const route = parseResultsRoute(window.location.pathname);
+    if (route) return <div className="app-content"><ResultsWorkspacePage source={source} backendOrigin={backendOrigin} runId={route.runId} surface={route.surface} onNavigate={navigatePath} onReplace={replacePath} /></div>;
+  }
+
   if (page === "RUN") {
     return <div className="app-content">
       {selectedRunError && <TypedError error={selectedRunError} onRetry={() => retryLoad.current?.()} onDismiss={() => setSelectedRunError(null)} />}
@@ -456,7 +478,7 @@ export function Phase4Application() {
         projection={selectedRunProjection}
         connection={connection ?? initialConnection(selectedRunProjection.run.runId, selectedRunProjection.projectionSequence)}
         lifecycle={lifecycle}
-        reportBaseUrl={backendOrigin}
+        onOpenResults={() => navigatePath(resultsPath(selectedRunProjection.run.runId, "report"))}
       />}
       {!selectedRunProjection && !selectedRunError && <div className="card app-loading" role="status"><div className="spinner" aria-hidden="true" /><span>正在载入当前 Research Run…</span></div>}
     </div>;

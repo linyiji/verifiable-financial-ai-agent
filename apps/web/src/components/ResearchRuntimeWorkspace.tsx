@@ -28,7 +28,7 @@ export interface ResearchRuntimeWorkspaceProps {
   readonly projection: RunProjection;
   readonly connection: ConnectionState;
   readonly lifecycle: ProjectionLifecycle | null;
-  readonly reportBaseUrl: string;
+  readonly onOpenResults: () => void;
 }
 
 type WorkspaceStage = "plan" | "research" | "review" | "report" | "complete";
@@ -99,7 +99,7 @@ function stageStateLabel(state: StageState, selected: boolean): string {
   return "等待中";
 }
 
-export function ResearchRuntimeWorkspace({ projection, connection, lifecycle, reportBaseUrl }: ResearchRuntimeWorkspaceProps) {
+export function ResearchRuntimeWorkspace({ projection, connection, lifecycle, onOpenResults }: ResearchRuntimeWorkspaceProps) {
   const [selectedStage, setSelectedStage] = useState<WorkspaceStage>("research");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const runId = projection.run.runId;
@@ -126,7 +126,7 @@ export function ResearchRuntimeWorkspace({ projection, connection, lifecycle, re
         <p>完整公司金融研究</p>
         <div className="workspace-object">{projection.object.symbol} · Research Object</div>
       </div>
-      <span className={`badge ${status.color}`}><span className="dot" />{status.label}</span>
+      <div className="workspace-header-actions"><span className={`badge ${status.color}`}><span className="dot" />{status.label}</span>{projection.result.availability.status === "AVAILABLE" && <button className="btn primary sm" type="button" data-testid="open-results-workspace" onClick={onOpenResults}>查看研究结果</button>}</div>
     </header>
 
     <dl className="workspace-facts" aria-label="Research Run 摘要">
@@ -190,7 +190,7 @@ export function ResearchRuntimeWorkspace({ projection, connection, lifecycle, re
     </section>}
     {selectedStage === "review" && <DeferredDetailSurface number="03" title="质量复核" state={stageState(projection, "review")} />}
     {selectedStage === "report" && <DeferredDetailSurface number="04" title="报告生成" state={stageState(projection, "report")} />}
-    {selectedStage === "complete" && <CompleteSurface projection={projection} reportBaseUrl={reportBaseUrl} />}
+    {selectedStage === "complete" && <CompleteSurface projection={projection} />}
 
     <TaskDetailDrawer projection={projection} taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
   </section>;
@@ -228,17 +228,11 @@ function PlanSurface({ projection }: { readonly projection: RunProjection }) {
   </section>;
 }
 
-function CompleteSurface({ projection, reportBaseUrl }: {
+function CompleteSurface({ projection }: {
   readonly projection: RunProjection;
-  readonly reportBaseUrl: string;
 }) {
-  const artifactId = projection.artifacts.availability.status === "AVAILABLE"
-    && projection.artifacts.representationIds.length === 1
-    ? projection.artifacts.representationIds[0]
-    : null;
-  const reportUrl = artifactId === null ? null : `${reportBaseUrl}/api/research-runs/${encodeURIComponent(projection.run.runId)}/artifacts/${encodeURIComponent(artifactId)}/content`;
   return <section className="card lifecycle-surface completion-surface" aria-labelledby="research-complete-heading">
     <div className="completion-mark" aria-hidden="true">✓</div>
-    <div><span>05 · 完成</span><h2 id="research-complete-heading">Research Run 已完成</h2><p>初始 Graph v{projection.plannedGraph.version} 经批准的研究路径调整后，形成 Actual Graph v{projection.actualGraph?.version ?? "—"}。</p>{reportUrl !== null && <a className="report-link" data-testid="open-research-report" data-report-artifact-id={artifactId ?? ""} href={reportUrl} target="_blank" rel="noreferrer">查看研究结果</a>}</div>
+    <div><span>05 · 完成</span><h2 id="research-complete-heading">Research Run 已完成</h2><p>初始 Graph v{projection.plannedGraph.version} 经批准的研究路径调整后，形成 Actual Graph v{projection.actualGraph?.version ?? "—"}。</p></div>
   </section>;
 }
