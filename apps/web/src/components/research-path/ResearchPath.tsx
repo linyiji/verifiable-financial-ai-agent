@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { TASK_STATUS_MAP } from "../../types/domain";
 import type {
   PathChangeProjectionV1,
@@ -254,12 +254,17 @@ export function ResearchPath({
   );
 
   return (
-    <section className="path-panel rr-path-panel" aria-labelledby="research-path-title">
+    <section
+      className="path-panel rr-path-panel"
+      aria-labelledby="research-path-title"
+      data-testid="research-path"
+      data-run-id={projection.run.runId}
+    >
       <div className="path-head">
         <div>
           <div className="path-title" id="research-path-title">Research Path</div>
           <div className="path-sub">
-            Exact Run {projection.run.runId} · Tasks and dependencies come only from the atomic Actual Graph projection.
+            Exact Run {projection.run.runId} · Planned and actual graphs come only from the atomic exact-Run projection.
           </div>
         </div>
         <div className="path-meta" aria-label="Research Path projection metadata">
@@ -273,18 +278,49 @@ export function ResearchPath({
 
       <RunTerminalState projection={projection} />
 
+      <section
+        className="path-cluster rr-path-cluster initial-path"
+        data-testid="initial-path"
+        data-run-id={projection.run.runId}
+        data-graph-id={projection.plannedGraph.graphId}
+        data-graph-version={projection.plannedGraph.version}
+      >
+        <div className="path-cluster-title">
+          <div>
+            <strong>Planned Path · Graph v{projection.plannedGraph.version}</strong>
+            <div className="micro">
+              Immutable Graph v{projection.plannedGraph.version} · {projection.plannedGraph.graphId}
+            </div>
+          </div>
+          <span className="badge neutral">{projection.plannedGraph.tasks.length} Tasks</span>
+        </div>
+        <div className="path-grid planned-path-grid">
+          {projection.plannedGraph.tasks.map((task) => (
+            <TaskNode key={task.taskId} task={task} testId="planned-research-task" />
+          ))}
+        </div>
+      </section>
+
+      <PathChangeNarrative projection={projection} />
+
       {model.kind !== "ready" ? (
         <div className="rr-path-empty" role={model.kind === "unavailable" ? "alert" : "status"}>
           <strong>{model.kind === "unavailable" ? "Research Path unavailable" : "Research Path pending"}</strong>
           <span>{model.message}</span>
         </div>
       ) : (
-        <div className="path-cluster rr-path-cluster">
+        <div
+          className="path-cluster rr-path-cluster actual-path"
+          data-testid="actual-path"
+          data-run-id={projection.run.runId}
+          data-graph-id={projection.actualGraph?.graphId ?? ""}
+          data-graph-version={projection.actualGraph?.version ?? ""}
+        >
           <div className="path-cluster-title">
             <div>
-              <strong>Actual Research Path</strong>
+              <strong>Actual Graph v{projection.actualGraph?.version}</strong>
               <div className="micro">
-                Graph {projection.actualGraph?.graphId} · dependency levels preserve authoritative snapshot order.
+                Graph v{projection.actualGraph?.version} · {projection.actualGraph?.graphId}
               </div>
             </div>
             <span className="badge neutral">{projection.tasks.length} Tasks</span>
@@ -297,7 +333,16 @@ export function ResearchPath({
                   <div className="rr-task-node-stack" key={task.taskId}>
                     <TaskNode task={task} onOpenTask={onOpenTask} />
                     {(correctionsByTask.get(task.taskId) ?? []).map((change) => (
-                      <div className="rr-self-correction-loop" key={change.pathChangeId}>
+                      <div
+                        className="rr-self-correction-loop"
+                        key={change.pathChangeId}
+                        data-testid="path-correction"
+                        data-run-id={projection.run.runId}
+                        data-correction-id={change.sourceId}
+                        data-task-id={task.taskId}
+                        data-reason-code={change.reasonCode ?? ""}
+                        data-correction-status={change.status}
+                      >
                         <span aria-hidden="true">↻</span>
                         <div>
                           <strong>Same-Task Self-Correction</strong>
@@ -350,10 +395,12 @@ function RunTerminalState({ projection }: { projection: RunProjection }) {
 
 function TaskNode({
   task,
-  onOpenTask
+  onOpenTask,
+  testId = "research-task"
 }: {
   task: RunTaskProjection;
   onOpenTask?: (task: RunTaskProjection) => void;
+  testId?: "research-task" | "planned-research-task";
 }) {
   const percent = Math.round(Math.max(0, Math.min(1, task.progress)) * 100);
   return (
@@ -362,6 +409,14 @@ function TaskNode({
       className={`branch-node rr-branch-node ${taskTone(task)}`}
       onClick={() => onOpenTask?.(task)}
       aria-label={`Open Task ${task.taskId}`}
+      data-testid={testId}
+      data-run-id={task.runId}
+      data-task-id={task.taskId}
+      data-task-status={task.backendStatus}
+      data-task-progress={String(task.progress)}
+      data-parent-task-id={task.parentTaskId ?? ""}
+      data-dependency-ids={JSON.stringify(task.dependencies)}
+      data-task-origin={task.origin}
     >
       <div className="rr-node-topline">
         <span className="micro">{task.taskId}</span>
@@ -389,6 +444,103 @@ function TaskNode({
           : "No declared dependencies"}
       </div>
     </button>
+  );
+}
+
+function PathChangeNarrative({ projection }: { projection: RunProjection }) {
+  const corrections = projection.pathChanges.filter((change) => change.sourceKind === "CORRECTION");
+  const replans = projection.pathChanges.filter((change) => change.sourceKind === "REPLAN");
+  if (corrections.length === 0 && replans.length === 0) {
+    return <div className="path-note" role="status">No authoritative Path Change records are available.</div>;
+  }
+  const actualTasks = new Map((projection.actualGraph?.tasks ?? []).map((task) => [task.taskId, task]));
+  return <section className="path-change-story" aria-labelledby="path-change-story-title">
+    <div className="rr-section-heading">
+      <div>
+        <strong id="path-change-story-title">Correction / Replan</strong>
+        <span>Observable execution facts linking the immutable plan to the Actual Graph.</span>
+      </div>
+    </div>
+    <div className="change-timeline">
+      {corrections.map((change) => <article
+        className="change-step correction-step"
+        key={change.pathChangeId}
+        data-testid="path-correction-summary"
+        data-run-id={projection.run.runId}
+        data-correction-id={change.sourceId}
+        data-task-id={change.taskRefs[0] ?? ""}
+        data-reason-code={change.reasonCode ?? ""}
+        data-correction-status={change.status}
+      >
+        <span className="change-step-index">1</span>
+        <div>
+          <strong>Correction / Evidence Problem</strong>
+          <span>{change.reasonCode ?? "Reason unavailable"} / {change.status}</span>
+          <code>{change.sourceId}</code>
+        </div>
+      </article>)}
+      {replans.flatMap((change) => {
+        const requested = boundActivity(projection, "replan.requested", change.sourceId);
+        const approved = boundActivity(projection, "replan.approved", change.sourceId);
+        const addedTasks = change.decision === "APPROVED"
+          ? change.operations
+              .filter((operation) =>
+                operation.operation === "add_node" && actualTasks.has(operation.taskId)
+              )
+              .map((operation) => ({ operation, task: actualTasks.get(operation.taskId) }))
+          : [];
+        const steps: ReactNode[] = [];
+        if (requested) steps.push(<article
+          className="change-step"
+          key={`${change.pathChangeId}-requested`}
+          data-testid="replan-requested"
+          data-run-id={projection.run.runId}
+          data-replan-id={change.sourceId}
+          data-event-id={requested.eventId}
+          data-event-sequence={requested.sequence}
+        ><span className="change-step-index">2</span><div><strong>Replan Requested</strong><span>{change.reasonCode ?? "Reason unavailable"} · seq {requested.sequence}</span><code>{change.sourceId}</code></div></article>);
+        if (approved && change.decision === "APPROVED") steps.push(<article
+          className="change-step approved-step"
+          key={`${change.pathChangeId}-approved`}
+          data-testid="replan-approved"
+          data-run-id={projection.run.runId}
+          data-replan-id={change.sourceId}
+          data-event-id={approved.eventId}
+          data-event-sequence={approved.sequence}
+          data-decision={change.decision}
+        ><span className="change-step-index">3</span><div><strong>Replan Approved</strong><span>{approved.actorId ?? "Authoritative decider"} · seq {approved.sequence}</span><code>{change.sourceId}</code></div></article>);
+        for (const { operation, task } of addedTasks) steps.push(<article
+          className="change-step added-step"
+          key={`${change.pathChangeId}-${operation.taskId}`}
+          data-testid="added-task"
+          data-run-id={projection.run.runId}
+          data-replan-id={change.sourceId}
+          data-operation={operation.operation}
+          data-task-id={operation.taskId}
+          data-task-origin={task?.origin ?? ""}
+        ><span className="change-step-index">4</span><div><strong>Added risk-follow-up task</strong><span>{operation.operation} · safe graph mutation</span><span>{task?.goal ?? "Task detail unavailable"}</span><code>{operation.taskId}</code></div></article>);
+        if (
+          change.decision === "APPROVED" &&
+          change.graphVersionBefore !== null &&
+          change.graphVersionAfter !== null
+        ) steps.push(<article
+          className="change-step version-step"
+          key={`${change.pathChangeId}-version`}
+          data-testid="graph-version-change"
+          data-run-id={projection.run.runId}
+          data-replan-id={change.sourceId}
+          data-graph-version-before={change.graphVersionBefore}
+          data-graph-version-after={change.graphVersionAfter}
+        ><span className="change-step-index">5</span><div><strong>Graph v{change.graphVersionBefore} → v{change.graphVersionAfter}</strong><span>Approved topology change recorded by the exact Replan.</span><code>{change.sourceId}</code></div></article>);
+        return steps;
+      })}
+    </div>
+  </section>;
+}
+
+function boundActivity(projection: RunProjection, type: string, sourceId: string) {
+  return projection.activity.find((activity) =>
+    activity.type === type && activity.outputRefs?.includes(sourceId)
   );
 }
 

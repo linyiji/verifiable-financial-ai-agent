@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Phase4ApiError, Phase4TransportError } from "./api/client";
+import { ResearchPath } from "./components/research-path/ResearchPath";
 import { createPhase4Mutation } from "./data/FrontendDataSource";
 import { HttpFrontendDataSource } from "./data/HttpFrontendDataSource";
 import { SSERuntimeTransport } from "./runtime/SSERuntimeTransport";
@@ -9,6 +10,7 @@ import {
   type NormalizedObjectIdentity,
   type PreparedResearchDraft,
   type ReleasedFinancialMetricProjectionV1,
+  type RunCollectionItem,
   type RunProjection
 } from "./types/domain";
 
@@ -25,6 +27,15 @@ type Lifecycle = {
   consumed?: { runId: string; requestEpoch: number; revision: number; sequence: number };
   discarded?: { runId: string; requestEpoch: number; revision: number; sequence: number; reason: string };
 };
+type HistoryState =
+  | Readonly<{ phase: "LOADING"; selectedRunId: string; items: readonly RunCollectionItem[] }>
+  | Readonly<{ phase: "READY"; selectedRunId: string; items: readonly RunCollectionItem[] }>
+  | Readonly<{ phase: "UNAVAILABLE"; selectedRunId: string; items: readonly RunCollectionItem[] }>;
+
+type HistoryError = Readonly<{
+  code: "HISTORY_UNAVAILABLE_OR_INCOMPATIBLE";
+  message: string;
+}>;
 
 function pathRunId(): string | null {
   const match = /^\/runs\/([^/]+)$/u.exec(window.location.pathname);
@@ -63,8 +74,10 @@ export function Phase4Application() {
   const [goal, setGoal] = useState("");
   const [asOf] = useState(() => new Date().toISOString().slice(0, 10));
   const [draft, setDraft] = useState<PreparedResearchDraft | null>(null);
-  const [projection, setProjection] = useState<RunProjection | null>(null);
-  const [runIds, setRunIds] = useState<readonly string[]>([]);
+  const [selectedRunProjection, setSelectedRunProjection] = useState<RunProjection | null>(null);
+  const [selectedRunError, setSelectedRunError] = useState<ErrorEnvelope | null>(null);
+  const [historyState, setHistoryState] = useState<HistoryState | null>(null);
+  const [historyError, setHistoryError] = useState<HistoryError | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [error, setError] = useState<ErrorEnvelope | null>(null);
   const [quarantine, setQuarantine] = useState<string | null>(null);
@@ -79,7 +92,7 @@ export function Phase4Application() {
   const currentProjection = useRef<RunProjection | null>(null);
   const currentConnection = useRef<ConnectionState | null>(null);
 
-  useEffect(() => { currentProjection.current = projection; }, [projection]);
+  useEffect(() => { currentProjection.current = selectedRunProjection; }, [selectedRunProjection]);
   useEffect(() => { currentConnection.current = connection; }, [connection]);
 
   const loadObjects = useCallback(async () => {
@@ -97,8 +110,12 @@ export function Phase4Application() {
     subscription.current?.unsubscribe();
     activeRun.current = runId;
     setError(null);
+    setSelectedRunError(null);
     setResults(null);
     setResultTab(false);
+    setSelectedRunProjection((current) => current?.run.runId === runId ? current : null);
+    setHistoryState({ phase: "LOADING", selectedRunId: runId, items: [] });
+    setHistoryError(null);
     const requestEpoch = ++epoch.current;
     setLifecycle((prior) => ({
       runId,
@@ -123,7 +140,7 @@ export function Phase4Application() {
           }) : prior);
           return;
         }
-        setProjection(value);
+        setSelectedRunProjection(value);
         setConnection(initialConnection(runId, value.projectionSequence));
         setLifecycle((prior) => ({
           runId,
@@ -143,8 +160,20 @@ export function Phase4Application() {
             ? "IDENTITY_MISMATCH"
             : null
         );
-        const collection = await source.listResearchObjectRuns(value.object.objectId, { limit: 100 });
-        if (activeRun.current === runId) setRunIds(collection.items.map((item) => item.runId));
+        void source.listResearchObjectRuns(value.object.objectId, { limit: 100 })
+          .then((collection) => {
+            if (activeRun.current !== runId || requestEpoch !== epoch.current) return;
+            setHistoryState({ phase: "READY", selectedRunId: runId, items: collection.items });
+            setHistoryError(null);
+          })
+          .catch(() => {
+            if (activeRun.current !== runId || requestEpoch !== epoch.current) return;
+            setHistoryState({ phase: "UNAVAILABLE", selectedRunId: runId, items: [] });
+            setHistoryError({
+              code: "HISTORY_UNAVAILABLE_OR_INCOMPATIBLE",
+              message: "Some historical records are unavailable or incompatible with this workspace version."
+            });
+          });
         if (value.terminal.isTerminal) {
           setConnection({
             kind: "TERMINAL",
@@ -181,9 +210,11 @@ export function Phase4Application() {
         }, 50);
       } catch (caught) {
         if (activeRun.current !== runId || requestEpoch !== epoch.current) return;
-        setProjection(null);
+        setSelectedRunProjection(null);
+        setSelectedRunError(safeEnvelope(caught, runId));
+        setHistoryState({ phase: "UNAVAILABLE", selectedRunId: runId, items: [] });
+        setHistoryError(null);
         setLifecycle((prior) => prior ? { ...prior, settled: true } : prior);
-        setError(safeEnvelope(caught, runId));
       }
     };
     retryLoad.current = () => loadRun(runId);
@@ -254,32 +285,40 @@ export function Phase4Application() {
   };
 
   const loadResults = async () => {
-    if (!projection) return;
+    if (!selectedRunProjection) return;
     setResultTab(true);
     try {
       const result = await source.getReleasedResult(
-        projection.run.runId,
-        projection.object.objectId
+        selectedRunProjection.run.runId,
+        selectedRunProjection.object.objectId
       );
       setResults(result.metrics);
     } catch (caught) {
       setResults(null);
-      setError(safeEnvelope(caught, projection.run.runId));
+      setError(safeEnvelope(caught, selectedRunProjection.run.runId));
     }
   };
 
-  if (pathRunId() !== null || projection !== null || error?.error.resource?.type === "research_run") {
+  if (
+    pathRunId() !== null ||
+    selectedRunProjection !== null ||
+    selectedRunError !== null ||
+    error?.error.resource?.type === "research_run"
+  ) {
     return <main className="app">
+      {selectedRunError && <TypedError error={selectedRunError} onRetry={() => retryLoad.current?.()} onDismiss={() => setSelectedRunError(null)} />}
       {error && <TypedError error={error} onRetry={() => retryLoad.current?.()} onDismiss={() => setError(null)} />}
       {quarantine && <div className="alert" data-testid="identity-quarantine" data-reason={quarantine}>Requested identity was quarantined.</div>}
-      {projection && <Workspace
-        projection={projection}
-        runIds={runIds}
-        connection={connection ?? initialConnection(projection.run.runId, projection.projectionSequence)}
+      {selectedRunProjection && <Workspace
+        projection={selectedRunProjection}
+        historyState={historyState}
+        historyError={historyError}
+        connection={connection ?? initialConnection(selectedRunProjection.run.runId, selectedRunProjection.projectionSequence)}
         lifecycle={lifecycle}
         resultTab={resultTab}
         results={results}
         onNavigate={navigateRun}
+        onPath={() => setResultTab(false)}
         onResults={() => void loadResults()}
       />}
     </main>;
@@ -328,35 +367,85 @@ function TypedError({ error, onRetry, onDismiss }: { error: ErrorEnvelope; onRet
   </div>;
 }
 
-function Workspace({ projection, runIds, connection, lifecycle, resultTab, results, onNavigate, onResults }: {
+function Workspace({ projection, historyState, historyError, connection, lifecycle, resultTab, results, onNavigate, onPath, onResults }: {
   projection: RunProjection;
-  runIds: readonly string[];
+  historyState: HistoryState | null;
+  historyError: HistoryError | null;
   connection: ConnectionState;
   lifecycle: Lifecycle | null;
   resultTab: boolean;
   results: readonly ReleasedFinancialMetricProjectionV1[] | null;
   onNavigate(runId: string): void;
+  onPath(): void;
   onResults(): void;
 }) {
   const runId = projection.run.runId;
   return <div className="workspace">
-    <aside className="panel"><strong>Runs</strong><nav className="run-nav">{runIds.map((id) => <a
-      href={`/runs/${encodeURIComponent(id)}`}
-      className="run-link"
-      data-testid="run-navigation-item"
-      data-run-id={id}
-      key={id}
-      onClick={(event) => { event.preventDefault(); onNavigate(id); }}
-    >{id}</a>)}</nav></aside>
+    <HistoryPanel historyState={historyState} historyError={historyError} projection={projection} onNavigate={onNavigate} />
     <section className="panel workspace-main" data-testid="run-workspace" data-run-id={runId} data-object-id={projection.object.objectId} data-goal-id={projection.goal.goalId} data-scheme-id={projection.confirmedScheme.schemeId} data-run-status={projection.run.backendStatus} data-run-stage={projection.run.stage} data-projection-revision={projection.projectionRevision} data-projection-sequence={projection.projectionSequence}>
-      <h1>{projection.object.companyName} Research Workspace</h1>
-      <div className="metadata"><span>{runId}</span><span>{projection.run.backendStatus}</span><span>Graph v{projection.graphVersion}</span></div>
+      <header className="workspace-header">
+        <div>
+          <div className="eyebrow">COMPLETED RESEARCH WORKSPACE</div>
+          <h1>{projection.object.companyName} Research Workspace</h1>
+          <div className="workspace-object">{projection.object.symbol} · {projection.object.objectId}</div>
+        </div>
+        <span className="status-badge">{projection.run.backendStatus}</span>
+      </header>
+      <dl className="workspace-facts">
+        <div><dt>Exact Run</dt><dd>{runId}</dd></div>
+        <div><dt>As of</dt><dd>{projection.run.asOf}</dd></div>
+        <div><dt>Status</dt><dd>{projection.run.status}</dd></div>
+        <div><dt>Graph</dt><dd>{projection.actualGraph ? `v${projection.actualGraph.version}` : "Pending"}</dd></div>
+      </dl>
       <div className="connection" role="status" aria-live="polite" data-testid="runtime-connection" data-run-id={runId} data-connection-state={connection.kind} data-last-sequence={connection.lastSequence} data-stale={connection.kind === "BACKOFF" || connection.kind === "RECOVERING" ? "true" : "false"}>Runtime connection: {connection.kind}</div>
       <div role="status" data-testid="projection-lifecycle" data-run-id={lifecycle?.runId ?? runId} data-request-epoch={lifecycle?.requestEpoch ?? 0} data-settled={String(lifecycle?.settled ?? false)} data-consumed-run-id={lifecycle?.consumed?.runId ?? ""} data-consumed-request-epoch={lifecycle?.consumed?.requestEpoch ?? ""} data-consumed-projection-revision={lifecycle?.consumed?.revision ?? ""} data-consumed-projection-sequence={lifecycle?.consumed?.sequence ?? ""} data-last-discarded-run-id={lifecycle?.discarded?.runId ?? ""} data-last-discarded-request-epoch={lifecycle?.discarded?.requestEpoch ?? ""} data-last-discarded-projection-revision={lifecycle?.discarded?.revision ?? ""} data-last-discarded-projection-sequence={lifecycle?.discarded?.sequence ?? ""} data-last-discard-reason={lifecycle?.discarded?.reason ?? ""}>Projection {lifecycle?.settled ? "settled" : "loading"}</div>
-      <div className="tabs" role="tablist"><button type="button" role="tab" aria-selected={!resultTab}>Research Path</button><button type="button" role="tab" aria-selected={resultTab} data-testid="result-tab" onClick={onResults}>Results</button></div>
-      {!resultTab ? <section data-testid="research-path" data-run-id={runId}>
-        <h2>Research Path</h2><div className="task-grid">{projection.tasks.map((task) => <article className="task" key={task.taskId} data-testid="research-task" data-run-id={runId} data-task-id={task.taskId} data-task-status={task.backendStatus} data-task-progress={String(task.progress)} data-parent-task-id={task.parentTaskId ?? ""} data-dependency-ids={JSON.stringify(task.dependencies)}><strong>{task.taskType}</strong><div>{task.backendStatus}</div><div className="muted">{task.taskId}</div></article>)}</div>
-      </section> : <section className="metric-list">{results?.map((metric) => <article className="metric" key={metric.metricId} data-testid="released-financial-metric" data-metric-id={metric.metricId} data-run-id={metric.runId} data-canonical-value={metric.canonicalValue}><strong>{metric.name}</strong><span data-testid="canonical-financial-value">{metric.canonicalValue}</span></article>)}</section>}
+      <div className="tabs" role="tablist"><button type="button" role="tab" aria-selected={!resultTab} onClick={onPath}>Research Path</button><button type="button" role="tab" aria-selected={resultTab} data-testid="result-tab" onClick={onResults}>Results</button></div>
+      {!resultTab ? <ResearchPath projection={projection} /> : <section className="metric-list">{results?.map((metric) => <article className="metric" key={metric.metricId} data-testid="released-financial-metric" data-metric-id={metric.metricId} data-run-id={metric.runId} data-canonical-value={metric.canonicalValue}><strong>{metric.name}</strong><span data-testid="canonical-financial-value">{metric.canonicalValue}</span></article>)}</section>}
     </section>
   </div>;
+}
+
+function HistoryPanel({ historyState, historyError, projection, onNavigate }: {
+  historyState: HistoryState | null;
+  historyError: HistoryError | null;
+  projection: RunProjection;
+  onNavigate(runId: string): void;
+}) {
+  const selectedRunId = projection.run.runId;
+  return <aside
+    className="panel history-panel"
+    data-testid="run-history"
+    data-selected-run-id={selectedRunId}
+    data-history-phase={historyState?.phase ?? "IDLE"}
+  >
+    <div className="history-heading"><strong>Run History</strong><span>{projection.object.symbol}</span></div>
+    <nav className="run-nav" aria-label="Research Run history">
+      {historyState?.phase === "READY" && historyState.items.map((item) => {
+        const id = item.runId;
+        return <a
+          href={`/runs/${encodeURIComponent(id)}`}
+          className={`run-link ${id === selectedRunId ? "selected-run" : ""}`}
+          data-testid="run-navigation-item"
+          data-run-id={id}
+          key={id}
+          onClick={(event) => { event.preventDefault(); onNavigate(id); }}
+        >
+          <span className="history-row-label">{id === selectedRunId ? "Selected exact Run" : item.status}</span>
+          <span>{id}</span>
+        </a>;
+      })}
+      {historyState?.phase === "LOADING" && <div className="history-local-state" role="status">Loading Run history…</div>}
+      {historyState?.phase === "UNAVAILABLE" && <div
+        className="history-local-state history-incompatible"
+        role="status"
+        data-testid="history-unavailable"
+        data-history-status={historyError?.code ?? "UNAVAILABLE"}
+      >
+        <strong>History unavailable / incompatible</strong>
+        <span>{historyError?.message ?? "History could not be loaded."}</span>
+        <span>The selected exact Run remains mounted.</span>
+      </div>}
+    </nav>
+    <a className="history-away-link" href="/">Start a new research task</a>
+  </aside>;
 }
