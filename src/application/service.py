@@ -50,6 +50,7 @@ from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
 from src.observability import NoopTraceAdapter
 from src.observability.instrumentation import RuntimeInstrumentation
+from src.observability.performance import milestone, observe, span
 from src.observability.references import TraceReferenceRepository
 from src.output import (
     CanonicalExecutionRecordBuilder,
@@ -292,6 +293,7 @@ class ResearchApplicationService:
         self._remember("confirm_run", idempotency_key, aggregate)
         return aggregate
 
+    @observe("run.execution", run="run_id")
     async def execute_run(
         self,
         run_id: str,
@@ -690,7 +692,9 @@ class ResearchApplicationService:
             limitations=limitations,
         )
         object_id = aggregate.run.research_object_id
-        report = FinancialReportRenderer.render(result, research_object=object_id)
+        with span("report.structured_construct"):
+            report = FinancialReportRenderer.render(result, research_object=object_id)
+        milestone("report.structured_ready")
         research_object = await self._object(object_id)
         if self.report_publisher is not None:
             source_contribution = await self._revenue_growth_source_contribution(
@@ -712,7 +716,9 @@ class ResearchApplicationService:
                 as_of=aggregate.run.as_of,
                 source_contributions=(source_contribution,),
             )
-            html_artifact = self.report_publisher.publish_html(canonical_report)
+            with span("report.html_publish"):
+                html_artifact = self.report_publisher.publish_html(canonical_report)
+            milestone("report.html_artifact_written")
             if (
                 html_artifact.run_id != run_id
                 or html_artifact.canonical_record_id != record.record_id

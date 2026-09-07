@@ -25,6 +25,7 @@ from src.domain.enums import (
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import ReplanRequest, Task
 from src.observability.instrumentation import ObservationStage
+from src.observability.performance import observe
 from src.runtime.graph import (
     GraphMutationActor,
     GraphMutationRole,
@@ -49,6 +50,7 @@ class IntegratedTaskExecutor:
         self._active = 0
         self.parallel_peak = 0
 
+    @observe("task.execution", task="task")
     async def execute(
         self,
         task: Task,

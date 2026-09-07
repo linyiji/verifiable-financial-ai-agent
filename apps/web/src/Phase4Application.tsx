@@ -12,6 +12,7 @@ import { ResearchRunsPage } from "./pages/ResearchRunsPage";
 import { ResultsWorkspacePage } from "./pages/ResultsWorkspacePage";
 import { parseResultsRoute, parseRunStage, resultsPath, runPath } from "./routing/resultsRoute";
 import { SSERuntimeTransport } from "./runtime/SSERuntimeTransport";
+import { recordRuntimeDiagnostic, runtimeDiagnosticReason } from "./runtime/diagnostics";
 import {
   createRunRuntimeState,
   reconcileRunRuntimeState,
@@ -205,6 +206,7 @@ export function Phase4Application() {
     setHistoryState({ phase: "LOADING", selectedRunId: runId, items: [] });
     setHistoryError(null);
     const requestEpoch = ++epoch.current;
+    recordRuntimeDiagnostic("load_start", runId, { requestEpoch });
     setLifecycle((prior) => ({
       runId,
       requestEpoch,
@@ -213,8 +215,10 @@ export function Phase4Application() {
       discarded: prior?.discarded
     }));
     const execute = async () => {
+      let diagnosticPhase = "request";
       try {
         const value = await source.getRunProjection(runId);
+        recordRuntimeDiagnostic("projection_received", runId, { requestEpoch, sequence: value.projectionSequence, revision: value.projectionRevision, canonicalPresent: value.execution.canonicalRecordId !== null });
         if (activeRun.current !== runId || requestEpoch !== epoch.current) {
           setLifecycle((prior) => prior ? ({
             ...prior,
@@ -229,6 +233,7 @@ export function Phase4Application() {
           return;
         }
         const priorRuntime = runtimeState.current;
+        diagnosticPhase = "reconcile";
         const initializedRuntime = priorRuntime?.runId === runId
           ? reconcileRunRuntimeState(priorRuntime, value)
           : createRunRuntimeState(value, {
@@ -241,7 +246,10 @@ export function Phase4Application() {
               canonicalRecordId: value.execution.canonicalRecordId
             });
         runtimeState.current = initializedRuntime;
+        diagnosticPhase = "select";
         setSelectedRunProjection(selectRunProjection(initializedRuntime));
+        diagnosticPhase = "installed";
+        recordRuntimeDiagnostic("projection_installed", runId, { requestEpoch, sequence: value.projectionSequence, revision: value.projectionRevision });
         setConnection(initialConnection(runId, value.projectionSequence));
         setLifecycle((prior) => ({
           runId,
@@ -293,6 +301,7 @@ export function Phase4Application() {
             runId,
             (event) => {
               if (activeRun.current !== runId) return;
+              recordRuntimeDiagnostic("sse_event", runId, { sequence: event.sequence, eventId: event.eventId });
               const current = runtimeState.current;
               if (current === null || current.runId !== runId) {
                 window.setTimeout(refresh, 0);
@@ -311,6 +320,7 @@ export function Phase4Application() {
               authoritativeTaskIds: value.tasks.map((task) => task.taskId),
               onStateChange: (state) => {
                 if (activeRun.current !== runId || requestEpoch !== epoch.current) return;
+                recordRuntimeDiagnostic("sse_state", runId, { state: state.kind, sequence: state.lastSequence, attempt: "attempt" in state ? state.attempt : undefined });
                 setConnection(state);
                 if (state.kind === "BACKOFF") window.setTimeout(refresh, 500);
               },
@@ -323,6 +333,7 @@ export function Phase4Application() {
         }, 50);
       } catch (caught) {
         if (activeRun.current !== runId || requestEpoch !== epoch.current) return;
+        recordRuntimeDiagnostic("load_failure", runId, { requestEpoch, phase: diagnosticPhase, reason: runtimeDiagnosticReason(caught) });
         runtimeState.current = null;
         setSelectedRunProjection(null);
         setSelectedRunError(safeEnvelope(caught, runId));

@@ -45,6 +45,7 @@ from src.infrastructure.config.settings import get_settings
 from src.infrastructure.database.base import Base
 from src.infrastructure.database.composition import create_postgresql_persistence
 from src.infrastructure.database.generated_workflow import PostgreSQLCapabilityWorkflowRecorder
+from src.observability.performance import configure_from_environment, flush
 from src.phase4_product.api import install_phase4_error_handlers
 from src.phase4_product.postgresql_backend import PostgreSQLPhase4ProductBackend
 from src.tooling.generated_sandbox import DockerSandboxBackend
@@ -80,6 +81,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 for secret in (*settings.fmp.credentials, settings.llm.api_key)
                 if secret is not None
             )
+            configure_from_environment(forbidden_values=forbidden_values)
             research_output_artifacts = ResearchAgentOutputArtifactStore(
                 Path(settings.artifact_root) / "phase4-agent-outputs",
                 forbidden_values=forbidden_values,
@@ -163,6 +165,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 yield
             finally:
                 await app.state.phase4_product_backend.close()
+                await flush()
                 await persistence.close()
             return
         engine = create_async_engine(

@@ -18,6 +18,7 @@ from src.adapters.llm.provider import (
     StructuredOutputError,
 )
 from src.infrastructure.config.settings import LLMSettings
+from src.observability.performance import annotate, observe, span
 
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
@@ -104,6 +105,7 @@ class OpenAICompatiblePlannerClient:
             execution_policy=self._execution_policy,
         )
 
+    @observe("model.logical_call")
     async def complete_structured(
         self,
         *,
@@ -190,18 +192,25 @@ class OpenAICompatiblePlannerClient:
         for attempt, model in enumerate(route, start=1):
             attempted.append(model)
             try:
-                async with asyncio.timeout(self._execution_policy.per_attempt_deadline_seconds):
-                    return await self._send(
-                        model=model,
-                        requested_model=requested_model,
-                        attempted_models=tuple(attempted),
-                        request_template=request_template,
-                        response_model=response_model,
-                        schema_name=schema_name,
-                        workload_type=workload_type,
-                        attempt=attempt,
-                        started=started,
-                    )
+                with span(
+                    "model.attempt",
+                    attempt_number=attempt,
+                    provider=self.provider_name,
+                    requested_model=requested_model,
+                    attempted_model=model,
+                ):
+                    async with asyncio.timeout(self._execution_policy.per_attempt_deadline_seconds):
+                        return await self._send(
+                            model=model,
+                            requested_model=requested_model,
+                            attempted_models=tuple(attempted),
+                            request_template=request_template,
+                            response_model=response_model,
+                            schema_name=schema_name,
+                            workload_type=workload_type,
+                            attempt=attempt,
+                            started=started,
+                        )
             except TimeoutError:
                 last_retryable = _RetryableProviderFailure(
                     "owned per-attempt deadline exceeded",
@@ -210,7 +219,12 @@ class OpenAICompatiblePlannerClient:
             except _RetryableProviderFailure as exc:
                 last_retryable = exc
             if attempt < len(route):
-                await asyncio.sleep(self._execution_policy.backoff_seconds(attempt))
+                with span(
+                    "model.retry_backoff",
+                    attempt_number=attempt,
+                    configured_delay_s=self._execution_policy.backoff_seconds(attempt),
+                ):
+                    await asyncio.sleep(self._execution_policy.backoff_seconds(attempt))
         detail = str(last_retryable) if last_retryable else "provider route unavailable"
         raise LLMProviderUnavailableError(
             f"{self.provider_name} models unavailable after {len(attempted)} attempt(s): {detail}",
@@ -246,20 +260,22 @@ class OpenAICompatiblePlannerClient:
             "Content-Type": "application/json",
         }
         try:
-            if self._client is None:
-                async with httpx.AsyncClient(
-                    timeout=self._execution_policy.httpx_timeout
-                ) as client:
-                    response = await client.post(
-                        self._completion_url, json=payload, headers=headers
+            with span("model.http", attempt_number=attempt) as http_timing:
+                if self._client is None:
+                    async with httpx.AsyncClient(
+                        timeout=self._execution_policy.httpx_timeout
+                    ) as client:
+                        response = await client.post(
+                            self._completion_url, json=payload, headers=headers
+                        )
+                else:
+                    response = await self._client.post(
+                        self._completion_url,
+                        json=payload,
+                        headers=headers,
+                        timeout=self._execution_policy.httpx_timeout,
                     )
-            else:
-                response = await self._client.post(
-                    self._completion_url,
-                    json=payload,
-                    headers=headers,
-                    timeout=self._execution_policy.httpx_timeout,
-                )
+                http_timing.set(http_status=response.status_code)
         except httpx.ConnectTimeout:
             raise _RetryableProviderFailure(
                 "connect timeout", LLMFailureClassification.CONNECT_TIMEOUT
@@ -277,6 +293,7 @@ class OpenAICompatiblePlannerClient:
                 type(exc).__name__, LLMFailureClassification.PROVIDER_UNAVAILABLE
             ) from None
 
+        annotate(http_status=response.status_code)
         if response.status_code == 429:
             raise _RetryableProviderFailure(
                 "HTTP 429", LLMFailureClassification.QUOTA_OR_RATE_LIMIT
@@ -306,6 +323,16 @@ class OpenAICompatiblePlannerClient:
 
         try:
             body = response.json()
+            metadata = body if isinstance(body, dict) else {}
+            usage_metadata = (
+                metadata.get("usage") if isinstance(metadata.get("usage"), dict) else {}
+            )
+            annotate(
+                actual_model=metadata.get("model"),
+                actual_model_reported=isinstance(metadata.get("model"), str),
+                input_tokens=_optional_int(usage_metadata.get("prompt_tokens")),
+                output_tokens=_optional_int(usage_metadata.get("completion_tokens")),
+            )
             content = _extract_content(body)
             decoded = json.loads(content) if isinstance(content, str) else content
         except (ValueError, TypeError, KeyError, IndexError) as exc:

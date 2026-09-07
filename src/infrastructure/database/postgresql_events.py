@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionm
 from src.application.persistence import RuntimeEventRow
 from src.domain.base import utc_now
 from src.domain.runtime_event import RuntimeEvent, RuntimeEventType
+from src.observability.performance import annotate, observe
 from src.runtime.events import (
     CursorPreflight,
     EventReconciliationRequired,
@@ -102,6 +103,7 @@ class PostgresRuntimeEventStore:
     async def append(self, event: RuntimeEvent) -> None:
         await self._insert_event(event=event, requested_sequence=event.sequence)
 
+    @observe("event.durable_commit", run="run_id")
     async def emit(
         self,
         *,
@@ -113,6 +115,7 @@ class PostgresRuntimeEventStore:
     ) -> RuntimeEvent:
         occurred_at = timestamp or utc_now()
         event_id = f"EVT-{uuid4()}"
+        annotate(event_id=event_id, task_id=task_id)
         partial_payload = {
             "event_id": event_id,
             "run_id": run_id,
@@ -137,6 +140,7 @@ class PostgresRuntimeEventStore:
                     .returning(RuntimeEventRow.sequence)
                 )
                 sequence = await session.scalar(statement)
+                annotate(event_sequence=sequence)
                 if sequence is None:
                     raise RuntimeError("PostgreSQL did not allocate an event sequence")
                 event = RuntimeEvent(

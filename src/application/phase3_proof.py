@@ -29,6 +29,7 @@ from src.domain.proof import (
 )
 from src.domain.runtime_event import RuntimeEventType
 from src.observability.instrumentation import RuntimeInstrumentation
+from src.observability.performance import observe, span
 from src.runtime.events import RuntimeEventStore
 
 
@@ -64,6 +65,7 @@ class RevenueGrowthRiscZeroProofWorkflow:
         self._repository = repository
         self._instrumentation = instrumentation
 
+    @observe("proof.workflow", run="run_id")
     async def execute(
         self,
         *,
@@ -136,16 +138,17 @@ class RevenueGrowthRiscZeroProofWorkflow:
                 },
             )
             async with self._proof_span(growth, proof_id):
-                result = await self._adapter.prove(
-                    ProofRequest(
-                        proof_id=proof_id,
-                        run_id=run_id,
-                        calculation_id=growth.calculation_id,
-                        program_id=FORMULA_ID,
-                        input_commitments=[proof_input.input_commitment],
-                        proof_input_ref=str(input_path),
+                with span("proof.prove"):
+                    result = await self._adapter.prove(
+                        ProofRequest(
+                            proof_id=proof_id,
+                            run_id=run_id,
+                            calculation_id=growth.calculation_id,
+                            program_id=FORMULA_ID,
+                            input_commitments=[proof_input.input_commitment],
+                            proof_input_ref=str(input_path),
+                        )
                     )
-                )
                 if result.status is not ProofStatus.VALID or result.receipt_ref is None:
                     raise RuntimeError(result.detail or "RISC Zero proving failed")
                 await self._event_store.emit(
@@ -154,7 +157,9 @@ class RevenueGrowthRiscZeroProofWorkflow:
                     event_type=RuntimeEventType.PROOF_GENERATED,
                     payload={"proof_id": proof_id, "backend": "risc0"},
                 )
-                if not await self._adapter.verify(result):
+                with span("proof.verify"):
+                    verified = await self._adapter.verify(result)
+                if not verified:
                     raise RuntimeError("RISC Zero independent verification failed")
             records = _map_verified_records(
                 run_id=run_id,

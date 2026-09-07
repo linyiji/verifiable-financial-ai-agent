@@ -35,6 +35,7 @@ from src.infrastructure.database.models import (
     ReportArtifactRecordRow,
     TaskDependencyRow,
 )
+from src.observability.performance import observe
 from src.runtime.state import RuntimeState
 
 
@@ -258,6 +259,7 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             await self._persist_children(session, aggregate)
             await session.commit()
 
+    @observe("persistence.run_save", aggregate="aggregate")
     async def save_run(self, aggregate: RunAggregate) -> None:
         await super().save_run(aggregate)
         async with self._sessions() as session:
@@ -271,6 +273,7 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             await self._persist_children(session, aggregate)
             await session.commit()
 
+    @observe("persistence.watermark_transaction", aggregate="aggregate")
     async def save_run_with_projection_watermark(
         self,
         aggregate: RunAggregate,
@@ -343,6 +346,7 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         return [self._to_aggregate(row.payload) for row in rows]
 
     @classmethod
+    @observe("persistence.aggregate_serialization", aggregate="aggregate")
     def _payload(cls, aggregate: RunAggregate) -> dict:
         return {
             "run": aggregate.run.model_dump(mode="json"),
@@ -373,6 +377,7 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         )
 
     @staticmethod
+    @observe("persistence.children", aggregate="aggregate")
     async def _persist_children(session: AsyncSession, aggregate: RunAggregate) -> None:
         scheme = await session.get(ResearchSchemeSnapshotRow, aggregate.scheme.scheme_id)
         if scheme is None:

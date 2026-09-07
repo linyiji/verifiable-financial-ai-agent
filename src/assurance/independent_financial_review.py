@@ -35,6 +35,7 @@ from src.domain.financial_semantics import (
 from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.macd_policy import MACD_DECIMAL_CONTEXT_POLICY
 from src.domain.review import ReviewCheck, ReviewRecord
+from src.observability.performance import observe
 from src.output.financial_metrics import MATERIAL_FORMULAS
 
 _METRIC_SPECS: dict[str, tuple[str, FinancialUnit, str]] = {
@@ -88,6 +89,7 @@ class IndependentFinancialReviewer:
 
     reviewer_id = "independent-financial-review-v2"
 
+    @observe("review.compute", run="run_id")
     def review(
         self,
         *,

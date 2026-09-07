@@ -5,6 +5,8 @@ import {
   type ErrorEnvelope,
   type ErrorRecovery
 } from "../types/domain";
+import { diagnosticRequest, recordRuntimeDiagnostic, runtimeDiagnosticReason } from "../runtime/diagnostics";
+let diagnosticSequence = 0;
 
 export const phase4ApiRoutes = {
   objects: "/api/objects",
@@ -224,6 +226,9 @@ export class Phase4ApiClient {
     }
 
     let response: Response;
+    const diagnosticPath = diagnosticRequest(options.path);
+    const diagnostic = diagnosticPath ? { ...diagnosticPath, requestId: ++diagnosticSequence } : null;
+    if (diagnostic) recordRuntimeDiagnostic("http_start", diagnostic.runId, diagnostic);
     try {
       response = await this.fetchImpl(`${this.baseUrl}${options.path}`, {
         method: options.method,
@@ -234,8 +239,10 @@ export class Phase4ApiClient {
         signal: options.signal
       });
     } catch (error: unknown) {
+      if (diagnostic) recordRuntimeDiagnostic("http_failure", diagnostic.runId, { ...diagnostic, reason: isAbort(error) ? "ABORTED" : "NETWORK" });
       throw new Phase4TransportError(isAbort(error) ? "ABORTED" : "NETWORK", request);
     }
+    if (diagnostic) recordRuntimeDiagnostic("http_end", diagnostic.runId, { ...diagnostic, status: response.status });
 
     // The frozen contract requires the explicit UTF-8 parameter on success.
     // Error envelopes may omit it, but may never declare a different charset.
@@ -296,7 +303,8 @@ export class Phase4ApiClient {
     let decoded: T;
     try {
       decoded = options.decode(payload);
-    } catch {
+    } catch (error) {
+      if (diagnostic) recordRuntimeDiagnostic("decode_failure", diagnostic.runId, { ...diagnostic, status: response.status, reason: runtimeDiagnosticReason(error) });
       throw new Phase4ProtocolError(
         "Phase 4 success response does not match the frozen response contract",
         request,
@@ -304,6 +312,7 @@ export class Phase4ApiClient {
       );
     }
     options.validateSuccess?.(decoded, response.status, response);
+    if (diagnostic) recordRuntimeDiagnostic("decode_ok", diagnostic.runId, { ...diagnostic, status: response.status });
     return decoded;
   }
 }

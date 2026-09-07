@@ -23,6 +23,7 @@ from src.capabilities.generated.spec import (
     expected_spec,
 )
 from src.capabilities.generated.telemetry import GeneratedCapabilityTrace
+from src.observability.performance import observe, span
 
 
 class CodeBuilderOutputMismatch(GeneratedCapabilityBundleValidationError):
@@ -71,6 +72,7 @@ class PlannerProviderCodeBuilder:
         policy = getattr(self._provider, "execution_policy", None)
         return policy if isinstance(policy, ProviderExecutionPolicyV1) else None
 
+    @observe("capability.generation")
     async def generate(self, request: CapabilityBuildRequest) -> GeneratedCapabilityCandidate:
         owned_request = GeneratedCapabilityRequestV1.from_build_request(request)
         policy = self.execution_policy or ProviderExecutionPolicyV1()
@@ -176,7 +178,12 @@ class PlannerProviderCodeBuilder:
                             max(0.0, absolute_deadline - loop.time()),
                         )
                         if backoff:
-                            await asyncio.sleep(backoff)
+                            with span(
+                                "capability.repair_backoff",
+                                attempt_number=generation_attempt,
+                                configured_delay_s=backoff,
+                            ):
+                                await asyncio.sleep(backoff)
                         continue
                     except Exception as exc:
                         await self._attempt_event(

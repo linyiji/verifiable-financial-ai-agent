@@ -19,6 +19,7 @@ from src.data.provider import ProviderRequest, RawProviderSnapshot
 from src.data.repository import EvidenceRepository
 from src.domain.enums import EvidenceAcquisitionStatus, EvidenceCategory
 from src.domain.evidence import AcceptedEvidenceBundle, EvidenceRecord
+from src.observability.performance import observe
 
 
 class EvidenceAcquisitionScope(StrEnum):
@@ -294,6 +295,7 @@ class LiveFMPEvidenceCollector:
             endpoint_statuses=tuple(endpoint_statuses),
         )
 
+    @observe("data.ingest_probe", run="run_id")
     async def _ingest_probe(
         self,
         *,

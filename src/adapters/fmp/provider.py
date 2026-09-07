@@ -21,6 +21,7 @@ from src.data.normalization import normalize_field
 from src.data.provider import ProviderRequest, RawProviderSnapshot
 from src.domain.base import JsonObject
 from src.infrastructure.config.settings import FMPSettings
+from src.observability.performance import annotate, measured_lock, observe, span
 
 
 @runtime_checkable
@@ -84,7 +85,7 @@ class HttpxFMPTransport:
         path: str,
         params: dict[str, str | int],
     ) -> FMPResponseEnvelope:
-        async with self._pool_lock:
+        async with measured_lock(self._pool_lock, "data.credential_pool_wait"):
             attempted_slots: set[int] = set()
             last_envelope: FMPResponseEnvelope | None = None
             while slot := self._key_pool.select(attempted_slots):
@@ -107,6 +108,7 @@ class HttpxFMPTransport:
                 return last_envelope
             return self._exhausted_envelope(endpoint)
 
+    @observe("data.http_attempt")
     async def _request_with_key(
         self,
         *,
@@ -143,6 +145,7 @@ class HttpxFMPTransport:
                 error_code="NETWORK_ERROR",
             )
 
+        annotate(http_status=response.status_code)
         payload = _json_or_none(response)
         status, error_code = classify_access(response.status_code, payload)
         return FMPResponseEnvelope(
@@ -315,6 +318,7 @@ class FMPProvider:
             raise FMPAccessError(result)
         return result.snapshot
 
+    @observe("data.probe")
     async def probe(self, request: ProviderRequest) -> FMPFetchResult:
         spec = endpoint_for(request.dataset)
         params = _params_for(spec, request)
@@ -333,7 +337,8 @@ class FMPProvider:
             )
 
         payload = envelope.payload if envelope.payload is not None else []
-        records = map_payload(spec, payload, request, envelope.retrieved_at)
+        with span("data.normalization"):
+            records = map_payload(spec, payload, request, envelope.retrieved_at)
         raw_envelope = {
             "endpoint": spec.endpoint.value,
             "http_status": envelope.http_status,
@@ -441,10 +446,12 @@ class FMPProvider:
             }:
                 break
             if delay:
-                await asyncio.sleep(delay)
+                with span("data.retry_backoff", configured_delay_s=delay):
+                    await asyncio.sleep(delay)
             envelope = await self._request(spec, params)
         return envelope
 
+    @observe("data.request")
     async def _request(
         self,
         spec: FMPEndpointSpec,
@@ -452,14 +459,14 @@ class FMPProvider:
     ) -> FMPResponseEnvelope:
         request_method = getattr(self._transport, "request", None)
         if request_method is not None:
-            async with self._request_lock:
+            async with measured_lock(self._request_lock, "data.request_lock_wait"):
                 return await request_method(endpoint=spec.endpoint, path=spec.path, params=params)
 
         # Phase-1 test doubles used get_json; preserve that contract during migration.
         legacy_params = dict(params)
         if legacy_params.get("period") == "annual":
             legacy_params.pop("period")
-        async with self._request_lock:
+        async with measured_lock(self._request_lock, "data.request_lock_wait"):
             payload = await self._transport.get_json(
                 spec.path.removeprefix("/stable/"), legacy_params
             )

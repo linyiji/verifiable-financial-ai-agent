@@ -42,6 +42,7 @@ from src.infrastructure.database.phase4_product import (
     Phase4RunProjectionRow,
     PostgreSQLProductUnitOfWorkFactory,
 )
+from src.observability.performance import measured_lock, observe
 from src.phase4_product.admission import (
     CONFIRM_ROUTE_TEMPLATE,
     CREATE_OBJECT_ROUTE_TEMPLATE,
@@ -1117,6 +1118,7 @@ class PostgreSQLPhase4ProductBackend:
         await self.get_run(run_id)
         raise self._unavailable("claim", claim_id, "NOT_GENERATED")
 
+    @observe("report.interactive_data_read", run="run_id")
     async def _results_surfaces(
         self, run_id: str
     ) -> tuple[
@@ -1404,8 +1406,9 @@ class PostgreSQLPhase4ProductBackend:
         await self.get_object(object_id)
         raise self._unavailable("released_object", object_id, "NOT_RELEASED")
 
+    @observe("event.projection_publication", event="event")
     async def _publish_runtime_event(self, event: RuntimeEvent) -> None:
-        async with self._projection_lock:
+        async with measured_lock(self._projection_lock, "event.projection_lock_wait"):
             aggregate = await self.service.repository.get_run(event.run_id)
             if aggregate is None:
                 return
@@ -1512,6 +1515,7 @@ class PostgreSQLPhase4ProductBackend:
         self._executions.add(execution)
         execution.add_done_callback(self._executions.discard)
 
+    @observe("scheduler.execution_delivery", run="run_id")
     async def _execute_started_run(self, run_id: str) -> None:
         try:
             await self.service.execute_run(run_id, emit_run_started=False)
@@ -1523,6 +1527,7 @@ class PostgreSQLPhase4ProductBackend:
             pass
         await self._publish_latest_projection_watermark(run_id)
 
+    @observe("event.terminal_publication", run="run_id")
     async def _publish_latest_projection_watermark(self, run_id: str) -> None:
         """Publish the completed aggregate and its durable event tail as one snapshot fence."""
 

@@ -19,6 +19,7 @@ from src.domain.enums import (
     TechnicalPriceBasis,
 )
 from src.domain.evidence import AcceptedEvidenceBundle, EvidenceRecord
+from src.observability.performance import observe, span
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +54,7 @@ class EvidenceIngestionService:
         self._artifact_store = artifact_store
         self._freshness_policy = freshness_policy
 
+    @observe("evidence.ingest", run="run_id")
     async def ingest(
         self,
         *,
@@ -73,12 +75,13 @@ class EvidenceIngestionService:
             )
 
         freshness_policy = self._freshness_policy or policy_for(request.dataset)
-        diagnostics = mark_duplicate_conflicts(
-            [
-                validate_record(index, record, request, freshness_policy)
-                for index, record in enumerate(snapshot.records)
-            ]
-        )
+        with span("evidence.validation"):
+            diagnostics = mark_duplicate_conflicts(
+                [
+                    validate_record(index, record, request, freshness_policy)
+                    for index, record in enumerate(snapshot.records)
+                ]
+            )
         records = tuple(
             _to_evidence_record(
                 validated,
@@ -97,15 +100,16 @@ class EvidenceIngestionService:
         )
         persisted_records: list[EvidenceRecord] = []
         created_records: list[EvidenceRecord] = []
-        for record in records:
-            existing = await self._repository.get(record.evidence_id)
-            if existing is None:
-                await self._repository.add(record)
-                persisted_records.append(record)
-                created_records.append(record)
-                continue
-            _assert_same_evidence_identity(existing, record)
-            persisted_records.append(existing)
+        with span("evidence.persistence"):
+            for record in records:
+                existing = await self._repository.get(record.evidence_id)
+                if existing is None:
+                    await self._repository.add(record)
+                    persisted_records.append(record)
+                    created_records.append(record)
+                    continue
+                _assert_same_evidence_identity(existing, record)
+                persisted_records.append(existing)
 
         accepted_records = [
             record for record in persisted_records if record.status is EvidenceStatus.ACCEPTED
