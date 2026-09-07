@@ -734,7 +734,11 @@ class IntegratedTaskExecutor:
                 "as_of": self._aggregate.run.as_of.isoformat(),
                 "research_goal": self._aggregate.goal.goal_text,
                 "normalized_evidence": normalized_evidence,
-                "deterministic_support": _compact_json_value(supporting_output),
+                "deterministic_support": _compact_json_value(
+                    _peer_model_support(supporting_output)
+                    if task.task_type == "peer_analysis"
+                    else supporting_output
+                ),
                 "upstream_agent_outputs": [
                     {
                         "output_id": output.output_id,
@@ -1046,6 +1050,26 @@ def _select_agent_evidence(task_type: str, records: list) -> list:
         if len(selected) == 40:
             break
     return selected
+
+
+def _peer_model_support(support: dict[str, object]) -> dict[str, object]:
+    """Exclude assembly-clock metadata only from the Peer model projection.
+
+    PeerCandidate/PeerSelectionDecision created_at records object construction,
+    not an evidence observation date. Preserve original domain/task artifacts and
+    all business fields; never strip timestamps from evidence or other inputs.
+    """
+    return {
+        key: [
+            {field: value for field, value in item.items() if field != "created_at"}
+            for item in rows
+        ]
+        if key in {"candidates", "selection_decisions", "selected_comparables"}
+        and isinstance(rows, list)
+        and all(isinstance(item, dict) for item in rows)
+        else rows
+        for key, rows in support.items()
+    }
 
 
 def _compact_json_value(value: Any, *, depth: int = 0) -> Any:
