@@ -40,6 +40,9 @@ _NUMBERS = {
     "attempt_deadline_s",
     "workload_deadline_s",
     "max_attempts",
+    "process_id",
+    "proxy_port",
+    "concurrent_http_attempts",
 }
 _ACTORS = {
     "fundamental_analyst",
@@ -72,8 +75,113 @@ class Recorder:
             return (
                 value if value in {"teamorouter-sol", "teamorouter-luna", "mimo-direct"} else None
             )
+        if key == "effective_provider_route":
+            return (
+                value
+                if value in {"teamorouter-sol", "teamorouter-luna", "mimo-direct", "UNKNOWN"}
+                else None
+            )
         if key == "task_profile":
-            return value if value == "INCREMENTAL_RESEARCH_PLANNING" else None
+            return (
+                value
+                if value
+                in {
+                    "INCREMENTAL_RESEARCH_PLANNING",
+                    "fundamental_analysis",
+                    "peer_analysis",
+                    "research_news_analysis",
+                    "valuation_analysis",
+                    "risk_analysis",
+                    "risk_follow_up",
+                    "report_synthesis",
+                    "RESEARCH_AGENT_EXECUTION",
+                    "LEAD_PLANNER",
+                }
+                else None
+            )
+        if key in {"trust_env", "client_closed"}:
+            return value if type(value) is bool else None
+        if key in {
+            "connection_established",
+            "request_sent",
+            "response_headers_received",
+            "response_body_reading",
+            "response_complete",
+        }:
+            return value if value in {"YES", "UNKNOWN"} else None
+        if key == "effective_proxy_route":
+            return value if value in {"DIRECT", "PROXY", "UNKNOWN"} else None
+        if key == "client_ownership":
+            return value if value in {"ATTEMPT", "CALLER"} else None
+        if key == "transport_stage":
+            return (
+                value
+                if value
+                in {
+                    "UNKNOWN",
+                    "TCP_CONNECTED",
+                    "TLS_ESTABLISHED",
+                    "REQUEST_SENT",
+                    "RESPONSE_HEADERS",
+                    "RESPONSE_BODY",
+                    "RESPONSE_COMPLETE",
+                }
+                else None
+            )
+        if key == "http_version":
+            return value if value in {"HTTP/1.0", "HTTP/1.1", "HTTP/2"} else None
+        if key == "transport_failure_code":
+            return (
+                value
+                if value
+                in {
+                    "connect_timeout",
+                    "read_timeout",
+                    "write_timeout",
+                    "pool_timeout",
+                    "remote_protocol_error",
+                    "transport_error",
+                }
+                else None
+            )
+        if key in {"transport_exception_class", "transport_exception_chain"}:
+            from src.observability.model_transport import EXCEPTION_NAMES
+
+            allowed = set(EXCEPTION_NAMES.values()) | {"UNKNOWN"}
+            if key.endswith("chain"):
+                return (
+                    value
+                    if isinstance(value, list)
+                    and len(value) <= 6
+                    and all(isinstance(item, str) and item in allowed for item in value)
+                    else None
+                )
+            return value if isinstance(value, str) and value in allowed else None
+        if key == "proxy_host":
+            return (
+                value
+                if isinstance(value, str)
+                and len(value) <= 253
+                and re.fullmatch(r"[A-Za-z0-9.:_-]+", value)
+                else None
+            )
+        if key in {"httpx_version", "httpcore_version"}:
+            return (
+                value
+                if isinstance(value, str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", value)
+                else None
+            )
+        if key == "transport_client_id":
+            return (
+                value if isinstance(value, str) and re.fullmatch(r"[0-9a-f-]{36}", value) else None
+            )
+        if key in {"client_created_at", "request_started_at", "attempt_completed_at"}:
+            return (
+                value
+                if isinstance(value, str)
+                and (value == "UNKNOWN" or re.fullmatch(r"[0-9]{4}-[0-9T:.+\-]{15,32}", value))
+                else None
+            )
         if key in {"run_id", "task_id", "event_id"}:
             return value if isinstance(value, str) and _ID.fullmatch(value) else None
         if key == "actor":
@@ -205,6 +313,8 @@ class span:
             self.logical_token = _logical.set(self.record["span_id"])
         if self.operation == "model.attempt":
             self.record["attempt_id"] = self.record["span_id"]
+        if self.operation == "model.http":
+            self.record["attempt_id"] = self.record["parent_span_id"]
         return self
 
     def __exit__(self, typ, exc, tb):
@@ -258,6 +368,7 @@ def observe(
             if task and task in bound:
                 item = bound[task]
                 context.update(run_id=item.run_id, task_id=item.task_id, actor=item.assigned_agent)
+                context["task_profile"] = getattr(item, "task_type", None)
             if event and event in bound:
                 item = bound[event]
                 context.update(

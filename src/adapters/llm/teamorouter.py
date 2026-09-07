@@ -18,6 +18,7 @@ from src.adapters.llm.provider import (
     StructuredOutputError,
 )
 from src.infrastructure.config.settings import LLMSettings
+from src.observability.model_transport import TransportObservation
 from src.observability.performance import annotate, observe, span
 
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
@@ -279,20 +280,42 @@ class OpenAICompatiblePlannerClient:
         }
         try:
             with span("model.http", attempt_number=attempt) as http_timing:
-                if self._client is None:
-                    async with httpx.AsyncClient(
-                        timeout=self._execution_policy.httpx_timeout
-                    ) as client:
-                        response = await client.post(
-                            self._completion_url, json=payload, headers=headers
+                observation = TransportObservation(
+                    http_timing,
+                    owned=self._client is None,
+                    provider=self.provider_name,
+                    model=model,
+                    route=self.route_ids.get(model),
+                    task_profile=self.task_profile,
+                )
+                transport_error = None
+                try:
+                    if self._client is None:
+                        async with httpx.AsyncClient(
+                            timeout=self._execution_policy.httpx_timeout
+                        ) as client:
+                            observation.bind(client, self._completion_url)
+                            response = await client.post(
+                                self._completion_url,
+                                json=payload,
+                                headers=headers,
+                                extensions=observation.extensions,
+                            )
+                    else:
+                        observation.bind(self._client, self._completion_url)
+                        response = await self._client.post(
+                            self._completion_url,
+                            json=payload,
+                            headers=headers,
+                            timeout=self._execution_policy.httpx_timeout,
+                            extensions=observation.extensions,
                         )
-                else:
-                    response = await self._client.post(
-                        self._completion_url,
-                        json=payload,
-                        headers=headers,
-                        timeout=self._execution_policy.httpx_timeout,
-                    )
+                    observation.complete(response)
+                except BaseException as exc:
+                    transport_error = exc
+                    raise
+                finally:
+                    observation.finish(transport_error)
                 http_timing.set(http_status=response.status_code)
         except httpx.ConnectTimeout:
             raise _RetryableProviderFailure(
