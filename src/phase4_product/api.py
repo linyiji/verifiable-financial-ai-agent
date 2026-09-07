@@ -45,6 +45,12 @@ from src.phase4_product.draft_review import ExactDraftReview, RenewDraftLeaseReq
 from src.phase4_product.errors import ProductError, product_error
 from src.phase4_product.hashing import require_sha256_identity
 from src.phase4_product.memory_contracts import MaterializeMemoryRequest, ResearchMemorySnapshot
+from src.phase4_product.reexecution import (
+    AuthorizeReexecutionRequest,
+    ReexecuteRequest,
+    ReexecutionAdmission,
+    ReexecutionAuthorization,
+)
 
 CONTRACT_HEADER = "X-Phase4-Contract-Version"
 JSON_MEDIA_TYPE = "application/json; charset=utf-8"
@@ -331,6 +337,14 @@ class Phase4ProductBackend(Protocol):
         limit: int,
     ) -> ResearchRunHistoryCollectionV1: ...
 
+    async def authorize_reexecution(
+        self, run_id: str, payload: AuthorizeReexecutionRequest, *, idempotency_key: str
+    ) -> ReexecutionAuthorization: ...
+
+    async def reexecute_run(
+        self, run_id: str, payload: ReexecuteRequest, *, idempotency_key: str
+    ) -> ReexecutionAdmission: ...
+
     async def prepare_run(
         self,
         payload: PrepareResearchRunRequestV1,
@@ -595,6 +609,29 @@ def create_phase4_product_router() -> APIRouter:
             request_id=_request_id(request),
         )
         response.status_code = 200 if result.response_meta.idempotency_replayed else 201
+        return result
+
+    @router.post(
+        "/research-runs/{run_id}/reexecution-authorizations",
+        response_model=ReexecutionAuthorization,
+    )
+    async def authorize_reexecution(
+        run_id: str, payload: AuthorizeReexecutionRequest, request: Request, response: Response
+    ):
+        _admit_contract(request, response)
+        return await _backend(request).authorize_reexecution(
+            run_id, payload, idempotency_key=_idempotency_key(request)
+        )
+
+    @router.post("/research-runs/{run_id}/reexecute", response_model=ReexecutionAdmission)
+    async def reexecute_run(
+        run_id: str, payload: ReexecuteRequest, request: Request, response: Response
+    ):
+        _admit_contract(request, response)
+        result = await _backend(request).reexecute_run(
+            run_id, payload, idempotency_key=_idempotency_key(request)
+        )
+        response.status_code = 200 if result.idempotency_replayed else 201
         return result
 
     @router.get("/research-runs/{run_id}", response_model=ResearchRunDetailV1)

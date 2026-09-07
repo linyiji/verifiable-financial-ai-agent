@@ -390,8 +390,15 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 )
             )
         else:
-            scheme.confirmed = aggregate.scheme.confirmed_at is not None
-            scheme.payload = aggregate.scheme.model_dump(mode="json")
+            if aggregate.run.reexecution_of_run_id:
+                if (
+                    not scheme.confirmed
+                    or scheme.payload != aggregate.scheme.model_dump(mode="json")
+                ):
+                    raise ValueError("re-execution cannot rewrite confirmed Scheme")
+            else:
+                scheme.confirmed = aggregate.scheme.confirmed_at is not None
+                scheme.payload = aggregate.scheme.model_dump(mode="json")
 
         for task in aggregate.runtime.actual_graph.tasks:
             row = await session.get(TaskRow, task.task_id)

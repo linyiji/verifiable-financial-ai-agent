@@ -281,7 +281,7 @@ def _client() -> tuple[TestClient, StubBackend]:
     return TestClient(app, raise_server_exceptions=False), backend
 
 
-def test_router_preserves_frozen_routes_and_adds_only_phase5a_memory() -> None:
+def test_router_preserves_frozen_routes_and_explicit_phase5_extensions() -> None:
     router = create_phase4_product_router()
     observed = {
         (method, route.path)
@@ -292,6 +292,10 @@ def test_router_preserves_frozen_routes_and_adds_only_phase5a_memory() -> None:
     assert observed == EXPECTED_A_ROUTES | {
         ("GET", "/api/objects/{object_id}/memory"),
         ("POST", "/api/objects/{object_id}/memory/materialize"),
+        ("GET", "/api/research-drafts/{draft_id}"),
+        ("POST", "/api/research-drafts/{draft_id}/lease-renewals"),
+        ("POST", "/api/research-runs/{run_id}/reexecution-authorizations"),
+        ("POST", "/api/research-runs/{run_id}/reexecute"),
     }
 
 

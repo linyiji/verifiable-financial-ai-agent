@@ -1,4 +1,5 @@
 import { ResearchRuntimeWorkspace, type ProjectionLifecycle } from "../components/ResearchRuntimeWorkspace";
+import { ReexecutionAction } from "../components/ReexecutionAction";
 import type { Phase4FrontendDataSource } from "../data/FrontendDataSource";
 import type { RunStageRoute } from "../routing/resultsRoute";
 import type { ConnectionState, RunProjection } from "../types/domain";
@@ -18,6 +19,7 @@ export interface ResearchRunPageProps {
 
 export function ResearchRunPage({ projection, source, connection, lifecycle, selectedStage, onSelectStage, backendOrigin, onOpenResults, onOpenExecution, onNavigate }: ResearchRunPageProps) {
   return <section className="research-run-page" aria-label={`${projection.object.companyName} Research Run`}>
+    <ReexecutionAction key={projection.run.runId} runId={projection.run.runId} objectId={projection.object.objectId} failed={projection.run.status === "FAILED"} backendOrigin={backendOrigin} onNavigate={onNavigate} />
     <ResearchRuntimeWorkspace projection={projection} source={source} connection={connection} lifecycle={lifecycle} selectedStage={selectedStage} onSelectStage={onSelectStage} backendOrigin={backendOrigin} onOpenResults={onOpenResults} onOpenExecution={onOpenExecution} onNavigate={onNavigate} />
   </section>;
 }

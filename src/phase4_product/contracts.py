@@ -492,6 +492,11 @@ class ResearchRunCollectionV1(FrozenWireModel):
 
 
 class ResearchRunDetailV1(FrozenWireModel):
+    reexecution_of_run_id: NonBlank | None = Field(default=None, exclude_if=lambda v: v is None)
+    base_run_id: NonBlank | None = Field(default=None, exclude_if=lambda v: v is None)
+    base_research_view_version: NonBlank | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
     run_id: NonBlank
     research_object_id: NonBlank
     goal_id: NonBlank

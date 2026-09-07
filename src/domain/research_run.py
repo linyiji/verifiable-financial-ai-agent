@@ -21,6 +21,7 @@ class ResearchRun(TimestampedModel):
     updated_at: datetime = Field(default_factory=utc_now)
     base_run_id: str | None = Field(default=None, exclude_if=lambda v: v is None)
     base_research_view_version: str | None = Field(default=None, exclude_if=lambda v: v is None)
+    reexecution_of_run_id: str | None = Field(default=None, exclude_if=lambda v: v is None)
 
     @model_validator(mode="after")
     def incremental_base(self):
@@ -28,4 +29,14 @@ class ResearchRun(TimestampedModel):
             raise ValueError("incremental base identities must be paired")
         if self.base_run_id == self.run_id:
             raise ValueError("incremental Run must be independent")
+        if self.reexecution_of_run_id is not None:
+            if (
+                not self.reexecution_of_run_id.strip()
+                or self.reexecution_of_run_id != self.reexecution_of_run_id.strip()
+                or self.reexecution_of_run_id in {self.run_id, self.base_run_id}
+                or self.base_run_id is None
+            ):
+                raise ValueError(
+                    "execution predecessor must be distinct from Run and knowledge base"
+                )
         return self

@@ -716,6 +716,9 @@ def project_run_detail(
 ) -> ResearchRunDetailV1:
     status = project_run_status(_field(run, "status"))
     return ResearchRunDetailV1(
+        reexecution_of_run_id=_field(run, "reexecution_of_run_id", None),
+        base_run_id=_field(run, "base_run_id", None),
+        base_research_view_version=_field(run, "base_research_view_version", None),
         run_id=_required_string(run, "run_id", "Run"),
         research_object_id=_required_string(run, "research_object_id", "Run"),
         goal_id=_required_string(run, "goal_id", "Run"),

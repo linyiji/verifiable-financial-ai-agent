@@ -819,6 +819,16 @@ class PostgreSQLPhase4ProductBackend:
         self._wake.set()
         return build_confirm_response(admission, request_id=request_id, idempotency_replayed=False)
 
+    async def authorize_reexecution(self, run_id, payload, *, idempotency_key):
+        from src.phase4_product.reexecution import authorize
+
+        return await authorize(self, run_id, payload, idempotency_key)
+
+    async def reexecute_run(self, run_id, payload, *, idempotency_key):
+        from src.phase4_product.reexecution import admit
+
+        return await admit(self, run_id, payload, idempotency_key)
+
     async def get_run(self, run_id: str) -> ResearchRunDetailV1:
         async with self.sessions() as session:
             row = await session.get(ResearchRunAggregateRow, run_id)
