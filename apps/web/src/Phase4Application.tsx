@@ -6,6 +6,7 @@ import { HttpFrontendDataSource } from "./data/HttpFrontendDataSource";
 import { NewResearchTaskPage, type NewResearchStep } from "./pages/NewResearchTaskPage";
 import { ResearchObjectDetailPage } from "./pages/ResearchObjectDetailPage";
 import { ResearchObjectsPage } from "./pages/ResearchObjectsPage";
+import { CreateResearchObjectModal } from "./pages/CreateResearchObjectModal";
 import { ResearchRunPage } from "./pages/ResearchRunPage";
 import { ResearchRunsPage } from "./pages/ResearchRunsPage";
 import { ResultsWorkspacePage } from "./pages/ResultsWorkspacePage";
@@ -103,6 +104,7 @@ export function Phase4Application() {
   const [objects, setObjects] = useState<readonly NormalizedObjectIdentity[]>([]);
   const [objectDetails, setObjectDetails] = useState<readonly Phase4ResearchObjectDetail[]>([]);
   const [objectsLoading, setObjectsLoading] = useState(false);
+  const [creatingObject, setCreatingObject] = useState(false);
   const [runs, setRuns] = useState<readonly RunHistoryItem[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsUnavailable, setRunsUnavailable] = useState(false);
@@ -354,6 +356,7 @@ export function Phase4Application() {
 
   useEffect(() => {
     const onRoute = () => {
+      setCreatingObject(false);
       setRouteRevision((value) => value + 1);
       const page = currentPage();
       const runId = pathRunId();
@@ -512,9 +515,18 @@ export function Phase4Application() {
       <ResearchObjectsPage
         objects={objectDetails}
         loading={objectsLoading}
-        onCreate={() => navigatePath("/")}
+        onCreate={() => setCreatingObject(true)}
         onOpen={(objectId) => navigatePath(`/objects/${encodeURIComponent(objectId)}`)}
       />
+      {creatingObject && <CreateResearchObjectModal
+        onCreate={(mutation) => source.createResearchObject(mutation)}
+        onClose={() => setCreatingObject(false)}
+        onCreated={(detail) => {
+          setCreatingObject(false);
+          setObjectDetail(detail);
+          navigatePath(`/objects/${encodeURIComponent(detail.object.objectId)}`);
+        }}
+      />}
     </div>;
   }
 
