@@ -18,6 +18,7 @@ function activePage(): PrimaryPage {
 }
 
 function routeContext(page: PrimaryPage): string {
+  if (/^\/drafts\/[^/]+$/u.test(window.location.pathname)) return "研究方案复核";
   if (parseResultsRoute(window.location.pathname)) return "Research Results";
   if (page === "runs") return "Research Run";
   if (page === "objects") return "Research Object";

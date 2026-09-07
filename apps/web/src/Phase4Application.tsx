@@ -4,6 +4,7 @@ import type { ProjectionLifecycle } from "./components/ResearchRuntimeWorkspace"
 import { createPhase4Mutation } from "./data/FrontendDataSource";
 import { HttpFrontendDataSource } from "./data/HttpFrontendDataSource";
 import { NewResearchTaskPage, type NewResearchStep } from "./pages/NewResearchTaskPage";
+import { ExactDraftReviewPage } from "./pages/ExactDraftReviewPage";
 import { ResearchObjectDetailPage } from "./pages/ResearchObjectDetailPage";
 import { ResearchObjectsPage } from "./pages/ResearchObjectsPage";
 import { CreateResearchObjectModal } from "./pages/CreateResearchObjectModal";
@@ -65,9 +66,10 @@ function pathObjectId(): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-type ProductPage = "NEW" | "RUNS" | "OBJECTS" | "OBJECT" | "RUN" | "RESULTS";
+type ProductPage = "NEW" | "RUNS" | "OBJECTS" | "OBJECT" | "RUN" | "RESULTS" | "DRAFT";
 
 function currentPage(): ProductPage {
+  if (/^\/drafts\/[^/]+$/u.test(window.location.pathname)) return "DRAFT";
   if (parseResultsRoute(window.location.pathname)) return "RESULTS";
   if (pathRunId() !== null) return "RUN";
   if (pathObjectId() !== null) return "OBJECT";
@@ -520,6 +522,8 @@ export function Phase4Application() {
   };
 
   const page = currentPage();
+
+  if (page === "DRAFT") return <ExactDraftReviewPage draftId={decodeURIComponent(window.location.pathname.split("/")[2])} backendOrigin={backendOrigin}/>;
 
   if (page === "RESULTS") {
     const route = parseResultsRoute(window.location.pathname);

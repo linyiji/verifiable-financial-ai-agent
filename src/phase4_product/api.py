@@ -18,6 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 
+from src.phase4_product.admission import DraftLeaseAuthorizationV1
 from src.phase4_product.contracts import (
     PHASE4_CONTRACT_VERSION,
     AtomicRunProjectionV1,
@@ -40,6 +41,7 @@ from src.phase4_product.contracts import (
     ResultsWorkspaceV1,
     TraceBundleV1,
 )
+from src.phase4_product.draft_review import ExactDraftReview, RenewDraftLeaseRequest
 from src.phase4_product.errors import ProductError, product_error
 from src.phase4_product.hashing import require_sha256_identity
 from src.phase4_product.memory_contracts import MaterializeMemoryRequest, ResearchMemorySnapshot
@@ -548,6 +550,22 @@ def create_phase4_product_router() -> APIRouter:
             result_availability=result_availability,
             cursor=cursor,
             limit=limit,
+        )
+
+    @router.get("/research-drafts/{draft_id}", response_model=ExactDraftReview)
+    async def read_draft_review(draft_id: str, request: Request, response: Response):
+        _admit_contract(request, response)
+        return await _backend(request).read_draft_review(draft_id)
+
+    @router.post(
+        "/research-drafts/{draft_id}/lease-renewals", response_model=DraftLeaseAuthorizationV1
+    )
+    async def renew_draft_lease(
+        draft_id: str, payload: RenewDraftLeaseRequest, request: Request, response: Response
+    ):
+        _admit_contract(request, response)
+        return await _backend(request).renew_draft_lease(
+            draft_id, payload, idempotency_key=_idempotency_key(request)
         )
 
     @router.post("/research-runs/prepare", response_model=ResearchRunDraftV1)

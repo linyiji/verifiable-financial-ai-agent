@@ -663,6 +663,18 @@ class PostgreSQLPhase4ProductBackend:
             await uow.commit()
             return draft
 
+    async def read_draft_review(self, draft_id):
+        from src.phase4_product.draft_review import read_exact_draft
+
+        return await read_exact_draft(self.sessions, draft_id)
+
+    async def renew_draft_lease(self, draft_id, payload, *, idempotency_key):
+        from src.infrastructure.database.draft_leases import renew_exact_draft
+
+        return await renew_exact_draft(
+            self.sessions, draft_id, payload, idempotency_key=idempotency_key
+        )
+
     async def confirm_run(
         self,
         payload: ConfirmResearchRunRequestV1,

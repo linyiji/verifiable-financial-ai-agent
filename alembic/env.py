@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from src.application import persistence as application_persistence  # noqa: F401
 from src.data import persistence as data_persistence  # noqa: F401
+from src.infrastructure.database import draft_leases as draft_lease_models  # noqa: F401
 from src.infrastructure.database import models as durable_models  # noqa: F401
 from src.infrastructure.database import research_memory as research_memory_models  # noqa: F401
 from src.infrastructure.database.base import Base

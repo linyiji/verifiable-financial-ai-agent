@@ -36,6 +36,7 @@ from src.domain.review import ReviewRecord
 from src.domain.runtime_event import RuntimeEvent
 from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph, Task
 from src.infrastructure.database.base import Base
+from src.infrastructure.database.draft_leases import latest_lease
 from src.phase4_product.admission import ResearchRunDraftRecordV1, RunSchedulerAdmissionV1
 from src.phase4_product.durability import (
     AtomicConfirmCommit,
@@ -290,6 +291,7 @@ class SQLAlchemyPhase4AdmissionRepository:
         draft = ResearchRunDraftV1.model_validate(row.payload)
         return ResearchRunDraftRecordV1(
             draft=draft,
+            lease_authorization=await latest_lease(self.session, draft_id),
             consumed_at=row.consumed_at,
             consumed_admission_id=row.consumed_admission_id,
             consumed_run_id=row.consumed_run_id,

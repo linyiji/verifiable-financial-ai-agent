@@ -47,6 +47,28 @@ class FrozenRecordModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, use_enum_values=False)
 
 
+class DraftLeaseAuthorizationV1(FrozenRecordModel):
+    lease_id: str
+    draft_id: str
+    draft_hash: str
+    scheme_id: str
+    base_run_id: str
+    base_research_view_version: str
+    previous_expires_at: datetime
+    authorized_at: datetime
+    expires_at: datetime
+
+    @model_validator(mode="after")
+    def bounded_authorization(self):
+        for name in ("previous_expires_at", "authorized_at", "expires_at"):
+            _require_utc(getattr(self, name), field_name=name)
+        if self.authorized_at < self.previous_expires_at:
+            raise ValueError("renewal requires expired authorization")
+        if self.expires_at - self.authorized_at != DRAFT_EXPIRY:
+            raise ValueError("renewal must retain draft lease policy")
+        return self
+
+
 class ResearchRunDraftRecordV1(FrozenRecordModel):
     """A public immutable draft plus its non-public consumption tombstone."""
 
@@ -54,6 +76,15 @@ class ResearchRunDraftRecordV1(FrozenRecordModel):
     consumed_at: datetime | None = None
     consumed_admission_id: str | None = None
     consumed_run_id: str | None = None
+    lease_authorization: DraftLeaseAuthorizationV1 | None = None
+
+    @property
+    def effective_expires_at(self) -> datetime:
+        return (
+            self.lease_authorization.expires_at
+            if self.lease_authorization
+            else self.draft.expires_at
+        )
 
     @property
     def consumed(self) -> bool:
@@ -61,6 +92,25 @@ class ResearchRunDraftRecordV1(FrozenRecordModel):
 
     @model_validator(mode="after")
     def consumption_is_all_or_nothing(self) -> ResearchRunDraftRecordV1:
+        lease = self.lease_authorization
+        if lease:
+            context = self.draft.scheme_snapshot.incremental_context
+            if context is None or (
+                lease.draft_id,
+                lease.draft_hash,
+                lease.scheme_id,
+                lease.base_run_id,
+                lease.base_research_view_version,
+            ) != (
+                self.draft.draft_id,
+                self.draft.draft_hash,
+                self.draft.scheme_snapshot.scheme_id,
+                context.base_run_id,
+                context.base_research_view_version,
+            ):
+                raise ValueError("lease does not bind exact draft content and base")
+            if lease.previous_expires_at < self.draft.expires_at:
+                raise ValueError("lease predecessor predates original expiry")
         values = (self.consumed_at, self.consumed_admission_id, self.consumed_run_id)
         if any(value is not None for value in values) and not all(
             value is not None for value in values
@@ -354,7 +404,7 @@ def validate_confirm_request(
         raise _draft_conflict(draft, "DRAFT_VERSION_MISMATCH")
     if record.consumed:
         raise _draft_conflict(draft, "DRAFT_CONSUMED")
-    if checked_at >= draft.expires_at:
+    if checked_at >= record.effective_expires_at:
         raise _draft_conflict(draft, "DRAFT_EXPIRED")
 
     return ValidatedConfirmRequestV1(
