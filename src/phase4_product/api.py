@@ -42,6 +42,7 @@ from src.phase4_product.contracts import (
 )
 from src.phase4_product.errors import ProductError, product_error
 from src.phase4_product.hashing import require_sha256_identity
+from src.phase4_product.memory_contracts import MaterializeMemoryRequest, ResearchMemorySnapshot
 
 CONTRACT_HEADER = "X-Phase4-Contract-Version"
 JSON_MEDIA_TYPE = "application/json; charset=utf-8"
@@ -304,6 +305,12 @@ class Phase4ProductBackend(Protocol):
 
     async def get_object(self, object_id: str) -> ResearchObjectDetailV1: ...
 
+    async def get_memory(self, object_id: str) -> ResearchMemorySnapshot: ...
+
+    async def materialize_memory(
+        self, object_id: str, source_run_id: str
+    ) -> ResearchMemorySnapshot: ...
+
     async def list_runs(
         self,
         *,
@@ -487,6 +494,18 @@ def create_phase4_product_router() -> APIRouter:
     ) -> ResearchObjectDetailV1:
         _admit_contract(request, response)
         return await _backend(request).get_object(object_id)
+
+    @router.get("/objects/{object_id}/memory", response_model=ResearchMemorySnapshot)
+    async def get_memory(object_id: str, request: Request, response: Response):
+        _admit_contract(request, response)
+        return await _backend(request).get_memory(object_id)
+
+    @router.post("/objects/{object_id}/memory/materialize", response_model=ResearchMemorySnapshot)
+    async def materialize_memory(
+        object_id: str, payload: MaterializeMemoryRequest, request: Request, response: Response
+    ):
+        _admit_contract(request, response)
+        return await _backend(request).materialize_memory(object_id, payload.source_run_id)
 
     @router.get("/objects/{object_id}/runs", response_model=ResearchRunHistoryCollectionV1)
     async def list_object_runs(

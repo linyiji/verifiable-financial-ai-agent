@@ -137,6 +137,7 @@ def test_activity_preserves_safe_task_scope_without_forwarding_private_payload()
 
 
 def test_list_and_detail_share_object_scoped_persisted_query():
+    from src.infrastructure.database.research_memory import ResearchMemoryPointerRow
     async def exercise():
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         async with engine.begin() as conn:
@@ -144,6 +145,7 @@ def test_list_and_detail_share_object_scoped_persisted_query():
                 ResearchObjectRow.__table__,
                 ResearchRunAggregateRow.__table__,
                 RuntimeEventRow.__table__,
+                ResearchMemoryPointerRow.__table__,
             ):
                 await conn.run_sync(table.create)
         sessions = async_sessionmaker(engine)
@@ -170,7 +172,9 @@ def test_list_and_detail_share_object_scoped_persisted_query():
         detail = await backend.get_object(OBJ.object_id)
         listing = await backend.list_objects(symbol=None, query=None, cursor=None, limit=10)
         assert listing.items == (detail,)
-        assert detail.run_count == 2 and detail.latest_released_run_id == "RUN-A"
+        # Phase 5A: unmaterialized history cannot infer a current asset by time.
+        assert detail.run_count == 2 and detail.latest_released_run_id is None
+        assert detail.released_result_availability.reason_code == "MEMORY_NOT_MATERIALIZED"
         assert detail.last_activity.event_id == "EVT-RUN-A-2"
         await engine.dispose()
 

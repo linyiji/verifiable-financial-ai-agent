@@ -1,0 +1,42 @@
+/** Real exact Object vertical slice. No provider Run or historical mutation. */
+import assert from 'node:assert/strict';
+import {mkdir,writeFile} from 'node:fs/promises';
+const RUN='RUN-57aed683-75d6-4b47-acc6-a73053ea492e',out='artifacts/phase5a/';await mkdir(out,{recursive:true});
+const headers={'X-Phase4-Contract-Version':'phase4-core/v1','Content-Type':'application/json'};
+const get=async path=>{const r=await fetch('http://127.0.0.1:8010/api/'+path,{headers});assert(r.ok);return r.json()};
+const p=await get(`research-runs/${RUN}/projection`),object=p.run.research_object_id;
+assert.equal(object,p.object.object_id);
+const before=await get(`objects/${object}/memory`),version=before.current_view.research_view_version_id;
+const target=(await(await fetch('http://127.0.0.1:9227/json/list')).json()).find(t=>t.type==='page');
+const ws=new WebSocket(target.webSocketDebuggerUrl);await new Promise(r=>ws.onopen=r);let seq=0;const jobs=new Map(),checks=[];
+ws.onmessage=({data})=>{const m=JSON.parse(data),j=jobs.get(m.id);if(j){jobs.delete(m.id);m.error?j.reject(Error(m.error.message)):j.resolve(m.result);}};
+const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq;jobs.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));});
+const ev=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true});if(r.exceptionDetails)throw Error('browser evaluation failed');return r.result.value;};
+const wait=async expression=>{for(let i=0;i<300;i++){if(await ev(expression))return;await new Promise(r=>setTimeout(r,100));}throw Error('missing '+expression);};
+const click=async selector=>{const p=await ev(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);await send('Input.dispatchMouseEvent',{type:'mousePressed',...p,button:'left',clickCount:1});await send('Input.dispatchMouseEvent',{type:'mouseReleased',...p,button:'left',clickCount:1});};
+const check=(v,name)=>{checks.push({name,pass:!!v});assert(v,name);};
+const visible=()=>wait(`document.querySelector('[data-testid="current-research-view"]')?.dataset.viewVersion===${JSON.stringify(version)}`);
+const snap=async name=>{const r=await send('Page.captureScreenshot',{format:'png'});await writeFile(out+name+'.png',Buffer.from(r.data,'base64'));};
+try{
+ await send('Page.enable');await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
+ await send('Page.navigate',{url:`http://127.0.0.1:4173/objects/${object}`});await visible();
+ check(await ev(`document.querySelector('[data-testid="research-object-detail"]').dataset.objectId===${JSON.stringify(object)}`),'exact Object identity');
+ check(await ev(`document.querySelector('[data-testid="object-latest-released-run"]').innerText===${JSON.stringify(RUN)}`),'explicit accepted source pointer');
+ check(await ev(`document.querySelector('[data-testid="current-research-view"]').dataset.sourceRunId===${JSON.stringify(RUN)}`),'current view exact Run');
+ check(await ev(`document.querySelectorAll('[data-testid="memory-item"]').length===${before.current_view.items.length}`),'authoritative item count');
+ check(await ev(`Array.from(document.querySelectorAll('[data-testid="memory-item"]')).every(e=>e.dataset.sourceRunId===${JSON.stringify(RUN)})`),'all items same source');
+ await snap('memory-current');
+ await click('[data-testid="memory-source-link"]');await wait(`!!document.querySelector('#metric-revenue-growth.report-focus')`);
+ check(await ev(`document.querySelector('[data-testid="results-workspace"]').dataset.runId===${JSON.stringify(RUN)}`),'metric to exact original Results');await snap('memory-source-report');
+ await send('Page.navigate',{url:`http://127.0.0.1:4173/objects/${object}`});await visible();
+ await send('Page.reload',{ignoreCache:true});await visible();check(true,'refresh same version');
+ await send('Page.navigate',{url:'about:blank'});await wait(`location.href==='about:blank'`);
+ await send('Page.navigate',{url:`http://127.0.0.1:4173/objects/${object}`});await visible();check(true,'close/reopen same version');
+ await click('#object-tab-history');await wait(`!!document.querySelector('[data-testid="object-history-run"][data-run-id="${RUN}"]')`);
+ check(await ev(`document.querySelector('[data-testid="object-history-run"][data-run-id="${RUN}"]').innerText.includes(${JSON.stringify(before.current_view.source_released_result_id)})`),'history exact result and view relation');await snap('memory-history');
+ const retry=await fetch(`http://127.0.0.1:8010/api/objects/${object}/memory/materialize`,{method:'POST',headers,body:JSON.stringify({source_run_id:RUN})});check(retry.ok,'re-materialization succeeds');
+ const after=await retry.json();check(JSON.stringify(before)===JSON.stringify(after),'durable idempotency exact snapshot');
+ const sourceCounts=Object.fromEntries(['VERIFIED_METRIC','VERIFIED_CLAIM','RESOLVED_ISSUE'].map(c=>[c,after.current_view.items.filter(i=>i.category===c).length]));
+ await writeFile(out+'materialization-identity.json',JSON.stringify({object_id:object,run_id:RUN,result_id:after.current_view.source_released_result_id,object_version_id:after.object_version.object_version_id,view_version_id:version,sourceCounts},null,2));
+}finally{await writeFile(out+'browser-acceptance.json',JSON.stringify(checks,null,2));ws.close();}
+console.log(`${checks.length} Phase5A browser checks PASS`);

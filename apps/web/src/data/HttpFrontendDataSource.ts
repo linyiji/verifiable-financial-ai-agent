@@ -1,3 +1,4 @@
+import {decodeResearchMemory} from "../types/researchMemory";
 import {
   Phase4ApiClient,
   Phase4ProtocolError,
@@ -214,6 +215,12 @@ export class HttpFrontendDataSource implements Phase4FrontendDataSource {
       phase4ApiRoutes.objects
     );
     return result;
+  }
+
+  getResearchMemory(objectId: string, options?: Phase4RequestOptions) {
+    const expectedObjectId = requiredText(objectId, "objectId");
+    return this.client.requestJson({method:"GET", path: `${phase4ApiRoutes.object(expectedObjectId)}/memory`,
+      expectedStatuses:[200], signal: options?.signal, decode: value=>decodeResearchMemory(value, expectedObjectId)});
   }
 
   getResearchObject(

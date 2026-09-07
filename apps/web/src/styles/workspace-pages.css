@@ -160,3 +160,13 @@
   .report-generation-grid,.release-truth-grid{grid-template-columns:1fr 1fr}.release-prerequisites{grid-template-columns:1fr}.release-prerequisites>b{transform:rotate(90deg)}.artifact-status-grid{grid-template-columns:1fr}.completion-actions{justify-content:flex-start}
   .execution-summary{grid-template-columns:repeat(2,1fr)}.execution-summary>div:nth-child(odd){border-left:0}.execution-summary>div:nth-child(n+3){border-top:1px solid #e2e6ec}.execution-toolbar{align-items:stretch;flex-direction:column}.execution-mode{grid-template-columns:1fr 1fr}.execution-search{min-width:0}.execution-collaboration{grid-template-columns:1fr}.actor-rail{position:static;max-height:none}.actor-detail-head,.execution-contribution,.execution-records-view>header{align-items:flex-start;flex-direction:column}.actor-detail-stats{justify-items:start;text-align:left}.execution-empty-ipo{grid-template-columns:1fr}.execution-table-wrap{max-width:100%}
 }
+/* Phase 5A extends the existing V17 Object cards without changing Results. */
+.memory-current, .research-memory { margin-bottom: 20px; }
+.memory-summary { font-size: 19px; line-height: 1.6; color: #21324c; }
+.memory-provenance { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:18px 0; }
+.memory-provenance code, .memory-item code { overflow-wrap:anywhere; font-size:11px; }
+.memory-category { border-top:1px solid #e2e8f0; margin-top:20px; padding-top:12px; }
+.memory-item { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:16px; margin:10px 0; background:#f7f9fd; border:1px solid #e2e8f0; border-radius:10px; }
+.memory-item p { line-height:1.6; }
+.memory-current dd { overflow-wrap:anywhere; }
+@media(max-width:700px) { .memory-item { align-items:flex-start; flex-direction:column; } }

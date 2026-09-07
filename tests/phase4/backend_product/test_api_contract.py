@@ -281,7 +281,7 @@ def _client() -> tuple[TestClient, StubBackend]:
     return TestClient(app, raise_server_exceptions=False), backend
 
 
-def test_isolated_router_exposes_exactly_the_frozen_19_a_routes() -> None:
+def test_router_preserves_frozen_routes_and_adds_only_phase5a_memory() -> None:
     router = create_phase4_product_router()
     observed = {
         (method, route.path)
@@ -289,7 +289,10 @@ def test_isolated_router_exposes_exactly_the_frozen_19_a_routes() -> None:
         if isinstance(route, APIRoute)
         for method in route.methods
     }
-    assert observed == EXPECTED_A_ROUTES
+    assert observed == EXPECTED_A_ROUTES | {
+        ("GET", "/api/objects/{object_id}/memory"),
+        ("POST", "/api/objects/{object_id}/memory/materialize"),
+    }
 
 
 def test_contract_version_is_admitted_before_backend_and_echoed_on_success() -> None:

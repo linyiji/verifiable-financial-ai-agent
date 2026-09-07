@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { AvailabilityStatus, Phase4ResearchObjectDetail, RunCollectionItem, RunHistoryItem } from "../types/domain";
 import { PHASE4_RUN_STATUS_META } from "../state/status";
 import { missingObjectActivity, objectReleaseSummary } from "./objectSummaryCopy";
+import {ResearchMemory} from "../components/ResearchMemory";
+import type {ResearchMemorySnapshot, MemoryHistoryRef} from "../types/researchMemory";
 import "../styles/workspace-pages.css";
 
 export type ObjectTab = "overview" | "history";
@@ -13,6 +15,9 @@ const TAB_LABELS: Readonly<Record<ObjectTab, string>> = {
 };
 
 export interface ResearchObjectDetailPageProps {
+  readonly memory?: ResearchMemorySnapshot | null;
+  readonly memoryUnavailable?: boolean;
+  readonly onOpenMemorySource?: (runId: string, anchor: string | null) => void;
   readonly detail: Phase4ResearchObjectDetail;
   readonly runs?: readonly RunHistoryItem[] | null;
   readonly runsLoading?: boolean;
@@ -26,6 +31,9 @@ export interface ResearchObjectDetailPageProps {
 }
 
 export function ResearchObjectDetailPage({
+  memory = null,
+  memoryUnavailable = false,
+  onOpenMemorySource,
   detail,
   runs = null,
   runsLoading = false,
@@ -47,7 +55,7 @@ export function ResearchObjectDetailPage({
     onTabChange?.(next);
   };
 
-  return <section className="workspace-page" aria-labelledby="object-detail-title">
+  return <section className="workspace-page" aria-labelledby="object-detail-title" data-testid="research-object-detail" data-object-id={object.objectId}>
     <button type="button" className="breadcrumb breadcrumb-button" onClick={onBack}>研究对象 › {object.companyName}</button>
     <div className="card object-head">
       <div className="object-header-row">
@@ -85,8 +93,11 @@ export function ResearchObjectDetailPage({
       </div>
     </div>
 
-    {tab === "overview" && <OverviewPanel detail={detail} onOpenRun={onOpenRun} />}
-    {tab === "history" && <HistoryPanel detail={detail} runs={runs} loading={runsLoading} stale={runsStale} unavailable={runsUnavailable} onOpenRun={onOpenRun} />}
+    {tab === "overview" && <>
+      {onOpenMemorySource && <ResearchMemory memory={memory?.research_object_id===object.objectId ? memory : null} unavailable={memoryUnavailable} onOpenSource={onOpenMemorySource} />}
+      <OverviewPanel detail={detail} onOpenRun={onOpenRun} />
+    </>}
+    {tab === "history" && <HistoryPanel onOpenResults={onOpenMemorySource} memoryHistory={memory?.historical_released_runs ?? []} detail={detail} runs={runs} loading={runsLoading} stale={runsStale} unavailable={runsUnavailable} onOpenRun={onOpenRun} />}
   </section>;
 }
 
@@ -118,7 +129,7 @@ function OverviewPanel({ detail, onOpenRun }: {
 
       <div className="card pad">
         <div className="section-heading">
-          <div><h2 className="panel-title">最近完成的研究</h2><div className="small">仅显示已正式完成的 Research Run。</div></div>
+          <div><h2 className="panel-title">当前已发布研究</h2><div className="small">来自明确绑定的研究资产，不按时间猜测。</div></div>
           <span className={`badge ${availabilityColor(availability.status)}`}>{availability.status}</span>
         </div>
         {detail.latestReleasedRunId
@@ -143,7 +154,9 @@ function OverviewPanel({ detail, onOpenRun }: {
   </div>;
 }
 
-function HistoryPanel({ detail, runs, loading, stale, unavailable, onOpenRun }: {
+function HistoryPanel({ detail, runs, loading, stale, unavailable, onOpenRun, memoryHistory, onOpenResults }: {
+  readonly onOpenResults?: (runId: string, anchor: string | null) => void;
+  readonly memoryHistory: readonly MemoryHistoryRef[];
   readonly detail: Phase4ResearchObjectDetail;
   readonly runs: readonly RunHistoryItem[] | null;
   readonly loading: boolean;
@@ -163,7 +176,7 @@ function HistoryPanel({ detail, runs, loading, stale, unavailable, onOpenRun }: 
           : runs.length === 0
             ? <div className="empty-state" role="status">该对象尚无 Research Run。</div>
             : runs.map((item) => item.availability === "AVAILABLE"
-              ? <ObjectRunRow key={item.run.runId} run={item.run} expectedObjectId={detail.object.objectId} onOpenRun={onOpenRun} />
+              ? <ObjectRunRow onOpenResults={onOpenResults} memoryHistory={memoryHistory.find(h=>h.source_run_id===item.run.runId&&h.research_object_id===detail.object.objectId)} key={item.run.runId} run={item.run} expectedObjectId={detail.object.objectId} onOpenRun={onOpenRun} />
               : <UnavailableObjectRunRow key={item.runId} item={item} expectedObjectId={detail.object.objectId} />)}
     </div>
   </div>;
@@ -196,7 +209,9 @@ function historyStatusLabel(status: RunCollectionItem["backendStatus"]): string 
   return "进行中";
 }
 
-function ObjectRunRow({ run, expectedObjectId, onOpenRun }: {
+function ObjectRunRow({ run, expectedObjectId, onOpenRun, memoryHistory, onOpenResults }: {
+  readonly onOpenResults?: (runId: string, anchor: string | null) => void;
+  readonly memoryHistory?: MemoryHistoryRef;
   readonly run: RunCollectionItem;
   readonly expectedObjectId: string;
   readonly onOpenRun: (runId: string, objectId: string) => void;
@@ -205,14 +220,16 @@ function ObjectRunRow({ run, expectedObjectId, onOpenRun }: {
     return <div className="history-row history-row-invalid" role="alert">身份不匹配的 Run 行已拒绝显示。</div>;
   }
   const meta = PHASE4_RUN_STATUS_META[run.status];
-  return <button type="button" className="history-row" onClick={() => onOpenRun(run.runId, run.object.objectId)}>
+  const hasResults = memoryHistory?.availability === "AVAILABLE" && onOpenResults;
+  return <button type="button" className="history-row" data-testid="object-history-run" data-run-id={run.runId} onClick={() => hasResults ? onOpenResults(run.runId,null) : onOpenRun(run.runId, run.object.objectId)}>
     <span>
       <strong>{run.object.companyName} · {run.asOf}</strong>
       <span className="small option-sub">Run ID · <code>{run.runId}</code></span>
+      {memoryHistory && <span className="small option-sub">{memoryHistory.source_released_result_id ?? "Released Result · UNAVAILABLE_INCOMPATIBLE"} · {memoryHistory.research_view_version ? `Research View v${memoryHistory.research_view_version}` : "尚未纳入研究记忆"}</span>}
     </span>
     <span className="history-meta">
       <span className={`badge ${meta.color}`}>{meta.label}</span>
-      <span className="btn ghost sm">打开 Research Run →</span>
+      <span className="btn ghost sm">{hasResults ? "打开原始 Results →" : "打开 Research Run →"}</span>
     </span>
   </button>;
 }

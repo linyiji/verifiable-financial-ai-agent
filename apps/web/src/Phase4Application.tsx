@@ -100,6 +100,8 @@ function initialConnection(runId: string, sequence: number): ConnectionState {
 }
 
 export function Phase4Application() {
+  const [objectMemory, setObjectMemory] = useState<import("./types/researchMemory").ResearchMemorySnapshot | null>(null);
+  const [objectMemoryUnavailable, setObjectMemoryUnavailable] = useState(false);
   const source = useMemo(() => new HttpFrontendDataSource({ baseUrl: backendOrigin }), []);
   const transport = useMemo(() => new SSERuntimeTransport({ basePath: apiBase }), []);
   const [objects, setObjects] = useState<readonly NormalizedObjectIdentity[]>([]);
@@ -170,6 +172,8 @@ export function Phase4Application() {
   }, [source]);
 
   const loadObject = useCallback(async (objectId: string) => {
+    setObjectMemory(null);
+    setObjectMemoryUnavailable(false);
     setObjectDetail((current) => current?.object.objectId === objectId ? current : null);
     setObjectRuns(null);
     setObjectRunsLoading(true);
@@ -178,6 +182,14 @@ export function Phase4Application() {
       const detail = await source.getResearchObject(objectId);
       if (pathObjectId() !== objectId) return;
       setObjectDetail(detail);
+      try {
+        const memory = await source.getResearchMemory(objectId);
+        if (pathObjectId() !== objectId) return;
+        setObjectMemory(memory);
+      } catch {
+        if (pathObjectId() !== objectId) return;
+        setObjectMemoryUnavailable(true);
+      }
       try {
         const collection = await source.listResearchObjectRuns(objectId, { limit: 100 });
         if (pathObjectId() !== objectId) return;
@@ -546,6 +558,9 @@ export function Phase4Application() {
       {error && <TypedError error={error} onRetry={() => { const objectId = pathObjectId(); if (objectId) void loadObject(objectId); }} onDismiss={() => setError(null)} />}
       {objectDetail
         ? <ResearchObjectDetailPage
+            memory={objectMemory}
+            memoryUnavailable={objectMemoryUnavailable}
+            onOpenMemorySource={(runId, anchor) => navigatePath(`/runs/${encodeURIComponent(runId)}/results/report${anchor ? `?anchor=${encodeURIComponent(anchor)}` : ""}`)}
             detail={objectDetail}
             runs={objectRuns}
             runsLoading={objectRunsLoading}

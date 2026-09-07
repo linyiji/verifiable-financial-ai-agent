@@ -42,6 +42,7 @@ from src.infrastructure.database.phase4_product import (
     Phase4RunProjectionRow,
     PostgreSQLProductUnitOfWorkFactory,
 )
+from src.infrastructure.database.research_memory import ResearchMemoryRepository
 from src.observability.performance import measured_lock, observe
 from src.phase4_product.admission import (
     CONFIRM_ROUTE_TEMPLATE,
@@ -106,6 +107,8 @@ from src.phase4_product.durability import (
 )
 from src.phase4_product.errors import ProductError, product_error
 from src.phase4_product.hashing import idempotency_key_digest
+from src.phase4_product.memory import build_memory_versions
+from src.phase4_product.memory_contracts import MemoryHistoryRef, ResearchMemorySnapshot
 from src.phase4_product.projections import (
     ProjectionIntegrityError,
     RunCollectionSource,
@@ -413,7 +416,77 @@ class PostgreSQLPhase4ProductBackend:
                 )
             ).all()
         )
-        return self._object_detail(entity, runs=runs, latest_events=events)
+        detail = self._object_detail(entity, runs=runs, latest_events=events)
+        memory = await ResearchMemoryRepository(self.sessions)._read(session, entity.object_id)
+        return detail.model_copy(
+            update={
+                "latest_released_run_id": memory.latest_released_run_id,
+                "released_result_availability": AvailabilityV1.available()
+                if memory.current_view
+                else AvailabilityV1.unavailable(
+                    AvailabilityStatus.NOT_GENERATED, "MEMORY_NOT_MATERIALIZED"
+                ),
+            }
+        )
+
+    async def get_memory(self, object_id):
+        current = await ResearchMemoryRepository(self.sessions).read(object_id)
+        async with self.sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(ResearchRunAggregateRow).where(
+                        ResearchRunAggregateRow.object_id == object_id,
+                        ResearchRunAggregateRow.status == "RELEASED",
+                    )
+                )
+            ).all()
+        history = []
+        for row in rows:
+            raw = row.payload.get("run", {})
+            if raw.get("run_id") != row.run_id or raw.get("research_object_id") != object_id:
+                raise product_error("IDENTITY_MISMATCH", "historical Object ownership mismatch")
+            result_id = None
+            try:
+                result = await self.get_result(row.run_id)
+                if result.run_id != row.run_id or result.object_id != object_id:
+                    raise product_error("IDENTITY_MISMATCH", "historical release identity mismatch")
+                result_id = result.released_result_id
+            except (ProductError, ValueError, LookupError):
+                # Retain incompatible history identity without inventing a result.
+                pass
+            history.append(
+                MemoryHistoryRef(
+                    research_object_id=object_id,
+                    source_run_id=row.run_id,
+                    as_of=raw.get("as_of"),
+                    source_released_result_id=result_id,
+                    research_view_version=current.latest_research_view_version
+                    if row.run_id == current.latest_released_run_id
+                    else None,
+                    availability="AVAILABLE" if result_id else "UNAVAILABLE_INCOMPATIBLE",
+                )
+            )
+        return ResearchMemorySnapshot.model_validate(
+            {**current.model_dump(), "historical_released_runs": history}
+        )
+
+    async def materialize_memory(self, object_id, source_run_id):
+        repository = ResearchMemoryRepository(self.sessions)
+        current = await repository.read(object_id)
+        if current.latest_released_run_id == source_run_id:
+            return await self.get_memory(object_id)
+        if current.latest_released_run_id is not None:
+            raise product_error(
+                "CONFLICT", "current memory is bound; explicit future advancement is required"
+            )
+        projection = await self.get_projection(source_run_id)
+        result = await self.get_result(source_run_id)
+        _, report, review, execution = await self._results_surfaces(source_run_id)
+        obj, view = build_memory_versions(
+            object_id, source_run_id, projection, result, report, review, execution
+        )
+        await repository.materialize(obj, view)
+        return await self.get_memory(object_id)
 
     async def prepare_run(
         self,

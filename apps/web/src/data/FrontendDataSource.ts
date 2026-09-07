@@ -195,6 +195,7 @@ export function createPhase4Mutation<TInput>(
 
 /** Contract-authoritative production data source for the Phase 4 Wave 1 flow. */
 export interface Phase4FrontendDataSource {
+  getResearchMemory(objectId: string, options?: Phase4RequestOptions): Promise<import("../types/researchMemory").ResearchMemorySnapshot>;
   readonly kind: "http";
 
   listResearchObjects(
