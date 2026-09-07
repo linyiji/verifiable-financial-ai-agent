@@ -25,6 +25,12 @@
 .identity-grid dt{color:var(--muted);font-size:10px;font-weight:750}.identity-grid dd{margin:5px 0 0;font-size:12px;font-weight:750;overflow-wrap:anywhere}
 .identity-grid code{font-size:11px}
 
+.runtime-recovery{padding:18px;margin-bottom:20px;border:1px solid var(--border);border-radius:10px;background:#f8fafc}
+.runtime-recovery h3,.runtime-recovery h4{margin:0 0 8px}.runtime-recovery p{color:var(--muted);font-size:12px;line-height:1.7}
+.runtime-recovery article{margin-top:18px}.runtime-recovery code,.runtime-recovery small{overflow-wrap:anywhere;font-size:10px;color:var(--muted)}
+.runtime-recovery ol{padding-left:22px}.runtime-recovery li{padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.runtime-recovery li span,.runtime-recovery li small{display:block;margin-top:4px}
+
 /* Run collection */
 .run-card{width:100%;text-align:left;color:inherit}.run-card-primary{display:grid;gap:5px;min-width:0}.run-card-primary .badge{width:max-content}
 .run-card .progress{display:block;margin-top:8px}.run-card .stage,.run-card .stage-sub{display:block}.run-card code{font-size:10px}

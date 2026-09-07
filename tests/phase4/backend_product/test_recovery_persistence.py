@@ -6,11 +6,15 @@ from types import SimpleNamespace
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from fastapi import FastAPI, Response
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
+from starlette.datastructures import Headers
 
-from apps.api.routes import recovery_execution_record
+from apps.api.routes import recovery_execution_record, router
 from src.agentic.research_agent import ResearchAgentInvocationError
 from src.infrastructure.database.recovery import RecoveryEvidenceStore, capability_provenance
+from src.phase4_product.contracts import PHASE4_CONTRACT_VERSION
 from tests.phase4.backend_product.test_memory_postgresql import database  # noqa: F401
 from tests.unit.agentic.test_adaptive_recovery import agent, context, setup, task
 
@@ -54,9 +58,23 @@ async def test_durable_attempts_decisions_projection_and_immutability(store, tmp
             assert run_id == "RUN-A"
 
     request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(phase4_product_backend=Backend()))
+        app=SimpleNamespace(state=SimpleNamespace(phase4_product_backend=Backend())),
+        headers=Headers(),
     )
-    assert await recovery_execution_record("RUN-A", request) == records
+    response = Response()
+    assert await recovery_execution_record("RUN-A", request, response) == records
+    assert response.headers["X-Phase4-Contract-Version"] == PHASE4_CONTRACT_VERSION
+    app = FastAPI()
+    app.include_router(router)
+    app.state.phase4_product_backend = Backend()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        http = await client.get(
+            "/api/research-runs/RUN-A/recovery",
+            headers={"X-Phase4-Contract-Version": PHASE4_CONTRACT_VERSION},
+        )
+        assert http.status_code == 200
+        assert http.headers["X-Phase4-Contract-Version"] == PHASE4_CONTRACT_VERSION
+        assert http.json() == [r.model_dump(mode="json") for r in records]
     serialized = "".join(r.model_dump_json() for r in records)
     assert "SENTINEL_SECRET" not in serialized and "messages" not in serialized
     async with store.sessions() as session:

@@ -263,6 +263,10 @@ export interface Phase4FrontendDataSource {
     options?: Phase4RequestOptions
   ): Promise<ExecutionRecordSurfaceV1>;
 
+  getRecoveryEvidence?(
+    runId: string, objectId: string, options?: Phase4RequestOptions
+  ): Promise<readonly import("../types/recovery").RecoveryRow[]>;
+
   prepareResearchRun(
     mutation: Phase4Mutation<Phase4PrepareResearchRunInput>,
     options?: Phase4RequestOptions

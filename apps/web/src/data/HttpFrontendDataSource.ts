@@ -1,4 +1,5 @@
 import {decodeResearchMemory} from "../types/researchMemory";
+import {decodeRecoveryEvidence} from "../types/recovery";
 import {
   Phase4ApiClient,
   Phase4ProtocolError,
@@ -227,8 +228,10 @@ export class HttpFrontendDataSource implements Phase4FrontendDataSource {
 
   materializeResearchMemory(objectId: string, sourceRunId: string) {
     const expectedObjectId=requiredText(objectId,"objectId");
+    const expectedRunId=requiredText(sourceRunId,"sourceRunId");
     return this.client.requestJson({method:"POST",path:`${phase4ApiRoutes.object(expectedObjectId)}/memory/materialize`,
-      expectedStatuses:[200],body:jsonBody({source_run_id:requiredText(sourceRunId,"sourceRunId")}),
+      idempotencyKey:`memory-v1:${encodeURIComponent(expectedObjectId)}:${encodeURIComponent(expectedRunId)}`,
+      expectedStatuses:[200],body:jsonBody({source_run_id:expectedRunId}),
       decode:value=>decodeResearchMemory(value,expectedObjectId)});
   }
 
@@ -329,6 +332,14 @@ export class HttpFrontendDataSource implements Phase4FrontendDataSource {
       signal: options?.signal,
       decode: (value) => decodeReleasedResultProjection(value, expectedRunId, expectedObjectId)
     });
+  }
+
+  getRecoveryEvidence(runId: string, objectId: string, options?: Phase4RequestOptions) {
+    const expectedRunId = requiredText(runId, "runId");
+    const expectedObjectId = requiredText(objectId, "objectId");
+    return this.client.requestJson({ method: "GET", path: `${phase4ApiRoutes.run(expectedRunId)}/recovery`,
+      expectedStatuses: [200], signal: options?.signal,
+      decode: value => decodeRecoveryEvidence(value, expectedRunId, expectedObjectId) });
   }
 
   getResultsWorkspace(

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Phase4FrontendDataSource } from "../data/FrontendDataSource";
 import { InteractiveExecutionRecord } from "../components/results/InteractiveExecutionRecord";
+import { RuntimeRecoveryEvidence } from "../components/results/RuntimeRecoveryEvidence";
 import { InteractiveFinancialReview } from "../components/results/InteractiveFinancialReview";
 import { InteractiveResearchReport } from "../components/results/InteractiveResearchReport";
 import { reportBundleMatches } from "../components/results/reportModel";
@@ -280,6 +281,7 @@ export function ResultsWorkspacePage({ source, backendOrigin, runId, surface, on
       aria-labelledby={`results-tab-${surface}`}
     >
       <header className="result-pane-head"><div><span>{meta.eyebrow}</span><h2>{meta.label.slice(4)}</h2><p>{meta.description}</p></div><span className={`badge ${availabilityClass(availability.status)}`}>{availabilityLabel(availability.status)}</span></header>
+      {surface === "execution" && <RuntimeRecoveryEvidence key={`${runId}/${workspace.objectId}`} source={source} runId={runId} objectId={workspace.objectId} />}
       {availability.status === "UNAVAILABLE"
         ? <UnavailableSurface reasonCode={availability.reasonCode} />
         : payload.status === "LOADING"
