@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AvailabilityStatus, Phase4ResearchObjectDetail, RunCollectionItem, RunHistoryItem } from "../types/domain";
 import { PHASE4_RUN_STATUS_META } from "../state/status";
+import { missingObjectActivity, objectReleaseSummary } from "./objectSummaryCopy";
 import "../styles/workspace-pages.css";
 
 export type ObjectTab = "overview" | "history";
@@ -97,7 +98,7 @@ function OverviewPanel({ detail, onOpenRun }: {
   return <div className="object-pane active" id="object-panel-overview" role="tabpanel" aria-labelledby="object-tab-overview">
     <div className="grid4 object-state-grid">
       <State label="研究次数" value={String(detail.runCount)} />
-      <State label="已发布结果" value={availabilityLabel(availability.status)} tone={availabilityColor(availability.status)} />
+      <State label="已发布结果" value={objectReleaseSummary(detail)} tone={availabilityColor(availability.status)} />
       <State label="公司代码" value={object.symbol} />
       <State label="计价货币" value={object.currency} />
     </div>
@@ -125,7 +126,7 @@ function OverviewPanel({ detail, onOpenRun }: {
               <code>{detail.latestReleasedRunId}</code>
               <button type="button" className="btn ghost sm" onClick={() => onOpenRun(detail.latestReleasedRunId!, object.objectId)}>打开已发布 Run →</button>
             </div>
-          : <div className="runtime-unavailable" role="status"><strong>尚无已发布 Research Run</strong><span>完成研究后将在这里显示。</span></div>}
+          : <div className="runtime-unavailable" role="status"><strong>{objectReleaseSummary(detail)}</strong><span>{availability.reasonCode === "NO_RELEASED_RUN" ? "完成研究后将在这里显示。" : "未确定最新已发布 Run；不会猜测或替换其他 Run。"}</span></div>}
       </div>
     </div>
 
@@ -137,7 +138,7 @@ function OverviewPanel({ detail, onOpenRun }: {
             <Identity label="时间" value={formatTimestamp(detail.lastActivity.timestamp)} />
             <Identity label="层级" value={detail.lastActivity.taskId === null ? "Research Run" : "Research Task"} />
           </dl>
-        : <div className="empty-state" role="status">尚无该对象的 Run 活动。</div>}
+        : <div className="empty-state" role="status">{missingObjectActivity(detail)}</div>}
     </div>
   </div>;
 }

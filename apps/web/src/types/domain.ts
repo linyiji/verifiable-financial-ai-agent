@@ -1707,9 +1707,12 @@ function decodeResearchObjectDetailAt(value: unknown, path: string): Phase4Resea
     updatedAt: decodeRfc3339Utc(field(input, "updated_at", path), `${path}.updated_at`)
   };
   const releasePairCloses = detail.latestReleasedRunId === null
-    ? detail.releasedResultAvailability.status === "NOT_RELEASED" &&
+    ? ((detail.releasedResultAvailability.status === "NOT_RELEASED" &&
       detail.releasedResultAvailability.reasonCode === "NO_RELEASED_RUN" &&
-      detail.releasedResultAvailability.retryable === false
+      detail.releasedResultAvailability.retryable === false) ||
+      (detail.runCount > 0 && detail.releasedResultAvailability.status === "UNAVAILABLE" &&
+       detail.releasedResultAvailability.reasonCode === "RELEASED_RUN_LATEST_UNAVAILABLE" &&
+       detail.releasedResultAvailability.retryable === false))
     : detail.releasedResultAvailability.status === "AVAILABLE" &&
       detail.releasedResultAvailability.reasonCode === null &&
       detail.releasedResultAvailability.retryable === false;

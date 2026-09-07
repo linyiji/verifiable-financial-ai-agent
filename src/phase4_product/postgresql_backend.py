@@ -86,6 +86,7 @@ from src.phase4_product.contracts import (
     ReviewSummaryV1,
     RunCollectionObjectV1,
     RunLifecycleV1,
+    SafeRuntimeActivityV1,
     TerminalStateV1,
     UnavailableIncompatibleRunHistoryItemV1,
 )
@@ -129,10 +130,20 @@ from src.phase4_product.results import (
     build_report_surface,
     build_results_workspace,
 )
+from src.phase4_product.safety import UnsafeProjectionData, safe_text
 from src.runtime.events import CursorPreflight, build_cursor_preflight
 from src.runtime.state import RuntimeState
 
 _CURSOR_SIGNING_KEY = b"phase4-vs01-local-run-collection-v1"
+
+
+def _object_summary_time(value: object) -> datetime | None:
+    """Missing/naive release or activity time is unknown, never a default now."""
+    try:
+        at = datetime.fromisoformat(value) if isinstance(value, str) else value
+        return at.astimezone(UTC) if isinstance(at, datetime) and at.tzinfo else None
+    except ValueError:
+        return None
 
 
 def _unavailable_history_item(
@@ -331,7 +342,7 @@ class PostgreSQLPhase4ProductBackend:
             )
             await uow.admission.insert_object_create_commit(commit)
             await uow.commit()
-        return self._object_detail(entity, run_count=0)
+        return self._object_detail(entity, runs=(), latest_events=())
 
     async def list_objects(
         self,
@@ -355,12 +366,7 @@ class PostgreSQLPhase4ProductBackend:
                     and query.lower() not in (entity.symbol + " " + entity.company_name).lower()
                 ):
                     continue
-                count = await session.scalar(
-                    select(func.count())
-                    .select_from(ResearchRunAggregateRow)
-                    .where(ResearchRunAggregateRow.object_id == entity.object_id)
-                )
-                details.append(self._object_detail(entity, run_count=int(count or 0)))
+                details.append(await self._persisted_object_detail(session, entity))
         return ResearchObjectCollectionV1(items=tuple(details[:limit]), next_cursor=None)
 
     async def get_object(self, object_id: str) -> ResearchObjectDetailV1:
@@ -368,14 +374,45 @@ class PostgreSQLPhase4ProductBackend:
             row = await session.get(ResearchObjectRow, object_id)
             if row is None:
                 raise self._not_found("research_object", object_id)
-            count = await session.scalar(
-                select(func.count())
-                .select_from(ResearchRunAggregateRow)
-                .where(ResearchRunAggregateRow.object_id == object_id)
+            return await self._persisted_object_detail(
+                session, ResearchObject.model_validate(row.payload)
             )
-        return self._object_detail(
-            ResearchObject.model_validate(row.payload), run_count=int(count or 0)
+
+    async def _persisted_object_detail(
+        self, session: AsyncSession, entity: ResearchObject
+    ) -> ResearchObjectDetailV1:
+        runs = tuple(
+            (
+                await session.scalars(
+                    select(ResearchRunAggregateRow).where(
+                        ResearchRunAggregateRow.object_id == entity.object_id
+                    )
+                )
+            ).all()
         )
+        # Sequence orders events within a Run only; cross-Run ordering below
+        # uses persisted timestamps, never Run IDs or database return order.
+        latest = (
+            select(RuntimeEventRow.run_id, func.max(RuntimeEventRow.sequence).label("sequence"))
+            .join(ResearchRunAggregateRow, ResearchRunAggregateRow.run_id == RuntimeEventRow.run_id)
+            .where(ResearchRunAggregateRow.object_id == entity.object_id)
+            .group_by(RuntimeEventRow.run_id)
+            .subquery()
+        )
+        events = tuple(
+            (
+                await session.scalars(
+                    select(RuntimeEventRow).join(
+                        latest,
+                        (
+                            (RuntimeEventRow.run_id == latest.c.run_id)
+                            & (RuntimeEventRow.sequence == latest.c.sequence)
+                        ),
+                    )
+                )
+            ).all()
+        )
+        return self._object_detail(entity, runs=runs, latest_events=events)
 
     async def prepare_run(
         self,
@@ -1549,15 +1586,95 @@ class PostgreSQLPhase4ProductBackend:
         )
 
     @staticmethod
-    def _object_detail(entity: ResearchObject, *, run_count: int) -> ResearchObjectDetailV1:
+    def _object_detail(
+        entity: ResearchObject,
+        *,
+        runs: tuple[ResearchRunAggregateRow, ...],
+        latest_events: tuple[RuntimeEventRow, ...],
+    ) -> ResearchObjectDetailV1:
+        scoped = {row.run_id: row for row in runs if row.object_id == entity.object_id}
+        if len(scoped) != sum(row.object_id == entity.object_id for row in runs):
+            raise ProjectionIntegrityError("Object summary has duplicate Run identities")
+        releases: list[tuple[str, datetime | None]] = []
+        for row in scoped.values():
+            raw = row.payload.get("run", {})
+            if (
+                raw.get("run_id") != row.run_id
+                or raw.get("research_object_id") != entity.object_id
+                or raw.get("status") != row.status
+            ):
+                raise ProjectionIntegrityError("Object summary Run ownership/status mismatch")
+            if row.status == RunStatus.RELEASED.value:
+                result = (row.payload.get("artifacts") or {}).get("released_result")
+                if result is not None and result.get("run_id") != row.run_id:
+                    raise ProjectionIntegrityError("Object summary release belongs to another Run")
+                releases.append(
+                    (
+                        row.run_id,
+                        _object_summary_time(
+                            result.get("released_at") if result is not None else None
+                        ),
+                    )
+                )
+        latest_run_id = None
+        if releases and all(at is not None for _, at in releases):
+            newest = max(at for _, at in releases if at is not None)
+            winners = [run_id for run_id, at in releases if at == newest]
+            if len(winners) == 1:
+                latest_run_id = winners[0]
+        availability = (
+            AvailabilityV1.available()
+            if latest_run_id is not None
+            else AvailabilityV1.unavailable(
+                AvailabilityStatus.UNAVAILABLE if releases else AvailabilityStatus.NOT_RELEASED,
+                "RELEASED_RUN_LATEST_UNAVAILABLE" if releases else "NO_RELEASED_RUN",
+            )
+        )
+        activities: dict[str, SafeRuntimeActivityV1 | None] = {}
+        for row in latest_events:
+            if row.run_id not in scoped:
+                continue
+            if row.run_id in activities:
+                raise ProjectionIntegrityError("Object summary latest event is ambiguous")
+            raw = row.payload
+            if (
+                raw.get("run_id") != row.run_id
+                or raw.get("event_id") != row.event_id
+                or raw.get("sequence") != row.sequence
+            ):
+                raise ProjectionIntegrityError("Object summary activity identity mismatch")
+            at = _object_summary_time(raw.get("timestamp"))
+            try:
+                # Project only safe event identity and time; never forward a
+                # legacy aggregate's raw event payload or manufacture an event.
+                activities[row.run_id] = (
+                    None
+                    if at is None
+                    else SafeRuntimeActivityV1(
+                        event_id=safe_text(row.event_id),
+                        type=safe_text(raw.get("type")),
+                        sequence=row.sequence,
+                        timestamp=at,
+                        task_id=(
+                            safe_text(raw["task_id"]) if raw.get("task_id") is not None else None
+                        ),
+                        message_code="OBJECT_RUN_ACTIVITY",
+                    )
+                )
+            except (UnsafeProjectionData, ValidationError):
+                activities[row.run_id] = None
+        activity = None
+        if scoped and set(activities) == set(scoped) and all(activities.values()):
+            newest = max(item.timestamp for item in activities.values() if item is not None)
+            winners = [item for item in activities.values() if item and item.timestamp == newest]
+            if len(winners) == 1:
+                activity = winners[0]
         return ResearchObjectDetailV1(
             object=project_object(entity),
-            latest_released_run_id=None,
-            released_result_availability=AvailabilityV1.unavailable(
-                AvailabilityStatus.NOT_RELEASED, "NO_RELEASED_RUN"
-            ),
-            run_count=run_count,
-            last_activity=None,
+            latest_released_run_id=latest_run_id,
+            released_result_availability=availability,
+            run_count=len(scoped),
+            last_activity=activity,
             created_at=entity.created_at,
             updated_at=entity.updated_at,
         )

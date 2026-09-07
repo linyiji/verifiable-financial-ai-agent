@@ -1,4 +1,5 @@
 import type { AvailabilityStatus, Phase4ResearchObjectDetail } from "../types/domain";
+import { missingObjectActivity, objectReleaseSummary } from "./objectSummaryCopy";
 import "../styles/workspace-pages.css";
 
 export interface ResearchObjectsPageProps {
@@ -59,11 +60,11 @@ function ObjectCard({ detail, onOpen }: { readonly detail: Phase4ResearchObjectD
         <strong>{object.companyName}</strong>
         <span className="small option-sub">{object.symbol} · {object.exchange} · {object.sector ?? "行业信息暂不可用"}</span>
       </span>
-      <span className={`badge ${availabilityColor(availability.status)}`}>{availabilityLabel(availability.status)}</span>
+      <span className={`badge ${availabilityColor(availability.status)}`}>{objectReleaseSummary(detail)}</span>
     </span>
     <span className="object-metrics">
       <Metric label="研究次数" value={String(detail.runCount)} />
-      <Metric label="最近完成" value={detail.latestReleasedRunId ? "已有发布结果" : "尚未发布"} />
+      <Metric label="最近完成" value={objectReleaseSummary(detail)} />
       <Metric label="计价货币" value={object.currency} />
       <Metric label="对象状态" value="可研究" />
     </span>
@@ -73,7 +74,7 @@ function ObjectCard({ detail, onOpen }: { readonly detail: Phase4ResearchObjectD
           <strong>Research Run 状态已更新</strong>
           <span className="small">{formatTimestamp(detail.lastActivity.timestamp)}</span>
         </span>
-      : <span className="object-last-activity small">尚无 Run 活动。</span>}
+      : <span className="object-last-activity small">{missingObjectActivity(detail)}</span>}
     <span className="object-card-action">打开研究对象 →</span>
   </button>;
 }
