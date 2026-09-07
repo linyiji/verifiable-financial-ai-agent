@@ -72,6 +72,29 @@ def configured_incremental_provider(settings, *, route_id=None, mimo_authority=M
     return client
 
 
+def configured_specialist_providers(settings, *, mimo_authority=MIMO_AUTHORITY):
+    """Explicit task-profile overrides; unlisted profiles keep their existing provider."""
+    allowed = {
+        "fundamental_analysis",
+        "peer_analysis",
+        "research_news_analysis",
+        "valuation_analysis",
+        "risk_analysis",
+        "risk_follow_up",
+        "report_synthesis",
+    }
+    providers = {}
+    for profile, route in settings.specialist_provider_routes.items():
+        if profile not in allowed:
+            raise ValueError("Unknown Specialist task profile")
+        client = configured_incremental_provider(
+            settings, route_id=route, mimo_authority=mimo_authority
+        )
+        client.task_profile = profile
+        providers[profile] = client
+    return providers
+
+
 def describe_route(client):
     return ProviderRoute(
         client.route_ids[client.model_name],

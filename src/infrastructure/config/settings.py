@@ -3,7 +3,7 @@ import re
 from collections.abc import Mapping
 from functools import lru_cache
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _FMP_NUMBERED_KEY = re.compile(r"FMP_API_KEY_([1-9][0-9]*)")
@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     fmp_base_url: str = "https://financialmodelingprep.com"
     llm_provider: str = "teamorouter"
     incremental_provider_route: str = "teamorouter-sol"
+    specialist_provider_routes: dict[str, str] = Field(
+        default_factory=lambda: {
+            "peer_analysis": "mimo-direct",
+            "research_news_analysis": "mimo-direct",
+        }
+    )
     teamorouter_api_key: SecretStr | None = None
     teamorouter_base_url: str = "https://api.teamorouter.com/v1"
     teamorouter_model: str = "gpt-5.6-sol"

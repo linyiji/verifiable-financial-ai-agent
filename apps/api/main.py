@@ -18,7 +18,7 @@ from src.adapters.finrobot.professional_reporting import (
     ProfessionalReportPublisher,
 )
 from src.adapters.fmp import FinancialProviderMode, FMPProvider, select_financial_provider
-from src.adapters.llm.routes import configured_incremental_provider
+from src.adapters.llm.routes import configured_incremental_provider, configured_specialist_providers
 from src.adapters.llm.teamorouter import TeamoRouterClient
 from src.adapters.risc0 import RiscZeroProofAdapter
 from src.agentic.composition import build_research_agent_registry
@@ -81,12 +81,14 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
             )
             model_provider = TeamoRouterClient(settings.llm)
             incremental_provider = configured_incremental_provider(settings)
+            specialist_providers = configured_specialist_providers(settings)
             forbidden_values = tuple(
                 secret.get_secret_value()
                 for secret in (
                     *settings.fmp.credentials,
                     settings.llm.api_key,
                     incremental_provider._settings.api_key,
+                    *(client._settings.api_key for client in specialist_providers.values()),
                 )
                 if secret is not None
             )
@@ -96,7 +98,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 forbidden_values=forbidden_values,
             )
             research_agents = build_research_agent_registry(
-                model_provider, research_output_artifacts
+                model_provider, research_output_artifacts, profile_providers=specialist_providers
             )
             app.state.postgresql_persistence = persistence
             research_service = ResearchApplicationService(
