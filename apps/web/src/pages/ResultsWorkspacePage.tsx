@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Phase4FrontendDataSource } from "../data/FrontendDataSource";
+import { InteractiveFinancialReview } from "../components/results/InteractiveFinancialReview";
 import { InteractiveResearchReport } from "../components/results/InteractiveResearchReport";
-import { executionFocusMatches, reportBundleMatches, selectorMatches } from "../components/results/reportModel";
+import { executionFocusMatches, reportBundleMatches } from "../components/results/reportModel";
 import { RESULTS_SURFACES, parseResultsFocus, resultsPath, runPath, type ResultsFocus, type ResultsSurfaceRoute } from "../routing/resultsRoute";
 import type {
   ExecutionRecordSurfaceV1,
@@ -44,7 +45,7 @@ const SURFACE_META: Readonly<Record<ResultsSurfaceRoute, Readonly<{ label: strin
   review: {
     label: "B · 财务复核",
     eyebrow: "B · FINANCIAL REVIEW",
-    description: "查看本次 Research Run 的财务复核结论与检查总量。"
+    description: "阅读本次 Research Run 的完整财务复核包与真实异常状态。"
   },
   execution: {
     label: "C · 执行记录",
@@ -340,12 +341,18 @@ function SurfaceHost({ surface, payload, supplement, backendOrigin, focus, runId
   }
   if (surface === "review") {
     const review = payload as FinancialReviewSurfaceV1;
-    const verdict = review.verdict === "PASS" ? "复核通过" : review.verdict === "REVIEW" ? "需要复核" : "已阻断";
     const requested = focus !== null && "reviewId" in focus ? focus : null;
-    const exact = requested === null ? null : review.checks.find((check) => selectorMatches(check.selector, {
-      reviewId: requested.reviewId, checkCode: requested.checkCode, subjectRefs: requested.subjectRefs
-    })) ?? null;
-    return <div className="result-product-host" data-testid="review-product-host"><div className="result-host-copy"><span>复核结论</span><h3>{verdict}</h3><p>{exact === null ? "选择报告中的可复核指标，可定位到精确 scoped selector。" : "已从报告定位到同一 Released Run 的精确复核检查。"}</p>{exact !== null && <div className="focus-receipt" data-testid="review-exact-focus"><span>{exact.selector.checkCode} · {exact.status}</span><code>{exact.selector.reviewId}</code>{exact.selector.subjectRefs.map((ref) => <code key={ref}>{ref}</code>)}</div>}{requested !== null && exact === null && <div className="focus-receipt invalid">请求的复核定位与此 Run 不匹配；未展示近似结果。</div>}</div><div className="result-host-facts single"><div><span>检查总量</span><strong>{review.checks.length}</strong></div></div>{requested?.returnAnchor && <button type="button" className="btn" onClick={() => onNavigate(resultsPath(runId, "report", { anchor: requested.returnAnchor! }))}>返回报告位置</button>}</div>;
+    return <InteractiveFinancialReview
+      review={review}
+      context="results"
+      requestedSelector={requested === null ? null : {
+        reviewId: requested.reviewId,
+        checkCode: requested.checkCode,
+        subjectRefs: requested.subjectRefs
+      }}
+      returnAnchor={requested?.returnAnchor ?? null}
+      onOpenReport={(anchor) => onNavigate(resultsPath(runId, "report", { anchor }))}
+    />;
   }
   const execution = payload as ExecutionRecordSurfaceV1;
   const eventCount = execution.actors.reduce((total, actor) => total + actor.eventCount, 0);

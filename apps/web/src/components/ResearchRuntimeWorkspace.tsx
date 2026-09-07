@@ -1,7 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { Phase4FrontendDataSource } from "../data/FrontendDataSource";
 import { researchPlanLabel } from "../pages/NewResearchTaskPage";
+import { resultsPath } from "../routing/resultsRoute";
 import { PHASE4_RUN_STATUS_META } from "../state/status";
-import type { ConnectionState, RunProjection } from "../types/domain";
+import type { ConnectionState, FinancialReviewSurfaceV1, RunProjection } from "../types/domain";
+import { InteractiveFinancialReview } from "./results/InteractiveFinancialReview";
+import { reviewGateSatisfied } from "./results/reviewModel";
 import { ResearchPath } from "./research-path/ResearchPath";
 import { TaskDetailDrawer } from "./tasks/TaskDetailDrawer";
 
@@ -26,9 +30,11 @@ export interface ProjectionLifecycle {
 
 export interface ResearchRuntimeWorkspaceProps {
   readonly projection: RunProjection;
+  readonly source: Phase4FrontendDataSource;
   readonly connection: ConnectionState;
   readonly lifecycle: ProjectionLifecycle | null;
   readonly onOpenResults: () => void;
+  readonly onNavigate: (path: string) => void;
 }
 
 type WorkspaceStage = "plan" | "research" | "review" | "report" | "complete";
@@ -52,7 +58,7 @@ const STAGES: readonly { id: WorkspaceStage; number: string; label: string }[] =
   { id: "complete", number: "05", label: "完成" }
 ];
 
-function stageState(projection: RunProjection, stage: WorkspaceStage): StageState {
+export function stageState(projection: RunProjection, stage: WorkspaceStage, reviewSurface: FinancialReviewSurfaceV1 | null = null): StageState {
   const hasEvent = (type: string) => projection.activity.some((event) => event.type === type);
   const planDone = hasEvent("plan.generated") || projection.plannedGraph.tasks.length > 0;
   const researchStarted = hasEvent("run.started")
@@ -60,11 +66,7 @@ function stageState(projection: RunProjection, stage: WorkspaceStage): StageStat
     || projection.run.backendStatus === "RUNNING"
     || projection.run.stage === "RESEARCH";
   const reviewStarted = hasEvent("review.started") || hasEvent("review.resolved") || projection.review.reviewId !== null;
-  const reviewDone = (
-    hasEvent("review.resolved") && projection.review.status === "PASS"
-  ) || (
-    projection.review.availability.status === "AVAILABLE" && projection.review.status === "PASS"
-  );
+  const reviewDone = reviewGateSatisfied(projection, reviewSurface);
   const reportDone = hasEvent("release.completed")
     && projection.artifacts.availability.status === "AVAILABLE"
     && projection.artifacts.reportId !== null
@@ -86,7 +88,7 @@ function stageState(projection: RunProjection, stage: WorkspaceStage): StageStat
     return reviewStarted ? "current" : "pending";
   }
   if (stage === "report") {
-    if (reportDone || completeDone) return "done";
+    if ((reportDone || completeDone) && reviewDone) return "done";
     return reviewDone && !projection.terminal.isTerminal ? "current" : "pending";
   }
   return completeDone ? "done" : "pending";
@@ -99,12 +101,35 @@ function stageStateLabel(state: StageState, selected: boolean): string {
   return "等待中";
 }
 
-export function ResearchRuntimeWorkspace({ projection, connection, lifecycle, onOpenResults }: ResearchRuntimeWorkspaceProps) {
+export function ResearchRuntimeWorkspace({ projection, source, connection, lifecycle, onOpenResults, onNavigate }: ResearchRuntimeWorkspaceProps) {
   const [selectedStage, setSelectedStage] = useState<WorkspaceStage>("research");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [reviewSurface, setReviewSurface] = useState<FinancialReviewSurfaceV1 | null>(null);
+  const [reviewLoadState, setReviewLoadState] = useState<"IDLE" | "LOADING" | "READY" | "ERROR">("IDLE");
   const runId = projection.run.runId;
   const status = PHASE4_RUN_STATUS_META[projection.run.status];
   const stale = connection.kind === "BACKOFF" || connection.kind === "RECOVERING";
+
+  useEffect(() => {
+    if (selectedStage !== "review" || projection.review.availability.status !== "AVAILABLE") return;
+    const controller = new AbortController();
+    let current = true;
+    setReviewLoadState("LOADING");
+    setReviewSurface(null);
+    void source.getFinancialReviewSurface(runId, projection.object.objectId, { signal: controller.signal })
+      .then((review) => {
+        if (!current) return;
+        setReviewSurface(review);
+        setReviewLoadState("READY");
+      })
+      .catch(() => {
+        if (current) setReviewLoadState("ERROR");
+      });
+    return () => {
+      current = false;
+      controller.abort();
+    };
+  }, [selectedStage, source, runId, projection.object.objectId, projection.review.availability.status]);
 
   return <section
     className="workspace-main runtime-workspace"
@@ -167,7 +192,7 @@ export function ResearchRuntimeWorkspace({ projection, connection, lifecycle, on
 
     <ol className="run-lifecycle" aria-label="Research Run 生命周期">
       {STAGES.map((stage) => {
-        const state = stageState(projection, stage.id);
+        const state = stageState(projection, stage.id, reviewSurface);
         const selected = selectedStage === stage.id;
         return <li key={stage.id} className={`${state} ${selected ? "selected" : ""}`}>
           <button
@@ -188,33 +213,42 @@ export function ResearchRuntimeWorkspace({ projection, connection, lifecycle, on
       <div className="lifecycle-surface-head"><div><span>02 · AI研究</span><h2 id="ai-research-heading">研究路径 · Research Path</h2><p>对照初始计划与实际执行路径，查看本次研究如何完成调整。</p></div><span className="badge green">{projection.tasks.length} Tasks</span></div>
       <ResearchPath projection={projection} onOpenTask={(task) => setSelectedTaskId(task.taskId)} />
     </section>}
-    {selectedStage === "review" && <DeferredDetailSurface number="03" title="质量复核" state={stageState(projection, "review")} />}
-    {selectedStage === "report" && <DeferredDetailSurface number="04" title="报告生成" state={stageState(projection, "report")} />}
+    {selectedStage === "review" && <ReviewStageSurface projection={projection} review={reviewSurface} loadState={reviewLoadState} onNavigate={onNavigate} />}
+    {selectedStage === "report" && <ReportStageSurface projection={projection} review={reviewSurface} />}
     {selectedStage === "complete" && <CompleteSurface projection={projection} />}
 
     <TaskDetailDrawer projection={projection} taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
   </section>;
 }
 
-function DeferredDetailSurface({ number, title, state }: {
-  readonly number: string;
-  readonly title: string;
-  readonly state: StageState;
+function ReviewStageSurface({ projection, review, loadState, onNavigate }: {
+  readonly projection: RunProjection;
+  readonly review: FinancialReviewSurfaceV1 | null;
+  readonly loadState: "IDLE" | "LOADING" | "READY" | "ERROR";
+  readonly onNavigate: (path: string) => void;
 }) {
-  const completed = state === "done";
-  return <section className="card lifecycle-surface deferred-detail-surface" aria-labelledby={`deferred-${number}`}>
+  return <section className="card lifecycle-surface review-stage-surface" aria-labelledby="run-review-heading" data-testid="run-stage-03-review">
     <div className="lifecycle-surface-head">
       <div>
-        <span>{number} · {title}</span>
-        <h2 id={`deferred-${number}`}>{completed ? `${title}已完成` : `${title}正在进行`}</h2>
-        <p>{completed ? "权威 Run 投影确认此业务阶段已经完成。" : "权威 Run 投影显示此业务阶段正在进行。"}</p>
+        <span>03 · 质量复核</span>
+        <h2 id="run-review-heading">Run 过程中的财务复核</h2>
+        <p>与结果工作区 B 使用同一 FinancialReviewSurface 权威投影。</p>
       </div>
-      <span className={`badge ${completed ? "green" : "blue"}`}>{completed ? "已完成" : "进行中"}</span>
+      <span className={`badge ${reviewGateSatisfied(projection, review) ? "green" : "amber"}`}>{reviewGateSatisfied(projection, review) ? "Review Gate 已满足" : "Review Gate 未满足"}</span>
     </div>
-    <div className="runtime-unavailable" role="status">
-      <strong>详细内容将在后续产品阶段提供</strong>
-      <span>当前仅呈现生命周期事实，不推测或提前展示尚未接入的明细。</span>
-    </div>
+    {projection.review.availability.status !== "AVAILABLE" && <div className="runtime-unavailable" role="status"><strong>复核包尚未可用</strong><span>Stage 03 不会把缺失的 Review 解释为 PASS；报告发布门槛保持未满足。</span></div>}
+    {projection.review.availability.status === "AVAILABLE" && (loadState === "IDLE" || loadState === "LOADING") && <div className="result-surface-state" role="status"><div className="spinner" aria-hidden="true" /><span>正在载入权威复核包…</span></div>}
+    {loadState === "ERROR" && <div className="runtime-unavailable" role="alert"><strong>复核明细暂时无法载入</strong><span>未改用其他 Run 或本地演示数据。</span></div>}
+    {review !== null && <InteractiveFinancialReview review={review} context="run" onOpenReport={() => onNavigate(resultsPath(projection.run.runId, "report"))} />}
+  </section>;
+}
+
+function ReportStageSurface({ projection, review }: { readonly projection: RunProjection; readonly review: FinancialReviewSurfaceV1 | null }) {
+  const gate = reviewGateSatisfied(projection, review);
+  const reportAvailable = projection.artifacts.availability.status === "AVAILABLE" && projection.artifacts.reportId !== null;
+  return <section className="card lifecycle-surface deferred-detail-surface" aria-labelledby="report-stage-heading" data-review-gate={gate ? "satisfied" : "unsatisfied"}>
+    <div className="lifecycle-surface-head"><div><span>04 · 报告生成</span><h2 id="report-stage-heading">{gate ? "复核门槛已满足" : "等待复核门槛"}</h2><p>{gate ? "权威 Review 已 READY 且结论为 PASS，报告生成阶段可以完成。" : "Review 尚未形成可验证 PASS；即使报告对象存在，也不宣称发布门槛已通过。"}</p></div><span className={`badge ${gate && reportAvailable ? "green" : "amber"}`}>{gate && reportAvailable ? "已完成" : "等待中"}</span></div>
+    <div className={`review-gate-flow ${gate ? "satisfied" : "blocked"}`}><span>03 财务复核</span><b>→</b><strong>{gate ? "Review Gate satisfied" : "Review Gate not satisfied"}</strong><b>→</b><span>04 报告生成</span></div>
   </section>;
 }
 

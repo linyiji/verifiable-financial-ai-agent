@@ -476,9 +476,11 @@ export function Phase4Application() {
       {quarantine && <div className="alert" data-testid="identity-quarantine" data-reason={quarantine}>请求的 Task 不属于当前 Research Run，已停止显示该 Task。</div>}
       {selectedRunProjection && <ResearchRunPage
         projection={selectedRunProjection}
+        source={source}
         connection={connection ?? initialConnection(selectedRunProjection.run.runId, selectedRunProjection.projectionSequence)}
         lifecycle={lifecycle}
         onOpenResults={() => navigatePath(resultsPath(selectedRunProjection.run.runId, "report"))}
+        onNavigate={navigatePath}
       />}
       {!selectedRunProjection && !selectedRunError && <div className="card app-loading" role="status"><div className="spinner" aria-hidden="true" /><span>正在载入当前 Research Run…</span></div>}
     </div>;
