@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import {decodeResearchRunDetail, type ResearchRunDetailV1} from "../types/domain";
 
 type Authorization = {
   authorization_id: string; research_object_id: string; reexecution_of_run_id: string;
@@ -11,7 +12,7 @@ export function ReexecutionAction({runId, objectId, failed, backendOrigin, onNav
   runId: string; objectId: string; failed: boolean; backendOrigin: string;
   onNavigate: (path: string) => void;
 }) {
-  const [detail, setDetail] = useState<{base_run_id?: string; reexecution_of_run_id?: string} | null>(null);
+  const [detail, setDetail] = useState<ResearchRunDetailV1 | null>(null);
   const [authorization, setAuthorization] = useState<Authorization | null>(null);
   const [stopped, setStopped] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -20,9 +21,9 @@ export function ReexecutionAction({runId, objectId, failed, backendOrigin, onNav
   useEffect(() => {
     const controller = new AbortController();
     fetch(`${backendOrigin}/api/research-runs/${encodeURIComponent(runId)}`, {headers, signal: controller.signal})
-      .then(async response => response.ok ? response.json() : null).then(setDetail).catch(() => {});
+      .then(async response => response.ok ? decodeResearchRunDetail(await response.json(), runId, objectId) : null).then(setDetail).catch(() => {});
     return () => controller.abort();
-  }, [runId, backendOrigin]);
+  }, [runId, objectId, backendOrigin]);
   const act = async () => {
     if (locked.current || stopped) return;
     if (authorization && Date.now() >= Date.parse(authorization.expires_at)) {setStopped(true); return;}
@@ -52,9 +53,15 @@ export function ReexecutionAction({runId, objectId, failed, backendOrigin, onNav
     } catch { setStopped(true); }
     finally { setBusy(false); }
   };
-  if (!detail?.base_run_id) return null;
+  if (!detail?.baseRunId) return null;
   return <section className="card pad" aria-label="重新执行研究">
-    {detail.reexecution_of_run_id && <p>这是沿用同一研究方案的新执行记录。<a href={`/runs/${encodeURIComponent(detail.reexecution_of_run_id)}`}>查看上次失败执行</a></p>}
+    <p>知识基线：<a href={`/runs/${encodeURIComponent(detail.baseRunId)}`}>查看历史已发布研究</a> · 沿用同一已确认研究方案</p>
+    <details><summary>研究方案与执行来源</summary>
+      <p>研究方案：{detail.schemeId}</p><p>知识基线：{detail.baseRunId}</p>
+      <p>基线研究视图：{detail.baseResearchViewVersion}</p>
+      {!detail.reexecutionOfRunId && <p>首次执行：无先前执行记录</p>}
+    </details>
+    {detail.reexecutionOfRunId && <p>这是沿用同一研究方案的新执行记录。<a href={`/runs/${encodeURIComponent(detail.reexecutionOfRunId)}`}>查看上次失败执行</a></p>}
     {failed && <>
       <p>本次执行失败。重新执行将沿用同一研究方案和知识基线，创建新的执行记录；历史失败记录不会修改。</p>
       {authorization && <p>授权已保存。确认后将生成新的执行任务图，不重新生成研究方案。授权截止：{new Date(authorization.expires_at).toLocaleString()}</p>}

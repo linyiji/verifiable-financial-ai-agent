@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import test from "node:test";
 import {rolldown} from "rolldown";
+import {projectionWire} from "./product-contract-fixtures.mjs";
 
 const bundle = await rolldown({input:new URL("../src/components/ReexecutionAction.tsx", import.meta.url).pathname,
   external:["react","react/jsx-runtime"]});
@@ -16,6 +17,9 @@ function fixture({fail = false, mismatch = false, expired = false, failed = true
   const auth = {authorization_id:"AUTH-X", research_object_id:"OBJ-X", reexecution_of_run_id:"RUN-FAILED",
     scheme_id:"SCHEME-SAME", scheme_hash:"sha256:"+"a".repeat(64), base_run_id:"RUN-BASE",
     base_research_view_version:"VIEW-BASE", expires_at: new Date(Date.now() + (expired ? -1000 : 30000)).toISOString()};
+  const detail = {...projectionWire().run, run_id:"RUN-FAILED", research_object_id:"OBJ-X",
+    terminal:false, projection_revision:1, projection_sequence:2,
+    base_run_id:"RUN-BASE",base_research_view_version:"VIEW-BASE",reexecution_of_run_id:"RUN-EARLIER"};
   const react = {
     useState(initial) {const index = stateIndex++; if (!(index in states)) states[index] = initial; return [states[index], value => {states[index] = value;}];},
     useRef(initial) {const index = refIndex++; return refs[index] ??= {current: initial};},
@@ -25,9 +29,9 @@ function fixture({fail = false, mismatch = false, expired = false, failed = true
   const jsx = (type, props) => ({type, props});
   const module = {exports};
   vm.runInNewContext(source, {exports, module, require: name => name === "react" ? react : {jsx, jsxs:jsx, Fragment:"fragment"},
-    AbortController, Date, crypto, encodeURIComponent, fetch: async (url, options) => {
+    AbortController, Date, Object, crypto, encodeURIComponent, fetch: async (url, options) => {
       calls.push({url, options});
-      if (!options.method) return {ok:true, json:async()=>({base_run_id:"RUN-BASE",reexecution_of_run_id:"RUN-EARLIER"})};
+      if (!options.method) return {ok:true, json:async()=>detail};
       if (fail) return {ok:false};
       return {ok:true, json:async()=>url.endsWith("reexecute")
         ? {...auth,run_id:mismatch ? "RUN-FAILED" : "RUN-NEW"} : auth};
@@ -59,7 +63,7 @@ test("two explicit actions retain intent; no prepare; new Run navigation", async
   assert.deepEqual(JSON.parse(posts[1].options.body),{research_object_id:"OBJ-X",authorization_id:"AUTH-X"});
   assert.ok(posts.every(c=>c.options.headers["Idempotency-Key"]));
   assert.deepEqual(f.navigation,["/runs/RUN-NEW"]);
-  assert.ok(nodes(f.render(),"a")[0].props.href.endsWith("RUN-EARLIER"));
+  assert.ok(nodes(f.render(),"a").some(a=>a.props.href.endsWith("RUN-EARLIER")));
 });
 test("double click sends one authorization", async()=>{
   const f=fixture();f.render();await settle();const button=nodes(f.render(),"button")[0];
@@ -84,5 +88,5 @@ test("expired authorization disables execution", async()=>{
 });
 test("nonfailed execution shows lineage but no reexecute action", async()=>{
   const f=fixture({failed:false});f.render();await settle();assert.equal(nodes(f.render(),"button").length,0);
-  assert.equal(nodes(f.render(),"a").length,1);
+  assert.equal(nodes(f.render(),"a").length,2);
 });

@@ -383,7 +383,13 @@ export interface GlobalRunCollectionProjection {
   readonly nextCursor: string | null;
 }
 
-export interface ResearchRunDetailV1 {
+export interface RunLineage {
+  readonly baseRunId?: string | null;
+  readonly baseResearchViewVersion?: string | null;
+  readonly reexecutionOfRunId?: string | null;
+}
+
+export interface ResearchRunDetailV1 extends RunLineage {
   readonly runId: string;
   readonly researchObjectId: string;
   readonly goalId: string;
@@ -404,7 +410,7 @@ export interface ResearchRunDetailV1 {
   readonly projectionSequence: number;
 }
 
-/** Frozen 14-field Run record embedded in an atomic Run projection. */
+/** Closed Run record with explicit optional knowledge/execution lineage. */
 export type EmbeddedResearchRunV1 = Omit<
   ResearchRunDetailV1,
   "projectionRevision" | "projectionSequence"
@@ -2327,6 +2333,26 @@ export function decodeRunCollection(
   });
 }
 
+const RUN_LINEAGE_FIELDS = ["base_run_id", "base_research_view_version", "reexecution_of_run_id"] as const;
+
+function decodeRunLineage(input: Record<string, unknown>, path: string): RunLineage {
+  const optionalId = (key: typeof RUN_LINEAGE_FIELDS[number]) => Object.hasOwn(input, key)
+    ? decodeNullableOpaqueId(input[key], `${path}.${key}`) : undefined;
+  const baseRunId = optionalId("base_run_id");
+  const baseResearchViewVersion = optionalId("base_research_view_version");
+  const reexecutionOfRunId = optionalId("reexecution_of_run_id");
+  if ((baseRunId != null) !== (baseResearchViewVersion != null)) return fail(path, "knowledge base identities must be paired");
+  if (baseRunId != null && baseRunId === input.run_id) return fail(path, "Run cannot be its own knowledge base");
+  if (reexecutionOfRunId != null && (baseRunId == null || reexecutionOfRunId === input.run_id || reexecutionOfRunId === baseRunId)) {
+    return fail(path, "execution predecessor must be distinct from Run and knowledge base");
+  }
+  return {
+    ...(baseRunId !== undefined ? {baseRunId} : {}),
+    ...(baseResearchViewVersion !== undefined ? {baseResearchViewVersion} : {}),
+    ...(reexecutionOfRunId !== undefined ? {reexecutionOfRunId} : {}),
+  };
+}
+
 function decodeResearchRunDetailAt(value: unknown, path: string): ResearchRunDetailV1 {
   const input = decodeObject(value, path);
   assertOnlyKeys(
@@ -2348,7 +2374,8 @@ function decodeResearchRunDetailAt(value: unknown, path: string): ResearchRunDet
       "completed_at",
       "terminal",
       "projection_revision",
-      "projection_sequence"
+      "projection_sequence",
+      ...RUN_LINEAGE_FIELDS
     ],
     path
   );
@@ -2404,6 +2431,7 @@ function decodeResearchRunDetailAt(value: unknown, path: string): ResearchRunDet
     updatedAt,
     startedAt,
     completedAt,
+    ...decodeRunLineage(input, path),
     projectionRevision: decodeInteger(
       field(input, "projection_revision", path),
       1,
@@ -2435,7 +2463,8 @@ function decodeEmbeddedResearchRunAt(value: unknown, path: string): EmbeddedRese
       "created_at",
       "updated_at",
       "started_at",
-      "completed_at"
+      "completed_at",
+      ...RUN_LINEAGE_FIELDS
     ],
     path
   );
@@ -2493,7 +2522,8 @@ function decodeEmbeddedResearchRunAt(value: unknown, path: string): EmbeddedRese
     createdAt,
     updatedAt,
     startedAt,
-    completedAt
+    completedAt,
+    ...decodeRunLineage(input, path)
   });
 }
 
