@@ -52,16 +52,16 @@ check(component.includes("导出 HTML") && component.includes("下载 PDF · 暂
 check(!/(DOMParser|<iframe|dangerouslySetInnerHTML)/u.test(component + page), "product authority never parses or embeds HTML");
 check(metricByName(result, "Revenue Growth") === metric && claimForMetric(result, metric.metricId) === claim, "values select structured exact-run DTOs");
 
-const executionUrl = resultsPath(RUN, "execution", { actorId: ACTOR, outputId: OUTPUT, eventId: EVENT, returnAnchor: REVENUE_GROWTH_ANCHOR });
+const executionUrl = resultsPath(RUN, "execution", { runId: RUN, actorId: ACTOR, outputId: OUTPUT, eventId: EVENT, returnAnchor: REVENUE_GROWTH_ANCHOR });
 check(executionUrl.startsWith(`/runs/${RUN}/results/execution?`), "source navigation preserves exact run_id");
-const executionFocus = parseResultsFocus("execution", executionUrl.slice(executionUrl.indexOf("?")));
+const executionFocus = parseResultsFocus(RUN, "execution", executionUrl.slice(executionUrl.indexOf("?")));
 check(executionFocus?.actorId === ACTOR && executionFocus.outputId === OUTPUT && executionFocus.eventId === EVENT, "C focus carries exact actor/output/event");
 check(contributionForMetric(report, metric) === contribution && contribution.reportAnchor === "metric-revenue-growth", "Revenue Growth resolves the accepted hero contribution");
 check(exactReviewCheck(review, metric)?.selector === selector && selectorMatches(selector, { ...selector, subjectRefs: [...selector.subjectRefs] }), "Report to Review uses exact scoped selector");
 check(executionFocus?.returnAnchor === REVENUE_GROWTH_ANCHOR && component.includes("scrollIntoView"), "round-trip state restores the report anchor");
 
-const reportUrl = resultsPath(RUN, "report", { anchor: REVENUE_GROWTH_ANCHOR });
-check(parseResultsFocus("report", reportUrl.slice(reportUrl.indexOf("?")))?.anchor === REVENUE_GROWTH_ANCHOR, "refresh preserves A report focus");
+const reportUrl = resultsPath(RUN, "report", { runId: RUN, anchor: REVENUE_GROWTH_ANCHOR });
+check(parseResultsFocus(RUN, "report", reportUrl.slice(reportUrl.indexOf("?")))?.anchor === REVENUE_GROWTH_ANCHOR, "refresh preserves A report focus");
 check(!component.includes("65.47") && !component.includes("AGOUT-9ab72a67"), "report has no fixture value or identity fallback");
 check(contributionForMetric({ ...report, sourceContributions: [{ ...contribution, calculationId: "CALC-OTHER" }] }, metric) === null &&
   !reportBundleMatches(

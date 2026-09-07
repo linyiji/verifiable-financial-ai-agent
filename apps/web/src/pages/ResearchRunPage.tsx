@@ -1,5 +1,6 @@
 import { ResearchRuntimeWorkspace, type ProjectionLifecycle } from "../components/ResearchRuntimeWorkspace";
 import type { Phase4FrontendDataSource } from "../data/FrontendDataSource";
+import type { RunStageRoute } from "../routing/resultsRoute";
 import type { ConnectionState, RunProjection } from "../types/domain";
 
 export interface ResearchRunPageProps {
@@ -7,13 +8,16 @@ export interface ResearchRunPageProps {
   readonly source: Phase4FrontendDataSource;
   readonly connection: ConnectionState;
   readonly lifecycle: ProjectionLifecycle | null;
+  readonly selectedStage: RunStageRoute;
+  readonly onSelectStage: (stage: RunStageRoute) => void;
+  readonly backendOrigin: string;
   readonly onOpenResults: () => void;
   readonly onOpenExecution: () => void;
   readonly onNavigate: (path: string) => void;
 }
 
-export function ResearchRunPage({ projection, source, connection, lifecycle, onOpenResults, onOpenExecution, onNavigate }: ResearchRunPageProps) {
+export function ResearchRunPage({ projection, source, connection, lifecycle, selectedStage, onSelectStage, backendOrigin, onOpenResults, onOpenExecution, onNavigate }: ResearchRunPageProps) {
   return <section className="research-run-page" aria-label={`${projection.object.companyName} Research Run`}>
-    <ResearchRuntimeWorkspace projection={projection} source={source} connection={connection} lifecycle={lifecycle} onOpenResults={onOpenResults} onOpenExecution={onOpenExecution} onNavigate={onNavigate} />
+    <ResearchRuntimeWorkspace projection={projection} source={source} connection={connection} lifecycle={lifecycle} selectedStage={selectedStage} onSelectStage={onSelectStage} backendOrigin={backendOrigin} onOpenResults={onOpenResults} onOpenExecution={onOpenExecution} onNavigate={onNavigate} />
   </section>;
 }

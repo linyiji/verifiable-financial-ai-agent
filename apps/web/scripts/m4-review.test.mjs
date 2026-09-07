@@ -65,8 +65,8 @@ check(exceptionReviewChecks({ ...review, checks: [{ ...checks[0], status: "REVIE
 check(component.includes("输入 · INPUT") && component.includes("复核逻辑 · PROCESS") && component.includes("结果 · RESULT") && component.includes("复核结论 · VERDICT"), "I/P/R/V hierarchy is present");
 check(!/(dangerouslySetInnerHTML|JSON\.stringify\(check|observableProcess\.map|hidden reasoning)/u.test(component), "no raw dump, unsafe field, or hidden CoT exposure");
 
-const reviewUrl = resultsPath(RUN, "review", { reviewId: REVIEW, checkCode: selected.checkCode, subjectRefs: selected.subjectRefs, returnAnchor: "metric-revenue-growth" });
-const focus = parseResultsFocus("review", reviewUrl.slice(reviewUrl.indexOf("?")));
+const reviewUrl = resultsPath(RUN, "review", { runId: RUN, reviewId: REVIEW, checkCode: selected.checkCode, subjectRefs: selected.subjectRefs, returnAnchor: "metric-revenue-growth" });
+const focus = parseResultsFocus(RUN, "review", reviewUrl.slice(reviewUrl.indexOf("?")));
 check(focus?.reviewId === REVIEW && focus.subjectRefs[0] === selected.subjectRefs[0], "Report to Review preserves exact selector");
 check(focus?.returnAnchor === "metric-revenue-growth" && component.includes("查看报告位置"), "Review to Report preserves authoritative return anchor");
 check(component.includes("returnAnchor={focused === check ? returnAnchor : null}"), "report return action is limited to the exact focused check");

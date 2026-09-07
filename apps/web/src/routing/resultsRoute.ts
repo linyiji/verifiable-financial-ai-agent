@@ -8,10 +8,12 @@ export interface ParsedResultsRoute {
 }
 
 export interface ReportFocus {
+  readonly runId: string;
   readonly anchor: string;
 }
 
 export interface ReviewFocus {
+  readonly runId: string;
   readonly reviewId: string;
   readonly checkCode: string;
   readonly subjectRefs: readonly string[];
@@ -19,6 +21,7 @@ export interface ReviewFocus {
 }
 
 export interface ExecutionFocus {
+  readonly runId: string;
   readonly actorId: string;
   readonly outputId: string | null;
   readonly eventId: string | null;
@@ -32,12 +35,12 @@ const safeFocusValue = (value: string | null): string | null => {
   return value;
 };
 
-export function parseResultsFocus(surface: ResultsSurfaceRoute, search: string): ResultsFocus {
+export function parseResultsFocus(runId: string, surface: ResultsSurfaceRoute, search: string): ResultsFocus {
   const query = new URLSearchParams(search);
   const returnAnchor = safeFocusValue(query.get("return_anchor"));
   if (surface === "report") {
     const anchor = safeFocusValue(query.get("anchor"));
-    return anchor === null ? null : { anchor };
+    return anchor === null ? null : { runId, anchor };
   }
   if (surface === "review") {
     const reviewId = safeFocusValue(query.get("review"));
@@ -46,13 +49,13 @@ export function parseResultsFocus(surface: ResultsSurfaceRoute, search: string):
     if (reviewId === null || checkCode === null || subjectRefs.length === 0 || subjectRefs.some((item) => item === null)) return null;
     const refs = subjectRefs as string[];
     if (new Set(refs).size !== refs.length || refs.some((item, index) => item !== [...refs].sort()[index])) return null;
-    return { reviewId, checkCode, subjectRefs: refs, returnAnchor };
+    return { runId, reviewId, checkCode, subjectRefs: refs, returnAnchor };
   }
   const actorId = safeFocusValue(query.get("actor"));
   const outputId = safeFocusValue(query.get("output"));
   const eventId = safeFocusValue(query.get("event"));
   if (actorId === null || (outputId === null) !== (eventId === null)) return null;
-  return { actorId, outputId, eventId, returnAnchor };
+  return { runId, actorId, outputId, eventId, returnAnchor };
 }
 
 export function parseResultsRoute(pathname: string): ParsedResultsRoute | null {
@@ -73,6 +76,7 @@ export function resultsPath(
 ): string {
   const path = `/runs/${encodeURIComponent(runId)}/results/${surface}`;
   if (focus === undefined || focus === null) return path;
+  if (focus.runId !== runId) return path;
   const query = new URLSearchParams();
   if (surface === "report" && "anchor" in focus) query.set("anchor", focus.anchor);
   if (surface === "review" && "reviewId" in focus) {
@@ -93,6 +97,14 @@ export function resultsPath(
   return suffix.length === 0 ? path : `${path}?${suffix}`;
 }
 
-export function runPath(runId: string): string {
-  return `/runs/${encodeURIComponent(runId)}`;
+export const RUN_STAGES = ["plan", "research", "review", "report", "complete"] as const;
+export type RunStageRoute = typeof RUN_STAGES[number];
+
+export function parseRunStage(search: string): RunStageRoute {
+  const stage = new URLSearchParams(search).get("stage");
+  return RUN_STAGES.includes(stage as RunStageRoute) ? stage as RunStageRoute : "research";
+}
+
+export function runPath(runId: string, stage: RunStageRoute = "research"): string {
+  return `/runs/${encodeURIComponent(runId)}?stage=${stage}`;
 }

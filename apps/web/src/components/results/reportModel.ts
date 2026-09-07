@@ -28,20 +28,24 @@ export function reportBundleMatches(
 }
 
 export function metricByName(result: ReleasedResultProjectionV1, name: string): ReleasedFinancialMetricProjectionV1 | null {
-  return result.metrics.find((metric) => metric.name === name) ?? null;
+  const matches = result.metrics.filter((metric) => metric.runId === result.runId && metric.name === name);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export function claimForMetric(result: ReleasedResultProjectionV1, metricId: string) {
-  return result.claims.find((claim) => claim.metricId === metricId) ?? null;
+  const matches = result.claims.filter((claim) => claim.runId === result.runId && claim.metricId === metricId);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export function contributionForMetric(
   report: ReportSurfaceV1,
   metric: ReleasedFinancialMetricProjectionV1
 ): ReportContributionRefV1 | null {
-  return report.sourceContributions.find((item) =>
+  const matches = report.sourceContributions.filter((item) =>
+    item.runId === report.runId && item.reportId === report.reportId && item.artifactId === report.artifactId &&
     item.calculationId === metric.calculationId && item.reportAnchor === REVENUE_GROWTH_ANCHOR
-  ) ?? null;
+  );
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export function exactReviewCheck(
@@ -50,13 +54,14 @@ export function exactReviewCheck(
 ): FinancialReviewCheckV1 | null {
   const claim = metric.claimRefs[0];
   if (claim === undefined) return null;
-  return review.checks.find((check) =>
+  const matches = review.checks.filter((check) =>
     check.selector.reviewId === review.reviewId &&
     check.selector.checkCode === "FIN_CLAIM_SUPPORT" &&
     check.selector.subjectRefs.length === 2 &&
     check.selector.subjectRefs[0] === metric.calculationId &&
     check.selector.subjectRefs[1] === claim
-  ) ?? null;
+  );
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export function selectorMatches(left: ReviewCheckSelectorV1, right: ReviewCheckSelectorV1): boolean {
@@ -71,15 +76,17 @@ export function executionFocusMatches(
   outputId: string,
   eventId: string
 ) {
-  const actor = execution.actors.find((item) => item.actorId === actorId);
-  const detail = execution.actorDetails.find((item) => item.actorId === actorId);
-  if (actor === undefined || detail === undefined) return null;
-  const output = detail.outputs.find((item) => item.outputId === outputId);
-  const event = detail.observableProcess.find((item) => item.eventId === eventId);
-  const contribution = detail.reportContributions.find((item) =>
-    item.agentOutputId === outputId && item.executionEventId === eventId
+  const actors = execution.actors.filter((item) => item.runId === execution.runId && item.actorId === actorId);
+  const details = execution.actorDetails.filter((item) => item.runId === execution.runId && item.actorId === actorId);
+  if (actors.length !== 1 || details.length !== 1) return null;
+  const actor = actors[0];
+  const detail = details[0];
+  const outputs = detail.outputs.filter((item) => item.runId === execution.runId && item.outputId === outputId);
+  const events = detail.observableProcess.filter((item) => item.runId === execution.runId && item.eventId === eventId);
+  const contributions = detail.reportContributions.filter((item) =>
+    item.runId === execution.runId && item.actorId === actorId && item.agentOutputId === outputId && item.executionEventId === eventId
   );
-  return output === undefined || event === undefined || contribution === undefined
+  return outputs.length !== 1 || events.length !== 1 || contributions.length !== 1
     ? null
-    : { actor, detail, output, event, contribution };
+    : { actor, detail, output: outputs[0], event: events[0], contribution: contributions[0] };
 }

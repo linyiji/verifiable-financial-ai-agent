@@ -9,7 +9,7 @@ import { ResearchObjectsPage } from "./pages/ResearchObjectsPage";
 import { ResearchRunPage } from "./pages/ResearchRunPage";
 import { ResearchRunsPage } from "./pages/ResearchRunsPage";
 import { ResultsWorkspacePage } from "./pages/ResultsWorkspacePage";
-import { parseResultsRoute, resultsPath } from "./routing/resultsRoute";
+import { parseResultsRoute, parseRunStage, resultsPath, runPath } from "./routing/resultsRoute";
 import { SSERuntimeTransport } from "./runtime/SSERuntimeTransport";
 import {
   createRunRuntimeState,
@@ -125,6 +125,7 @@ export function Phase4Application() {
   const [error, setError] = useState<ErrorEnvelope | null>(null);
   const [quarantine, setQuarantine] = useState<string | null>(null);
   const [lifecycle, setLifecycle] = useState<ProjectionLifecycle | null>(null);
+  const [, setRouteRevision] = useState(0);
   const epoch = useRef(0);
   const activeRun = useRef<string | null>(null);
   const subscription = useRef<{ unsubscribe(): void } | null>(null);
@@ -333,7 +334,7 @@ export function Phase4Application() {
   }, [source, transport]);
 
   const navigateRun = useCallback((runId: string) => {
-    window.history.pushState({}, "", `/runs/${encodeURIComponent(runId)}`);
+    window.history.pushState({}, "", runPath(runId));
     window.dispatchEvent(new Event(ROUTE_CHANGE_EVENT));
   }, []);
 
@@ -353,6 +354,7 @@ export function Phase4Application() {
 
   useEffect(() => {
     const onRoute = () => {
+      setRouteRevision((value) => value + 1);
       const page = currentPage();
       const runId = pathRunId();
       if (page === "RUN" && runId) {
@@ -479,6 +481,9 @@ export function Phase4Application() {
         source={source}
         connection={connection ?? initialConnection(selectedRunProjection.run.runId, selectedRunProjection.projectionSequence)}
         lifecycle={lifecycle}
+        selectedStage={parseRunStage(window.location.search)}
+        onSelectStage={(stage) => navigatePath(runPath(selectedRunProjection.run.runId, stage))}
+        backendOrigin={backendOrigin}
         onOpenResults={() => navigatePath(resultsPath(selectedRunProjection.run.runId, "report"))}
         onOpenExecution={() => navigatePath(resultsPath(selectedRunProjection.run.runId, "execution"))}
         onNavigate={navigatePath}

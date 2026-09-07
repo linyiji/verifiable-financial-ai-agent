@@ -227,7 +227,7 @@ export function ResultsWorkspacePage({ source, backendOrigin, runId, surface, on
   const companyName = object.value.object.companyName;
   const symbol = object.value.object.symbol;
   const meta = SURFACE_META[surface];
-  const focus = parseResultsFocus(surface, window.location.search);
+  const focus = parseResultsFocus(runId, surface, window.location.search);
 
   return <section
     className="results-shell"
@@ -239,10 +239,10 @@ export function ResultsWorkspacePage({ source, backendOrigin, runId, surface, on
   >
     <div className="result-top">
       <div>
-        <button type="button" className="breadcrumb breadcrumb-button" onClick={() => onNavigate(runPath(runId))}>Research / Run / 研究结果</button>
+        <button type="button" className="breadcrumb breadcrumb-button" onClick={() => onNavigate(runPath(runId, "complete"))}>Research / Run / 研究结果</button>
         <div className="results-title-line"><div className="company-logo" aria-hidden="true">{symbol.slice(0, 3).toUpperCase()}</div><div><h1 id="results-title">{companyName} · 研究结果</h1><p>{symbol} · 截至 {workspace.asOf}</p></div></div>
       </div>
-      <div className="results-status"><span className="badge green"><span className="dot" />{RUN_STATUS_LABELS[workspace.runStatus]}</span><button type="button" className="btn" onClick={() => onNavigate(runPath(runId))}>返回 Research Run</button></div>
+      <div className="results-status"><span className="badge green"><span className="dot" />{RUN_STATUS_LABELS[workspace.runStatus]}</span><button type="button" className="btn" onClick={() => onNavigate(runPath(runId, "complete"))}>返回 Research Run</button></div>
     </div>
 
     <dl className="results-identity" aria-label="结果工作区身份">
@@ -318,25 +318,27 @@ function SurfaceHost({ surface, payload, supplement, backendOrigin, focus, runId
       return <div className="result-surface-state unavailable" role="alert"><strong>报告身份闭包不一致</strong><span>系统已停止组合这些结果；未尝试跨 Run 回退。</span></div>;
     }
     const requestedAnchor = focus !== null && "anchor" in focus ? focus.anchor : null;
-    const preserveReportAnchor = (anchor: string) => onReplace(resultsPath(runId, "report", { anchor }));
+    const preserveReportAnchor = (anchor: string) => onReplace(resultsPath(runId, "report", { runId, anchor }));
     return <InteractiveResearchReport report={report} result={supplement.result} artifacts={supplement.artifacts} review={supplement.review} backendOrigin={backendOrigin} requestedAnchor={requestedAnchor}
       onOpenExecution={(contribution) => {
         if (contribution.executionEventId === null) return;
         preserveReportAnchor(contribution.reportAnchor);
         onNavigate(resultsPath(runId, "execution", {
+          runId,
           actorId: contribution.actorId,
           outputId: contribution.agentOutputId,
           eventId: contribution.executionEventId,
           returnAnchor: contribution.reportAnchor
         }));
       }}
-      onOpenReview={(selector) => {
-        preserveReportAnchor(report.anchors[0]?.anchor ?? "metric-revenue-growth");
+      onOpenReview={(selector, anchor) => {
+        preserveReportAnchor(anchor);
         onNavigate(resultsPath(runId, "review", {
+          runId,
           reviewId: selector.reviewId,
           checkCode: selector.checkCode,
           subjectRefs: selector.subjectRefs,
-          returnAnchor: report.anchors[0]?.anchor ?? null
+          returnAnchor: anchor
         }));
       }} />;
   }
@@ -352,7 +354,7 @@ function SurfaceHost({ surface, payload, supplement, backendOrigin, focus, runId
         subjectRefs: requested.subjectRefs
       }}
       returnAnchor={requested?.returnAnchor ?? null}
-      onOpenReport={(anchor) => onNavigate(resultsPath(runId, "report", { anchor }))}
+      onOpenReport={(anchor) => onNavigate(resultsPath(runId, "report", { runId, anchor }))}
     />;
   }
   const execution = payload as ExecutionRecordSurfaceV1;
@@ -361,11 +363,12 @@ function SurfaceHost({ surface, payload, supplement, backendOrigin, focus, runId
     execution={execution}
     requested={requested}
     onSelectActor={(actorId) => onReplace(resultsPath(runId, "execution", {
+      runId,
       actorId,
       outputId: null,
       eventId: null,
       returnAnchor: null
     }))}
-    onOpenReport={(contribution) => onNavigate(resultsPath(runId, "report", { anchor: contribution.reportAnchor }))}
+    onOpenReport={(contribution) => onNavigate(resultsPath(runId, "report", { runId, anchor: contribution.reportAnchor }))}
   />;
 }

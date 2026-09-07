@@ -8,6 +8,7 @@
     "test:m3": "node --experimental-strip-types scripts/m3-report.test.mjs",
     "test:m4": "node --experimental-strip-types scripts/m4-review.test.mjs",
     "test:m5": "node --experimental-strip-types scripts/m5-execution.test.mjs",
+    "test:m6": "node --experimental-strip-types scripts/m6-closure.test.mjs",
     "preview": "vite"
   },
   "dependencies": {

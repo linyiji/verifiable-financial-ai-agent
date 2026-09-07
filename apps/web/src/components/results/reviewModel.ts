@@ -113,6 +113,14 @@ export function reviewGateSatisfied(projection: RunProjection, reviewSurface: Fi
   return projection.review.availability.status === "AVAILABLE" && projection.review.status === "PASS";
 }
 
+export function reviewSurfaceMatchesProjection(projection: RunProjection, review: FinancialReviewSurfaceV1): boolean {
+  return review.runId === projection.run.runId &&
+    review.objectId === projection.object.objectId &&
+    review.reviewId === projection.review.reviewId &&
+    review.releasedResultId === projection.result.releasedResultId &&
+    review.canonicalExecutionRecordId === projection.execution.canonicalRecordId;
+}
+
 export function subjectKind(ref: string): string {
   if (ref.startsWith("CALC-")) return "计算";
   if (ref.startsWith("CLAIM-")) return "结论";

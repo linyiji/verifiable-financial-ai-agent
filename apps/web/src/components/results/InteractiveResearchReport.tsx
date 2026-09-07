@@ -24,7 +24,7 @@ interface InteractiveResearchReportProps {
   readonly backendOrigin: string;
   readonly requestedAnchor: string | null;
   readonly onOpenExecution: (contribution: ReportContributionRefV1) => void;
-  readonly onOpenReview: (selector: ReviewCheckSelectorV1) => void;
+  readonly onOpenReview: (selector: ReviewCheckSelectorV1, anchor: string) => void;
 }
 
 const metricNames = {
@@ -123,7 +123,7 @@ export function InteractiveResearchReport({
     </nav>
 
     <section id={REVENUE_GROWTH_ANCHOR} className={`report-section ${anchorIsAuthoritative ? "report-focus" : ""}`} data-testid="revenue-growth-section">
-      <div className="report-section-heading"><div><span>01 · FINANCIAL ANALYSIS</span><h3>Revenue, profitability & cash generation</h3></div>{heroReview !== null && <button type="button" className="report-review-link" data-testid="report-to-review" onClick={() => onOpenReview(heroReview.selector)}>查看金融复核 →</button>}</div>
+      <div className="report-section-heading"><div><span>01 · FINANCIAL ANALYSIS</span><h3>Revenue, profitability & cash generation</h3></div>{heroReview !== null && <button type="button" className="report-review-link" data-testid="report-to-review" onClick={() => onOpenReview(heroReview.selector, REVENUE_GROWTH_ANCHOR)}>查看金融复核 →</button>}</div>
       <div className="report-financial-grid">
         {[revenue, ebitda, fcf].map((metric) => metric === null ? null : <button key={metric.metricId} type="button" className={`report-financial-row ${metric === revenue && heroContribution !== null ? "interactive" : ""}`} onClick={metric === revenue ? openExecution : undefined}>
           <span><strong>{metric.name}</strong><small>{metric.period} · as of {metric.asOf}</small></span><b>{shown(metric)}</b><em>{metric.proof.status}</em>

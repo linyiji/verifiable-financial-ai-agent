@@ -93,14 +93,14 @@ check(exactExecutionTarget({ ...execution, actorDetails: [{ ...fundamentalDetail
 check(exactExecutionActor({ ...execution, actors: [...actors, actors[1]] }, ACTOR) === null, "duplicate actor identity fails closed");
 check(executionRecordCards({ ...fundamentalDetail, reportContributions: [] })[0].contribution === null, "missing report contribution is not fabricated");
 
-const focusUrl = resultsPath(RUN, "execution", { actorId: ACTOR, outputId: OUTPUT, eventId: EVENT, returnAnchor: ANCHOR });
-const focus = parseResultsFocus("execution", focusUrl.slice(focusUrl.indexOf("?")));
+const focusUrl = resultsPath(RUN, "execution", { runId: RUN, actorId: ACTOR, outputId: OUTPUT, eventId: EVENT, returnAnchor: ANCHOR });
+const focus = parseResultsFocus(RUN, "execution", focusUrl.slice(focusUrl.indexOf("?")));
 check(focus?.actorId === ACTOR && focus.outputId === OUTPUT && focus.eventId === EVENT, "Report-to-Execution preserves exact hero identity");
 check(focus?.returnAnchor === ANCHOR, "exact A-to-C handoff preserves return context");
-const actorUrl = resultsPath(RUN, "execution", { actorId: "risk_analyst", outputId: null, eventId: null, returnAnchor: null });
-const actorFocus = parseResultsFocus("execution", actorUrl.slice(actorUrl.indexOf("?")));
+const actorUrl = resultsPath(RUN, "execution", { runId: RUN, actorId: "risk_analyst", outputId: null, eventId: null, returnAnchor: null });
+const actorFocus = parseResultsFocus(RUN, "execution", actorUrl.slice(actorUrl.indexOf("?")));
 check(actorFocus?.actorId === "risk_analyst" && actorFocus.outputId === null && actorFocus.eventId === null, "actor selection is refresh-stable without invented output identity");
-check(parseResultsFocus("execution", "?actor=x&output=y") === null, "partial output/event focus is rejected");
+check(parseResultsFocus(RUN, "execution", "?actor=x&output=y") === null, "partial output/event focus is rejected");
 check(filterExecutionActors(groups, "fundamental")[0].actors[0].actorId === ACTOR, "actor filter uses real identity fields");
 check(observableExecutionRows(execution).length === 2, "secondary records project only available public detail");
 check(observableExecutionRows({ ...execution, actorDetails: [...execution.actorDetails, { ...leadDetail, runId: "RUN-OTHER" }] }).length === 2, "secondary records reject foreign-run detail");
