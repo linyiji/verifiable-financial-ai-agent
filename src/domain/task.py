@@ -17,7 +17,7 @@ class Task(TimestampedModel):
     parent_task_id: str | None = None
     task_type: str
     goal: str
-    assigned_agent: str
+    assigned_agent: str = Field(description="Canonical runtime Agent ID, not a display name")
     skill_id: str
     dependencies: list[str] = Field(default_factory=list)
     origin: TaskOrigin = TaskOrigin.PLAN

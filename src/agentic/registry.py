@@ -35,6 +35,24 @@ class AgentRegistry:
     def registered_ids(self) -> tuple[str, ...]:
         return tuple(self._agents)
 
+    def planning_descriptors(self) -> list[dict]:
+        from src.agentic.runtime_bindings import NATIVE_PLANNING_TASK_TYPES, SKILL_TASK_TYPES
+
+        return [
+            {
+                "agent_id": agent.agent_id,
+                "display_name": getattr(agent, "display_name", agent.agent_id),
+                "supported_task_profiles": sorted(agent.supported_task_types),
+                "native_task_profiles": sorted(NATIVE_PLANNING_TASK_TYPES),
+                "planning_skills": sorted(
+                    skill
+                    for skill, profiles in SKILL_TASK_TYPES.items()
+                    if profiles & (agent.supported_task_types | NATIVE_PLANNING_TASK_TYPES)
+                ),
+            }
+            for agent in self._agents.values()
+        ]
+
 
 class SkillRegistry:
     def __init__(self) -> None:

@@ -878,7 +878,9 @@ class IntegratedTaskExecutor:
         return getattr(self, f"_execute_{task.task_type}", self._execute_generic)
 
     def _should_acquire_evidence(self, task: Task) -> bool:
-        if task.task_type == "evidence_collection":
+        from src.agentic.runtime_bindings import NATIVE_PLANNING_TASK_TYPES
+
+        if task.task_type in NATIVE_PLANNING_TASK_TYPES:
             return True
         return not self._has_specialized_collection_tasks and task.task_type in {
             "peer_analysis",

@@ -21,12 +21,11 @@ from src.adapters.fmp import FinancialProviderMode, FMPProvider, select_financia
 from src.adapters.llm.routes import configured_incremental_provider
 from src.adapters.llm.teamorouter import TeamoRouterClient
 from src.adapters.risc0 import RiscZeroProofAdapter
-from src.agentic import AgentRegistry
+from src.agentic.composition import build_research_agent_registry
 from src.agentic.llm_integration import (
     PlannerProviderResearchLeadPlanner,
     PlannerProviderSchemeGenerator,
 )
-from src.agentic.research_agent import LLMResearchAgent
 from src.agentic.research_output_artifacts import ResearchAgentOutputArtifactStore
 from src.application.errors import ApplicationError
 from src.application.evidence_collection import LiveFMPEvidenceCollector
@@ -96,26 +95,9 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 Path(settings.artifact_root) / "phase4-agent-outputs",
                 forbidden_values=forbidden_values,
             )
-            research_agents = AgentRegistry()
-            for agent_id, task_types in (
-                ("fundamental_analyst", frozenset({"fundamental_analysis"})),
-                ("peer_analyst", frozenset({"peer_analysis"})),
-                (
-                    "research_news_analyst",
-                    frozenset({"research_news_analysis"}),
-                ),
-                ("valuation_analyst", frozenset({"valuation_analysis"})),
-                ("risk_analyst", frozenset({"risk_analysis", "risk_follow_up"})),
-                ("research_lead", frozenset({"report_synthesis"})),
-            ):
-                research_agents.register(
-                    LLMResearchAgent(
-                        agent_id=agent_id,
-                        supported_task_types=task_types,
-                        provider=model_provider,
-                        artifacts=research_output_artifacts,
-                    )
-                )
+            research_agents = build_research_agent_registry(
+                model_provider, research_output_artifacts
+            )
             app.state.postgresql_persistence = persistence
             research_service = ResearchApplicationService(
                 repository=persistence.application_repository,
@@ -146,7 +128,12 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 sessions=persistence.sessions,
                 service=research_service,
                 incremental_scheme_generator=PlannerProviderSchemeGenerator(incremental_provider),
-                incremental_planner=PlannerProviderResearchLeadPlanner(incremental_provider),
+                incremental_planner=PlannerProviderResearchLeadPlanner(
+                    incremental_provider,
+                    max_validation_attempts=1,
+                    fail_closed=True,
+                    agent_registry=research_agents,
+                ),
             )
             generated = GeneratedCapabilityOrchestrator(
                 registry=ScopedCapabilityRegistry(research_service.capability_registry),

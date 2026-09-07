@@ -287,9 +287,12 @@ async def test_incremental_prepare_confirm_persists_exact_new_run_and_replay(dat
     proposal["incremental_decisions"] = [dict(source_identity=d.source_identity,
         decision=d.decision, reason=d.reason) for d in context.decisions]
     provider = FakeProvider([proposal, valid_graph()])
+    from src.agentic.composition import build_research_agent_registry
+
+    registry = build_research_agent_registry(provider, None)
     backend = PostgreSQLPhase4ProductBackend(
         sessions=sessions,
-        service=ResearchApplicationService(),
+        service=ResearchApplicationService(agent_registry=registry),
         incremental_scheme_generator=PlannerProviderSchemeGenerator(provider),
         incremental_planner=PlannerProviderResearchLeadPlanner(provider),
     )

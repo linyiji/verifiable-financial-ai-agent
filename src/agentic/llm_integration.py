@@ -89,7 +89,10 @@ class PlannedTaskProposal(_StrictModel):
         "quality_review",
     ]
     goal: str = Field(min_length=1)
-    assigned_agent: str = Field(min_length=1)
+    assigned_agent: str = Field(
+        min_length=1,
+        description="Exact canonical runtime agent_id; never a display name or role label",
+    )
     skill_id: SchemeSkillRequirement
     dependency_keys: list[str] = Field(default_factory=list)
 
@@ -216,23 +219,32 @@ class PlannerProviderSchemeGenerator:
             except StructuredOutputError as exc:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
-                failure_stage = (PlanningFailureStage.DECODER_PARSER
-                    if exc.failure_classification == LLMFailureClassification.INVALID_PROVIDER_RESPONSE
-                    else PlanningFailureStage.STRUCTURED_OUTPUT_SCHEMA)
+                failure_stage = (
+                    PlanningFailureStage.DECODER_PARSER
+                    if exc.failure_classification
+                    == LLMFailureClassification.INVALID_PROVIDER_RESPONSE
+                    else PlanningFailureStage.STRUCTURED_OUTPUT_SCHEMA
+                )
                 messages = _with_validation_retry(messages, type(exc).__name__)
             except ValueError as exc:
                 last_error = exc
-                messages = _with_validation_retry(messages, type(exc).__name__,
-                    detail=failure_stage.value if incremental_context is not None else str(exc))
+                messages = _with_validation_retry(
+                    messages,
+                    type(exc).__name__,
+                    detail=failure_stage.value if incremental_context is not None else str(exc),
+                )
             except LLMProviderError as exc:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
                 break
         if incremental_context is not None:
-            raise IncrementalSchemeFailure(failure_stage,
+            raise IncrementalSchemeFailure(
+                failure_stage,
                 provider_failure=last_error.failure_classification
-                    if isinstance(last_error, LLMProviderError) else None,
-                attempted_count=len(attempted_models)) from None
+                if isinstance(last_error, LLMProviderError)
+                else None,
+                attempted_count=len(attempted_models),
+            ) from None
         fallback = await self._fallback.generate(research_object=research_object, goal=goal)
         classification = _failure_classification(last_error)
         decision = StructuredAgentDecision(
@@ -296,6 +308,8 @@ class PlannerProviderResearchLeadPlanner:
         *,
         max_validation_attempts: int = 2,
         fallback: ResearchLeadPlanner | None = None,
+        fail_closed: bool = False,
+        agent_registry=None,
     ) -> None:
         if max_validation_attempts < 1:
             raise ValueError("max_validation_attempts must be positive")
@@ -303,6 +317,8 @@ class PlannerProviderResearchLeadPlanner:
         self.planner_id = f"{_provider_name(provider)}-research-lead-planner-v1"
         self._max_validation_attempts = max_validation_attempts
         self._fallback = fallback or ResearchLeadPlanner()
+        self._fail_closed = fail_closed
+        self._agent_registry = agent_registry
         self.decisions: list[StructuredAgentDecision] = []
         self.last_audit: LLMExecutionAudit | None = None
 
@@ -324,7 +340,12 @@ class PlannerProviderResearchLeadPlanner:
         scheme: ResearchSchemeSnapshot,
     ) -> AgenticLLMResult[PlannedTaskGraph]:
         _validate_planner_inputs(run_id=run_id, goal=goal, scheme=scheme)
-        messages = _planner_messages(run_id, goal, scheme)
+        messages = _planner_messages(run_id, goal, scheme, agent_registry=self._agent_registry)
+        from src.agentic.runtime_bindings import (
+            GraphRuntimeBindingError,
+            validate_graph_runtime_bindings,
+        )
+
         last_error: LLMProviderError | ValueError | None = None
         attempted_models: list[str] = []
         validation_attempts = 0
@@ -342,6 +363,8 @@ class PlannerProviderResearchLeadPlanner:
                 )
                 attempted_models.extend(response.attempted_models)
                 graph = _build_validated_graph(run_id, scheme, response.output)
+                if self._agent_registry is not None:
+                    validate_graph_runtime_bindings(graph, self._agent_registry, scheme=scheme)
                 decision = StructuredAgentDecision(
                     decision_id=_decision_id(run_id, "plan", response.actual_model),
                     run_id=run_id,
@@ -358,6 +381,9 @@ class PlannerProviderResearchLeadPlanner:
                 self.decisions.append(decision)
                 self.last_audit = audit
                 return AgenticLLMResult(output=graph, decision=decision, audit=audit)
+            except GraphRuntimeBindingError:
+                # An unusable identity is never repaired by another generation or fallback.
+                raise
             except StructuredOutputError as exc:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
@@ -369,6 +395,10 @@ class PlannerProviderResearchLeadPlanner:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
                 break
+        if self._fail_closed:
+            from src.agentic.planning_errors import GraphPlanningFailure
+
+            raise GraphPlanningFailure(_failure_classification(last_error)) from None
         graph = self._fallback.plan(run_id=run_id, goal=goal, scheme=scheme)
         classification = _failure_classification(last_error)
         decision = StructuredAgentDecision(
@@ -502,6 +532,8 @@ def _planner_messages(
     run_id: str,
     goal: ResearchGoal,
     scheme: ResearchSchemeSnapshot,
+    *,
+    agent_registry=None,
 ) -> list[LLMMessage]:
     system = (
         "Build the complete initial task graph before execution. Return strict JSON only. "
@@ -520,11 +552,23 @@ def _planner_messages(
         "dependency_keys must use those keys verbatim. Supply a concise goal and assigned_agent "
         "for each task. Do not generate financial values, calculations, or chain-of-thought."
     )
+    if agent_registry is not None:
+        system += (
+            " assigned_agent MUST be an exact available_agents.agent_id, never display_name. "
+            "Select an Agent compatible with the task's supported_task_profiles "
+            "or native_task_profiles. "
+            "Unknown IDs, human labels and incompatible assignments are rejected before admission."
+        )
     user = json.dumps(
         {
             "run_id": run_id,
             "goal": goal.model_dump(mode="json"),
             "confirmed_scheme": scheme.model_dump(mode="json"),
+            **(
+                {"available_agents": agent_registry.planning_descriptors()}
+                if agent_registry is not None
+                else {}
+            ),
         },
         sort_keys=True,
     )
@@ -648,15 +692,9 @@ def _build_validated_graph(
 
 
 def _validate_runtime_graph_semantics(proposal: PlannedGraphProposal) -> None:
-    expected_skill_types = {
-        "evidence_collection_v1": {"evidence_collection"},
-        "fundamental_analysis_v1": {"fundamental_analysis"},
-        "peer_analysis_v1": {"peer_analysis"},
-        "research_news_analysis_v1": {"research_news_analysis"},
-        "valuation_analysis_v1": {"valuation_analysis"},
-        "risk_analysis_v1": {"risk_analysis"},
-        "report_synthesis_v1": {"report_synthesis", "quality_review"},
-    }
+    from src.agentic.runtime_bindings import SKILL_TASK_TYPES
+
+    expected_skill_types = SKILL_TASK_TYPES
     for task in proposal.tasks:
         if task.task_type not in expected_skill_types[task.skill_id]:
             raise ValueError(

@@ -25,3 +25,11 @@ class IncrementalSchemeFailure(ValueError):
         if self.provider_failure:
             self.reason_code += "_" + self.provider_failure.value.upper()
         super().__init__(self.reason_code)
+
+
+class GraphPlanningFailure(ValueError):
+    """Owned safe classification only; never raw model output or exception text."""
+
+    def __init__(self, classification):
+        self.classification = classification
+        super().__init__("GRAPH_PLANNING_" + str(classification).upper())

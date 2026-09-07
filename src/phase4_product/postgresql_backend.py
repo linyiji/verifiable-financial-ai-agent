@@ -722,8 +722,34 @@ class PostgreSQLPhase4ProductBackend:
                 if self.incremental_planner is None:
                     raise product_error("CONFLICT", "incremental AI planner is not configured")
                 planner = self.incremental_planner
-            planned_value = planner.plan(run_id=run_id, goal=goal, scheme=scheme)
-            planned = await planned_value if inspect.isawaitable(planned_value) else planned_value
+            from src.agentic.planning_errors import GraphPlanningFailure
+            from src.agentic.runtime_bindings import (
+                GraphRuntimeBindingError,
+                validate_graph_runtime_bindings,
+            )
+
+            approved_scheme = scheme.model_dump(mode="json")
+            approved_goal = goal.model_dump(mode="json")
+            try:
+                planned_value = planner.plan(run_id=run_id, goal=goal, scheme=scheme)
+                planned = (
+                    await planned_value if inspect.isawaitable(planned_value) else planned_value
+                )
+                if (
+                    scheme.model_dump(mode="json") != approved_scheme
+                    or goal.model_dump(mode="json") != approved_goal
+                    or planned.run_id != run_id
+                ):
+                    raise GraphRuntimeBindingError()
+                validate_graph_runtime_bindings(planned, self.service.agent_registry, scheme=scheme)
+            except (GraphPlanningFailure, GraphRuntimeBindingError) as failure:
+                from src.observability.performance import flush
+
+                await flush()
+                raise product_error(
+                    "CONFLICT", "research graph validation failed closed",
+                    details={"reason_code": str(failure)},
+                ) from None
             if scheme.incremental_context:
                 from src.phase4_product.incremental import bind_incremental_plan
 
