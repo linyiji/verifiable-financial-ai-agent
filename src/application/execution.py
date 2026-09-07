@@ -199,9 +199,8 @@ class IntegratedTaskExecutor:
             )
         except ValueError as exc:
             correction_id = f"CORR-{task.run_id}-PERIOD"
-            # Keep the durable pre-correction watermark observable to an exact-Run
-            # SSE consumer before the same-Task correction pair is published.
-            await asyncio.sleep(3.0)
+            # Awaited event publication, not presentation dwell, defines the
+            # durable correction boundaries. Slow consumers reconstruct by replay.
             async with self._service.instrumentation.self_correction(
                 run_id=task.run_id,
                 task_id=task.task_id,
@@ -239,8 +238,6 @@ class IntegratedTaskExecutor:
                     event_type=RuntimeEventType.TASK_CORRECTION_RESOLVED,
                     payload={"correction_id": correction.correction_id},
                 )
-                # The resolved correction is an authoritative projection boundary.
-                await asyncio.sleep(3.0)
 
         margin = await self._execute_calculation(
             task=task,
@@ -420,9 +417,6 @@ class IntegratedTaskExecutor:
         ):
             raise ValueError("risk replan request does not close to its authoritative task")
         self._aggregate.artifacts.replans.append(pending)
-        # Preserve one short pre-request observation window for snapshot/SSE
-        # composition without introducing a public mutation control.
-        await asyncio.sleep(10.0)
         async with self._service.instrumentation.replan(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -434,10 +428,8 @@ class IntegratedTaskExecutor:
                 event_type=RuntimeEventType.REPLAN_REQUESTED,
                 payload={"replan_id": pending.replan_id, "decision": pending.decision.value},
             )
-            # The pending decision is an observable, durable Product state. Give
-            # exact-Run consumers one bounded scheduling turn to read it before
-            # the Lead resolves the request.
-            await asyncio.sleep(10.0)
+            # Requested and approved remain separate awaited durable events;
+            # browser presentation must not impose a minimum runtime dwell.
             decision = ResearchLeadReplanDecider().decide(
                 pending,
                 outcome=ReplanDecision.APPROVED,
@@ -468,7 +460,6 @@ class IntegratedTaskExecutor:
                     "decided_by": approved.decided_by,
                 },
             )
-            await asyncio.sleep(10.0)
             await GraphMutationService(self._service.event_store).insert_node_between(
                 state=self._aggregate.runtime,
                 request=approved,
@@ -477,7 +468,6 @@ class IntegratedTaskExecutor:
                 successor_task_id=synthesis.task_id,
                 actor=GraphMutationActor("research_lead", GraphMutationRole.RESEARCH_LEAD),
             )
-            await asyncio.sleep(10.0)
 
     async def _execute_peer_analysis(self, task: Task) -> TaskExecutionResult:
         routed_task = self._aggregate.runtime.task(task.task_id)

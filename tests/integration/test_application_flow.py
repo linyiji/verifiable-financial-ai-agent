@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date
 
@@ -49,6 +50,56 @@ async def completed_service() -> tuple[ResearchApplicationService, str]:
     )
     await service.execute_run(aggregate.run.run_id)
     return service, aggregate.run.run_id
+
+
+@pytest.mark.asyncio
+async def test_normal_runtime_has_no_presentation_dwell_and_replays_semantic_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fast consumers are optional; complete durable history is not."""
+    delays: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def observed_sleep(delay: float, result=None):
+        delays.append(delay)
+        # A reintroduced presentation hold fails below without slowing the suite.
+        return await original_sleep(0, result)
+
+    monkeypatch.setattr(asyncio, "sleep", observed_sleep)
+    service, run_id = await completed_service()
+    assert all(delay == 0 for delay in delays), delays
+    events = await service.event_store.replay(run_id)
+    meaningful = {
+        RuntimeEventType.TASK_SELF_CORRECTING,
+        RuntimeEventType.TASK_CORRECTION_RESOLVED,
+        RuntimeEventType.REPLAN_REQUESTED,
+        RuntimeEventType.REPLAN_APPROVED,
+        RuntimeEventType.GRAPH_TASK_ADDED,
+        RuntimeEventType.GRAPH_EDGE_ADDED,
+        RuntimeEventType.GRAPH_EDGE_REMOVED,
+        RuntimeEventType.GRAPH_VERSION_CHANGED,
+    }
+    expected = [
+        RuntimeEventType.TASK_SELF_CORRECTING,
+        RuntimeEventType.TASK_CORRECTION_RESOLVED,
+        RuntimeEventType.REPLAN_REQUESTED,
+        RuntimeEventType.REPLAN_APPROVED,
+        RuntimeEventType.GRAPH_TASK_ADDED,
+        RuntimeEventType.GRAPH_EDGE_ADDED,
+        RuntimeEventType.GRAPH_EDGE_REMOVED,
+        RuntimeEventType.GRAPH_EDGE_ADDED,
+        RuntimeEventType.GRAPH_VERSION_CHANGED,
+    ]
+    assert [event.type for event in events if event.type in meaningful] == expected
+    # A delayed/reconnecting consumer reads every transition from its cursor.
+    correction = next(e for e in events if e.type == expected[0])
+    tail = await service.event_store.replay(run_id, after_sequence=correction.sequence - 1)
+    assert [event.type for event in tail if event.type in meaningful] == expected
+    assert all(event.run_id == run_id for event in tail)
+    aggregate = await service.get_run(run_id)
+    assert aggregate.runtime.actual_graph.version == 2
+    assert len(aggregate.artifacts.corrections) == len(aggregate.artifacts.replans) == 1
+    assert aggregate.run.status is RunStatus.RELEASED
 
 
 @pytest.mark.asyncio
