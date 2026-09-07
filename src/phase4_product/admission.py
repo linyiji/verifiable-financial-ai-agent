@@ -259,6 +259,22 @@ def build_prepare_draft(
 
     now = _as_utc(created_at or datetime.now(UTC), field_name="created_at")
     _validate_prepare_identity(request, goal=goal, scheme_snapshot=scheme_snapshot)
+    context = scheme_snapshot.incremental_context
+    if context is None:
+        if request.base_run_id is not None:
+            raise ValueError("incremental request has no governed context")
+    elif (
+        context.research_object_id,
+        context.base_run_id,
+        context.base_research_view_version,
+        context.target_as_of,
+    ) != (
+        request.research_object_id,
+        request.base_run_id,
+        request.base_research_view_version,
+        request.as_of,
+    ):
+        raise ValueError("incremental scheme does not close to explicit request")
     _require_nonblank(draft_id, field_name="draft_id")
     prepare_hash = prepare_request_hash(request)
     payload = {

@@ -1,4 +1,5 @@
 import {decodeArray, decodeEnum, decodeObject, decodeOpaqueId, decodePublicText, decodeRfc3339Utc, decodeSafeJsonObject} from "./domain";
+import {decodeIncrementalContext, type IncrementalContext} from "./incremental";
 
 export interface MemoryItem {
   readonly memory_item_id: string;
@@ -49,6 +50,9 @@ export interface MemoryHistoryRef {
   readonly availability: "AVAILABLE" | "UNAVAILABLE_INCOMPATIBLE";
 }
 export interface ResearchMemorySnapshot {
+  readonly changes?: readonly {readonly category: MemoryItem["category"];readonly change: "UNCHANGED"|"UPDATED"|"NEW"|"REMOVED_FROM_CURRENT_VIEW"|"REVALIDATED";readonly logical_key: string|null;readonly base_item_id: string|null;readonly current_item_id: string|null}[];
+  readonly base_memory?: ResearchMemorySnapshot;
+  readonly incremental_context?: IncrementalContext;
   readonly schema_version: "phase5a-memory/v1";
   readonly research_object_id: string;
   readonly latest_released_run_id: string | null;
@@ -76,7 +80,18 @@ function frozen<T>(x:T):T { if(x && typeof x==="object") {for(const child of Obj
 export function decodeResearchMemory(value: unknown, expectedObjectId: string): ResearchMemorySnapshot {
   // Shared public safety boundary rejects secret/private keys and strings first.
   const x=decodeObject(decodeSafeJsonObject(value));
-  keys(x,["schema_version","research_object_id","latest_released_run_id","latest_research_object_version","latest_research_view_version","object_version","current_view","historical_released_runs"]);
+  const hasBase=Object.hasOwn(x,"base_memory");
+  keys(x,["schema_version","research_object_id","latest_released_run_id","latest_research_object_version","latest_research_view_version","object_version","current_view","historical_released_runs",...(hasBase?["base_memory","incremental_context"]:[]),...(Object.hasOwn(x,"changes")?["changes"]:[])]);
+  let base: ResearchMemorySnapshot | undefined;
+  if(hasBase) {
+    const rawBase=decodeObject(x.base_memory);require(!Object.hasOwn(rawBase,"base_memory"));
+    base=decodeResearchMemory(rawBase,expectedObjectId);
+    const context=decodeIncrementalContext(x.incremental_context,expectedObjectId);
+    require(base.current_view!==null && base.latest_released_run_id===context.base_run_id && base.current_view.research_view_version_id===context.base_research_view_version && base.latest_released_run_id!==x.latest_released_run_id);
+    require(x.latest_research_view_version===context.base_version_number+1 && base.latest_research_view_version===context.base_version_number);
+    const identities=new Map(base.current_view!.items.map(i=>[i.memory_item_id,i]));
+    for(const d of context.decisions) if(d.category!=="VIEW_CONTEXT") require(identities.get(d.source_identity)?.category===d.category);
+  }
   require(x.schema_version==="phase5a-memory/v1" && x.research_object_id===expectedObjectId);
   decodeOpaqueId(x.research_object_id);nullableId(x.latest_released_run_id);
   nullableNumber(x.latest_research_object_version);nullableNumber(x.latest_research_view_version);
@@ -87,7 +102,7 @@ export function decodeResearchMemory(value: unknown, expectedObjectId: string): 
     if(h.as_of!==null) require(typeof h.as_of==="string" && /^\d{4}-\d{2}-\d{2}$/.test(h.as_of));
     decodeEnum(h.availability,["AVAILABLE","UNAVAILABLE_INCOMPATIBLE"]);
     require((h.availability==="AVAILABLE")===(h.source_released_result_id!==null));
-    if(h.research_view_version!==null) require(h.source_run_id===x.latest_released_run_id && h.research_view_version===x.latest_research_view_version);
+    if(h.research_view_version!==null) require((h.source_run_id===x.latest_released_run_id && h.research_view_version===x.latest_research_view_version) || (base!==undefined && h.source_run_id===base.latest_released_run_id && h.research_view_version===base.latest_research_view_version));
     return h;
   });
   require(new Set(history.map(h=>h.source_run_id)).size===history.length);
@@ -111,5 +126,19 @@ export function decodeResearchMemory(value: unknown, expectedObjectId: string): 
     require(i.source_run_id===runId && i.report_id===view.source_report_id);return i;
   });
   require(new Set(items.map(i=>i.memory_item_id)).size===items.length);
+  if(base) {
+    const baseItems=new Map(base.current_view!.items.map(i=>[i.memory_item_id,i]));
+    const currentItems=new Map(items.map(i=>[i.memory_item_id,i]));
+    const usedBase=new Set(),usedCurrent=new Set();
+    for(const value of decodeArray(x.changes ?? [])) {
+      const c=decodeObject(value);keys(c,["category","change","logical_key","base_item_id","current_item_id"]);
+      decodeEnum(c.change,["UNCHANGED","UPDATED","NEW","REMOVED_FROM_CURRENT_VIEW","REVALIDATED"]);
+      if(c.logical_key!==null) decodePublicText(c.logical_key);
+      if(c.base_item_id!==null) {decodeOpaqueId(c.base_item_id);require(baseItems.get(String(c.base_item_id))?.category===c.category && !usedBase.has(c.base_item_id));usedBase.add(c.base_item_id);} else require(c.change==="NEW");
+      if(c.current_item_id!==null) {decodeOpaqueId(c.current_item_id);require(currentItems.get(c.current_item_id)?.category===c.category && !usedCurrent.has(c.current_item_id));usedCurrent.add(c.current_item_id);} else require(c.change==="REMOVED_FROM_CURRENT_VIEW");
+      if(c.base_item_id!==null && c.current_item_id!==null) require(c.logical_key!==null && !["NEW","REMOVED_FROM_CURRENT_VIEW"].includes(String(c.change)));
+    }
+    require(usedBase.size===baseItems.size && usedCurrent.size===currentItems.size);
+  } else require(x.changes===undefined);
   return frozen(x as unknown as ResearchMemorySnapshot);
 }

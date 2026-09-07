@@ -21,6 +21,10 @@ from src.adapters.fmp import FinancialProviderMode, FMPProvider, select_financia
 from src.adapters.llm.teamorouter import TeamoRouterClient
 from src.adapters.risc0 import RiscZeroProofAdapter
 from src.agentic import AgentRegistry
+from src.agentic.llm_integration import (
+    PlannerProviderResearchLeadPlanner,
+    PlannerProviderSchemeGenerator,
+)
 from src.agentic.research_agent import LLMResearchAgent
 from src.agentic.research_output_artifacts import ResearchAgentOutputArtifactStore
 from src.application.errors import ApplicationError
@@ -135,6 +139,8 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
             app.state.phase4_product_backend = PostgreSQLPhase4ProductBackend(
                 sessions=persistence.sessions,
                 service=research_service,
+                incremental_scheme_generator=PlannerProviderSchemeGenerator(model_provider),
+                incremental_planner=PlannerProviderResearchLeadPlanner(model_provider),
             )
             generated = GeneratedCapabilityOrchestrator(
                 registry=ScopedCapabilityRegistry(research_service.capability_registry),

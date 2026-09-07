@@ -11,7 +11,9 @@ from src.phase4_product.memory_contracts import (
 )
 
 
-def build_memory_versions(object_id, run_id, projection, result, report, review, execution):
+def build_memory_versions(
+    object_id, run_id, projection, result, report, review, execution, *, version=1
+):
     if projection.run.status != "RELEASED" or not projection.terminal.is_terminal:
         raise product_error("NOT_RELEASED", "memory requires an authoritative released Run")
     if (
@@ -144,13 +146,13 @@ def build_memory_versions(object_id, run_id, projection, result, report, review,
         created_at=now,
     )
     obj = ResearchObjectVersion(
-        **identity, object_version=1, object_version_id=ident("ROV-", "object-v1")
+        **identity, object_version=version, object_version_id=ident("ROV-", f"object-v{version}")
     )
     view = ResearchViewVersion(
         **identity,
-        research_view_version=1,
-        research_view_version_id=ident("RVV-", "view-v1"),
-        research_object_version=1,
+        research_view_version=version,
+        research_view_version_id=ident("RVV-", f"view-v{version}"),
+        research_object_version=version,
         as_of=projection.run.as_of.isoformat(),
         summary=" ".join(i.statement for i in items if i.category == "VERIFIED_CLAIM") or None,
         items=tuple(items),

@@ -112,6 +112,8 @@ export interface Phase4CreateResearchObjectInput {
 }
 
 export interface Phase4PrepareResearchRunInput {
+  readonly baseRunId?: string;
+  readonly baseResearchViewVersion?: string;
   readonly researchObjectId: string;
   readonly researchGoal: string;
   readonly asOf: string;

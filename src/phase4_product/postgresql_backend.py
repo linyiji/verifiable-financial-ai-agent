@@ -253,9 +253,13 @@ class PostgreSQLPhase4ProductBackend:
         *,
         sessions: async_sessionmaker[AsyncSession],
         service: ResearchApplicationService,
+        incremental_scheme_generator=None,
+        incremental_planner=None,
     ) -> None:
         self.sessions = sessions
         self.service = service
+        self.incremental_scheme_generator = incremental_scheme_generator
+        self.incremental_planner = incremental_planner
         self.uow_factory = PostgreSQLProductUnitOfWorkFactory(sessions)
         self._confirm_uow_factory = PostgreSQLProductUnitOfWorkFactory(
             sessions,
@@ -431,6 +435,41 @@ class PostgreSQLPhase4ProductBackend:
 
     async def get_memory(self, object_id):
         current = await ResearchMemoryRepository(self.sessions).read(object_id)
+        comparison = {}
+        if current.latest_released_run_id:
+            async with self.sessions() as session:
+                current_row = await session.get(
+                    ResearchRunAggregateRow, current.latest_released_run_id
+                )
+                current_run = ResearchRun.model_validate(current_row.payload["run"])
+                current_scheme = ResearchSchemeSnapshot.model_validate(
+                    current_row.payload["scheme"]
+                )
+            if current_run.base_run_id:
+                context = current_scheme.incremental_context
+                if context is None or (context.base_run_id, context.base_research_view_version) != (
+                    current_run.base_run_id,
+                    current_run.base_research_view_version,
+                ):
+                    raise product_error(
+                        "IDENTITY_MISMATCH", "current incremental relation mismatch"
+                    )
+                base = await ResearchMemoryRepository(self.sessions).historical_snapshot(
+                    object_id, current_run.base_run_id, current_run.base_research_view_version
+                )
+                from src.phase4_product.memory_comparison import compare_memory
+
+                changes = compare_memory(
+                    base.current_view,
+                    current.current_view,
+                    await self.get_result(current_run.base_run_id),
+                    await self.get_result(current.latest_released_run_id),
+                )
+                comparison = {
+                    "base_memory": base,
+                    "incremental_context": context,
+                    "changes": changes,
+                }
         async with self.sessions() as session:
             rows = (
                 await session.scalars(
@@ -460,14 +499,19 @@ class PostgreSQLPhase4ProductBackend:
                     source_run_id=row.run_id,
                     as_of=raw.get("as_of"),
                     source_released_result_id=result_id,
-                    research_view_version=current.latest_research_view_version
-                    if row.run_id == current.latest_released_run_id
-                    else None,
+                    research_view_version=(
+                        current.latest_research_view_version
+                        if row.run_id == current.latest_released_run_id
+                        else comparison["base_memory"].latest_research_view_version
+                        if comparison
+                        and row.run_id == comparison["base_memory"].latest_released_run_id
+                        else None
+                    ),
                     availability="AVAILABLE" if result_id else "UNAVAILABLE_INCOMPATIBLE",
                 )
             )
         return ResearchMemorySnapshot.model_validate(
-            {**current.model_dump(), "historical_released_runs": history}
+            {**current.model_dump(), "historical_released_runs": history, **comparison}
         )
 
     async def materialize_memory(self, object_id, source_run_id):
@@ -475,17 +519,26 @@ class PostgreSQLPhase4ProductBackend:
         current = await repository.read(object_id)
         if current.latest_released_run_id == source_run_id:
             return await self.get_memory(object_id)
+        expected_base = None
+        version = 1
         if current.latest_released_run_id is not None:
-            raise product_error(
-                "CONFLICT", "current memory is bound; explicit future advancement is required"
-            )
+            async with self.sessions() as session:
+                source = await session.get(ResearchRunAggregateRow, source_run_id)
+                raw = source.payload.get("run", {}) if source else {}
+            expected_base = (raw.get("base_run_id"), raw.get("base_research_view_version"))
+            if expected_base != (
+                current.latest_released_run_id,
+                current.current_view.research_view_version_id,
+            ):
+                raise product_error("CONFLICT", "writeback requires exact current incremental base")
+            version = current.latest_research_view_version + 1
         projection = await self.get_projection(source_run_id)
         result = await self.get_result(source_run_id)
         _, report, review, execution = await self._results_surfaces(source_run_id)
         obj, view = build_memory_versions(
-            object_id, source_run_id, projection, result, report, review, execution
+            object_id, source_run_id, projection, result, report, review, execution, version=version
         )
-        await repository.materialize(obj, view)
+        await repository.materialize(obj, view, expected_base=expected_base)
         return await self.get_memory(object_id)
 
     async def prepare_run(
@@ -525,10 +578,41 @@ class PostgreSQLPhase4ProductBackend:
                 as_of=payload.as_of,
                 preferences=payload.preferences,
             )
-            generated = self.service.scheme_generator.generate(
-                research_object=research_object, goal=goal
+            context_args = {}
+            if payload.base_run_id is not None:
+                from src.phase4_product.incremental import build_incremental_context
+
+                view = await ResearchMemoryRepository(self.sessions).read_exact(
+                    payload.research_object_id,
+                    payload.base_run_id,
+                    payload.base_research_view_version,
+                )
+                context_args["incremental_context"] = build_incremental_context(
+                    view,
+                    object_id=payload.research_object_id,
+                    base_run_id=payload.base_run_id,
+                    base_view_id=payload.base_research_view_version,
+                    target_as_of=payload.as_of,
+                )
+            generator = self.service.scheme_generator
+            if context_args:
+                if self.incremental_scheme_generator is None:
+                    raise product_error("CONFLICT", "incremental AI planning is not configured")
+                generator = self.incremental_scheme_generator
+            generated = generator.generate(
+                research_object=research_object, goal=goal, **context_args
             )
-            scheme = await generated if inspect.isawaitable(generated) else generated
+            from src.agentic.planning_errors import IncrementalSchemeFailure
+
+            try:
+                scheme = await generated if inspect.isawaitable(generated) else generated
+            except IncrementalSchemeFailure as exc:
+                raise product_error("UNAVAILABLE", "增量研究计划未通过生成或验证；尚未创建研究。",
+                    details={"reason_code": exc.reason_code}) from None
+            if context_args:
+                from src.phase4_product.incremental import validate_incremental_scheme
+
+                validate_incremental_scheme(scheme, context_args["incremental_context"])
             allowed_assurance = {
                 name: value
                 for name, value in scheme.assurance_requirements.items()
@@ -541,9 +625,7 @@ class PostgreSQLPhase4ProductBackend:
                     "policy_id",
                 }
             }
-            scheme = scheme.model_copy(
-                update={"assurance_requirements": allowed_assurance}
-            )
+            scheme = scheme.model_copy(update={"assurance_requirements": allowed_assurance})
             goal_projection = project_goal(goal, expected_object_id=payload.research_object_id)
             scheme_projection = project_scheme(
                 scheme,
@@ -623,12 +705,27 @@ class PostgreSQLPhase4ProductBackend:
                 validated.draft.scheme_snapshot.model_dump(mode="json")
             ).model_copy(update={"confirmed_at": datetime.now(UTC)})
             run_id = f"RUN-{uuid4()}"
-            planned_value = self.service.planner.plan(run_id=run_id, goal=goal, scheme=scheme)
+            planner = self.service.planner
+            if scheme.incremental_context:
+                if self.incremental_planner is None:
+                    raise product_error("CONFLICT", "incremental AI planner is not configured")
+                planner = self.incremental_planner
+            planned_value = planner.plan(run_id=run_id, goal=goal, scheme=scheme)
             planned = await planned_value if inspect.isawaitable(planned_value) else planned_value
+            if scheme.incremental_context:
+                from src.phase4_product.incremental import bind_incremental_plan
+
+                planned = bind_incremental_plan(planned, scheme.incremental_context)
             runtime = RuntimeState.create(run_id=run_id, planned_graph=planned)
             admitted_at = datetime.now(UTC)
             run = ResearchRun(
                 run_id=run_id,
+                base_run_id=scheme.incremental_context.base_run_id
+                if scheme.incremental_context
+                else None,
+                base_research_view_version=scheme.incremental_context.base_research_view_version
+                if scheme.incremental_context
+                else None,
                 research_object_id=validated.draft.object_id,
                 goal_id=goal.goal_id,
                 scheme_id=scheme.scheme_id,
@@ -847,15 +944,11 @@ class PostgreSQLPhase4ProductBackend:
                             "Run history aggregate runtime is not an object"
                         )
                     run = ResearchRun.model_validate(payload.get("run"))
-                    artifacts = CompletedRunArtifacts.model_validate(
-                        payload.get("artifacts")
-                    )
+                    artifacts = CompletedRunArtifacts.model_validate(payload.get("artifacts"))
                     source = RunCollectionSource(
                         run=run,
                         research_object=research_object,
-                        actual_graph=ActualRuntimeGraph.model_validate(
-                            runtime.get("actual_graph")
-                        ),
+                        actual_graph=ActualRuntimeGraph.model_validate(runtime.get("actual_graph")),
                         latest_event=(
                             None
                             if latest is None
@@ -900,14 +993,10 @@ class PostgreSQLPhase4ProductBackend:
                         ),
                     )
                     history_items.append(
-                        AvailableRunHistoryItemV1(
-                            run=project_run_collection_item(source)
-                        )
+                        AvailableRunHistoryItemV1(run=project_run_collection_item(source))
                     )
                 except (ProjectionIntegrityError, ValidationError):
-                    history_items.append(
-                        _unavailable_history_item(row, research_object)
-                    )
+                    history_items.append(_unavailable_history_item(row, research_object))
         return build_run_history_collection(
             items=history_items,
             cursor_signing_key=_CURSOR_SIGNING_KEY,
@@ -1034,8 +1123,7 @@ class PostgreSQLPhase4ProductBackend:
             for event in events
         )
         changes = tuple(
-            project_path_change(change, expected_run_id=run.run_id)
-            for change in path_changes
+            project_path_change(change, expected_run_id=run.run_id) for change in path_changes
         )
         terminal_event = events[-1]
         if terminal_event.type is not RuntimeEventType.RUN_COMPLETED:
@@ -1124,18 +1212,14 @@ class PostgreSQLPhase4ProductBackend:
         }
         for replan in artifacts.replans:
             history = histories.get(replan.replan_id)
-            raw_operations = (
-                history.get("operations", []) if isinstance(history, dict) else []
-            )
+            raw_operations = history.get("operations", []) if isinstance(history, dict) else []
             operations: list[dict[str, object]] = []
             for operation in raw_operations:
                 if not isinstance(operation, dict):
                     continue
                 kind = operation.get("operation")
                 if kind == "add_node":
-                    operations.append(
-                        {"operation": kind, "task_id": operation.get("task_id")}
-                    )
+                    operations.append({"operation": kind, "task_id": operation.get("task_id")})
                 elif kind in {"add_edge", "remove_edge"}:
                     operations.append(
                         {
@@ -1179,9 +1263,7 @@ class PostgreSQLPhase4ProductBackend:
                     ),
                     "created_at": replan.created_at,
                     "resolved_at": (
-                        None
-                        if replan.decision is ReplanDecision.PENDING
-                        else replan.created_at
+                        None if replan.decision is ReplanDecision.PENDING else replan.created_at
                     ),
                 }
             )
@@ -1243,9 +1325,7 @@ class PostgreSQLPhase4ProductBackend:
                 resource_id=run_id,
             )
         html_artifacts = tuple(
-            item
-            for item in artifacts.report_artifacts
-            if item.artifact_type == "text/html"
+            item for item in artifacts.report_artifacts if item.artifact_type == "text/html"
         )
         if len(html_artifacts) != 1:
             raise product_error(
@@ -1403,8 +1483,7 @@ class PostgreSQLPhase4ProductBackend:
                     ),
                     generated_at=record.created_at,
                     authorized_ref=(
-                        f"/api/research-runs/{run_id}/artifacts/"
-                        f"{record.artifact_id}/content"
+                        f"/api/research-runs/{run_id}/artifacts/{record.artifact_id}/content"
                     ),
                 ),
                 ReportArtifactRepresentationV1(

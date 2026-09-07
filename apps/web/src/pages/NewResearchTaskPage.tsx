@@ -1,8 +1,11 @@
 import type { NormalizedObjectIdentity, PreparedResearchDraft } from "../types/domain";
+import {IncrementalContext} from "../components/IncrementalContext";
+import type {ResearchViewVersion} from "../types/researchMemory";
 
 export type NewResearchStep = "OBJECT" | "GOAL" | "SCHEME" | "CONFIRM";
 
 export interface NewResearchTaskPageProps {
+  readonly baseView?: ResearchViewVersion | null;
   readonly step: NewResearchStep;
   readonly objects: readonly NormalizedObjectIdentity[];
   readonly selected: NormalizedObjectIdentity | null;
@@ -44,6 +47,7 @@ export function researchPlanLabel(value: string): string {
 }
 
 export function NewResearchTaskPage({
+  baseView,
   step,
   objects,
   selected,
@@ -79,6 +83,11 @@ export function NewResearchTaskPage({
       </li>)}
     </ol>
 
+    {baseView && !draft && <section className="card pad" data-testid="previous-research-context" data-base-run-id={baseView.source_run_id} data-base-view-id={baseView.research_view_version_id}>
+      <h2>基于上次研究 · View v{baseView.research_view_version}</h2><p>{baseView.summary}</p>
+      <p>历史摘要仅作为背景。AI 将判断哪些材料需要更新、重新验证或用于避免重复问题；没有可安全沿用的材料时，继续沿用可以为零。</p>
+    </section>}
+    {draft?.schemeSnapshot.incrementalContext && <IncrementalContext context={draft.schemeSnapshot.incrementalContext}/>}
     <div className="research-wizard">
       <div className="card wizard-main">
         {step === "OBJECT" && <ObjectStep objects={objects} selected={selected} onSelect={onSelectObject} onNext={() => onStepChange("GOAL")} />}
@@ -147,6 +156,8 @@ function PlanStep({ draft, onBack, onNext }: { readonly draft: PreparedResearchD
       <div className="plan-workstreams">
         {draft.schemeSnapshot.researchScope.map((item, index) => <div className="plan-workstream" key={`${item}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><strong>{researchPlanLabel(item)}</strong></div>)}
       </div>
+      <h3>本次研究任务与检查</h3>
+      <ul>{[...draft.schemeSnapshot.dataRequirements,...draft.schemeSnapshot.reportRequirements].map((item,index)=><li key={index}>{researchPlanLabel(item)}</li>)}</ul>
       <details className="technical-details"><summary>计划技术详情</summary><dl><dt>Draft ID</dt><dd>{draft.draftId}</dd><dt>Goal ID</dt><dd>{draft.goal.goalId}</dd><dt>Scheme ID</dt><dd>{draft.schemeSnapshot.schemeId}</dd></dl></details>
     </div>
     <WizardActions backLabel="修改目标" nextLabel="下一步：确认" onBack={onBack} onNext={onNext} />

@@ -1,0 +1,78 @@
+{
+  "schema_version": "phase5a-view-version/v1",
+  "research_object_id": "OBJ-NVDA",
+  "research_view_version": 1,
+  "research_view_version_id": "RVV-05bec42f-ab9b-55c5-b502-c439b8abe948",
+  "research_object_version": 1,
+  "source_run_id": "RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+  "source_released_result_id": "RESULT-RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+  "source_report_id": "RESULT-RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+  "source_canonical_record_id": "CER-RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+  "as_of": "2026-09-06",
+  "summary": "Revenue increased 65.47% YoY for FY2026.",
+  "items": [
+    {
+      "memory_item_id": "MI-5dbf896b-4c17-5aca-959d-814730a44b10",
+      "category": "VERIFIED_METRIC",
+      "source_run_id": "RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+      "reference_id": "METRIC-CALC-RUN-57aed683-75d6-4b47-acc6-a73053ea492e-GROWTH",
+      "title": "Revenue Growth",
+      "statement": "Revenue Growth: 65.47 % · FY2026",
+      "display_value": "65.47",
+      "display_unit": "%",
+      "calculation_id": "CALC-RUN-57aed683-75d6-4b47-acc6-a73053ea492e-GROWTH",
+      "evidence_ids": [
+        "EVD-210857b6-862e-522e-9ae7-b876ed1f947c",
+        "EVD-92a731e7-913d-59d2-954c-ce08628f6a92"
+      ],
+      "review_id": "REVIEW-RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+      "report_id": "RESULT-RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+      "report_anchor": "metric-revenue-growth",
+      "task_id": "RUN-57aed683-75d6-4b47-acc6-a73053ea492e:fundamentals",
+      "agent_output_id": "AGOUT-9ab72a67-87e1-523a-a88f-1c4246a26330"
+    },
+    {
+      "memory_item_id": "MI-bec69bfe-c8e4-594b-96c2-0092da97387c",
+      "category": "VERIFIED_CLAIM",
+      "source_run_id": "RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+      "reference_id": "CLAIM-CALC-RUN-57aed683-75d6-4b47-acc6-a73053ea492e-GROWTH",
+      "title": "Revenue Growth",
+      "statement": "Revenue increased 65.47% YoY for FY2026.",
+      "display_value": null,
+      "display_unit": null,
+      "calculation_id": "CALC-RUN-57aed683-75d6-4b47-acc6-a73053ea492e-GROWTH",
+      "evidence_ids": [
+        "EVD-210857b6-862e-522e-9ae7-b876ed1f947c",
+        "EVD-92a731e7-913d-59d2-954c-ce08628f6a92"
+      ],
+      "review_id": "REVIEW-RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+      "report_id": "RESULT-RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+      "report_anchor": "metric-revenue-growth",
+      "task_id": "RUN-57aed683-75d6-4b47-acc6-a73053ea492e:fundamentals",
+      "agent_output_id": "AGOUT-9ab72a67-87e1-523a-a88f-1c4246a26330"
+    },
+    {
+      "memory_item_id": "MI-8e7ff853-ea69-54c6-9135-13329f2df2f4",
+      "category": "RESOLVED_ISSUE",
+      "source_run_id": "RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+      "reference_id": "CORR-RUN-57aed683-75d6-4b47-acc6-a73053ea492e-PERIOD",
+      "title": "Resolved research issue",
+      "statement": "PERIOD_MISMATCH",
+      "display_value": null,
+      "display_unit": null,
+      "calculation_id": null,
+      "evidence_ids": [],
+      "review_id": "REVIEW-RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+      "report_id": "RESULT-RUN-57aed683-75d6-4b47-acc6-a73053ea492e",
+      "report_anchor": null,
+      "task_id": "RUN-57aed683-75d6-4b47-acc6-a73053ea492e:fundamentals",
+      "agent_output_id": null
+    }
+  ],
+  "unavailable_categories": [
+    "PEER_CONTEXT",
+    "PATH_CONTEXT",
+    "REUSABLE_CONTEXT"
+  ],
+  "created_at": "2026-09-07T06:34:08.572406Z"
+}

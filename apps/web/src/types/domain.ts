@@ -165,6 +165,7 @@ export interface NormalizedGoal {
 }
 
 export interface NormalizedScheme {
+  readonly incrementalContext?: import("./incremental").IncrementalContext;
   readonly schemeId: string;
   readonly researchObjectId: string;
   readonly goalId: string;
@@ -1481,12 +1482,40 @@ function decodeGoal(value: unknown, path: string): NormalizedGoal {
   });
 }
 
+export function decodeIncrementalContext(value: unknown, objectId: string): import("./incremental").IncrementalContext {
+  const fail = () => {throw new Error("Incremental context identity mismatch");};
+  const exact = (x: Record<string, unknown>, names: string[]) => {
+    if(Object.keys(x).length!==names.length || names.some(n=>!Object.hasOwn(x,n))) fail();
+  };
+  const x=decodeObject(decodeSafeJsonObject(value));
+  exact(x,["research_object_id","base_run_id","base_research_view_version","base_version_number","base_as_of","target_as_of","decisions",...(Object.hasOwn(x,"prior_summary")?["prior_summary"]:[])]);
+  if(Object.hasOwn(x,"prior_summary")) decodePublicText(x.prior_summary);
+  for(const k of ["research_object_id","base_run_id","base_research_view_version"]) decodeOpaqueId(x[k]);
+  if(x.research_object_id!==objectId || typeof x.base_version_number!=="number" || !Number.isSafeInteger(x.base_version_number) || x.base_version_number<1) fail();
+  for(const k of ["base_as_of","target_as_of"]) if(typeof x[k]!=="string" || !/^\d{4}-\d{2}-\d{2}$/.test(x[k] as string)) fail();
+  if(String(x.target_as_of)<String(x.base_as_of)) fail();
+  const decisions=decodeArray(x.decisions);
+  if(decisions.length>32) fail();
+  const policy: Record<string,readonly string[]>={VIEW_CONTEXT:["REUSE","UNKNOWN"],VERIFIED_METRIC:["REFRESH","REVALIDATE","UNKNOWN"],VERIFIED_CLAIM:["REFRESH","REVALIDATE","UNKNOWN"],RESOLVED_ISSUE:["PREVENT","UNKNOWN"]};
+  const seen=new Set<string>();
+  for(const value of decisions) {
+    const d=decodeObject(value);
+    exact(d,["decision","source_run_id","source_identity","category","statement","reason","authority"]);
+    decodeOpaqueId(d.source_identity);decodePublicText(d.statement);decodePublicText(d.reason);
+    if(d.source_run_id!==x.base_run_id || !Object.hasOwn(policy,String(d.category)) || !policy[String(d.category)].includes(String(d.decision)) || d.authority!=="phase5b-exact-memory-policy/v1") fail();
+    if(d.category==="VIEW_CONTEXT" && d.source_identity!==x.base_research_view_version) fail();
+    const key=String(d.source_identity);if(seen.has(key)) fail();seen.add(key);Object.freeze(d);
+  }
+  Object.freeze(decisions);return Object.freeze(x) as unknown as import("./incremental").IncrementalContext;
+}
+
 function decodeScheme(value: unknown, path: string): NormalizedScheme {
   const input = decodeObject(value, path);
   assertOnlyKeys(
     input,
     [
       "scheme_id",
+      "incremental_context",
       "research_object_id",
       "goal_id",
       "research_scope",
@@ -1508,6 +1537,7 @@ function decodeScheme(value: unknown, path: string): NormalizedScheme {
   const rawConfirmedAt = field(input, "confirmed_at", path);
   return freezeDeep({
     schemeId: decodeOpaqueId(field(input, "scheme_id", path), `${path}.scheme_id`),
+    ...(input.incremental_context === undefined ? {} : {incrementalContext: decodeIncrementalContext(input.incremental_context, decodeOpaqueId(input.research_object_id))}),
     researchObjectId: decodeOpaqueId(
       field(input, "research_object_id", path),
       `${path}.research_object_id`

@@ -122,12 +122,55 @@ class ResearchMemoryRepository:
                 raise product_error("NOT_FOUND", "research Object not found")
             return await self._read(session, object_id)
 
+    async def read_exact(self, object_id, base_run_id, base_view_id):
+        async with self.sessions() as session:
+            source = await session.get(ResearchRunAggregateRow, base_run_id)
+            if source is None or source.object_id != object_id:
+                raise product_error("IDENTITY_MISMATCH", "base Run belongs to another Object")
+            if source.status != "RELEASED":
+                raise product_error("NOT_RELEASED", "base Run must be released")
+            row = await session.scalar(
+                select(ResearchViewVersionRow).where(
+                    ResearchViewVersionRow.object_id == object_id,
+                    ResearchViewVersionRow.source_run_id == base_run_id,
+                )
+            )
+            if row is None:
+                raise product_error("NOT_FOUND", "exact base memory unavailable")
+            view = ResearchViewVersion.model_validate(row.payload)
+            if (
+                view.research_object_id,
+                view.source_run_id,
+                view.research_view_version_id,
+                view.research_view_version,
+            ) != (object_id, base_run_id, base_view_id, row.version):
+                raise product_error("IDENTITY_MISMATCH", "exact base view mismatch")
+            return view
+
+    async def historical_snapshot(self, object_id, base_run_id, base_view_id):
+        view = await self.read_exact(object_id, base_run_id, base_view_id)
+        async with self.sessions() as session:
+            obj = await session.get(
+                ResearchObjectVersionRow, (object_id, view.research_object_version)
+            )
+            if obj is None:
+                raise product_error("INTEGRITY_FAILURE", "historical Object version missing")
+            return ResearchMemorySnapshot(
+                research_object_id=object_id,
+                latest_released_run_id=base_run_id,
+                latest_research_object_version=view.research_object_version,
+                latest_research_view_version=view.research_view_version,
+                object_version=ResearchObjectVersion.model_validate(obj.payload),
+                current_view=view,
+            )
+
     async def materialize(
         self,
         obj: ResearchObjectVersion,
         view: ResearchViewVersion,
         *,
         checkpoint: Callable[[str], None] | None = None,
+        expected_base=None,
     ):
         # Validate closure even for direct repository callers. No update API exists.
         ResearchMemorySnapshot(
@@ -156,10 +199,34 @@ class ResearchMemoryRepository:
             if current.latest_released_run_id == obj.source_run_id:
                 return current
             if current.latest_released_run_id is not None:
-                raise product_error(
-                    "CONFLICT", "current memory is bound; explicit future advancement is required"
-                )
-            if obj.object_version != 1 or view.research_view_version != 1:
+                if expected_base is None:
+                    raise product_error(
+                        "CONFLICT", "current memory is bound; explicit advancement required"
+                    )
+                raw = source.payload.get("run", {})
+                if (
+                    expected_base is None
+                    or (
+                        current.latest_released_run_id,
+                        current.current_view.research_view_version_id,
+                    )
+                    != expected_base
+                    or (raw.get("base_run_id"), raw.get("base_research_view_version"))
+                    != expected_base
+                ):
+                    raise product_error(
+                        "CONFLICT", "explicit base authority or current pointer mismatch"
+                    )
+                if (
+                    obj.object_version != current.latest_research_object_version + 1
+                    or view.research_view_version != current.latest_research_view_version + 1
+                ):
+                    raise product_error("CONFLICT", "memory advancement must be consecutive")
+            elif (
+                expected_base is not None
+                or obj.object_version != 1
+                or view.research_view_version != 1
+            ):
                 raise product_error("CONFLICT", "initial memory must use version one")
             session.add(
                 ResearchObjectVersionRow(
@@ -184,14 +251,20 @@ class ResearchMemoryRepository:
             await session.flush()
             if checkpoint:
                 checkpoint("view")
-            session.add(
-                ResearchMemoryPointerRow(
-                    object_id=obj.research_object_id,
-                    latest_released_run_id=obj.source_run_id,
-                    latest_research_object_version=obj.object_version,
-                    latest_research_view_version=view.research_view_version,
+            pointer = await session.get(ResearchMemoryPointerRow, obj.research_object_id)
+            if pointer is None:
+                session.add(
+                    ResearchMemoryPointerRow(
+                        object_id=obj.research_object_id,
+                        latest_released_run_id=obj.source_run_id,
+                        latest_research_object_version=obj.object_version,
+                        latest_research_view_version=view.research_view_version,
+                    )
                 )
-            )
+            else:
+                pointer.latest_released_run_id = obj.source_run_id
+                pointer.latest_research_object_version = obj.object_version
+                pointer.latest_research_view_version = view.research_view_version
             await session.flush()
             if checkpoint:
                 checkpoint("pointer")

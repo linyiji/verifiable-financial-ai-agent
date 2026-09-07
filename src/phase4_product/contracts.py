@@ -22,6 +22,8 @@ from pydantic import (
     model_validator,
 )
 
+from src.domain.incremental import IncrementalResearchContext
+
 PHASE4_CONTRACT_VERSION = "phase4-core/v1"
 PHASE4_EVENT_CONTRACT_VERSION = "phase4-runtime-event/v1"
 LOCAL_ACCESS_SCOPE = "LOCAL_SINGLE_USER"
@@ -205,6 +207,16 @@ class PrepareResearchRunRequestV1(FrozenWireModel):
     research_goal: NonBlank
     as_of: date
     preferences: SafeJsonObject = Field(default_factory=dict)
+    base_run_id: NonBlank | None = Field(default=None, exclude_if=lambda v: v is None)
+    base_research_view_version: NonBlank | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+
+    @model_validator(mode="after")
+    def paired_base(self):
+        if (self.base_run_id is None) != (self.base_research_view_version is None):
+            raise ValueError("explicit base Run and view identity must be paired")
+        return self
 
 
 class ConfirmResearchRunRequestV1(FrozenWireModel):
@@ -269,6 +281,9 @@ class SchemeProjectionV1(FrozenWireModel):
     generated_model: str | None = None
     created_at: datetime
     confirmed_at: datetime | None = None
+    incremental_context: IncrementalResearchContext | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
 
 
 class ResearchRunDraftV1(FrozenWireModel):
@@ -465,9 +480,7 @@ RunHistoryItemV1 = AvailableRunHistoryItemV1 | UnavailableIncompatibleRunHistory
 
 
 class ResearchRunHistoryCollectionV1(FrozenWireModel):
-    schema_version: Literal["phase4-run-history-collection/v1"] = (
-        "phase4-run-history-collection/v1"
-    )
+    schema_version: Literal["phase4-run-history-collection/v1"] = "phase4-run-history-collection/v1"
     items: tuple[RunHistoryItemV1, ...]
     next_cursor: str | None = None
 
@@ -568,7 +581,9 @@ class ReviewSummaryV1(FrozenWireModel):
             raise ValueError("Review summary identity/status must be jointly present")
         available = self.availability.status is AvailabilityStatus.AVAILABLE
         if available != (self.review_id is not None):
-            raise ValueError("Review summary identity/status must be present exactly when AVAILABLE")
+            raise ValueError(
+                "Review summary identity/status must be present exactly when AVAILABLE"
+            )
         return self
 
 
@@ -1666,9 +1681,7 @@ class ResultsSurfaceRefV1(FrozenWireModel):
 
 
 class ResultsWorkspaceV1(FrozenWireModel):
-    schema_version: Literal["phase4.5-results-workspace/v1"] = (
-        "phase4.5-results-workspace/v1"
-    )
+    schema_version: Literal["phase4.5-results-workspace/v1"] = "phase4.5-results-workspace/v1"
     run_id: NonBlank
     object_id: NonBlank
     as_of: date
@@ -1694,8 +1707,7 @@ class ResultsWorkspaceV1(FrozenWireModel):
                 surface.run_id != self.run_id
                 or surface.object_id != self.object_id
                 or surface.released_result_id != self.released_result_id
-                or surface.canonical_execution_record_id
-                != self.canonical_execution_record_id
+                or surface.canonical_execution_record_id != self.canonical_execution_record_id
             ):
                 raise ValueError("Results surface crossed exact workspace identity")
         if any(item.run_id != self.run_id for item in self.cross_view_refs):

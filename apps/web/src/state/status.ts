@@ -504,6 +504,8 @@ function draftClosesToExpectation(
   mutation: Phase4Mutation<Phase4PrepareResearchRunInput>
 ): boolean {
   return draft.objectId === expected.objectId &&
+    draft.schemeSnapshot.incrementalContext?.base_run_id === mutation.input.baseRunId &&
+    draft.schemeSnapshot.incrementalContext?.base_research_view_version === mutation.input.baseResearchViewVersion &&
     (expected.previousDraftId === null || draft.draftId !== expected.previousDraftId) &&
     (expected.previousSchemeId === null ||
       draft.schemeSnapshot.schemeId !== expected.previousSchemeId) &&

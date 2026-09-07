@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from src.domain.incremental import IncrementalResearchContext
 from src.phase4_product.contracts import FrozenWireModel
 from src.phase4_product.safety import is_protected_key, safe_text
 
@@ -104,6 +105,14 @@ class MemoryHistoryRef(MemoryModel):
     availability: Literal["AVAILABLE", "UNAVAILABLE_INCOMPATIBLE"]
 
 
+class MemoryChange(MemoryModel):
+    category: Literal["VERIFIED_METRIC", "VERIFIED_CLAIM", "RESOLVED_ISSUE"]
+    change: Literal["UNCHANGED", "UPDATED", "NEW", "REMOVED_FROM_CURRENT_VIEW", "REVALIDATED"]
+    logical_key: str | None
+    base_item_id: str | None
+    current_item_id: str | None
+
+
 class ResearchMemorySnapshot(MemoryModel):
     schema_version: Literal["phase5a-memory/v1"] = "phase5a-memory/v1"
     research_object_id: str
@@ -113,9 +122,57 @@ class ResearchMemorySnapshot(MemoryModel):
     object_version: ResearchObjectVersion | None
     current_view: ResearchViewVersion | None
     historical_released_runs: tuple[MemoryHistoryRef, ...] = ()
+    changes: tuple[MemoryChange, ...] = Field(default=(), exclude_if=lambda v: not v)
+    base_memory: "ResearchMemorySnapshot | None" = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+    incremental_context: IncrementalResearchContext | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
 
     @model_validator(mode="after")
     def closure(self):
+        if (self.base_memory is None) != (self.incremental_context is None):
+            raise ValueError("comparison base and context must be paired")
+        if self.base_memory is not None:
+            base, context = self.base_memory, self.incremental_context
+            if (
+                base.base_memory is not None
+                or base.current_view is None
+                or self.current_view is None
+                or base.research_object_id != self.research_object_id
+                or context.research_object_id != self.research_object_id
+                or base.latest_released_run_id != context.base_run_id
+                or base.current_view.research_view_version_id != context.base_research_view_version
+                or self.latest_released_run_id == context.base_run_id
+            ):
+                raise ValueError("comparison exact lineage mismatch")
+            base_items = {i.memory_item_id: i for i in base.current_view.items}
+            current_items = {i.memory_item_id: i for i in self.current_view.items}
+            seen_base, seen_current = set(), set()
+            for change in self.changes:
+                for identity, items, seen in (
+                    (change.base_item_id, base_items, seen_base),
+                    (change.current_item_id, current_items, seen_current),
+                ):
+                    if identity is not None:
+                        if (
+                            identity in seen
+                            or identity not in items
+                            or items[identity].category != change.category
+                        ):
+                            raise ValueError("comparison foreign or duplicate item")
+                        seen.add(identity)
+                if change.base_item_id is None and change.change != "NEW":
+                    raise ValueError("comparison missing base")
+                if change.current_item_id is None and change.change != "REMOVED_FROM_CURRENT_VIEW":
+                    raise ValueError("comparison missing current")
+                if change.base_item_id and change.current_item_id and not change.logical_key:
+                    raise ValueError("comparison match requires governed logical key")
+            if seen_base != set(base_items) or seen_current != set(current_items):
+                raise ValueError("comparison does not cover exact views")
+        elif self.changes:
+            raise ValueError("changes require exact comparison base")
         if any(
             h.research_object_id != self.research_object_id for h in self.historical_released_runs
         ) or len({h.source_run_id for h in self.historical_released_runs}) != len(

@@ -704,6 +704,7 @@ def project_scheme(
         ),
         created_at=_required_datetime(scheme, "created_at", "Scheme"),
         confirmed_at=confirmed_at,
+        incremental_context=_field(scheme, "incremental_context", None),
     )
 
 
@@ -1057,9 +1058,7 @@ def build_run_history_collection(
     run_ids = tuple(_run_history_identity(item)[0] for item in checked_items)
     if len(set(run_ids)) != len(run_ids):
         raise ProjectionIntegrityError("Run history collection contains duplicate Run identities")
-    ordered = tuple(
-        sorted(checked_items, key=_run_history_order_key, reverse=True)
-    )
+    ordered = tuple(sorted(checked_items, key=_run_history_order_key, reverse=True))
 
     start = 0
     if marker is not None:

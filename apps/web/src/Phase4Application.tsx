@@ -102,6 +102,8 @@ function initialConnection(runId: string, sequence: number): ConnectionState {
 export function Phase4Application() {
   const [objectMemory, setObjectMemory] = useState<import("./types/researchMemory").ResearchMemorySnapshot | null>(null);
   const [objectMemoryUnavailable, setObjectMemoryUnavailable] = useState(false);
+  const [baseView, setBaseView] = useState<import("./types/researchMemory").ResearchViewVersion | null>(null);
+  const [baseReady, setBaseReady] = useState(false);
   const source = useMemo(() => new HttpFrontendDataSource({ baseUrl: backendOrigin }), []);
   const transport = useMemo(() => new SSERuntimeTransport({ basePath: apiBase }), []);
   const [objects, setObjects] = useState<readonly NormalizedObjectIdentity[]>([]);
@@ -124,6 +126,13 @@ export function Phase4Application() {
   const [confirming, setConfirming] = useState(false);
   const [selectedRunProjection, setSelectedRunProjection] = useState<RunProjection | null>(null);
   const [selectedRunError, setSelectedRunError] = useState<ErrorEnvelope | null>(null);
+  const memoryWriteAttempt=useRef<string|null>(null);
+  useEffect(()=>{
+    const p=selectedRunProjection;
+    if(!p || p.run.backendStatus!=="RELEASED" || !p.confirmedScheme.incrementalContext || memoryWriteAttempt.current===p.run.runId) return;
+    memoryWriteAttempt.current=p.run.runId;
+    void source.materializeResearchMemory(p.object.objectId,p.run.runId).catch(caught=>setSelectedRunError(safeEnvelope(caught)));
+  },[selectedRunProjection,source]);
   const [historyState, setHistoryState] = useState<HistoryState | null>(null);
   const [historyError, setHistoryError] = useState<HistoryError | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
@@ -447,8 +456,27 @@ export function Phase4Application() {
     if (match) setSelected(match);
   }, [objects]);
 
+  useEffect(() => {
+    let cancelled=false;
+    setBaseReady(false);setBaseView(null);setDraft(null);
+    if (!selected) return;
+    const objectId=selected.objectId;
+    void source.getResearchMemory(objectId).then(memory=>{
+      if(cancelled) return;
+      const params=new URLSearchParams(window.location.search);
+      const requestedRun=params.get("base_run_id"), requestedView=params.get("base_view_id");
+      let view=memory.current_view;
+      if(params.get("object")===objectId && (requestedRun || requestedView)) {
+        view=[memory.current_view,memory.base_memory?.current_view].find(v=>v?.source_run_id===requestedRun && v.research_view_version_id===requestedView) ?? null;
+        if(!view) throw new Error("Exact selected base unavailable");
+      }
+      setBaseView(view);setBaseReady(true);
+    }).catch(caught=>{if(!cancelled) setError(safeEnvelope(caught));});
+    return ()=>{cancelled=true;};
+  }, [selected?.objectId, source]);
+
   const prepare = async () => {
-    if (!selected || !goal.trim()) return;
+    if (!selected || !goal.trim() || !baseReady) return;
     setError(null);
     setPreparing(true);
     try {
@@ -457,6 +485,7 @@ export function Phase4Application() {
         researchGoal: goal,
         asOf,
         preferences: {}
+        ,...(baseView ? {baseRunId: baseView.source_run_id, baseResearchViewVersion: baseView.research_view_version_id} : {})
       }));
       setDraft(value);
       setStep("SCHEME");
@@ -566,7 +595,7 @@ export function Phase4Application() {
             runsLoading={objectRunsLoading}
             runsUnavailable={objectRunsUnavailable}
             onBack={() => navigatePath("/objects")}
-            onBeginResearch={(objectId) => navigatePath(`/?object=${encodeURIComponent(objectId)}`)}
+            onBeginResearch={(objectId) => navigatePath(`/?object=${encodeURIComponent(objectId)}${objectMemory?.current_view ? `&base_run_id=${encodeURIComponent(objectMemory.current_view.source_run_id)}&base_view_id=${encodeURIComponent(objectMemory.current_view.research_view_version_id)}` : ""}`)}
             onOpenRun={(runId) => navigateRun(runId)}
           />
         : !error && <div className="card app-loading" role="status"><div className="spinner" aria-hidden="true" /><span>正在载入 Research Object…</span></div>}
@@ -576,6 +605,7 @@ export function Phase4Application() {
   return <div className="app-content">
     {error && <TypedError error={error} onRetry={() => void loadObjects()} onDismiss={() => setError(null)} />}
     <NewResearchTaskPage
+      baseView={baseView}
       step={step}
       objects={objects}
       selected={selected}

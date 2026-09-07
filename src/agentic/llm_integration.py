@@ -66,6 +66,16 @@ class SchemeProposal(_StrictModel):
     limitations: list[str]
 
 
+class IncrementalDecisionProposal(_StrictModel):
+    source_identity: str = Field(min_length=1)
+    decision: Literal["REUSE", "REFRESH", "REVALIDATE", "PREVENT", "UNKNOWN"]
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class IncrementalSchemeProposal(SchemeProposal):
+    incremental_decisions: list[IncrementalDecisionProposal] = Field(max_length=32)
+
+
 class PlannedTaskProposal(_StrictModel):
     key: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
     task_type: Literal[
@@ -132,8 +142,11 @@ class PlannerProviderSchemeGenerator:
         *,
         research_object: ResearchObject,
         goal: ResearchGoal,
+        incremental_context=None,
     ) -> ResearchSchemeSnapshot:
-        result = await self.generate_with_decision(research_object=research_object, goal=goal)
+        result = await self.generate_with_decision(
+            research_object=research_object, goal=goal, incremental_context=incremental_context
+        )
         return result.output
 
     async def generate_with_decision(
@@ -141,27 +154,48 @@ class PlannerProviderSchemeGenerator:
         *,
         research_object: ResearchObject,
         goal: ResearchGoal,
+        incremental_context=None,
     ) -> AgenticLLMResult[ResearchSchemeSnapshot]:
         if goal.research_object_id != research_object.object_id:
             raise ValueError("goal and research object must reference the same object")
-        messages = _scheme_messages(research_object, goal)
+        from src.agentic.planning_errors import IncrementalSchemeFailure, PlanningFailureStage
+
+        if incremental_context is not None and (
+            incremental_context.research_object_id != research_object.object_id
+            or incremental_context.target_as_of != goal.as_of
+        ):
+            raise IncrementalSchemeFailure(PlanningFailureStage.PLANNING_INPUT_CONTRACT)
+        messages = _scheme_messages(research_object, goal, incremental_context)
         last_error: LLMProviderError | ValueError | None = None
         attempted_models: list[str] = []
         validation_attempts = 0
         deadline_at = asyncio.get_running_loop().time() + _overall_deadline_seconds(self._provider)
         for attempt in range(1, self._max_validation_attempts + 1):
             validation_attempts = attempt
+            failure_stage = PlanningFailureStage.MODEL_INVOCATION
             try:
                 response = await _complete_before_deadline(
                     self._provider,
                     deadline_at=deadline_at,
                     workload_type="SCHEME_PLANNER",
                     messages=messages,
-                    response_model=SchemeProposal,
+                    response_model=IncrementalSchemeProposal
+                    if incremental_context
+                    else SchemeProposal,
                     schema_name="research_scheme_proposal_v2",
                 )
                 attempted_models.extend(response.attempted_models)
+                failure_stage = PlanningFailureStage.SCHEME_VALIDATION
                 _validate_scheme_proposal(response.output)
+                context = incremental_context
+                if context is not None:
+                    from src.phase4_product.incremental import resolve_incremental_decisions
+
+                    failure_stage = PlanningFailureStage.DECISION_VALIDATION
+                    context = resolve_incremental_decisions(
+                        context, response.output.incremental_decisions
+                    )
+                failure_stage = PlanningFailureStage.SCHEME_VALIDATION
                 scheme_key = f"{research_object.object_id}:{goal.goal_id}:{goal.as_of}:llm"
                 scheme = ResearchSchemeSnapshot(
                     scheme_id=f"SCHEME-{uuid5(NAMESPACE_URL, scheme_key)}",
@@ -169,7 +203,8 @@ class PlannerProviderSchemeGenerator:
                     goal_id=goal.goal_id,
                     generated_by=self.generator_id,
                     generated_model=response.actual_model,
-                    **response.output.model_dump(),
+                    incremental_context=context,
+                    **response.output.model_dump(exclude={"incremental_decisions"}),
                 )
                 return self._record_scheme_result(
                     scheme=scheme,
@@ -181,14 +216,23 @@ class PlannerProviderSchemeGenerator:
             except StructuredOutputError as exc:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
+                failure_stage = (PlanningFailureStage.DECODER_PARSER
+                    if exc.failure_classification == LLMFailureClassification.INVALID_PROVIDER_RESPONSE
+                    else PlanningFailureStage.STRUCTURED_OUTPUT_SCHEMA)
                 messages = _with_validation_retry(messages, type(exc).__name__)
             except ValueError as exc:
                 last_error = exc
-                messages = _with_validation_retry(messages, type(exc).__name__, detail=str(exc))
+                messages = _with_validation_retry(messages, type(exc).__name__,
+                    detail=failure_stage.value if incremental_context is not None else str(exc))
             except LLMProviderError as exc:
                 attempted_models.extend(exc.attempted_models)
                 last_error = exc
                 break
+        if incremental_context is not None:
+            raise IncrementalSchemeFailure(failure_stage,
+                provider_failure=last_error.failure_classification
+                    if isinstance(last_error, LLMProviderError) else None,
+                attempted_count=len(attempted_models)) from None
         fallback = await self._fallback.generate(research_object=research_object, goal=goal)
         classification = _failure_classification(last_error)
         decision = StructuredAgentDecision(
@@ -411,7 +455,9 @@ def _overall_deadline_error(
     )
 
 
-def _scheme_messages(research_object: ResearchObject, goal: ResearchGoal) -> list[LLMMessage]:
+def _scheme_messages(
+    research_object: ResearchObject, goal: ResearchGoal, incremental_context=None
+) -> list[LLMMessage]:
     system = (
         "Create a research method only. Return the strict JSON schema. Never generate financial "
         "numbers, estimates, CalculationRecords, or hidden reasoning. Require accepted evidence "
@@ -423,11 +469,30 @@ def _scheme_messages(research_object: ResearchObject, goal: ResearchGoal) -> lis
         "each: deterministic_financial_calculations_only and "
         "calculation_records_for_reported_values."
     )
+    if incremental_context is not None:
+        system += (
+            " This is a NEW independent incremental research Run. Interpret the bounded prior "
+            "memory and propose a new research method and new tasks. Distinguish reused historical "
+            "context, fresh acquisitions, new validation, preventive period-consistency checks, "
+            "and new research needs in the scheme fields. The prior summary is context, not an "
+            "automatic REUSE decision. Zero REUSE and empty categories are valid. The governed "
+            "sources and policy are constraints: "
+            "never reuse old evidence as current, never inherit old review/proof, never change a "
+            "source identity or historical statement. incremental_decisions must contain exactly "
+            "one closed entry per input source_identity, with decision and concise Chinese reason. "
+            "For verified metrics/claims select REFRESH or REVALIDATE or UNKNOWN; for a known "
+            "resolved issue select PREVENT or UNKNOWN; REUSE only for an explicitly supplied "
+            "eligible VIEW_CONTEXT item. Input UNKNOWN must remain UNKNOWN. Do not invent sources "
+            "or require all four categories. No hidden reasoning."
+        )
+    payload = {
+        "research_object": research_object.model_dump(mode="json"),
+        "goal": goal.model_dump(mode="json"),
+    }
+    if incremental_context is not None:
+        payload["previous_research_memory"] = incremental_context.model_dump(mode="json")
     user = json.dumps(
-        {
-            "research_object": research_object.model_dump(mode="json"),
-            "goal": goal.model_dump(mode="json"),
-        },
+        payload,
         sort_keys=True,
     )
     return [LLMMessage(role="system", content=system), LLMMessage(role="user", content=user)]

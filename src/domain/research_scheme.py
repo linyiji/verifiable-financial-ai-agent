@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import Field
 
 from src.domain.base import JsonObject, TimestampedModel
+from src.domain.incremental import IncrementalResearchContext
 
 
 class ResearchSchemeSnapshot(TimestampedModel):
@@ -20,3 +21,6 @@ class ResearchSchemeSnapshot(TimestampedModel):
     generated_by: str
     generated_model: str | None = None
     confirmed_at: datetime | None = None
+    incremental_context: IncrementalResearchContext | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )

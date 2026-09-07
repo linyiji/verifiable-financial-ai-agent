@@ -1,4 +1,5 @@
 import type {ResearchMemorySnapshot} from "../types/researchMemory";
+import {IncrementalContext} from "./IncrementalContext";
 
 export function ResearchMemory({memory, unavailable, onOpenSource}: {
   readonly memory: ResearchMemorySnapshot | null;
@@ -26,7 +27,20 @@ export function ResearchMemory({memory, unavailable, onOpenSource}: {
         </article>)}
         {!view.items.some(i=>i.category===category)&&<p className="small">NOT_OBSERVED · 未保留可验证的权威材料。</p>}
       </section>)}
-      <footer className="small">Peer / Path / Reusable Context：NOT_OBSERVED · 未纳入此版本。记忆不会自动复用证据或发起增量研究。</footer>
+      <footer className="small">Peer / Path / Reusable Context：NOT_OBSERVED · 未纳入此版本。新研究可使用精确历史出处作为计划背景，不自动复制证据。</footer>
     </section>
+    {memory.base_memory?.current_view && memory.incremental_context && <section className="card pad" data-testid="base-vs-current" data-base-run-id={memory.base_memory.current_view.source_run_id} data-current-run-id={view.source_run_id}>
+      <h2>本次变化 · 历史研究与当前研究</h2>
+      <p>View v{memory.base_memory.current_view.research_view_version} → View v{view.research_view_version}。按公式、期间、单位与结论类型比较；没有精确逻辑键的问题仅列为历史保留或本次新增。</p>
+      <div data-testid="comparison-changes">{memory.changes?.map((c,index)=><p key={index} data-testid="governed-change" data-change={c.change} data-category={c.category}>{names[c.category]}：{({UNCHANGED:"数值未变 · 本次独立验证",UPDATED:"已更新",REVALIDATED:"已重新验证",NEW:"本次新增",REMOVED_FROM_CURRENT_VIEW:"仅保留在历史视图"})[c.change]}</p>)}</div>
+      <div className="detail-grid">{[memory.base_memory.current_view,view].map((v,index)=><div key={v.research_view_version_id}>
+        <h3>{index===0 ? "上次研究" : "当前研究"} · v{v.research_view_version}</h3><p>{v.summary ?? "未观察到已验证摘要"}</p>
+        <button className="btn primary sm" data-testid={index===0?"comparison-base-source":"comparison-current-source"} onClick={()=>onOpenSource(v.source_run_id,null)}>打开{index===0?"历史":"本次"}研究结果 →</button>
+        {v.items.map(i=><article className="memory-item" key={i.memory_item_id} data-testid="comparison-item" data-source-run-id={i.source_run_id}>
+          <div><strong>{names[i.category]}</strong><p>{i.statement}</p><span className="small">{index===0?"仅保留在历史视图，不视为本次产出":"本次独立生成"}</span><button className="btn ghost sm" onClick={()=>onOpenSource(i.source_run_id,i.report_anchor)}>查看精确来源</button></div>
+        </article>)}
+      </div>)}</div>
+      <IncrementalContext context={memory.incremental_context}/>
+    </section>}
   </>;
 }

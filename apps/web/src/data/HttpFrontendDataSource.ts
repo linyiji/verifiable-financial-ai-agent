@@ -131,7 +131,9 @@ function createObjectBody(input: Readonly<Phase4CreateResearchObjectInput>): str
 }
 
 function prepareBody(input: Readonly<Phase4PrepareResearchRunInput>): string {
+  if ((input.baseRunId===undefined)!==(input.baseResearchViewVersion===undefined)) throw new TypeError("Paired base identities required");
   return jsonBody({
+    ...(input.baseRunId===undefined ? {} : {base_run_id: requiredText(input.baseRunId,"baseRunId"), base_research_view_version: requiredText(input.baseResearchViewVersion!,"baseResearchViewVersion")}),
     research_object_id: requiredText(input.researchObjectId, "researchObjectId"),
     research_goal: requiredText(input.researchGoal, "researchGoal"),
     as_of: requiredText(input.asOf, "asOf"),
@@ -221,6 +223,13 @@ export class HttpFrontendDataSource implements Phase4FrontendDataSource {
     const expectedObjectId = requiredText(objectId, "objectId");
     return this.client.requestJson({method:"GET", path: `${phase4ApiRoutes.object(expectedObjectId)}/memory`,
       expectedStatuses:[200], signal: options?.signal, decode: value=>decodeResearchMemory(value, expectedObjectId)});
+  }
+
+  materializeResearchMemory(objectId: string, sourceRunId: string) {
+    const expectedObjectId=requiredText(objectId,"objectId");
+    return this.client.requestJson({method:"POST",path:`${phase4ApiRoutes.object(expectedObjectId)}/memory/materialize`,
+      expectedStatuses:[200],body:jsonBody({source_run_id:requiredText(sourceRunId,"sourceRunId")}),
+      decode:value=>decodeResearchMemory(value,expectedObjectId)});
   }
 
   getResearchObject(
@@ -412,7 +421,12 @@ export class HttpFrontendDataSource implements Phase4FrontendDataSource {
       idempotencyKey: mutation.idempotencyKey,
       body: prepareBody(mutation.input),
       signal: options?.signal,
-      decode: (value) => decodePreparedResearchDraft(value, expectedObjectId)
+      decode: (value) => {
+        const draft=decodePreparedResearchDraft(value, expectedObjectId);
+        const context=draft.schemeSnapshot.incrementalContext;
+        if(context?.base_run_id!==mutation.input.baseRunId || context?.base_research_view_version!==mutation.input.baseResearchViewVersion || (context && context.target_as_of!==mutation.input.asOf)) throw new TypeError("Prepared draft changed exact base identity");
+        return draft;
+      }
     });
     this.retainImmutableResponse(
       this.preparedDrafts,
