@@ -5,12 +5,22 @@ from fastapi.responses import StreamingResponse
 
 from src.application.events import prepare_completed_run_event_stream
 from src.application.service import ResearchApplicationService
+from src.domain.recovery import RecoveryEvidence
+from src.infrastructure.database.recovery import RecoveryEvidenceStore
 from src.phase4_product.api import create_phase4_product_router
 from src.phase4_product.contracts import PHASE4_CONTRACT_VERSION
 from src.phase4_product.errors import product_error
 from src.runtime.events import CursorPreflightError
 
 router = create_phase4_product_router()
+
+
+@router.get("/research-runs/{run_id}/recovery", response_model=list[RecoveryEvidence])
+async def recovery_execution_record(run_id: str, request: Request):
+    """Exact-Run additive recovery projection; old Runs have no backfilled attempts."""
+    backend = request.app.state.phase4_product_backend
+    await backend.get_run(run_id)
+    return await RecoveryEvidenceStore(backend.sessions).records(run_id=run_id)
 
 
 def _service(request: Request) -> ResearchApplicationService:

@@ -37,6 +37,7 @@ class LLMResearchAgent:
         supported_task_types: frozenset[str],
         provider: LLMProvider,
         artifacts: ResearchAgentOutputArtifactStore,
+        recovery=None,
     ) -> None:
         if not agent_id.strip() or not supported_task_types:
             raise ValueError("research Agent identity and task types are required")
@@ -44,6 +45,7 @@ class LLMResearchAgent:
         self.supported_task_types = supported_task_types
         self._provider = provider
         self._artifacts = artifacts
+        self._recovery = recovery
 
     async def execute(self, context: SpecialistExecutionContext) -> SpecialistResult:
         task = context.task
@@ -59,11 +61,16 @@ class LLMResearchAgent:
         )
         started = perf_counter()
         try:
-            response = await self._provider.complete_structured(
+            request = dict(
                 messages=_messages(context),
                 response_model=response_model,
                 schema_name=f"{task.task_type}_research_output_v1",
                 workload_type="RESEARCH_AGENT_EXECUTION",
+            )
+            response = (
+                await self._recovery.execute(context, self._provider, **request)
+                if self._recovery is not None
+                else await self._provider.complete_structured(**request)
             )
         except LLMProviderError as exc:
             duration_ms = max(0, round((perf_counter() - started) * 1000))

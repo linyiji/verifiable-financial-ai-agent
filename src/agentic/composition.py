@@ -4,7 +4,7 @@ from src.agentic.registry import AgentRegistry
 from src.agentic.research_agent import LLMResearchAgent
 
 
-def build_research_agent_registry(provider, artifacts, *, profile_providers=None):
+def build_research_agent_registry(provider, artifacts, *, profile_providers=None, recovery=None):
     profile_providers = profile_providers or {}
     registry = AgentRegistry()
     for agent_id, task_types in (
@@ -24,6 +24,7 @@ def build_research_agent_registry(provider, artifacts, *, profile_providers=None
                 supported_task_types=task_types,
                 provider=selected[0],
                 artifacts=artifacts,
+                recovery=recovery,
             )
         )
     return registry

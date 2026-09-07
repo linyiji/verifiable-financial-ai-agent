@@ -192,7 +192,7 @@ def _full_material_release() -> dict[str, object]:
                 input_values_snapshot={},
                 parameters={},
                 output_value=value,
-                output_unit=unit.value,
+                output_unit="USD" if unit is FinancialUnit.CURRENCY else unit.value,
                 status=CalculationStatus.PASS,
                 review_status=ReviewStatus.PASS,
                 implementation_hash=SHA256_A,

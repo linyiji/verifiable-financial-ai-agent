@@ -26,6 +26,7 @@ from src.agentic.llm_integration import (
     PlannerProviderResearchLeadPlanner,
     PlannerProviderSchemeGenerator,
 )
+from src.agentic.recovery_composition import build_adaptive_recovery
 from src.agentic.research_output_artifacts import ResearchAgentOutputArtifactStore
 from src.application.errors import ApplicationError
 from src.application.evidence_collection import LiveFMPEvidenceCollector
@@ -98,7 +99,12 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 forbidden_values=forbidden_values,
             )
             research_agents = build_research_agent_registry(
-                model_provider, research_output_artifacts, profile_providers=specialist_providers
+                model_provider,
+                research_output_artifacts,
+                profile_providers=specialist_providers,
+                recovery=await build_adaptive_recovery(
+                    settings, persistence.sessions, forbidden_values=forbidden_values
+                ),
             )
             app.state.postgresql_persistence = persistence
             research_service = ResearchApplicationService(
