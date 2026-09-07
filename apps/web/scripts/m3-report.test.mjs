@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createServer } from "vite";
 
 import {
   parseResultsFocus,
@@ -74,3 +77,36 @@ check(executionFocusMatches(execution, ACTOR, OUTPUT, EVENT)?.actor.actorId === 
 
 assert.equal(checks, 14);
 console.log(`M3 focused interaction checks: ${checks}/14 PASS`);
+
+// Render the actual component in memory using the existing Vite/React
+// toolchain. These alternate statements are test data, never production Runs.
+const renderer = await createServer({ server: { middlewareMode: true }, appType: "custom" });
+let ReportComponent;
+try {
+  ({ InteractiveResearchReport: ReportComponent } = await renderer.ssrLoadModule("/src/components/results/InteractiveResearchReport.tsx"));
+} finally {
+  await renderer.close();
+}
+const renderSummary = (claims) => {
+  const markup = renderToStaticMarkup(createElement(ReportComponent, {
+    report: { ...report, anchors: [], availability: { reasonCode: "REPORT_SOURCE_MAP_PARTIAL" } },
+    result: { ...result, claims: claims.map((item) => ({ ...item, calculationRefs: [], evidenceRefs: [] })), releasedAt: "2026-01-01", limitations: [], metrics: [{ ...metric, proof: { status: "VERIFIED" } }] },
+    artifacts: { representations: [] }, review, backendOrigin: "", requestedAnchor: null,
+    onOpenExecution: () => {}, onOpenReview: () => {}
+  }));
+  const summary = markup.match(/<section class="report-summary"[^>]*>([\s\S]*?)<\/section>/u);
+  assert.ok(summary, "actual component renders the prominent summary");
+  return summary[1];
+};
+const originalSummary = renderSummary([claim]);
+const changedSummary = renderSummary([{ ...claim, statement: "Released test claim: revenue declined." }]);
+const missingSummary = renderSummary([]);
+const neutralBody = "<p>当前没有可展示的已发布核心结论。</p>";
+check(originalSummary.includes(`<p>${claim.statement}</p>`), "summary renders the authoritative released claim");
+check(!component.includes("财务增长强劲；估值、竞争和外部事件仍需独立证据。"), "old authored financial conclusion is absent from production component");
+check(changedSummary.includes("<p>Released test claim: revenue declined.</p>") && !changedSummary.includes(claim.statement), "changed authoritative data changes the rendered conclusion");
+check(missingSummary.includes(neutralBody), "missing claim renders a neutral unavailable state");
+check(missingSummary === '<span>RELEASED RESEARCH SUMMARY</span><h3 id="report-summary-heading">核心研究结论</h3>' + neutralBody, "missing summary contains no manufactured financial conclusion");
+check(renderSummary([{ ...claim, runId: "RUN-OTHER" }]) === missingSummary, "foreign-run claim cannot become a summary fallback");
+assert.equal(checks, 20);
+console.log("M7-R1 rendered summary provenance checks: 6/6 PASS");

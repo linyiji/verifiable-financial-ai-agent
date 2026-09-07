@@ -91,8 +91,8 @@ export function InteractiveResearchReport({
 
     <section className="report-summary" aria-labelledby="report-summary-heading">
       <span>RELEASED RESEARCH SUMMARY</span>
-      <h3 id="report-summary-heading">财务增长强劲；估值、竞争和外部事件仍需独立证据。</h3>
-      <p>{heroClaim?.statement ?? "当前 Released Result 未提供收入增长结论。"}</p>
+      <h3 id="report-summary-heading">核心研究结论</h3>
+      <p>{heroClaim?.statement ?? "当前没有可展示的已发布核心结论。"}</p>
     </section>
 
     <section className="report-key-metrics" aria-label="关键财务指标">
