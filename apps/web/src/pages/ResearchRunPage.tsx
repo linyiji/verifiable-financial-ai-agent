@@ -8,11 +8,12 @@ export interface ResearchRunPageProps {
   readonly connection: ConnectionState;
   readonly lifecycle: ProjectionLifecycle | null;
   readonly onOpenResults: () => void;
+  readonly onOpenExecution: () => void;
   readonly onNavigate: (path: string) => void;
 }
 
-export function ResearchRunPage({ projection, source, connection, lifecycle, onOpenResults, onNavigate }: ResearchRunPageProps) {
+export function ResearchRunPage({ projection, source, connection, lifecycle, onOpenResults, onOpenExecution, onNavigate }: ResearchRunPageProps) {
   return <section className="research-run-page" aria-label={`${projection.object.companyName} Research Run`}>
-    <ResearchRuntimeWorkspace projection={projection} source={source} connection={connection} lifecycle={lifecycle} onOpenResults={onOpenResults} onNavigate={onNavigate} />
+    <ResearchRuntimeWorkspace projection={projection} source={source} connection={connection} lifecycle={lifecycle} onOpenResults={onOpenResults} onOpenExecution={onOpenExecution} onNavigate={onNavigate} />
   </section>;
 }

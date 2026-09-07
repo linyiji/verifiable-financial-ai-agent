@@ -34,6 +34,7 @@ export interface ResearchRuntimeWorkspaceProps {
   readonly connection: ConnectionState;
   readonly lifecycle: ProjectionLifecycle | null;
   readonly onOpenResults: () => void;
+  readonly onOpenExecution: () => void;
   readonly onNavigate: (path: string) => void;
 }
 
@@ -101,7 +102,7 @@ function stageStateLabel(state: StageState, selected: boolean): string {
   return "等待中";
 }
 
-export function ResearchRuntimeWorkspace({ projection, source, connection, lifecycle, onOpenResults, onNavigate }: ResearchRuntimeWorkspaceProps) {
+export function ResearchRuntimeWorkspace({ projection, source, connection, lifecycle, onOpenResults, onOpenExecution, onNavigate }: ResearchRuntimeWorkspaceProps) {
   const [selectedStage, setSelectedStage] = useState<WorkspaceStage>("research");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [reviewSurface, setReviewSurface] = useState<FinancialReviewSurfaceV1 | null>(null);
@@ -151,7 +152,7 @@ export function ResearchRuntimeWorkspace({ projection, source, connection, lifec
         <p>完整公司金融研究</p>
         <div className="workspace-object">{projection.object.symbol} · Research Object</div>
       </div>
-      <div className="workspace-header-actions"><span className={`badge ${status.color}`}><span className="dot" />{status.label}</span>{projection.result.availability.status === "AVAILABLE" && <button className="btn primary sm" type="button" data-testid="open-results-workspace" onClick={onOpenResults}>查看研究结果</button>}</div>
+      <div className="workspace-header-actions"><span className={`badge ${status.color}`}><span className="dot" />{status.label}</span>{projection.execution.availability.status === "AVAILABLE" && <button className="btn sm" type="button" data-testid="open-execution-workspace" onClick={onOpenExecution}>查看执行记录</button>}{projection.result.availability.status === "AVAILABLE" && <button className="btn primary sm" type="button" data-testid="open-results-workspace" onClick={onOpenResults}>查看研究结果</button>}</div>
     </header>
 
     <dl className="workspace-facts" aria-label="Research Run 摘要">

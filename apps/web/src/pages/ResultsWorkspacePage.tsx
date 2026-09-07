@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Phase4FrontendDataSource } from "../data/FrontendDataSource";
+import { InteractiveExecutionRecord } from "../components/results/InteractiveExecutionRecord";
 import { InteractiveFinancialReview } from "../components/results/InteractiveFinancialReview";
 import { InteractiveResearchReport } from "../components/results/InteractiveResearchReport";
-import { executionFocusMatches, reportBundleMatches } from "../components/results/reportModel";
+import { reportBundleMatches } from "../components/results/reportModel";
 import { RESULTS_SURFACES, parseResultsFocus, resultsPath, runPath, type ResultsFocus, type ResultsSurfaceRoute } from "../routing/resultsRoute";
 import type {
   ExecutionRecordSurfaceV1,
@@ -50,7 +51,7 @@ const SURFACE_META: Readonly<Record<ResultsSurfaceRoute, Readonly<{ label: strin
   execution: {
     label: "C · 执行记录",
     eyebrow: "C · EXECUTION RECORD",
-    description: "查看本次 Research Run 可观察的执行参与者与记录汇总。"
+    description: "按 Actor 查看本次 Research Run 的输入、可观察过程、输出与报告贡献。"
   }
 };
 
@@ -355,9 +356,16 @@ function SurfaceHost({ surface, payload, supplement, backendOrigin, focus, runId
     />;
   }
   const execution = payload as ExecutionRecordSurfaceV1;
-  const eventCount = execution.actors.reduce((total, actor) => total + actor.eventCount, 0);
-  const recordCount = execution.actors.reduce((total, actor) => total + actor.recordCount, 0);
   const requested = focus !== null && "actorId" in focus ? focus : null;
-  const exact = requested === null ? null : executionFocusMatches(execution, requested.actorId, requested.outputId, requested.eventId);
-  return <div className="result-product-host execution-focus-host" data-testid="execution-product-host"><div className="result-host-copy"><span>执行摘要</span><h3>{exact?.actor.displayRole ?? `${execution.actors.length} 个参与角色`}</h3><p>{exact === null ? "仅展示可观察汇总，不包含原始事件流或内部推理内容。" : "已从报告定位到同一 Released Run 的精确 Actor → Output → Event。"}</p>{exact !== null && <div className="focus-receipt" data-testid="execution-exact-focus"><span>{exact.actor.actorId} · {exact.output.status}</span><code>{exact.output.outputId}</code><code>{exact.event.eventId}</code><small>{exact.output.summary}</small></div>}{requested !== null && exact === null && <div className="focus-receipt invalid">请求的执行定位与此 Run 不匹配；未展示近似记录。</div>}</div><div className="result-host-facts"><div><span>事件总量</span><strong>{eventCount}</strong></div><div><span>输出记录</span><strong>{recordCount}</strong></div></div>{requested?.returnAnchor && <button type="button" className="btn" data-testid="execution-return-report" onClick={() => onNavigate(resultsPath(runId, "report", { anchor: requested.returnAnchor! }))}>返回报告位置</button>}</div>;
+  return <InteractiveExecutionRecord
+    execution={execution}
+    requested={requested}
+    onSelectActor={(actorId) => onReplace(resultsPath(runId, "execution", {
+      actorId,
+      outputId: null,
+      eventId: null,
+      returnAnchor: null
+    }))}
+    onOpenReport={(contribution) => onNavigate(resultsPath(runId, "report", { anchor: contribution.reportAnchor }))}
+  />;
 }

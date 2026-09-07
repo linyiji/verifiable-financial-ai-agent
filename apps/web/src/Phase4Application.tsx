@@ -480,6 +480,7 @@ export function Phase4Application() {
         connection={connection ?? initialConnection(selectedRunProjection.run.runId, selectedRunProjection.projectionSequence)}
         lifecycle={lifecycle}
         onOpenResults={() => navigatePath(resultsPath(selectedRunProjection.run.runId, "report"))}
+        onOpenExecution={() => navigatePath(resultsPath(selectedRunProjection.run.runId, "execution"))}
         onNavigate={navigatePath}
       />}
       {!selectedRunProjection && !selectedRunError && <div className="card app-loading" role="status"><div className="spinner" aria-hidden="true" /><span>正在载入当前 Research Run…</span></div>}

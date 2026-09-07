@@ -20,8 +20,8 @@ export interface ReviewFocus {
 
 export interface ExecutionFocus {
   readonly actorId: string;
-  readonly outputId: string;
-  readonly eventId: string;
+  readonly outputId: string | null;
+  readonly eventId: string | null;
   readonly returnAnchor: string | null;
 }
 
@@ -51,9 +51,8 @@ export function parseResultsFocus(surface: ResultsSurfaceRoute, search: string):
   const actorId = safeFocusValue(query.get("actor"));
   const outputId = safeFocusValue(query.get("output"));
   const eventId = safeFocusValue(query.get("event"));
-  return actorId === null || outputId === null || eventId === null
-    ? null
-    : { actorId, outputId, eventId, returnAnchor };
+  if (actorId === null || (outputId === null) !== (eventId === null)) return null;
+  return { actorId, outputId, eventId, returnAnchor };
 }
 
 export function parseResultsRoute(pathname: string): ParsedResultsRoute | null {
@@ -84,8 +83,10 @@ export function resultsPath(
   }
   if (surface === "execution" && "actorId" in focus) {
     query.set("actor", focus.actorId);
-    query.set("output", focus.outputId);
-    query.set("event", focus.eventId);
+    if (focus.outputId !== null && focus.eventId !== null) {
+      query.set("output", focus.outputId);
+      query.set("event", focus.eventId);
+    }
     if (focus.returnAnchor !== null) query.set("return_anchor", focus.returnAnchor);
   }
   const suffix = query.toString();
