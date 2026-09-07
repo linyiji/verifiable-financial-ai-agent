@@ -33,6 +33,13 @@ _NUMBERS = {
     "input_tokens",
     "output_tokens",
     "configured_delay_s",
+    "connect_timeout_s",
+    "read_timeout_s",
+    "write_timeout_s",
+    "pool_timeout_s",
+    "attempt_deadline_s",
+    "workload_deadline_s",
+    "max_attempts",
 }
 _ACTORS = {
     "fundamental_analyst",
@@ -61,6 +68,12 @@ class Recorder:
             return None
         if key in _NUMBERS:
             return value if type(value) in (int, float) and 0 <= value < 10**15 else None
+        if key == "provider_route_id":
+            return (
+                value if value in {"teamorouter-sol", "teamorouter-luna", "mimo-direct"} else None
+            )
+        if key == "task_profile":
+            return value if value == "INCREMENTAL_RESEARCH_PLANNING" else None
         if key in {"run_id", "task_id", "event_id"}:
             return value if isinstance(value, str) and _ID.fullmatch(value) else None
         if key == "actor":
@@ -271,6 +284,10 @@ def observe(
                 attributes.update(
                     provider=getattr(owner, "provider_name", None),
                     requested_model=getattr(owner, "model_name", None),
+                    provider_route_id=getattr(owner, "route_ids", {}).get(
+                        getattr(owner, "model_name", None)
+                    ),
+                    task_profile=getattr(owner, "task_profile", None),
                 )
             return token, span(operation, **attributes)
 

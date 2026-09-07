@@ -1,0 +1,85 @@
+"""Explicit route composition. No ranking, auto switching, or secrets in descriptors."""
+
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from dotenv import dotenv_values
+
+from src.adapters.llm.execution import ProviderExecutionPolicyV1
+from src.adapters.llm.mimo import MimoClient
+from src.adapters.llm.teamorouter import TeamoRouterClient
+from src.infrastructure.config.settings import LLMSettings
+
+MIMO_AUTHORITY = Path(
+    "/Users/mac/.atlasanalyse/secrets/production-runtime-v1/xiaomi-mimo-direct-provider.env"
+)
+
+
+@dataclass(frozen=True)
+class ProviderRoute:
+    provider_route_id: str
+    provider_id: str
+    model_id: str
+    endpoint_authority_ref: str
+    structured_output_capability: str
+    timeout_policy: ProviderExecutionPolicyV1
+
+
+def load_mimo_authority(path=MIMO_AUTHORITY):
+    """Load the approved external authority only; never copy or emit its contents."""
+    if not path.is_file():
+        raise ValueError("MiMo authority unavailable")
+    values = dotenv_values(path)
+    key, base, model = (values.get(k) for k in ("MIMO_API_KEY", "MIMO_BASE_URL", "MIMO_CHAT_MODEL"))
+    if not all(isinstance(v, str) and v.strip() for v in (key, base, model)):
+        raise ValueError("MiMo authority incomplete")
+    url = urlsplit(base)
+    if (
+        (url.scheme, url.hostname, url.path.rstrip("/")) != ("https", "api.xiaomimimo.com", "/v1")
+        or url.username
+        or url.password
+        or url.query
+        or url.fragment
+        or url.port not in (None, 443)
+    ):
+        raise ValueError("MiMo direct endpoint authority invalid")
+    if model not in {"mimo-v2.5", "mimo-v2.5-pro"}:
+        raise ValueError("MiMo model structured capability not established")
+    return LLMSettings(
+        provider="mimo", api_key=key, base_url=base, primary_model=model, fallback_model=model
+    )
+
+
+def configured_incremental_provider(settings, *, route_id=None, mimo_authority=MIMO_AUTHORITY):
+    """The only provider-specific choice is in composition, never in the researcher."""
+    selected = route_id or settings.incremental_provider_route
+    if selected == "mimo-direct":
+        client = MimoClient(load_mimo_authority(mimo_authority))
+        client.route_ids = {client.model_name: selected}
+    elif selected in {"teamorouter-sol", "teamorouter-luna"}:
+        config = settings.llm
+        if selected == "teamorouter-luna":
+            config = config.model_copy(update={"primary_model": config.fallback_model})
+        client = TeamoRouterClient(config)
+        client.route_ids = {
+            settings.llm.primary_model: "teamorouter-sol",
+            settings.llm.fallback_model: "teamorouter-luna",
+        }
+    else:
+        raise ValueError("Unknown explicit provider route")
+    client.task_profile = "INCREMENTAL_RESEARCH_PLANNING"
+    return client
+
+
+def describe_route(client):
+    return ProviderRoute(
+        client.route_ids[client.model_name],
+        client.provider_name,
+        client.model_name,
+        "atlasanalyse-mimo-direct" if client.provider_name == "mimo" else "vfas-teamorouter",
+        "JSON_MODE_WITH_STRICT_LOCAL_VALIDATION"
+        if client.provider_name == "mimo"
+        else "NATIVE_SCHEMA_CONSTRAINED",
+        client.execution_policy,
+    )

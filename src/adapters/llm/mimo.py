@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 
 from src.adapters.llm.execution import ProviderExecutionPolicyV1
@@ -11,6 +13,25 @@ class MimoClient(OpenAICompatiblePlannerClient):
     """Xiaomi MiMo specialization with truthful identity and PAYG-only credentials."""
 
     provider_name = "mimo"
+
+    def _request_template(self, *, messages, response_model, schema_name):
+        # MiMo documents JSON mode, not native JSON-schema enforcement.
+        # The unchanged shared decoder and exact Pydantic validator remain mandatory.
+        template = super()._request_template(
+            messages=messages, response_model=response_model, schema_name=schema_name
+        )
+        schema = template["response_format"]["json_schema"]["schema"]
+        template["response_format"] = {"type": "json_object"}
+        template["messages"] = [
+            {
+                "role": "system",
+                "content": "Return only one JSON object matching this exact "
+                "schema. No Markdown, commentary or reasoning. JSON schema: " + json.dumps(schema),
+            },
+            *template["messages"],
+        ]
+        template.update(stream=False, max_completion_tokens=8192, thinking={"type": "disabled"})
+        return template
 
     def __init__(
         self,

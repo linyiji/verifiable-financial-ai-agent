@@ -109,6 +109,7 @@ class Settings(BaseSettings):
     fmp_api_key: SecretStr | None = None
     fmp_base_url: str = "https://financialmodelingprep.com"
     llm_provider: str = "teamorouter"
+    incremental_provider_route: str = "teamorouter-sol"
     teamorouter_api_key: SecretStr | None = None
     teamorouter_base_url: str = "https://api.teamorouter.com/v1"
     teamorouter_model: str = "gpt-5.6-sol"

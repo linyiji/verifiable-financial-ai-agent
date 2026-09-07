@@ -44,6 +44,11 @@ class OpenAICompatiblePlannerClient:
     """
 
     provider_name = ""
+    route_ids: dict[str, str] = {}
+    task_profile: str | None = None
+
+    def _request_template(self, **kwargs):
+        return _structured_request_template(**kwargs)
 
     def __init__(
         self,
@@ -116,11 +121,22 @@ class OpenAICompatiblePlannerClient:
         workload_type: str | None = None,
     ) -> LLMStructuredResponse[StructuredModel]:
         requested_model = self._settings.primary_model
+        # Internal bounded metadata only; no messages, URLs, bodies or credentials.
+        policy = self._execution_policy
+        annotate(
+            connect_timeout_s=policy.connect_timeout_seconds,
+            read_timeout_s=policy.read_timeout_seconds,
+            write_timeout_s=policy.write_timeout_seconds,
+            pool_timeout_s=policy.pool_timeout_seconds,
+            attempt_deadline_s=policy.per_attempt_deadline_seconds,
+            workload_deadline_s=policy.overall_workload_deadline_seconds,
+            max_attempts=policy.max_attempts,
+        )
         started = perf_counter()
         attempted: list[str] = []
         try:
             _validate_completion_url(self._completion_url)
-            request_template = _structured_request_template(
+            request_template = self._request_template(
                 messages=messages,
                 response_model=response_model,
                 schema_name=schema_name,
@@ -198,6 +214,8 @@ class OpenAICompatiblePlannerClient:
                     provider=self.provider_name,
                     requested_model=requested_model,
                     attempted_model=model,
+                    provider_route_id=self.route_ids.get(model),
+                    task_profile=self.task_profile,
                 ):
                     async with asyncio.timeout(self._execution_policy.per_attempt_deadline_seconds):
                         return await self._send(

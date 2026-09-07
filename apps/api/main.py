@@ -18,6 +18,7 @@ from src.adapters.finrobot.professional_reporting import (
     ProfessionalReportPublisher,
 )
 from src.adapters.fmp import FinancialProviderMode, FMPProvider, select_financial_provider
+from src.adapters.llm.routes import configured_incremental_provider
 from src.adapters.llm.teamorouter import TeamoRouterClient
 from src.adapters.risc0 import RiscZeroProofAdapter
 from src.agentic import AgentRegistry
@@ -80,9 +81,14 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 artifact_root=Path(settings.artifact_root) / "phase4-raw",
             )
             model_provider = TeamoRouterClient(settings.llm)
+            incremental_provider = configured_incremental_provider(settings)
             forbidden_values = tuple(
                 secret.get_secret_value()
-                for secret in (*settings.fmp.credentials, settings.llm.api_key)
+                for secret in (
+                    *settings.fmp.credentials,
+                    settings.llm.api_key,
+                    incremental_provider._settings.api_key,
+                )
                 if secret is not None
             )
             configure_from_environment(forbidden_values=forbidden_values)
@@ -139,8 +145,8 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
             app.state.phase4_product_backend = PostgreSQLPhase4ProductBackend(
                 sessions=persistence.sessions,
                 service=research_service,
-                incremental_scheme_generator=PlannerProviderSchemeGenerator(model_provider),
-                incremental_planner=PlannerProviderResearchLeadPlanner(model_provider),
+                incremental_scheme_generator=PlannerProviderSchemeGenerator(incremental_provider),
+                incremental_planner=PlannerProviderResearchLeadPlanner(incremental_provider),
             )
             generated = GeneratedCapabilityOrchestrator(
                 registry=ScopedCapabilityRegistry(research_service.capability_registry),
