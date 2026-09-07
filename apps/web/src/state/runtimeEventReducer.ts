@@ -160,7 +160,7 @@ export function createRunRuntimeState(
 
   return {
     projection,
-    identity: Object.freeze({ ...expected }),
+    identity: Object.freeze({ ...expected, canonicalRecordId: snapshot.canonicalRecordId }),
     runId: expected.runId,
     committedSequence: snapshot.sequence,
     streamGeneration: 0,
@@ -445,6 +445,7 @@ export function reconcileRunRuntimeState(
   return {
     ...state,
     projection: replacement,
+    identity: Object.freeze({ ...state.identity, canonicalRecordId: snapshot.canonicalRecordId }),
     committedSequence: snapshot.sequence,
     streamGeneration: state.streamGeneration + 1,
     connection,
@@ -692,7 +693,7 @@ function inspectProjection(projection: RunProjection, expected: ExactRunIdentity
   for (const value of requiredArray(root, "pathChanges", "projection")) {
     validatePathChange(value, taskIds, graphVersion);
   }
-  validateCanonicalRecord(root, expected.canonicalRecordId);
+  const canonicalRecordId = validateCanonicalRecord(root, expected.canonicalRecordId);
 
   const lifecycle = requiredNestedRecord(root, "lifecycle", "projection");
   const terminalState = requiredNestedRecord(root, "terminal", "projection");
@@ -748,7 +749,7 @@ function inspectProjection(projection: RunProjection, expected: ExactRunIdentity
     }
   }
 
-  return { revision, sequence, graphVersion, terminal, terminalOutcome };
+  return { revision, sequence, graphVersion, terminal, terminalOutcome, canonicalRecordId };
 }
 
 function validatePathChange(
@@ -862,9 +863,29 @@ function validateCanonicalRecord(root: UnknownRecord, expected: string | null | 
     if (observed.size !== 1 || !observed.has(expected)) {
       throw new RuntimeProjectionError("projection does not match the expected canonical record");
     }
-  } else if (expected === null && observed.size > 0) {
-    throw new RuntimeProjectionError("projection unexpectedly exposes a canonical record");
   }
+  const canonicalRecordId = observed.values().next().value ?? null;
+  if (canonicalRecordId !== null) {
+    // Null before release means not materialized, not permanently forbidden.
+    // Ownership is established by the decoded exact-Run backend projection;
+    // canonical IDs are opaque and must not be parsed as Run identifiers.
+    const run = requiredNestedRecord(root, "run", "projection");
+    const terminal = requiredNestedRecord(root, "terminal", "projection");
+    const result = requiredNestedRecord(root, "result", "projection");
+    const execution = requiredNestedRecord(root, "execution", "projection");
+    if (
+      run.backendStatus !== "RELEASED"
+      || terminal.isTerminal !== true
+      || terminal.outcome !== "SUCCESS"
+      || result.canonicalRecordId !== canonicalRecordId
+      || execution.canonicalRecordId !== canonicalRecordId
+      || recordOrNull(result.availability)?.status !== "AVAILABLE"
+      || recordOrNull(execution.availability)?.status !== "AVAILABLE"
+    ) {
+      throw new RuntimeProjectionError("canonical record requires exact released result closure");
+    }
+  }
+  return canonicalRecordId;
 }
 
 function validateTerminalAvailability(root: UnknownRecord) {

@@ -2124,9 +2124,8 @@ function decodeRunCollectionItem(value: unknown, path: string): RunCollectionIte
       "unsuccessful terminal Run with every Task completed must have complete progress"
     );
   }
-  if (!statusFields.terminal && progress.fraction === 1) {
-    return fail(`${path}.progress.fraction`, "nonterminal Run progress cannot be complete");
-  }
+  // Task execution may be complete while Review/Proof/release remain pending.
+  // Explicit lifecycle status, not task progress, determines terminality.
   if (statusFields.backendStatus === "RELEASED" && progress.fraction !== 1) {
     return fail(`${path}.progress.fraction`, "RELEASED Run progress must be complete");
   }
@@ -3258,8 +3257,7 @@ export function decodeRunProjection(
   if (
     lifecycle.progress.totalTasks !== tasks.length ||
     lifecycle.progress.completedTasks !== completedTasks ||
-    Math.abs(lifecycle.progress.fraction - expectedFraction) > fractionTolerance ||
-    (!run.terminal && lifecycle.progress.fraction === 1)
+    Math.abs(lifecycle.progress.fraction - expectedFraction) > fractionTolerance
   ) {
     return fail("$.lifecycle.progress", "Run progress contradicts authoritative Tasks/status");
   }

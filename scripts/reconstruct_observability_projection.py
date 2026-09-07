@@ -89,4 +89,16 @@ def reconstruct(sequence):
     return projection.model_dump(mode="json")
 
 
-print(json.dumps({"initial": reconstruct(606), "review": reconstruct(609)}))
+print(
+    json.dumps(
+        {
+            "initial": reconstruct(606),
+            "review": reconstruct(609),
+            "proof": reconstruct(612),
+            "verified": reconstruct(614),
+            "intermediate": {
+                str(sequence): reconstruct(sequence) for sequence in (610, 611, 613, 615)
+            },
+        }
+    )
+)
