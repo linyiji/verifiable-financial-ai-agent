@@ -104,6 +104,7 @@ class IndependentFinancialReviewer:
         judgments: Sequence[JsonObject],
         proof_requirements: Mapping[str, ProofRequirement],
         branch_results: Sequence[FinancialBranchResult] = (),
+        requirement_context: JsonObject | None = None,
     ) -> ReviewRecord:
         checks: list[ReviewCheck] = []
         evidence_by_id = _unique(evidence, "evidence_id", "evidence")
@@ -111,33 +112,79 @@ class IndependentFinancialReviewer:
         metric_by_calculation = _unique(metrics, "calculation_id", "metric calculation")
         claim_by_metric = _unique(claims, "metric_id", "claim metric")
         formulas = [item.formula_id for item in calculations]
+        expected_formulas = set(MATERIAL_FORMULAS)
+        if requirement_context is not None:
+            from src.domain.financial_branch import BRANCH_FORMULAS
+
+            explicit = set(requirement_context["required_calculations"])
+            valid = (
+                requirement_context["branches"]
+                == [b.model_dump(mode="json") for b in branch_results]
+                and len(branch_results) == len(BRANCH_FORMULAS)
+                and {b.calculation_type for b in branch_results} == set(BRANCH_FORMULAS)
+            )
+            for branch in branch_results:
+                required = (
+                    branch.calculation_type in explicit
+                    or branch.calculation_type == "free_cash_flow_margin"
+                )
+                valid = valid and (branch.requirement is BranchRequirement.REQUIRED) == required
+                if (
+                    not required
+                    and branch.status
+                    in {BranchStatus.INSUFFICIENT_DATA, BranchStatus.BLOCKED_BY_RUNTIME}
+                    and branch.reason_code
+                ):
+                    expected_formulas.difference_update(BRANCH_FORMULAS[branch.calculation_type])
+            valid = valid and explicit.issubset({c.capability_id for c in calculations})
+            _check(
+                checks,
+                "FIN_SCHEME_REQUIREMENT_CLOSURE",
+                valid,
+                refs=[b.branch_id for b in branch_results],
+                expected={"status": "PASS"},
+                actual={"status": "PASS" if valid else "BLOCK"},
+            )
         for branch in branch_results:
-            owned = [item.calculation_id for item in calculations
-                     if item.capability_id == branch.calculation_type]
+            owned = [
+                item.calculation_id
+                for item in calculations
+                if item.capability_id == branch.calculation_type
+            ]
             eligible = branch.status is BranchStatus.COMPLETED
-            _check(checks, "FIN_BRANCH_CALCULATION_AVAILABILITY",
-                branch.run_id == run_id and set(owned) == set(branch.calculation_ids)
+            _check(
+                checks,
+                "FIN_BRANCH_CALCULATION_AVAILABILITY",
+                branch.run_id == run_id
+                and set(owned) == set(branch.calculation_ids)
                 and (eligible or not owned),
-                refs=[branch.branch_id, *owned], expected={"status": "PASS"},
-                actual={"status": branch.status.value})
+                refs=[branch.branch_id, *owned],
+                expected={"status": "PASS"},
+                actual={"status": branch.status.value},
+            )
             if branch.requirement is BranchRequirement.REQUIRED:
-                _check(checks, "FIN_REQUIRED_BRANCH_AVAILABILITY", eligible,
-                    refs=[branch.branch_id], expected={"status": "COMPLETED"},
-                    actual={"status": branch.status.value})
+                _check(
+                    checks,
+                    "FIN_REQUIRED_BRANCH_AVAILABILITY",
+                    eligible,
+                    refs=[branch.branch_id],
+                    expected={"status": "COMPLETED"},
+                    actual={"status": branch.status.value},
+                )
 
         _check(
             checks,
             "FIN_MATERIAL_FORMULA_CLOSURE",
-            len(formulas) == len(set(formulas)) and set(formulas) == set(MATERIAL_FORMULAS),
+            len(formulas) == len(set(formulas)) and set(formulas) == expected_formulas,
             refs=[item.calculation_id for item in calculations],
-            expected={"formula_ids": list(MATERIAL_FORMULAS)},
+            expected={"formula_ids": sorted(expected_formulas)},
             actual={"formula_ids": sorted(formulas)},
         )
         _check(
             checks,
             "FIN_TYPED_RELEASE_CARDINALITY",
-            len(calculations) == len(metrics) == len(claims) == len(MATERIAL_FORMULAS),
-            expected={"count": len(MATERIAL_FORMULAS)},
+            len(calculations) == len(metrics) == len(claims) == len(expected_formulas),
+            expected={"count": len(expected_formulas)},
             actual={
                 "calculations": len(calculations),
                 "metrics": len(metrics),
@@ -381,12 +428,19 @@ class IndependentFinancialReviewer:
                 for judgment in judgments
             ):
                 judgment_ok = False
+        expected_judgments = {"rsi_state", "macd_state"}
+        if requirement_context is not None:
+            expected_judgments = set()
+            if "rsi_close_14_simple_average_v1" in expected_formulas:
+                expected_judgments.add("rsi_state")
+            if "macd_line_close_12_26_adjust_false_v1" in expected_formulas:
+                expected_judgments.add("macd_state")
         _check(
             checks,
             "FIN_JUDGMENT_SUPPORT",
             judgment_ok
-            and judgment_types == {"rsi_state", "macd_state"}
-            and len(judgment_ids) == len(set(judgment_ids)) == 2,
+            and judgment_types == expected_judgments
+            and len(judgment_ids) == len(set(judgment_ids)) == len(expected_judgments),
             refs=judgment_ids,
             expected={"run_id": run_id, "unique": True},
             actual={"count": len(judgment_ids), "unique_count": len(set(judgment_ids))},
@@ -417,6 +471,7 @@ class IndependentFinancialReviewer:
             claims=claims,
             judgments=judgments,
             proof_requirements=proof_requirements,
+            requirement_context=requirement_context,
         )
         status = (
             ReviewStatus.PASS
@@ -440,6 +495,7 @@ class IndependentFinancialReviewer:
             required_proof_calculation_refs=required,
             checks=checks,
             input_snapshot_hash=snapshot_hash,
+            requirement_context=requirement_context,
             reviewer=self.reviewer_id,
         )
 
@@ -454,6 +510,7 @@ def financial_review_input_snapshot_hash(
     claims: Sequence[MaterialFinancialClaim],
     judgments: Sequence[JsonObject],
     proof_requirements: Mapping[str, ProofRequirement],
+    requirement_context: JsonObject | None = None,
 ) -> str:
     """Hash the exact immutable inputs independently reviewed before proof/release."""
 
@@ -469,6 +526,8 @@ def financial_review_input_snapshot_hash(
             key: value.value for key, value in sorted(proof_requirements.items())
         },
     }
+    if requirement_context is not None:
+        payload["requirement_context"] = requirement_context
     encoded = json.dumps(
         payload,
         allow_nan=False,

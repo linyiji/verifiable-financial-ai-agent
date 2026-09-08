@@ -12,6 +12,16 @@ SETTLED = {
 }
 
 
+class ExecutionContinuationGate:
+    """Scheduler exhaustion is not a Release decision; fatal errors never enter here."""
+
+    @staticmethod
+    def settled_for_review(state):
+        return all(task.status in SETTLED for task in state.actual_graph.tasks) and any(
+            task.output_requirements is not None for task in state.actual_graph.tasks
+        )
+
+
 def resolve_outputs(state, task):
     predecessors = [state.task(key) for key in task.dependencies]
     if task.output_requirements is None:

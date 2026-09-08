@@ -665,7 +665,7 @@ export interface ReportContributionRefV1 {
   readonly reportAnchor: string;
   readonly taskId: string;
   readonly actorId: string;
-  readonly agentOutputId: string;
+  readonly agentOutputId: string | null;
   readonly executionEventId: string | null;
   readonly calculationId: string | null;
   readonly evidenceRefs: readonly string[];
@@ -733,8 +733,8 @@ export interface FinancialReviewSurfaceV1 {
   readonly schemaVersion: "phase4.5-financial-review-surface/v1";
   readonly runId: string;
   readonly objectId: string;
-  readonly releasedResultId: string;
-  readonly canonicalExecutionRecordId: string;
+  readonly releasedResultId: string | null;
+  readonly canonicalExecutionRecordId: string | null;
   readonly reviewId: string;
   readonly reviewer: string;
   readonly verdict: Phase4ReviewStatus;
@@ -3657,7 +3657,7 @@ function decodeReportContribution(
     reportAnchor: decodeOpaqueId(field(input, "report_anchor", path), `${path}.report_anchor`),
     taskId: decodeOpaqueId(field(input, "task_id", path), `${path}.task_id`),
     actorId: decodeOpaqueId(field(input, "actor_id", path), `${path}.actor_id`),
-    agentOutputId: decodeOpaqueId(field(input, "agent_output_id", path), `${path}.agent_output_id`),
+    agentOutputId: nullableId("agent_output_id"),
     executionEventId: nullableId("execution_event_id"),
     calculationId: nullableId("calculation_id"),
     evidenceRefs: decodeStringArray(field(input, "evidence_refs", path), `${path}.evidence_refs`).map(
@@ -3832,6 +3832,9 @@ export function decodeFinancialReviewSurface(
   if (field(input, "schema_version", path) !== "phase4.5-financial-review-surface/v1") {
     return fail("$.schema_version", "unsupported Financial Review surface schema");
   }
+  if ((field(input, "released_result_id", path) === null) !== (field(input, "canonical_execution_record_id", path) === null)) {
+    return fail("$.released_result_id", "Review release identities must be present or absent together");
+  }
   const runId = decodeOpaqueId(field(input, "run_id", path), "$.run_id");
   if (runId !== decodeOpaqueId(expectedRunId, "expectedRunId")) return fail("$.run_id", "Review belongs to another Run");
   const objectId = decodeOpaqueId(field(input, "object_id", path), "$.object_id");
@@ -3860,8 +3863,8 @@ export function decodeFinancialReviewSurface(
   return freezeDeep({
     schemaVersion: "phase4.5-financial-review-surface/v1",
     runId, objectId,
-    releasedResultId: decodeOpaqueId(field(input, "released_result_id", path), "$.released_result_id"),
-    canonicalExecutionRecordId: decodeOpaqueId(field(input, "canonical_execution_record_id", path), "$.canonical_execution_record_id"),
+    releasedResultId: field(input, "released_result_id", path) === null ? null : decodeOpaqueId(field(input, "released_result_id", path), "$.released_result_id"),
+    canonicalExecutionRecordId: field(input, "canonical_execution_record_id", path) === null ? null : decodeOpaqueId(field(input, "canonical_execution_record_id", path), "$.canonical_execution_record_id"),
     reviewId,
     reviewer: decodePublicText(field(input, "reviewer", path), "$.reviewer", false, 800),
     verdict: decodeEnum(field(input, "verdict", path), ["PASS", "REVIEW", "BLOCK"] as const, "$.verdict"),

@@ -147,6 +147,7 @@ def _to_evidence_record(
     if isinstance(value, Decimal):
         value = _canonical_decimal(value)
     return EvidenceRecord(
+        document_authority=raw_record.get("document_authority"),
         evidence_id=f"EVD-{uuid5(NAMESPACE_URL, evidence_key)}",
         run_id=run_id,
         object_id=object_id,
@@ -202,6 +203,7 @@ def _canonical_decimal(value: Decimal) -> str:
 
 def _assert_same_evidence_identity(existing: EvidenceRecord, candidate: EvidenceRecord) -> None:
     identity_fields = (
+        "document_authority",
         "run_id",
         "object_id",
         "provider",

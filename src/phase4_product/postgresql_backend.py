@@ -134,6 +134,7 @@ from src.phase4_product.results import (
     build_report_surface,
     build_results_workspace,
 )
+from src.phase4_product.retained_assurance import retained_review_surface, validate_retained_proofs
 from src.phase4_product.safety import UnsafeProjectionData, safe_text
 from src.runtime.events import CursorPreflight, build_cursor_preflight
 from src.runtime.state import RuntimeState
@@ -610,8 +611,11 @@ class PostgreSQLPhase4ProductBackend:
             try:
                 scheme = await generated if inspect.isawaitable(generated) else generated
             except IncrementalSchemeFailure as exc:
-                raise product_error("UNAVAILABLE", "增量研究计划未通过生成或验证；尚未创建研究。",
-                    details={"reason_code": exc.reason_code}) from None
+                raise product_error(
+                    "UNAVAILABLE",
+                    "增量研究计划未通过生成或验证；尚未创建研究。",
+                    details={"reason_code": exc.reason_code},
+                ) from None
             if context_args:
                 from src.phase4_product.incremental import validate_incremental_scheme
 
@@ -750,7 +754,8 @@ class PostgreSQLPhase4ProductBackend:
 
                 await flush()
                 raise product_error(
-                    "CONFLICT", "research graph validation failed closed",
+                    "CONFLICT",
+                    "research graph validation failed closed",
                     details={"reason_code": str(failure)},
                 ) from None
             if scheme.incremental_context:
@@ -939,6 +944,31 @@ class PostgreSQLPhase4ProductBackend:
                     terminal_event=terminal_event,
                     safe_failure=safe_failure,
                 )
+            if run.status is not RunStatus.RELEASED:
+                updates = {}
+                if artifacts.review is not None:
+                    surface = retained_review_surface(run, artifacts, actual.tasks)
+                    updates["review"] = ReviewSummaryV1(
+                        availability=AvailabilityV1.available(),
+                        review_id=surface.review_id,
+                        status=surface.verdict,
+                    )
+                retained_proofs = [p for p in artifacts.proofs if isinstance(p, ProofRecord)]
+                if retained_proofs:
+                    validate_retained_proofs(run, artifacts)
+                    statuses = {p.status.value for p in retained_proofs}
+                    status = (
+                        "VERIFIED"
+                        if statuses == {"VERIFIED"}
+                        else ("FAILED" if "FAILED" in statuses else next(iter(sorted(statuses))))
+                    )
+                    updates["proof"] = ProofSummaryV1(
+                        availability=AvailabilityV1.available(),
+                        policy="MUST_PROVE",
+                        status=status,
+                        proof_refs=tuple(p.proof_id for p in retained_proofs),
+                    )
+                projection = projection.model_copy(update=updates)
             if persist:
                 await session.execute(
                     pg_insert(Phase4RunProjectionRow)
@@ -1093,6 +1123,29 @@ class PostgreSQLPhase4ProductBackend:
         canonical = aggregate.artifacts.canonical_record
         if aggregate.run.status is not RunStatus.RELEASED or result is None or canonical is None:
             raise self._unavailable("released_result", run_id, "NOT_GENERATED")
+        from src.assurance.requirements import requirement_context
+        from src.domain.financial_branch import BRANCH_FORMULAS, BranchRequirement, BranchStatus
+
+        unavailable_formulas = frozenset()
+        branches = aggregate.artifacts.financial_branches
+        review = aggregate.artifacts.review
+        if branches:
+            retained_review_surface(
+                aggregate.run, aggregate.artifacts, aggregate.runtime.actual_graph.tasks
+            )
+            if review.status.value != "PASS" or review.requirement_context != requirement_context(
+                aggregate.scheme, branches
+            ):
+                raise product_error("INTEGRITY_FAILURE", "Result requirement preimage mismatch")
+            unavailable_formulas = frozenset(
+                formula
+                for branch in branches
+                if branch.requirement is not BranchRequirement.REQUIRED
+                and branch.status
+                in {BranchStatus.INSUFFICIENT_DATA, BranchStatus.BLOCKED_BY_RUNTIME}
+                and branch.reason_code
+                for formula in BRANCH_FORMULAS[branch.calculation_type]
+            )
         records = SQLAlchemyPhase3RecordRepository(self.sessions)
         return build_released_result_projection(
             expected_object_id=aggregate.run.research_object_id,
@@ -1106,6 +1159,7 @@ class PostgreSQLPhase4ProductBackend:
             proof_records=tuple(await records.list(ProofRecord, run_id)),
             proof_verifications=tuple(await records.list(ProofVerificationRecord, run_id)),
             proof_commitments=tuple(await records.list(ProofInputCommitment, run_id)),
+            unavailable_formulas=unavailable_formulas,
         )
 
     def _released_projection(
@@ -1374,6 +1428,7 @@ class PostgreSQLPhase4ProductBackend:
         events = tuple(await self.service.event_store.replay(run_id))
         tasks = tuple(actual_graph.tasks)
         retained_children = (
+            *artifacts.financial_branches,
             *artifacts.agent_outputs,
             *artifacts.evidence,
             *artifacts.calculations,
@@ -1407,6 +1462,7 @@ class PostgreSQLPhase4ProductBackend:
             released.result_id,
             review.review_id,
             *(item.task_id for item in tasks),
+            *(item.branch_id for item in artifacts.financial_branches),
             *(item.output_id for item in artifacts.agent_outputs),
             *(item.event_id for item in events),
             *(item.evidence_id for item in artifacts.evidence),
@@ -1476,6 +1532,13 @@ class PostgreSQLPhase4ProductBackend:
         return (await self._results_surfaces(run_id))[1]
 
     async def get_review(self, run_id: str) -> FinancialReviewSurfaceV1:
+        aggregate = await self.service.get_run(run_id)
+        if aggregate.run.status is not RunStatus.RELEASED:
+            if aggregate.artifacts.review is None:
+                raise self._unavailable("financial_review", run_id, "NOT_GENERATED")
+            return retained_review_surface(
+                aggregate.run, aggregate.artifacts, aggregate.runtime.actual_graph.tasks
+            )
         return (await self._results_surfaces(run_id))[2]
 
     async def get_execution(self, run_id: str, **_kwargs) -> ExecutionRecordSurfaceV1:

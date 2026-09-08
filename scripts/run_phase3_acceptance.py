@@ -770,6 +770,7 @@ def _credential_needles(settings: Settings) -> tuple[bytes, ...]:
         *settings.fmp.credentials,
         settings.llm.api_key,
         settings.mimo.api_key,
+        settings.bocha_api_key,
         settings.langfuse.public_key,
         settings.langfuse.secret_key,
     ):

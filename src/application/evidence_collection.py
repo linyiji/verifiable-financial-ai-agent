@@ -45,6 +45,7 @@ class EndpointCollectionStatus:
     accepted_count: int
     non_accepted_count: int
     error_code: str | None
+    capability_execution: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,10 +180,14 @@ class LiveFMPEvidenceCollector:
         provider: FMPProvider,
         repository: EvidenceRepository,
         artifact_store: RawArtifactStore | None = None,
+        discovery=None,
+        fuse_news: bool = False,
     ) -> None:
         self._provider = provider
         self._repository = repository
         self._artifact_store = artifact_store
+        self._discovery = discovery
+        self._fuse_news = fuse_news
         self.endpoint_statuses: list[EndpointCollectionStatus] = []
         self.scope_outcomes: dict[EvidenceAcquisitionScope, EvidenceAcquisitionStatus] = {}
 
@@ -193,11 +198,13 @@ class LiveFMPEvidenceCollector:
         provider: FMPProvider,
         repository: EvidenceRepository,
         artifact_root: Path,
+        discovery=None,
     ) -> LiveFMPEvidenceCollector:
         return cls(
             provider=provider,
             repository=repository,
             artifact_store=LocalRawArtifactStore(artifact_root),
+            discovery=discovery,
         )
 
     async def collect(
@@ -265,6 +272,70 @@ class LiveFMPEvidenceCollector:
             )
             accepted_count = len(result.accepted.records) if result is not None else 0
             record_count = len(result.records) if result is not None else 0
+            capability_execution = None
+            if plan.request.dataset in {"news", "transcript"}:
+                from src.data.capability_policy import data_policy
+
+                capability = (
+                    "company_news" if plan.request.dataset == "news" else "earnings_transcript"
+                )
+                policy = data_policy(
+                    capability, fuse=self._fuse_news and capability == "company_news"
+                )
+                capability_execution = {
+                    "capability_id": capability,
+                    "preferred_provider": "fmp",
+                    "actual_provider": "fmp" if accepted_count else None,
+                    "mode": policy.mode,
+                    "fmp_status": probe.status.value,
+                    "bocha_status": "NOT_ATTEMPTED",
+                    "fallback_reason": None,
+                    "discovery_only": False,
+                }
+                if self._discovery is not None and (not accepted_count or policy.mode == "FUSE"):
+                    snapshots, outcome, reason = await self._discovery.acquire(
+                        plan.request, capability
+                    )
+                    capability_execution.update(
+                        bocha_status=outcome.value,
+                        fallback_reason=probe.status.value
+                        if not accepted_count
+                        else "POLICY_FUSION",
+                        discovery_only=capability == "earnings_transcript",
+                    )
+                    known_urls = {
+                        r.source_locator for item in results for r in item.accepted.records
+                    }
+                    for snapshot in snapshots:
+                        if snapshot.source_locator in known_urls:
+                            continue
+                        known_urls.add(snapshot.source_locator)
+                        service = EvidenceIngestionService(
+                            repository=self._repository,
+                            artifact_store=self._artifact_store,
+                            freshness_policy=FreshnessPolicy(
+                                max_age_days=550 if capability == "earnings_transcript" else 7
+                            ),
+                        )
+                        extra = await service.ingest(
+                            provider=_SnapshotProvider(snapshot),
+                            request=plan.request.model_copy(update={"expected_period": None}),
+                            run_id=run_id,
+                            object_id=object_id,
+                            provenance=EvidenceProvenance(
+                                producer_task_id=task_id,
+                                source_endpoint="bocha_web_search",
+                                evidence_purpose="transcript_discovery"
+                                if capability == "earnings_transcript"
+                                else "research_news",
+                                evidence_category=EvidenceCategory.NEWS,
+                            ),
+                        )
+                        results.append(extra)
+                        if extra.accepted.records:
+                            capability_execution["actual_provider"] = (
+                                "fmp+bocha" if accepted_count else "bocha"
+                            )
             endpoint_statuses.append(
                 EndpointCollectionStatus(
                     endpoint=probe.endpoint,
@@ -274,6 +345,7 @@ class LiveFMPEvidenceCollector:
                     accepted_count=accepted_count,
                     non_accepted_count=record_count - accepted_count,
                     error_code=probe.error_code,
+                    capability_execution=capability_execution,
                 )
             )
             if result is not None:

@@ -72,6 +72,11 @@ class TaskEvidenceRoutingResult:
                 "error_code": item.error_code,
                 "accepted_count": item.accepted_count,
                 "access_status": item.status.value,
+                **(
+                    {"capability_execution": item.capability_execution}
+                    if item.capability_execution
+                    else {}
+                ),
                 "outcome": (
                     "COMPLETED"
                     if item.accepted_count > 0

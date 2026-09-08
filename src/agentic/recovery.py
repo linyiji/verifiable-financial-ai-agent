@@ -17,7 +17,7 @@ from src.agentic.recovery_policy import (
     classify,
     policy_allows,
 )
-from src.domain.model_execution import resolve_model_execution
+from src.domain.model_execution import TASK_CANDIDATES, resolve_model_execution
 from src.domain.recovery import (
     Action,
     Capability,
@@ -94,7 +94,11 @@ class AdaptiveRecovery:
         generated = scope.operation_id.startswith("generated-capability:")
         if digest(context.model_dump(mode="json")) != scope.context_hash:
             raise ValueError("Recovery scope/context mismatch")
-        routes = self.detector.routes
+        allowed_routes = TASK_CANDIDATES.get(scope.task_profile, ())
+        routes = {
+            key: value for key, value in self.detector.routes.items() if key in allowed_routes
+        }
+        detector = ProviderDetector(routes)
         current = next(
             (
                 key
@@ -350,7 +354,7 @@ class AdaptiveRecovery:
             if not failure.recoverable:
                 await stop("NONRECOVERABLE")
             health[current] = Health.DEGRADED
-            candidates = self.detector.candidates(
+            candidates = detector.candidates(
                 capabilities, history, self.budget, health, capability_refs
             )
             # Never spend a capability check on a route that cannot be used under

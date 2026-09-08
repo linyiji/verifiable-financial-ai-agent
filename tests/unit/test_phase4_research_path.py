@@ -164,11 +164,16 @@ async def test_scheduler_failure_uses_safe_terminal_and_task_codes() -> None:
     emitted = await events.replay(state.run_id)
     task_failure = next(event for event in emitted if event.type is RuntimeEventType.TASK_FAILED)
     run_failure = next(event for event in emitted if event.type is RuntimeEventType.RUN_FAILED)
-    assert task_failure.payload == {
+    assert {k: v for k, v in task_failure.payload.items() if k != "internal_diagnostic"} == {
         "attempt": 1,
         "failure_code": "TASK_EXECUTION_FAILED",
     }
-    assert run_failure.payload == {
+    diagnostic = task_failure.payload["internal_diagnostic"]
+    assert diagnostic["run_id"] == state.run_id
+    assert diagnostic["task_id"] == task_failure.task_id
+    assert diagnostic["exception_type"] == "RuntimeError"
+    assert all(f["file"].startswith("src/") for f in diagnostic["owned_frames"])
+    assert {k: v for k, v in run_failure.payload.items() if k != "internal_diagnostic"} == {
         "status": "FAILED",
         "failure_stage": "TASK_EXECUTION",
         "failure_code": "TASK_EXECUTION_FAILED",

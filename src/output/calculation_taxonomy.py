@@ -24,6 +24,8 @@ TECHNICAL_FORMULAS = (
 
 def partition_material_calculation_refs(
     calculations: Sequence[CalculationRecord],
+    *,
+    unavailable_formulas: frozenset[str] = frozenset(),
 ) -> tuple[list[str], list[str]]:
     """Partition the owned material calculation set without inspecting runtime text."""
 
@@ -33,15 +35,24 @@ def partition_material_calculation_refs(
     formula_ids = [calculation.formula_id for calculation in calculations]
     if len(formula_ids) != len(set(formula_ids)):
         raise ValueError("material calculation formulas must be unique")
-    if set(formula_ids) != set(expected):
+    if (
+        not unavailable_formulas.issubset(expected)
+        or set(formula_ids) != set(expected) - unavailable_formulas
+    ):
         raise ValueError("material calculation taxonomy requires the exact owned formula set")
     calculation_id_by_formula = {
         calculation.formula_id: calculation.calculation_id for calculation in calculations
     }
     fundamental_refs = [
-        calculation_id_by_formula[formula_id] for formula_id in FUNDAMENTAL_FORMULAS
+        calculation_id_by_formula[formula_id]
+        for formula_id in FUNDAMENTAL_FORMULAS
+        if formula_id in calculation_id_by_formula
     ]
-    technical_refs = [calculation_id_by_formula[formula_id] for formula_id in TECHNICAL_FORMULAS]
+    technical_refs = [
+        calculation_id_by_formula[formula_id]
+        for formula_id in TECHNICAL_FORMULAS
+        if formula_id in calculation_id_by_formula
+    ]
     if set(fundamental_refs) & set(technical_refs):
         raise ValueError("fundamental and technical calculation refs must be disjoint")
     return fundamental_refs, technical_refs

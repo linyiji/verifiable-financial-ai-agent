@@ -1,6 +1,8 @@
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.domain.base import TimestampedModel
 from src.domain.enums import (
@@ -15,7 +17,20 @@ from src.domain.enums import (
 from src.domain.financial_semantics import infer_period_basis
 
 
+class DocumentAuthority(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    discovery_provider: Literal["bocha"]
+    original_url: str
+    authority: Literal["PRIMARY", "OFFICIAL"]
+    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    content_scope: Literal["ORIGINAL_DOCUMENT", "TRANSCRIPT_DISCOVERY_ONLY"]
+    period_verified: Literal[False] = False
+
+
 class EvidenceRecord(TimestampedModel):
+    document_authority: DocumentAuthority | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     evidence_id: str
     run_id: str
     object_id: str

@@ -13,7 +13,7 @@ from src.runtime.checkpoint import CheckpointStore, RuntimeCheckpoint
 from src.runtime.diagnostics import task_failure_diagnostic
 from src.runtime.events import RuntimeEventStore
 from src.runtime.lifecycle import transition_task
-from src.runtime.output_dependencies import SETTLED, resolve_outputs
+from src.runtime.output_dependencies import resolve_outputs
 from src.runtime.state import RuntimeState
 
 
@@ -125,11 +125,9 @@ class DependencyScheduler:
                     )
 
                 if not ready:
-                    if all(task.status in SETTLED for task in state.actual_graph.tasks) and any(
-                        task.task_type == "report_synthesis"
-                        and task.output_requirements is not None
-                        for task in state.actual_graph.tasks
-                    ):
+                    from src.runtime.output_dependencies import ExecutionContinuationGate
+
+                    if ExecutionContinuationGate.settled_for_review(state):
                         state.run_status = RunStatus.REVIEW
                         await self._event_store.emit(
                             run_id=state.run_id,

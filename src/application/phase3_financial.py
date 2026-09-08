@@ -13,6 +13,7 @@ from src.adapters.finrobot.technical import (
     VolumeRatio20Capability,
 )
 from src.application.extensions import TaskCalculationExtensionResult
+from src.capabilities.financial.common import PeriodMismatchError
 from src.capabilities.generated.models import (
     CapabilityOrchestrationResult,
     GeneratedCapabilityCandidate,
@@ -217,6 +218,7 @@ class Phase3FinancialCapabilityExtension:
                 await publish(outcome)
 
         def make_branch(capability_id, minimum):
+            alignment_error = None
             required = requirements.get(capability_id, BranchRequirement.SUPPORTING)
             if capability_id == FCF_MARGIN_CAPABILITY_ID:
                 required = requirements.get(capability_id, BranchRequirement.REQUIRED)
@@ -225,6 +227,8 @@ class Phase3FinancialCapabilityExtension:
                     count = 3
                 except LookupError:
                     count = 0
+                except PeriodMismatchError as error:
+                    count, alignment_error = 3, error
             else:
                 count = available
             identity = FinancialBranchResult(
@@ -239,6 +243,16 @@ class Phase3FinancialCapabilityExtension:
             )
 
             async def execute():
+                if alignment_error is not None:
+                    await self._event_store.emit(
+                        run_id=task.run_id,
+                        task_id=task.task_id,
+                        event_type=RuntimeEventType.TASK_SELF_CORRECTING,
+                        payload={"problem_code": "PERIOD_MISMATCH", "error": "PeriodMismatchError"},
+                    )
+                    # All accepted candidates were searched. No aligned replacement:
+                    # leave correction unresolved and require corrected evidence.
+                    raise alignment_error
                 if count < minimum:
                     return identity.model_copy(
                         update={
@@ -543,6 +557,15 @@ def _select_fcf_margin_inputs(
             and Decimal(str(capital_expenditures[0].normalized_value)) <= 0
         ):
             return operating_cash_flow, capital_expenditures[0], revenues[0]
+    fields = {record.normalized_field for record in accepted}
+    if {"operating_cash_flow", "capital_expenditure", "revenue"}.issubset(fields):
+        periods = [
+            {(e.period, e.period_basis) for e in accepted if e.normalized_field == field}
+            for field in ("operating_cash_flow", "capital_expenditure", "revenue")
+        ]
+        if not set.intersection(*periods):
+            raise PeriodMismatchError("Financial periods require correction and revalidation")
+        raise ValueError("Financial cohort/currency/authority/sign integrity mismatch")
     raise LookupError(
         "accepted period-aligned annual operating cash flow, capital expenditure, "
         "and revenue are required"

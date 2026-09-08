@@ -12,7 +12,40 @@ def test_parent_registers_one_frozen_product_route_inventory() -> None:
         if isinstance(route, APIRoute)
         for method in route.methods
     }
-    assert len(observed) == 18
+    assert observed == {
+        ("POST", "/api/objects"),
+        ("GET", "/api/objects"),
+        ("GET", "/api/objects/{object_id}"),
+        ("GET", "/api/objects/{object_id}/memory"),
+        ("POST", "/api/objects/{object_id}/memory/materialize"),
+        ("GET", "/api/objects/{object_id}/runs"),
+        ("GET", "/api/objects/{object_id}/released-state"),
+        ("GET", "/api/research-runs"),
+        ("GET", "/api/research-drafts/{draft_id}"),
+        ("POST", "/api/research-drafts/{draft_id}/lease-renewals"),
+        ("POST", "/api/research-runs/prepare"),
+        ("POST", "/api/research-runs"),
+        ("POST", "/api/research-runs/{run_id}/reexecution-authorizations"),
+        ("POST", "/api/research-runs/{run_id}/reexecute"),
+        *(
+            ("GET", "/api/research-runs/{run_id}" + suffix)
+            for suffix in (
+                "",
+                "/projection",
+                "/results",
+                "/result",
+                "/report-view",
+                "/claims/{claim_id}",
+                "/review-view",
+                "/execution-view",
+                "/trace/{claim_id}",
+                "/artifacts",
+                "/artifacts/{artifact_id}/content",
+                "/recovery",
+                "/events",
+            )
+        ),
+    }
     assert ("GET", "/api/research-runs/{run_id}/events") in observed
     assert ("POST", "/api/research-runs") in observed
     assert ("POST", "/api/research-runs/{run_id}/execute") not in observed

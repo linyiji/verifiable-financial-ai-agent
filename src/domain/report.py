@@ -106,15 +106,15 @@ class ReportSourceContribution(DomainModel):
     report_section: str
     actor_id: str
     task_id: str
-    agent_output_id: str
-    agent_output_artifact_id: str
+    agent_output_id: str | None
+    agent_output_artifact_id: str | None
     execution_event_id: str
     status: Literal["SUCCESS"] = "SUCCESS"
     provider: str
-    actual_model: str
+    actual_model: str | None
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
-    duration_ms: int = Field(ge=0)
+    duration_ms: int | None = Field(ge=0)
     input_refs: tuple[str, ...] = ()
     observable_process: tuple[str, ...] = ()
     output_summary: str
@@ -148,16 +148,28 @@ class ReportSourceContribution(DomainModel):
         "output_summary",
     )
     @classmethod
-    def reject_blank_identity(cls, value: str) -> str:
+    def reject_blank_identity(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not value.strip():
             raise ValueError("report source identity and output fields must not be blank")
         return value.strip()
 
     @model_validator(mode="after")
     def validate_safe_exact_source(self) -> ReportSourceContribution:
-        safe_anchor_characters = (
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
-        )
+        if self.agent_output_id is None:
+            if (
+                self.agent_output_artifact_id is not None
+                or self.actual_model is not None
+                or self.input_tokens is not None
+                or self.output_tokens is not None
+                or self.provider != "native"
+                or self.calculation_id is None
+            ):
+                raise ValueError("Deterministic contribution cannot claim model execution")
+        elif self.agent_output_artifact_id is None or self.actual_model is None:
+            raise ValueError("Agent contribution requires exact execution metadata")
+        safe_anchor_characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
         if any(
             character not in safe_anchor_characters
             for character in self.report_anchor + self.execution_anchor
@@ -286,8 +298,7 @@ class ReportArtifactRecord(TimestampedModel):
             if self.anchor_manifest_id is None:
                 raise ValueError("report source contributions require an anchor manifest")
             if any(
-                source.run_id != self.run_id
-                or source.report_id != self.released_result_id
+                source.run_id != self.run_id or source.report_id != self.released_result_id
                 for source in self.source_contributions
             ):
                 raise ValueError("report source contribution crossed Run or Report identity")

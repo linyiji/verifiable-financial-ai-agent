@@ -458,9 +458,7 @@ def _artifact_record(
 ) -> ReportArtifactRecord:
     content_hash = _sha256(content)
     artifact_kind = "HTML" if artifact_type == "text/html" else "PDF"
-    manifest_hash = (
-        _sha256(_source_manifest_bytes(report)) if report.source_contributions else None
-    )
+    manifest_hash = _sha256(_source_manifest_bytes(report)) if report.source_contributions else None
     return ReportArtifactRecord(
         artifact_id=f"RPT-{artifact_kind}-{content_hash.removeprefix('sha256:')[:20]}",
         run_id=report.run_id,
@@ -504,9 +502,7 @@ def _html_demo_sections(report: CanonicalReportDTO) -> str:
         risks = ()
     if not risks:
         risk_value = report.risk_output.get("risks", ())
-        if isinstance(risk_value, Sequence) and not isinstance(
-            risk_value, (str, bytes, bytearray)
-        ):
+        if isinstance(risk_value, Sequence) and not isinstance(risk_value, (str, bytes, bytearray)):
             risks = risk_value
 
     source_by_calculation = {
@@ -522,8 +518,7 @@ def _html_demo_sections(report: CanonicalReportDTO) -> str:
         source = source_by_calculation.get(metric.calculation_id)
         anchor = source.report_anchor if source is not None else f"metric-{metric.capability_id}"
         link = (
-            f'<a class="source-link" href="#{_html_text(source.execution_anchor)}">'
-            "查看研究来源</a>"
+            f'<a class="source-link" href="#{_html_text(source.execution_anchor)}">查看研究来源</a>'
             if source is not None
             else ""
         )
@@ -531,8 +526,8 @@ def _html_demo_sections(report: CanonicalReportDTO) -> str:
             f'<article class="metric-card" id="{_html_text(anchor)}" '
             f'data-calculation-id="{_html_text(metric.calculation_id)}">'
             f'<span class="label">{_html_text(metric.name)}</span>'
-            f'<strong>{_html_text(metric.display_value)} {_html_text(metric.display_unit)}</strong>'
-            f'<span>{_html_text(metric.period)} · {_html_text(metric.actuality.value)}</span>{link}'
+            f"<strong>{_html_text(metric.display_value)} {_html_text(metric.display_unit)}</strong>"
+            f"<span>{_html_text(metric.period)} · {_html_text(metric.actuality.value)}</span>{link}"
             "</article>"
         )
     metrics_html = (
@@ -576,13 +571,10 @@ def _html_source_panel(source: ReportSourceContribution) -> str:
         if source.metric_name and source.metric_value and source.metric_unit
         else "Not attached"
     )
-    process = (
-        source.observable_process
-        or (
-            "Provider-backed Agent invocation completed.",
-            "Strict structured output validated.",
-            "Content-addressed output retained.",
-        )
+    process = source.observable_process or (
+        "Provider-backed Agent invocation completed.",
+        "Strict structured output validated.",
+        "Content-addressed output retained.",
     )
     details = {
         "Actor / Agent": source.actor_id,
@@ -592,9 +584,11 @@ def _html_source_panel(source: ReportSourceContribution) -> str:
         "Observable Process": process,
         "Output": output,
         "Report Contribution": f"{source.report_section} · {metric}",
-        "Provider / Model": f"{source.provider} / {source.actual_model}",
+        "Provider / Model": f"{source.provider} / {source.actual_model or 'Not applicable'}",
         "Token Usage": token_usage,
-        "Duration": f"{source.duration_ms} ms",
+        "Duration": f"{source.duration_ms} ms"
+        if source.duration_ms is not None
+        else "Not observed",
         "Agent Output ID": source.agent_output_id,
         "Agent Output Artifact": source.agent_output_artifact_id,
         "Execution Event ID": source.execution_event_id,
@@ -618,9 +612,13 @@ def _html_source_panel(source: ReportSourceContribution) -> str:
         f'data-task-id="{_html_text(source.task_id)}" '
         f'data-agent-output-id="{_html_text(source.agent_output_id)}" '
         f'data-execution-event-id="{_html_text(source.execution_event_id)}">'
-        f'<h3>{_html_text(source.report_section)} · Exact Execution Record</h3>'
-        '<p class="status">SUCCESS · exact same-Run identity verified</p>'
-        f"{_html_value(details)}"
+        f"<h3>{_html_text(source.report_section)} · Exact Execution Record</h3>"
+        + (
+            '<p class="status">CALCULATION SUCCESS · narrative unavailable</p>'
+            if source.agent_output_id is None
+            else '<p class="status">SUCCESS · exact same-Run identity verified</p>'
+        )
+        + f"{_html_value(details)}"
         f'<a class="back-link" href="#{_html_text(source.report_anchor)}">返回报告</a>'
         "</article>"
     )

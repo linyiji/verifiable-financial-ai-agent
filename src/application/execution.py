@@ -218,6 +218,7 @@ class IntegratedTaskExecutor:
 
         # The fixture intentionally presents a quarterly revenue candidate first.
         # The real capability rejects its period mismatch and the same task corrects it.
+        correction = None
         try:
             await self._execute_calculation(
                 task=task,
@@ -230,6 +231,10 @@ class IntegratedTaskExecutor:
                 context=context,
             )
         except ValueError as exc:
+            from src.capabilities.financial.common import PeriodMismatchError
+
+            if not isinstance(exc, PeriodMismatchError):
+                raise
             correction_id = f"CORR-{task.run_id}-PERIOD"
             # Awaited event publication, not presentation dwell, defines the
             # durable correction boundaries. Slow consumers reconstruct by replay.
@@ -263,13 +268,6 @@ class IntegratedTaskExecutor:
                     created_at=correction_timestamp,
                     resolved_at=correction_timestamp,
                 )
-                self._aggregate.artifacts.corrections.append(correction)
-                await self._service.event_store.emit(
-                    run_id=task.run_id,
-                    task_id=task.task_id,
-                    event_type=RuntimeEventType.TASK_CORRECTION_RESOLVED,
-                    payload={"correction_id": correction.correction_id},
-                )
 
         margin = await self._execute_calculation(
             task=task,
@@ -282,6 +280,15 @@ class IntegratedTaskExecutor:
             context=context,
         )
         await self._commit_calculation(task, margin)
+        if correction is not None:
+            correction.resolved_at = datetime.now(UTC)
+            self._aggregate.artifacts.corrections.append(correction)
+            await self._service.event_store.emit(
+                run_id=task.run_id,
+                task_id=task.task_id,
+                event_type=RuntimeEventType.TASK_CORRECTION_RESOLVED,
+                payload={"correction_id": correction.correction_id},
+            )
         extension_calculations = []
         extension_refs: list[str] = []
         extension_judgments: list[dict[str, object]] = []

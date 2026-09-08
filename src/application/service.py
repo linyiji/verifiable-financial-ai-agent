@@ -17,6 +17,7 @@ from src.agentic import (
     ResearchLeadPlanner,
     SchemeGenerator,
 )
+from src.application.closure_policy import closure_diagnostic, release_requirement_gaps
 from src.application.errors import ApplicationError, NotFoundError
 from src.application.evidence_collection import EvidenceCollector, FixtureEvidenceCollector
 from src.application.evidence_routing import (
@@ -35,6 +36,7 @@ from src.application.repository import ApplicationRepository, InMemoryApplicatio
 from src.application.research_outputs import availability_map
 from src.assurance import DeterministicReviewer, IndependentFinancialReviewer, ReleaseGate
 from src.assurance.proof_policy import ProofPolicy
+from src.assurance.requirements import requirement_context
 from src.capabilities.calculation_lineage import link_calculation_lineage
 from src.capabilities.financial.growth import RevenueGrowthCapability
 from src.capabilities.financial.profitability import EbitdaMarginCapability
@@ -345,7 +347,16 @@ class ResearchApplicationService:
                         aggregate.artifacts.proofs = list(proof.proofs.values())
                         aggregate.runtime.proof_state = proof.runtime_state
                 await self._assure_and_release(aggregate)
-        except Exception:
+        except Exception as exc:
+            policy_blocked = isinstance(exc, ApplicationError) and exc.code in {
+                "REVIEW_BLOCKED",
+                "RELEASE_GATE_BLOCKED",
+                "INCOMPLETE_RESEARCH_NOT_RELEASED",
+                "REQUIRED_RESEARCH_OUTPUT_MISSING",
+            }
+            aggregate.artifacts.closure_diagnostic = closure_diagnostic(
+                aggregate, exc, "POST_SCHEDULER"
+            )
             durable_events = list(await self.event_store.replay(run_id))
             terminal_event = (
                 durable_events[-1]
@@ -364,8 +375,10 @@ class ResearchApplicationService:
                     event_type=RuntimeEventType.RUN_FAILED,
                     payload={
                         "status": RunStatus.FAILED.value,
-                        "failure_stage": "POST_SCHEDULER",
-                        "failure_code": "POST_SCHEDULER_FAILED",
+                        "failure_stage": "FINANCIAL_REVIEW" if policy_blocked else "POST_SCHEDULER",
+                        "failure_code": "FINANCIAL_REVIEW_BLOCKED"
+                        if policy_blocked
+                        else "POST_SCHEDULER_FAILED",
                         "safe_message": "The Run could not complete its release checks.",
                     },
                     timestamp=terminal_at,
@@ -378,6 +391,8 @@ class ResearchApplicationService:
             )
             await self.repository.save_run(aggregate)
             await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
+            if policy_blocked:
+                return aggregate
             raise
         await self.repository.save_run(aggregate)
         await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
@@ -498,6 +513,11 @@ class ResearchApplicationService:
                     judgments=judgments,
                     proof_requirements=proof_requirements,
                     branch_results=aggregate.artifacts.financial_branches,
+                    requirement_context=requirement_context(
+                        aggregate.scheme, aggregate.artifacts.financial_branches
+                    )
+                    if aggregate.artifacts.financial_branches
+                    else None,
                 )
             else:
                 review = DeterministicReviewer().review(
@@ -521,10 +541,12 @@ class ResearchApplicationService:
                 details={"review_id": review.review_id, "status": review.status.value},
             )
 
-        if aggregate.artifacts.partial_research is not None:
+        gaps = release_requirement_gaps(aggregate)
+        if gaps:
             raise ApplicationError(
                 "INCOMPLETE_RESEARCH_NOT_RELEASED",
-                "Independent work completed; failed or blocked research still prevents release.",
+                "Required research outputs remain unavailable.",
+                details={"reason_codes": list(gaps)},
             )
 
         proof_outcome = await self._execute_proof_workflow(aggregate)
@@ -537,6 +559,11 @@ class ResearchApplicationService:
         aggregate.runtime.proof_state = proof_outcome.runtime_state
 
         release_decision = ReleaseGate().evaluate(
+            requirement_context=requirement_context(
+                aggregate.scheme, aggregate.artifacts.financial_branches
+            )
+            if strict_financial_release and aggregate.artifacts.financial_branches
+            else None,
             review=review,
             proof_requirements=proof_outcome.requirements,
             proofs=proof_outcome.proofs,
@@ -625,7 +652,15 @@ class ResearchApplicationService:
             (
                 fundamental_calculation_refs,
                 technical_calculation_refs,
-            ) = partition_material_calculation_refs(aggregate.artifacts.calculations)
+            ) = partition_material_calculation_refs(
+                aggregate.artifacts.calculations,
+                unavailable_formulas=frozenset(
+                    f
+                    for b in aggregate.artifacts.financial_branches
+                    if b.status in {BranchStatus.INSUFFICIENT_DATA, BranchStatus.BLOCKED_BY_RUNTIME}
+                    for f in BRANCH_FORMULAS[b.calculation_type]
+                ),
+            )
             if set(fundamental_calculation_refs) | set(technical_calculation_refs) != set(
                 record.calculation_refs
             ):
@@ -696,6 +731,11 @@ class ResearchApplicationService:
                 "calculation_refs": technical_calculation_refs,
             }
         limitations = list(proof_outcome.limitations)
+        limitations.extend(
+            f"{task.task_type}: narrative unavailable; no conclusion from this output."
+            for task in aggregate.runtime.actual_graph.tasks
+            if task.status.value != "COMPLETED"
+        )
         limitations.extend(
             f"{branch.calculation_type}: {branch.reason_code}; "
             f"required {branch.required_inputs}, available {branch.available_inputs}; "
@@ -824,6 +864,10 @@ class ResearchApplicationService:
             aggregate.artifacts.projections = projections
             aggregate.artifacts.report = report
             aggregate.artifacts.writeback = writeback
+            if aggregate.artifacts.partial_research is not None:
+                aggregate.artifacts.partial_research.update(
+                    status="PARTIAL_RELEASED", release_status="RELEASED"
+                )
             await self.event_store.emit(
                 run_id=run_id,
                 event_type=RuntimeEventType.RELEASE_COMPLETED,
@@ -863,6 +907,10 @@ class ResearchApplicationService:
             if output.status == "SUCCESS"
             and aggregate.runtime.task(output.task_id).task_type == "fundamental_analysis"
         ]
+        if not fundamental_outputs:
+            return await self._deterministic_growth_contribution(
+                aggregate, result, review_id, review_status, proof_records
+            )
         if len(fundamental_outputs) != 1:
             raise ApplicationError(
                 "REPORT_SOURCE_MAP_INCOMPLETE",
@@ -972,6 +1020,86 @@ class ResearchApplicationService:
             review_status=review_status,
             proof_id=proof.proof_id if proof is not None else None,
             proof_status=proof.status.value if proof is not None else None,
+        )
+
+    async def _deterministic_growth_contribution(
+        self, aggregate, result, review_id, review_status, proofs
+    ):
+        run_id = aggregate.run.run_id
+        calculations = [
+            c
+            for c in aggregate.artifacts.calculations
+            if c.capability_id == "revenue_growth"
+            and c.run_id == run_id
+            and c.status.value == "PASS"
+        ]
+        if len(calculations) != 1:
+            raise ApplicationError(
+                "REPORT_SOURCE_MAP_INCOMPLETE", "Exact Revenue Growth calculation is required"
+            )
+        calculation = calculations[0]
+        task = aggregate.runtime.task(calculation.task_id)
+        metrics = [
+            m for m in result.released_metrics if m.calculation_id == calculation.calculation_id
+        ]
+        events = [
+            e
+            for e in await self.event_store.replay(run_id)
+            if e.type is RuntimeEventType.CALCULATION_COMPLETED
+            and e.task_id == task.task_id
+            and e.payload.get("calculation_id") == calculation.calculation_id
+        ]
+        if (
+            len(metrics) != 1
+            or len(events) != 1
+            or task.run_id != run_id
+            or not set(calculation.input_evidence_ids).issubset(
+                {e.evidence_id for e in aggregate.artifacts.evidence if e.run_id == run_id}
+            )
+        ):
+            raise ApplicationError(
+                "REPORT_SOURCE_IDENTITY_MISMATCH",
+                "Exact deterministic calculation lineage is required",
+            )
+        metric = metrics[0]
+        proof = next(
+            (
+                p
+                for p in proofs
+                if p.run_id == run_id and p.calculation_id == calculation.calculation_id
+            ),
+            None,
+        )
+        return ReportSourceContribution(
+            run_id=run_id,
+            report_id=result.result_id,
+            report_anchor="metric-revenue-growth",
+            execution_anchor="execution-" + calculation.calculation_id,
+            report_section="Financial Analysis / Revenue Growth",
+            actor_id=task.assigned_agent,
+            task_id=task.task_id,
+            agent_output_id=None,
+            agent_output_artifact_id=None,
+            execution_event_id=events[0].event_id,
+            provider="native",
+            actual_model=None,
+            duration_ms=None,
+            input_refs=tuple(calculation.input_evidence_ids),
+            observable_process=(
+                "Deterministic calculation completed and was independently reviewed.",
+            ),
+            output_summary="Revenue Growth from retained CalculationRecord; narrative unavailable.",
+            limitations=("No successful Fundamental narrative is claimed.",),
+            metric_name=metric.name,
+            metric_value=metric.display_value,
+            metric_unit=metric.display_unit,
+            calculation_id=calculation.calculation_id,
+            formula_id=calculation.formula_id,
+            evidence_refs=tuple(calculation.input_evidence_ids),
+            review_id=review_id,
+            review_status=review_status,
+            proof_id=proof.proof_id if proof else None,
+            proof_status=proof.status.value if proof else None,
         )
 
     @staticmethod

@@ -66,8 +66,11 @@ class ReleaseGate:
         input_commitments: dict[str, ProofInputCommitment] | None = None,
         verifications: dict[str, ProofVerificationRecord] | None = None,
         artifacts: dict[str, ProofArtifactReference] | None = None,
+        requirement_context: JsonObject | None = None,
     ) -> ReleaseDecision:
         reasons: list[str] = []
+        if review.requirement_context != requirement_context:
+            reasons.append("REVIEW_REQUIREMENT_CONTEXT_MISMATCH")
         if review.status is not ReviewStatus.PASS:
             reasons.append(f"REVIEW_{review.status.value}")
 
@@ -117,6 +120,7 @@ class ReleaseGate:
                         claims=claims,
                         judgments=judgments,
                         proof_requirements=proof_requirements,
+                        requirement_context=requirement_context,
                     )
                 except (AttributeError, TypeError, ValueError):
                     snapshot_hash = None

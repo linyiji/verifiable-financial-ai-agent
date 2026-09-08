@@ -28,7 +28,12 @@ pytestmark = pytest.mark.skipif(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "profile",
-    ["fundamental_analysis", "valuation_analysis", "GENERATED_CAPABILITY:free_cash_flow_margin"],
+    [
+        "fundamental_analysis",
+        "valuation_analysis",
+        "risk_analysis",
+        "GENERATED_CAPABILITY:free_cash_flow_margin",
+    ],
 )
 async def test_real_dynamic_composition(database, tmp_path, profile):  # noqa: F811
     sessions, recovery, repository, request = await composition(database, tmp_path)

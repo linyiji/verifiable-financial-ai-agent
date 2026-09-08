@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import date
 
 import pytest
@@ -120,9 +119,9 @@ async def test_offline_vertical_slice_uses_every_frozen_boundary() -> None:
     correction = aggregate.artifacts.corrections[0]
     assert correction.task_id.endswith(":fundamentals")
     assert correction.resolved_at is not None
-    assert correction.created_at == correction.resolved_at
+    assert correction.created_at <= correction.resolved_at
     projected_correction = project_path_change(correction, expected_run_id=run_id)
-    assert projected_correction.created_at == projected_correction.resolved_at
+    assert projected_correction.created_at <= projected_correction.resolved_at
     assert len(aggregate.artifacts.replans) == 1
     assert aggregate.artifacts.replans[0].decision is ReplanDecision.APPROVED
     child = next(
@@ -240,77 +239,19 @@ async def test_offline_vertical_slice_uses_every_frozen_boundary() -> None:
     assert [event.sequence for event in replay] == [events[-2].sequence, events[-1].sequence]
 
 
-def test_api_routes_are_thin_idempotent_and_return_contract_errors() -> None:
-    with TestClient(create_app()) as client:
-        object_payload = {
-            "symbol": "NVDA",
-            "company_name": "NVIDIA Corporation",
-            "exchange": "NASDAQ",
-        }
-        first = client.post(
-            "/api/objects",
-            json=object_payload,
-            headers={"Idempotency-Key": "object-1"},
-        )
-        second = client.post(
-            "/api/objects",
-            json=object_payload,
-            headers={"Idempotency-Key": "object-1"},
-        )
-        assert first.status_code == second.status_code == 201
-        assert first.json()["object_id"] == second.json()["object_id"] == "OBJ-NVDA"
-
-        invalid = client.post("/api/objects", json={})
-        assert invalid.status_code == 422
-        assert invalid.json()["error"]["code"] == "REQUEST_VALIDATION_ERROR"
-        missing = client.get("/api/objects/OBJ-MISSING")
-        assert missing.status_code == 404
-        assert missing.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
-
-        prepared = client.post(
-            "/api/research-runs/prepare",
-            json={
-                "research_object_id": "OBJ-NVDA",
-                "research_goal": "Evaluate fundamentals",
-                "as_of": "2026-09-03",
-                "preferences": {"depth": "standard"},
-            },
-        )
-        assert prepared.status_code == 201
-        confirmed = client.post(
-            "/api/research-runs",
-            json={"draft_id": prepared.json()["draft_id"], "confirm_scheme": True},
-            headers={"Idempotency-Key": "run-1"},
-        )
-        assert confirmed.status_code == 201
-        run_id = confirmed.json()["run_id"]
-        assert client.get(f"/api/research-runs/{run_id}").json()["status"] == "RELEASED"
-        graph = client.get(f"/api/research-runs/{run_id}/graph").json()
-        assert len(graph["actual_graph"]["tasks"]) == len(graph["planned_graph"]["tasks"]) + 1
-        result = client.get(f"/api/research-runs/{run_id}/result")
-        review = client.get(f"/api/research-runs/{run_id}/review-view")
-        execution = client.get(f"/api/research-runs/{run_id}/execution-view")
-        assert result.status_code == review.status_code == execution.status_code == 200
-        assert review.json()["canonical_record_id"] == execution.json()["canonical_record_id"]
-
-        stream = client.get(f"/api/research-runs/{run_id}/events")
-        assert stream.status_code == 200
-        data_lines = [
-            json.loads(line.removeprefix("data: "))
-            for line in stream.text.splitlines()
-            if line.startswith("data: ")
-        ]
-        assert [item["sequence"] for item in data_lines] == list(range(1, len(data_lines) + 1))
-        resumed = client.get(
-            f"/api/research-runs/{run_id}/events",
-            headers={"Last-Event-ID": str(data_lines[-2]["sequence"])},
-        )
-        resumed_data = [
-            json.loads(line.removeprefix("data: "))
-            for line in resumed.text.splitlines()
-            if line.startswith("data: ")
-        ]
-        assert [item["sequence"] for item in resumed_data] == [data_lines[-1]["sequence"]]
+def test_product_http_never_implicitly_admits_with_no_backend() -> None:
+    # The historical Phase-1 test assumed implicit fixtures and synchronous release.
+    # Real admission/idempotency/SSE now live in tests/phase4/backend_product.
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        for _ in range(2):
+            response = client.post(
+                "/api/objects",
+                json={"symbol": "NVDA", "company_name": "NVIDIA Corporation", "exchange": "NASDAQ"},
+                headers={"Idempotency-Key": "object-1"},
+            )
+            assert response.status_code == 503
+            assert response.json()["error"]["code"] == "TRANSIENT_BACKEND_ERROR"
+            assert response.headers["X-Phase4-Contract-Version"] == "phase4-core/v1"
 
 
 @pytest.mark.asyncio

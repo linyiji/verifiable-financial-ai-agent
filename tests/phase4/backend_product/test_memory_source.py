@@ -69,6 +69,55 @@ def test_released_verified_subset():
     assert obj.source_released_result_id == "RESULT-A"
 
 
+def test_native_memory_requires_exact_observable_calculation_not_successful_narrative():
+    data = source()
+    contribution = N(
+        run_id="RUN-A",
+        report_id="REPORT-A",
+        artifact_id="HTML-A",
+        report_anchor="growth",
+        calculation_id="CALC-A",
+        actor_id="fundamental_analyst",
+        task_id="TASK-A",
+        agent_output_id=None,
+        execution_event_id="EVT-CALC",
+        evidence_refs=("EVD-A",),
+        review_id="REVIEW-A",
+    )
+    data[2].anchors = [N(anchor="growth")]
+    data[2].source_contributions = [contribution]
+    data[4].actor_details = [
+        N(
+            actor_id="fundamental_analyst",
+            run_id="RUN-A",
+            outputs=[],
+            report_contributions=[contribution],
+            observable_process=[
+                N(
+                    event_id="EVT-CALC",
+                    task_id="TASK-A",
+                    event_type="calculation.completed",
+                    status="COMPLETED",
+                )
+            ],
+        )
+    ]
+    _, view = build_memory_versions("OBJ-A", "RUN-A", *data)
+    assert len(view.items) == 2
+    assert all(
+        item.agent_output_id is None and item.calculation_id == "CALC-A" for item in view.items
+    )
+    for field, value in (
+        ("execution_event_id", "FOREIGN"),
+        ("evidence_refs", ("FOREIGN",)),
+        ("review_id", "FOREIGN"),
+    ):
+        broken = deepcopy(data)
+        setattr(broken[2].source_contributions[0], field, value)
+        with pytest.raises(ProductError):
+            build_memory_versions("OBJ-A", "RUN-A", *broken)
+
+
 @pytest.mark.parametrize("status", ["RUNNING", "REVIEW", "PROOF", "FAILED", "CANCELLED"])
 def test_nonrelease_rejected(status):
     data = source()

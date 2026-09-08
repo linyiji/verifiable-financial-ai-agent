@@ -559,6 +559,44 @@ def test_execution_actor_is_exact_and_unknown_input_ref_is_quarantined() -> None
     assert detail.quarantined_input_ref_count == 1
 
 
+def test_partial_release_keeps_failed_execution_without_claiming_a_contribution() -> None:
+    failed = agent_output().model_copy(
+        update={"status": "FAILED", "structured_output": None, "failure_code": "TIMEOUT"}
+    )
+    failed_task = task().model_copy(update={"status": TaskStatus.FAILED, "result_ref": None})
+    failed_event = event().model_copy(
+        update={
+            "type": RuntimeEventType.TASK_FAILED,
+            "payload": {"failure_code": "TASK_EXECUTION_FAILED"},
+        }
+    )
+    args = dict(
+        expected_run_id=RUN_ID,
+        expected_object_id=OBJECT_ID,
+        run=run(),
+        canonical_record=canonical().model_copy(update={"agent_output_refs": []}),
+        released_result=released(),
+        review=review_record(),
+        tasks=(failed_task,),
+        agent_outputs=(failed,),
+        events=(failed_event,),
+        report_contributions=(),
+    )
+    surface = build_execution_record_surface(**args)
+    assert surface.actors[0].status == "FAILED"
+    assert surface.actor_details[0].outputs[0].status == "FAILED"
+    assert surface.actor_details[0].observable_process[0].status == "FAILED"
+    assert not surface.actor_details[0].report_contributions
+    for changes in (
+        {"canonical_record": canonical()},
+        {"events": (event(),)},
+        {"tasks": (task(),)},
+        {"agent_outputs": (failed.model_copy(update={"run_id": "RUN-FOREIGN"}),)},
+    ):
+        with pytest.raises((ResultsIdentityError, ResultsIntegrityError)):
+            build_execution_record_surface(**(args | changes))
+
+
 def test_execution_quarantines_internal_path_even_if_retained_as_a_known_ref() -> None:
     internal_path = "/Users/private/agent-scratch.json"
     output = agent_output(input_refs=["GOAL-A", internal_path])
@@ -767,6 +805,13 @@ def test_frontend_results_decoders_accept_exact_contract_and_fail_closed() -> No
       assert.equal(report.sourceContributions[0].calculationId, "CALC-A");
       assert.equal(review.checks.length, 1);
       assert.equal(execution.actorDetails.length, 1);
+
+      const retainedReview = structuredClone(payloads.review);
+      retainedReview.released_result_id = null;
+      assert.throws(() => domain.decodeFinancialReviewSurface(retainedReview, "RUN-A", "OBJ-A"));
+      retainedReview.canonical_execution_record_id = null;
+      const retained = domain.decodeFinancialReviewSurface(retainedReview, "RUN-A", "OBJ-A");
+      assert.equal(retained.releasedResultId, null);
 
       const foreignReport = structuredClone(payloads.report);
       foreignReport.sections[0].anchor.run_id = "RUN-X";

@@ -27,6 +27,7 @@ class ReviewRecord(TimestampedModel):
     required_proof_calculation_refs: list[str] = Field(default_factory=list)
     checks: list[ReviewCheck] = Field(default_factory=list)
     input_snapshot_hash: str | None = None
+    requirement_context: JsonObject | None = None
     reviewer: str = "deterministic-review-v1"
 
     @model_validator(mode="after")

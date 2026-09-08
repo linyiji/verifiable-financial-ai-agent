@@ -29,6 +29,7 @@ class ResearchRunDraft(DomainModel):
 
 
 class CompletedRunArtifacts(DomainModel):
+    closure_diagnostic: JsonObject | None = None
     partial_research: JsonObject | None = None
     financial_branches: list[FinancialBranchResult] = Field(default_factory=list)
     agent_outputs: list[ResearchAgentOutputRecord] = Field(default_factory=list)

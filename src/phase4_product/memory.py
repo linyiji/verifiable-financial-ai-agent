@@ -65,10 +65,34 @@ def build_memory_versions(
             for d in execution.actor_details
             if d.actor_id == contribution.actor_id and d.run_id == run_id
         ]
+        if contribution.agent_output_id is None:
+            exact_metric = [
+                m for m in metrics.values() if m.calculation_id == contribution.calculation_id
+            ]
+            if (
+                len(details) != 1
+                or contribution not in details[0].report_contributions
+                or len(exact_metric) != 1
+                or set(contribution.evidence_refs) != set(exact_metric[0].evidence_refs)
+                or contribution.review_id != review.review_id
+                or sum(
+                    e.event_id == contribution.execution_event_id
+                    and e.task_id == contribution.task_id
+                    and e.event_type == "calculation.completed"
+                    and e.status == "COMPLETED"
+                    for e in details[0].observable_process
+                )
+                != 1
+            ):
+                raise product_error(
+                    "IDENTITY_MISMATCH", "memory native calculation lineage mismatch"
+                )
+            continue
         if len(details) != 1 or not any(
             o.output_id == contribution.agent_output_id
             and o.run_id == run_id
             and o.task_id == contribution.task_id
+            and o.status == "SUCCESS"
             for o in details[0].outputs
         ):
             raise product_error("IDENTITY_MISMATCH", "memory contribution output mismatch")

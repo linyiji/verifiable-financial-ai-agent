@@ -110,6 +110,7 @@ class Settings(BaseSettings):
     artifact_root: str = "artifacts"
     workspace_root: str = "workspaces"
     fmp_api_key: SecretStr | None = None
+    bocha_api_key: SecretStr | None = None
     fmp_base_url: str = "https://financialmodelingprep.com"
     llm_provider: str = "teamorouter"
     incremental_provider_route: str = "teamorouter-sol"

@@ -25,6 +25,7 @@ class EvidenceRecordRow(Base):
     __tablename__ = "evidence_records"
 
     evidence_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    document_authority: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     run_id: Mapped[str] = mapped_column(String(128), index=True)
     object_id: Mapped[str] = mapped_column(String(128), index=True)
     provider: Mapped[str] = mapped_column(String(128))
@@ -108,6 +109,7 @@ def _to_row(record: EvidenceRecord) -> EvidenceRecordRow:
 
 def _to_domain(row: EvidenceRecordRow) -> EvidenceRecord:
     return EvidenceRecord(
+        document_authority=row.document_authority,
         evidence_id=row.evidence_id,
         run_id=row.run_id,
         object_id=row.object_id,

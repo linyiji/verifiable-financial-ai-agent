@@ -47,7 +47,38 @@ class ModelExecutionPolicy(Frozen):
 DYNAMIC_GRANTS = {
     ("fundamental_analysis", "teamorouter-luna"): ("teamorouter-terra",),
     ("valuation_analysis", "teamorouter-luna"): ("teamorouter-terra",),
+    ("risk_analysis", "teamorouter-luna"): ("teamorouter-terra",),
     ("GENERATED_CAPABILITY:free_cash_flow_margin", "teamorouter-luna"): ("teamorouter-terra",),
+}
+
+# Prospective task authorization, separate from registration and capability evidence.
+TASK_CANDIDATES = {
+    "GENERATED_CAPABILITY:gross_margin": (
+        "teamorouter-sol",
+        "teamorouter-luna",
+        "teamorouter-terra",
+    ),
+    "fundamental_analysis": (
+        "teamorouter-sol",
+        "teamorouter-luna",
+        "teamorouter-terra",
+        "mimo-direct",
+    ),
+    "valuation_analysis": (
+        "teamorouter-sol",
+        "teamorouter-luna",
+        "teamorouter-terra",
+        "mimo-direct",
+    ),
+    "risk_analysis": ("teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"),
+    "peer_analysis": ("mimo-direct", "teamorouter-sol", "teamorouter-luna"),
+    "research_news_analysis": ("mimo-direct", "teamorouter-sol", "teamorouter-luna"),
+    "report_synthesis": ("teamorouter-sol", "teamorouter-luna", "mimo-direct"),
+    "GENERATED_CAPABILITY:free_cash_flow_margin": (
+        "teamorouter-sol",
+        "teamorouter-luna",
+        "teamorouter-terra",
+    ),
 }
 
 

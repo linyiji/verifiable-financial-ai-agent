@@ -1429,7 +1429,7 @@ class ReportContributionRefV1(FrozenWireModel):
     report_anchor: NonBlank
     task_id: NonBlank
     actor_id: NonBlank
-    agent_output_id: NonBlank
+    agent_output_id: NonBlank | None
     execution_event_id: NonBlank | None = None
     calculation_id: NonBlank | None = None
     evidence_refs: tuple[NonBlank, ...] = ()
@@ -1506,8 +1506,8 @@ class FinancialReviewSurfaceV1(FrozenWireModel):
     )
     run_id: NonBlank
     object_id: NonBlank
-    released_result_id: NonBlank
-    canonical_execution_record_id: NonBlank
+    released_result_id: NonBlank | None
+    canonical_execution_record_id: NonBlank | None
     review_id: NonBlank
     reviewer: NonBlank
     verdict: Literal["PASS", "REVIEW", "BLOCK"]
@@ -1516,6 +1516,8 @@ class FinancialReviewSurfaceV1(FrozenWireModel):
 
     @model_validator(mode="after")
     def exact_review_identity(self) -> FinancialReviewSurfaceV1:
+        if (self.released_result_id is None) != (self.canonical_execution_record_id is None):
+            raise ValueError("Review release bindings must be present together")
         if not self.checks:
             raise ValueError("available Financial Review requires persisted checks")
         selectors = set()

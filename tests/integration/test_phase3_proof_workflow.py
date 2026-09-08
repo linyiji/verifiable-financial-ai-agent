@@ -4,7 +4,6 @@ from datetime import date
 
 import pytest
 
-from src.application.errors import ApplicationError
 from src.application.extensions import ProofWorkflowOutcome
 from src.application.service import ResearchApplicationService
 from src.domain.enums import ProofRequirement, ProofStatus, RunStatus
@@ -92,8 +91,8 @@ async def test_missing_required_proof_blocks_release() -> None:
         RevenueGrowthProofWorkflow(provide_valid_proof=False)
     )
 
-    with pytest.raises(ApplicationError, match="assurance requirements"):
-        await service.execute_run(aggregate.run.run_id)
+    await service.execute_run(aggregate.run.run_id)
+    assert aggregate.artifacts.closure_diagnostic["code"] == "RELEASE_GATE_BLOCKED"
 
     assert aggregate.run.status is not RunStatus.RELEASED
     assert aggregate.artifacts.canonical_record is None

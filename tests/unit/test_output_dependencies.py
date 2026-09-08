@@ -150,7 +150,6 @@ async def test_integrated_partial_synthesis_persists_but_release_stays_strict(
 ):
     from datetime import UTC, datetime
 
-    from src.application.errors import ApplicationError
     from src.application.execution import IntegratedTaskExecutor
     from src.application.service import ResearchApplicationService
 
@@ -184,11 +183,21 @@ async def test_integrated_partial_synthesis_persists_but_release_stays_strict(
         preferences={},
     )
     aggregate = await service.confirm_run(draft_id=draft.draft_id, confirm_scheme=True)
-    with pytest.raises(ApplicationError):
-        await service.execute_run(aggregate.run.run_id)
-    assert aggregate.run.status is RunStatus.FAILED
-    assert aggregate.artifacts.released_result is None
-    assert aggregate.artifacts.partial_research["status"] == "PARTIAL_NOT_RELEASED"
+    await service.execute_run(aggregate.run.run_id)
+    assert aggregate.run.status is (RunStatus.FAILED if synthesis_fails else RunStatus.RELEASED)
+    if synthesis_fails:
+        assert aggregate.artifacts.released_result is None
+        assert aggregate.artifacts.closure_diagnostic["code"] in {
+            "INCOMPLETE_RESEARCH_NOT_RELEASED",
+            "REQUIRED_RESEARCH_OUTPUT_MISSING",
+            "REVIEW_BLOCKED",
+        }
+    else:
+        assert aggregate.artifacts.released_result is not None
+        assert aggregate.artifacts.review.status.value == "PASS"
+    assert aggregate.artifacts.partial_research["status"] == (
+        "PARTIAL_NOT_RELEASED" if synthesis_fails else "PARTIAL_RELEASED"
+    )
     assert len(aggregate.artifacts.partial_research["available_calculations"]) == 2
     assert aggregate.artifacts.proofs  # real existing policy, no invented verification
     for kind in ("valuation_analysis", "risk_analysis", "report_synthesis"):

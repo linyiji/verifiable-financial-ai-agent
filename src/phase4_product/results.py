@@ -249,6 +249,14 @@ def build_report_surface(
         task = task_index.get(source.task_id)
         output = output_index.get(source.agent_output_id)
         event = event_index.get(source.execution_event_id)
+        deterministic = source.agent_output_id is None
+        if deterministic and (
+            source.calculation_id not in canonical_record.calculation_refs
+            or event is None
+            or event.type is not RuntimeEventType.CALCULATION_COMPLETED
+            or event.payload.get("calculation_id") != source.calculation_id
+        ):
+            raise ResultsIdentityError("Deterministic contribution lacks exact calculation event")
         if (
             not all(
                 _is_safe_ref(item)
@@ -257,7 +265,7 @@ def build_report_surface(
                     source.report_anchor,
                     source.task_id,
                     source.actor_id,
-                    source.agent_output_id,
+                    *([source.agent_output_id] if source.agent_output_id else []),
                     source.execution_event_id,
                     *source.evidence_refs,
                     *(item for item in (source.calculation_id, source.review_id) if item),
@@ -265,21 +273,34 @@ def build_report_surface(
             )
             or source.report_id != released_result.result_id
             or source.task_id not in canonical_record.task_refs
-            or source.agent_output_id not in canonical_record.agent_output_refs
+            or (
+                not deterministic
+                and source.agent_output_id not in canonical_record.agent_output_refs
+            )
             or task is None
             or task.run_id != expected_run_id
             or task.assigned_agent != source.actor_id
-            or output is None
-            or task.result_ref != output.artifact_ref
-            or output.run_id != expected_run_id
-            or output.task_id != source.task_id
-            or output.actor != source.actor_id
-            or output.artifact_id != source.agent_output_artifact_id
+            or (
+                not deterministic
+                and (
+                    output is None
+                    or task.result_ref != output.artifact_ref
+                    or output.run_id != expected_run_id
+                    or output.task_id != source.task_id
+                    or output.actor != source.actor_id
+                    or output.artifact_id != source.agent_output_artifact_id
+                )
+            )
             or event is None
             or event.run_id != expected_run_id
             or event.task_id != source.task_id
-            or event.type is not RuntimeEventType.TASK_COMPLETED
-            or event.payload.get("result_ref") != output.artifact_ref
+            or (
+                not deterministic
+                and (
+                    event.type is not RuntimeEventType.TASK_COMPLETED
+                    or event.payload.get("result_ref") != output.artifact_ref
+                )
+            )
             or (
                 source.calculation_id is not None
                 and source.calculation_id not in canonical_record.calculation_refs
@@ -341,8 +362,8 @@ def build_financial_review_surface(
     expected_run_id: str,
     expected_object_id: str,
     review: ReviewRecord,
-    canonical_record: CanonicalExecutionRecord,
-    released_result: ReleasedResearchResult,
+    canonical_record: CanonicalExecutionRecord | None,
+    released_result: ReleasedResearchResult | None,
     authoritative_subject_refs: Iterable[str],
 ) -> FinancialReviewSurfaceV1:
     for value, context in (
@@ -350,11 +371,18 @@ def build_financial_review_surface(
         (canonical_record, "CanonicalExecutionRecord"),
         (released_result, "ReleasedResult"),
     ):
-        _exact_run(value, expected_run_id, context)
+        if value is not None:
+            _exact_run(value, expected_run_id, context)
+    if (canonical_record is None) != (released_result is None):
+        raise ResultsIdentityError("Review release bindings are incomplete")
     if (
-        canonical_record.object_snapshot_ref != expected_object_id
-        or released_result.canonical_record_id != canonical_record.record_id
-        or review.review_id not in canonical_record.review_refs
+        canonical_record is not None
+        and released_result is not None
+        and (
+            canonical_record.object_snapshot_ref != expected_object_id
+            or released_result.canonical_record_id != canonical_record.record_id
+            or review.review_id not in canonical_record.review_refs
+        )
     ):
         raise ResultsIdentityError(
             "Financial Review closure does not match exact Run/Object/Result"
@@ -388,8 +416,8 @@ def build_financial_review_surface(
     return FinancialReviewSurfaceV1(
         run_id=expected_run_id,
         object_id=expected_object_id,
-        released_result_id=released_result.result_id,
-        canonical_execution_record_id=canonical_record.record_id,
+        released_result_id=released_result.result_id if released_result else None,
+        canonical_execution_record_id=canonical_record.record_id if canonical_record else None,
         review_id=review.review_id,
         reviewer=_safe(review.reviewer, context="Review reviewer") or "",
         verdict=_enum_value(review.status),
@@ -463,10 +491,9 @@ def build_execution_record_surface(
     event_ids = {item.event_id for item in events}
     if len(output_ids) != len(agent_outputs) or len(event_ids) != len(events):
         raise ResultsIntegrityError("Execution output/event identities are ambiguous")
-    if (
-        set(canonical_record.task_refs) != task_ids
-        or set(canonical_record.agent_output_refs) != output_ids
-    ):
+    if set(canonical_record.task_refs) != task_ids or set(canonical_record.agent_output_refs) != {
+        item.output_id for item in agent_outputs if item.status == "SUCCESS"
+    }:
         raise ResultsIdentityError(
             "Execution Task/AgentOutput refs differ from the canonical record"
         )
@@ -518,17 +545,40 @@ def build_execution_record_surface(
         )
         completed_events: list[RuntimeEvent] = []
         for output in actor_outputs:
+            success = output.status == "SUCCESS"
+            terminal_type = (
+                RuntimeEventType.TASK_COMPLETED if success else RuntimeEventType.TASK_FAILED
+            )
             matches = [
                 item
                 for item in owned_events
-                if item.type is RuntimeEventType.TASK_COMPLETED
+                if item.type is terminal_type
                 and item.task_id == output.task_id
-                and item.payload.get("result_ref") == output.artifact_ref
+                and (not success or item.payload.get("result_ref") == output.artifact_ref)
+            ]
+            failed_binding_ambiguous = not success and (
+                sum(item.task_id == output.task_id for item in agent_outputs) != 1
+                or next(item for item in tasks if item.task_id == output.task_id).status.value
+                != "FAILED"
+            )
+            if len(matches) != 1 or failed_binding_ambiguous:
+                raise ResultsIntegrityError(
+                    "AgentOutput requires exactly one matching terminal Task event"
+                )
+            completed_events.append(matches[0])
+        for contribution in report_contributions:
+            if contribution.actor_id != actor_id or contribution.agent_output_id is not None:
+                continue
+            matches = [
+                item
+                for item in owned_events
+                if item.type is RuntimeEventType.CALCULATION_COMPLETED
+                and item.event_id == contribution.execution_event_id
+                and item.task_id == contribution.task_id
+                and item.payload.get("calculation_id") == contribution.calculation_id
             ]
             if len(matches) != 1:
-                raise ResultsIntegrityError(
-                    "AgentOutput requires exactly one matching task.completed event"
-                )
+                raise ResultsIntegrityError("Native contribution lacks exact calculation event")
             completed_events.append(matches[0])
         details.append(
             ExecutionActorDetailV1(
@@ -545,7 +595,9 @@ def build_execution_record_surface(
                         event_id=event.event_id,
                         task_id=event.task_id,
                         event_type=event.type.value,
-                        status="COMPLETED",
+                        status="FAILED"
+                        if event.type is RuntimeEventType.TASK_FAILED
+                        else "COMPLETED",
                     )
                     for event in sorted(completed_events, key=lambda item: item.sequence)
                 ),

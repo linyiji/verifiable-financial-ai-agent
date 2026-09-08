@@ -157,6 +157,16 @@ _TASK_COVERAGE_ALLOWLIST: JsonAllowlist = {
         "accepted_evidence_ids": None,
         "access_status": None,
         "outcome": None,
+        "capability_execution": {
+            "capability_id": None,
+            "preferred_provider": None,
+            "actual_provider": None,
+            "mode": None,
+            "fmp_status": None,
+            "bocha_status": None,
+            "fallback_reason": None,
+            "discovery_only": None,
+        },
     }
     for endpoint in (
         "profile",
@@ -1599,6 +1609,7 @@ def build_released_result_projection(
     proof_records: Sequence[object] = (),
     proof_verifications: Sequence[object] = (),
     proof_commitments: Sequence[object] = (),
+    unavailable_formulas: frozenset[str] = frozenset(),
 ) -> ReleasedResultProjectionV1:
     """Build the released result only after full typed material closure succeeds."""
 
@@ -1653,8 +1664,11 @@ def build_released_result_projection(
         )
         for metric in raw_metrics
     )
-    if len(metrics) != len(MATERIAL_FORMULAS) or {item.formula_id for item in metrics} != set(
-        MATERIAL_FORMULAS
+    expected_formulas = set(MATERIAL_FORMULAS) - unavailable_formulas
+    if (
+        not unavailable_formulas.issubset(MATERIAL_FORMULAS)
+        or len(metrics) != len(expected_formulas)
+        or {item.formula_id for item in metrics} != expected_formulas
     ):
         raise ProjectionIntegrityError("released result does not contain the exact FULL set")
     if len({metric.metric_id for metric in metrics}) != len(metrics):
@@ -2254,6 +2268,7 @@ def _validate_review_input_snapshot(
             claims=claims,
             judgments=judgments,
             proof_requirements=proof_requirements,
+            requirement_context=_field(review, "requirement_context", None),
         )
     except (AttributeError, TypeError, ValueError) as exc:
         raise ProjectionIntegrityError(

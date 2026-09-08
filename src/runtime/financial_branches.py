@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from src.capabilities.financial.common import PeriodMismatchError
 from src.capabilities.generated.orchestration import CapabilityGenerationUnavailableError
 from src.capabilities.generated.validation import GeneratedCapabilityExecutionError
 from src.domain.financial_branch import BranchStatus, FinancialBranchResult
@@ -87,7 +88,9 @@ async def execute_financial_branches(
                         update={
                             "status": BranchStatus.FAILED,
                             "reason_code": (
-                                "CAPABILITY_BUILD_FAILED"
+                                "PERIOD_MISMATCH_CORRECTION_REQUIRED"
+                                if isinstance(error, PeriodMismatchError)
+                                else "CAPABILITY_BUILD_FAILED"
                                 if isinstance(error, CapabilityGenerationUnavailableError)
                                 else "CALCULATION_FAILURE"
                             ),
@@ -121,7 +124,12 @@ async def execute_financial_branches(
         # validation, authority and persistence defects still terminate globally.
         if all(
             isinstance(
-                value, (GeneratedCapabilityExecutionError, CapabilityGenerationUnavailableError)
+                value,
+                (
+                    GeneratedCapabilityExecutionError,
+                    CapabilityGenerationUnavailableError,
+                    PeriodMismatchError,
+                ),
             )
             for value in errors.values()
         ):
@@ -133,7 +141,12 @@ async def execute_financial_branches(
             value
             for value in errors.values()
             if not isinstance(
-                value, (GeneratedCapabilityExecutionError, CapabilityGenerationUnavailableError)
+                value,
+                (
+                    GeneratedCapabilityExecutionError,
+                    CapabilityGenerationUnavailableError,
+                    PeriodMismatchError,
+                ),
             )
         )
     return [outcomes[key] for key in ids]

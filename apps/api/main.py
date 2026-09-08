@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from apps.api.routes import router
+from src.adapters.bocha import BochaDiscovery
 from src.adapters.finrobot.professional_reporting import (
     ControlledArtifactStore,
     ProfessionalReportPublisher,
@@ -89,6 +90,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 provider=financial_provider,
                 repository=persistence.evidence_repository,
                 artifact_root=Path(settings.artifact_root) / "phase4-raw",
+                discovery=None if evaluator else BochaDiscovery(settings.bocha_api_key),
             )
             model_provider = (
                 configured_incremental_provider(settings, route_id="teamorouter-sol")
@@ -104,6 +106,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                     secret.get_secret_value()
                     for secret in (
                         *settings.fmp.credentials,
+                        settings.bocha_api_key,
                         settings.llm.api_key,
                         incremental_provider._settings.api_key,
                         *(client._settings.api_key for client in specialist_providers.values()),
