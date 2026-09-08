@@ -34,6 +34,12 @@ class GeneratedCapabilityDeadlineExceededError(TimeoutError):
     """The one absolute generation/validation/repair deadline was exhausted."""
 
 
+class CodeBuilderModelIdentityError(RuntimeError):
+    """The generated output did not come from the explicitly selected model."""
+
+    retryable = False
+
+
 class PlannerProviderCodeBuilder:
     """Generate, validate, and if needed repair one provider-neutral bundle.
 
@@ -49,6 +55,7 @@ class PlannerProviderCodeBuilder:
         *,
         trace: GeneratedCapabilityTrace | None = None,
         compiler: GeneratedCapabilityCompilerV1 | None = None,
+        exact_model: str | None = None,
     ) -> None:
         provider_name = getattr(provider, "provider_name", None)
         if provider_name not in SUPPORTED_PLANNER_PROVIDERS:
@@ -58,6 +65,9 @@ class PlannerProviderCodeBuilder:
         self.builder_id = f"{provider_name}-spec-compiler-builder-v1"
         self._trace = trace or GeneratedCapabilityTrace()
         self._compiler = compiler or GeneratedCapabilityCompilerV1()
+        self._exact_model = exact_model
+        if exact_model is not None and exact_model != provider.model_name:
+            raise ValueError("Code Builder exact model must match its configured route")
 
     @property
     def provider_name(self) -> str:
@@ -118,6 +128,14 @@ class PlannerProviderCodeBuilder:
                                 workload_type="GENERATED_CAPABILITY",
                             )
                         responses.append(response)
+                        if self._exact_model is not None and (
+                            response.actual_model != self._exact_model
+                            or response.requested_model != self._exact_model
+                            or response.provider != self.provider_name
+                        ):
+                            raise CodeBuilderModelIdentityError(
+                                "Code Builder model identity mismatch"
+                            )
                         if response.provider != self.provider_name:
                             raise GeneratedCapabilityBundleValidationError(
                                 [

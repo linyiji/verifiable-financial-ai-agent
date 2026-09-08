@@ -2,6 +2,8 @@
 
 [简体中文](ADAPTIVE_RUNTIME.zh-CN.md)
 
+Generated-capability construction uses a separate explicit `teamorouter-terra` route, with requested and actual model fixed to `gpt-5.6-terra`. It does not alias a Sol/Luna response to Terra or certify the route in advance. Spec compilation, sandbox validation and registration approval remain mandatory. Model identity mismatch stops generation without retry. Exhausted classified transport/schema generation failures are output-local; authentication, authority, persistence and unknown contract defects remain fatal. Source and dependency progress events use the frozen progress envelope and the task's actual recorded progress.
+
 Provider/model failure → owned error classification → Lead recovery proposal → independent policy gate → bounded same-Run invocation → ordinary structured-output validation.
 
 Recovery preserves Object, Run, Scheme, Task, actor/profile, exact input and output-contract hashes. It does not change financial evidence, regenerate the Scheme, replan the graph or admit another Run.

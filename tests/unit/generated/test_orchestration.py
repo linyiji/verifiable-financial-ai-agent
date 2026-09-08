@@ -528,6 +528,39 @@ def test_specialist_request_cannot_smuggle_approval_or_registration_authority() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["transport", "identity", "unknown", "auth"])
+async def test_only_classified_generation_failures_are_output_local(kind):
+    from src.adapters.llm.provider import LLMFailureClassification, LLMProviderUnavailableError
+    from src.capabilities.generated.builder import CodeBuilderModelIdentityError
+    from src.capabilities.generated.orchestration import CapabilityGenerationUnavailableError
+
+    errors = {
+        "transport": LLMProviderUnavailableError(
+            "unavailable", failure_classification=LLMFailureClassification.READ_TIMEOUT
+        ),
+        "identity": CodeBuilderModelIdentityError("mismatch"),
+        "unknown": ValueError("contract defect"),
+        "auth": LLMProviderUnavailableError(
+            "denied", failure_classification=LLMFailureClassification.AUTHENTICATION_FAILURE
+        ),
+    }
+
+    class FailedBuilder(FakeBuilder):
+        async def generate(self, request):
+            self.calls.append(request)
+            raise errors[kind]
+
+    builder = FailedBuilder()
+    service, events = orchestrator(builder=builder)
+    with pytest.raises(CapabilityBuildFailedError) as raised:
+        await service.lookup_or_build(state=make_state(), request=make_request())
+    assert isinstance(raised.value, CapabilityGenerationUnavailableError) == (kind == "transport")
+    assert raised.value.__cause__ is errors[kind]
+    if kind == "identity":
+        assert len(builder.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_request_must_come_through_the_task_assigned_skill() -> None:
     service, events = orchestrator()
     state = make_state()

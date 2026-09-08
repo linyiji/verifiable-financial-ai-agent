@@ -391,6 +391,19 @@ async def test_runtime_scopes_specialized_collection_tasks_and_links_lineage() -
     assert aggregate.run.status is RunStatus.RELEASED
     assert len(aggregate.artifacts.evidence) == 49
     events = await service.event_store.replay(aggregate.run.run_id)
+    from src.domain.runtime_event import normalize_runtime_event_v1
+
+    source_progress = [
+        event
+        for event in events
+        if event.type is RuntimeEventType.TASK_PROGRESS
+        and str(event.payload.get("message_code", "")).startswith("SOURCE_OUTCOME:")
+    ]
+    assert source_progress
+    for event in source_progress:
+        public = normalize_runtime_event_v1(event)
+        assert public.payload["progress_scale"] == "RATIO_0_1"
+        assert public.payload["progress"] == event.payload["progress"]
     evidence_events = [
         event for event in events if event.type is RuntimeEventType.EVIDENCE_ACCEPTED
     ]

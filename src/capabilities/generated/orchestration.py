@@ -4,6 +4,8 @@ import asyncio
 from platform import python_version
 from uuid import uuid4
 
+from src.adapters.llm.provider import LLMFailureClassification, LLMProviderError
+from src.capabilities.generated.builder import CodeBuilderModelIdentityError
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
     CapabilityOrchestrationResult,
@@ -51,6 +53,10 @@ class CapabilityBuildFailedError(RuntimeError):
 
 class CapabilityAuthorityError(ValueError):
     pass
+
+
+class CapabilityGenerationUnavailableError(CapabilityBuildFailedError):
+    """Exhausted, classified provider generation failure, scoped to its output."""
 
 
 class GeneratedCapabilityDeadlineExceededError(RuntimeError):
@@ -378,7 +384,7 @@ class GeneratedCapabilityOrchestrator:
                 await self._emit(
                     RuntimeEventType.TASK_PROGRESS,
                     request=request,
-                    payload={"message_code": "BLOCKED_BY_RUNTIME", "build_id": build.build_id},
+                    payload={"progress": task.progress, "message_code": "BLOCKED_BY_RUNTIME"},
                 )
                 raise
             except Exception as exc:
@@ -421,14 +427,37 @@ class GeneratedCapabilityOrchestrator:
                         "terminal": (
                             attempt == self._max_attempts
                             or isinstance(exc, GeneratedCapabilityDeadlineExceededError)
+                            or isinstance(exc, CodeBuilderModelIdentityError)
                         ),
                     },
                 )
-                if isinstance(exc, GeneratedCapabilityDeadlineExceededError):
+                if isinstance(
+                    exc, (GeneratedCapabilityDeadlineExceededError, CodeBuilderModelIdentityError)
+                ):
                     break
 
         task.status = TaskStatus.CAPABILITY_BUILD_FAILED
-        raise CapabilityBuildFailedError(
+        local_generation_failure = failure_stage == "generation" and (
+            isinstance(last_error, GeneratedCapabilityDeadlineExceededError)
+            or isinstance(last_error, LLMProviderError)
+            and last_error.failure_classification
+            in {
+                LLMFailureClassification.PROVIDER_UNAVAILABLE,
+                LLMFailureClassification.CONNECT_TIMEOUT,
+                LLMFailureClassification.READ_TIMEOUT,
+                LLMFailureClassification.OVERALL_DEADLINE_EXCEEDED,
+                LLMFailureClassification.REMOTE_PROTOCOL_ERROR,
+                LLMFailureClassification.RETRYABLE_HTTP_FAILURE,
+                LLMFailureClassification.SEMANTIC_SCHEMA_FAILURE,
+                LLMFailureClassification.INVALID_PROVIDER_RESPONSE,
+            }
+        )
+        error_type = (
+            CapabilityGenerationUnavailableError
+            if local_generation_failure
+            else CapabilityBuildFailedError
+        )
+        raise error_type(
             f"capability build failed after {len(builds)} attempt(s): "
             f"{type(last_error).__name__ if last_error else 'unknown'}",
             gap=gap,

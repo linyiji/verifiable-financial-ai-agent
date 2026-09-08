@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from src.capabilities.generated.orchestration import CapabilityGenerationUnavailableError
 from src.capabilities.generated.validation import GeneratedCapabilityExecutionError
 from src.domain.financial_branch import BranchStatus, FinancialBranchResult
 from src.domain.output_dependency import LocalOutputFailure
@@ -83,7 +84,14 @@ async def execute_financial_branches(
                 except Exception as error:
                     errors[identity.branch_id] = error
                     result = identity.model_copy(
-                        update={"status": BranchStatus.FAILED, "reason_code": "CALCULATION_FAILURE"}
+                        update={
+                            "status": BranchStatus.FAILED,
+                            "reason_code": (
+                                "CAPABILITY_GENERATION_UNAVAILABLE"
+                                if isinstance(error, CapabilityGenerationUnavailableError)
+                                else "CALCULATION_FAILURE"
+                            ),
+                        }
                     )
         await publish(result)
         outcomes[identity.branch_id] = result
@@ -96,9 +104,14 @@ async def execute_financial_branches(
     # siblings have settled and durably published before the original error is raised.
     if errors:
         error = next(errors[key] for key in ids if key in errors)
-        # Only the owned deterministic execution error is research-local. Unknown
+        # Only owned calculation or classified generation failures are local. Unknown
         # validation, authority and persistence defects still terminate globally.
-        if all(isinstance(value, GeneratedCapabilityExecutionError) for value in errors.values()):
-            raise LocalOutputFailure("Recorded deterministic calculation failure") from error
+        if all(
+            isinstance(
+                value, (GeneratedCapabilityExecutionError, CapabilityGenerationUnavailableError)
+            )
+            for value in errors.values()
+        ):
+            raise LocalOutputFailure("Recorded output construction or calculation failure") from error
         raise error
     return [outcomes[key] for key in ids]

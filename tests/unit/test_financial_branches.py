@@ -88,6 +88,52 @@ async def test_true_owned_calculation_failure_is_failed_not_unavailable():
 
 
 @pytest.mark.asyncio
+async def test_classified_generation_failure_settles_siblings_before_local_failure():
+    from src.capabilities.generated.orchestration import CapabilityGenerationUnavailableError
+    from src.domain.capability import CapabilityGapRecord
+    from src.domain.enums import CapabilityLifecycle
+    from src.domain.output_dependency import LocalOutputFailure
+    from tests.unit.generated.test_orchestration import make_request
+
+    request = make_request()
+    error = CapabilityGenerationUnavailableError(
+        "provider generation exhausted",
+        gap=CapabilityGapRecord(
+            gap_id="GAP-test",
+            run_id=request.run_id,
+            task_id=request.task_id,
+            requirement=request.requirement,
+            requested_by=request.requested_by,
+            lifecycle=CapabilityLifecycle.GAP_DETECTED,
+        ),
+        build_records=(),
+    )
+    published = []
+
+    async def bad():
+        raise error
+
+    async def good():
+        return identity("good").model_copy(
+            update={"status": BranchStatus.COMPLETED, "calculation_ids": ["CALC-good"]}
+        )
+
+    async def publish(result):
+        published.append(result)
+
+    with pytest.raises(LocalOutputFailure) as raised:
+        await execute_financial_branches(
+            [FinancialBranch(identity("FCF"), bad), FinancialBranch(identity("good"), good)],
+            publish=publish,
+        )
+    assert raised.value.__cause__ is error
+    assert {item.branch_id: item.status for item in published} == {
+        "FCF": BranchStatus.FAILED,
+        "good": BranchStatus.COMPLETED,
+    }
+
+
+@pytest.mark.asyncio
 async def test_independent_parallelism_dependency_block_and_claim_gating():
     active = 0
     peak = 0

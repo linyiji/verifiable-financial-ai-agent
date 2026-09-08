@@ -123,6 +123,36 @@ class FakeMimoProvider(FakeProvider):
         super().__init__(outputs, model="mimo-v2.5")
 
 
+@pytest.mark.asyncio
+async def test_exact_terra_builder_identity():
+    from dataclasses import replace
+
+    from src.capabilities.generated.builder import (
+        CodeBuilderModelIdentityError,
+        PlannerProviderCodeBuilder,
+    )
+
+    provider = FakeProvider([spec_output()], model="gpt-5.6-terra")
+    candidate = await PlannerProviderCodeBuilder(provider, exact_model="gpt-5.6-terra").generate(
+        build_request()
+    )
+    assert candidate.actual_model == "gpt-5.6-terra"
+    assert provider.locked_models == ["gpt-5.6-terra"]
+
+    class Substitution(FakeProvider):
+        async def complete_structured(self, **kwargs):
+            response = await super().complete_structured(**kwargs)
+            return replace(response, actual_model="gpt-5.6-sol")
+
+    substituted = Substitution([spec_output()], model="gpt-5.6-terra")
+    with pytest.raises(CodeBuilderModelIdentityError):
+        await PlannerProviderCodeBuilder(substituted, exact_model="gpt-5.6-terra").generate(
+            build_request()
+        )
+    assert len(substituted.calls) == 1
+    assert substituted.locked_models == []
+
+
 class TraceSpy:
     def __init__(self) -> None:
         self.generations: list[dict[str, object]] = []

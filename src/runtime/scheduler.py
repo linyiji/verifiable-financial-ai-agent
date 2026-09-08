@@ -110,8 +110,9 @@ class DependencyScheduler:
                             task_id=blocked.task_id,
                             event_type=RuntimeEventType.TASK_PROGRESS,
                             payload={
+                                "progress": blocked.progress,
                                 "message_code": "BLOCKED_BY_DEPENDENCY:"
-                                + ",".join(blocked.missing_output_dependencies)
+                                + ",".join(blocked.missing_output_dependencies),
                             },
                         )
                         self._reported_blocks.add(blocked.task_id)

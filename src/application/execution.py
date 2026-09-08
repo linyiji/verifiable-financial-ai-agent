@@ -144,7 +144,8 @@ class IntegratedTaskExecutor:
                     task_id=task.task_id,
                     event_type=RuntimeEventType.TASK_PROGRESS,
                     payload={
-                        "message_code": f"SOURCE_OUTCOME:{endpoint}:{status.value}:{len(refs)}"
+                        "progress": authoritative.progress,
+                        "message_code": f"SOURCE_OUTCOME:{endpoint}:{status.value}:{len(refs)}",
                     },
                 )
             status_counts: dict[str, int] = {}
