@@ -112,6 +112,8 @@ async def execute_financial_branches(
             )
             for value in errors.values()
         ):
-            raise LocalOutputFailure("Recorded output construction or calculation failure") from error
+            raise LocalOutputFailure(
+                "Recorded output construction or calculation failure"
+            ) from error
         raise error
     return [outcomes[key] for key in ids]
