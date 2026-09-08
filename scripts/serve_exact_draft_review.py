@@ -10,7 +10,7 @@ from src.infrastructure.config.settings import Settings
 from src.phase4_product.api import create_phase4_product_router, install_phase4_error_handlers
 from src.phase4_product.postgresql_backend import PostgreSQLPhase4ProductBackend
 
-settings = Settings(_env_file="/Users/mac/Verifiable_Financial_Agent_System/.env.local")
+settings = Settings()
 engine = create_async_engine(settings.database_url)
 app = FastAPI()
 app.state.phase4_product_backend = PostgreSQLPhase4ProductBackend(

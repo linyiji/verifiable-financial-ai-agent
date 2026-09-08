@@ -49,7 +49,7 @@ def guard():
 
 
 async def main():
-    settings = Settings(_env_file="/Users/mac/Verifiable_Financial_Agent_System/.env.local")
+    settings = Settings()
     engine = create_async_engine(settings.database_url)
     sessions = async_sessionmaker(engine)
     try:

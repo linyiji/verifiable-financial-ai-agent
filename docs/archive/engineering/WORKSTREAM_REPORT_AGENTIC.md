@@ -5,7 +5,7 @@
 **COMPLETE** for the Foundation scope on branch `ws/agentic`.
 
 Runtime used for implementation and verification: Python `3.11.16` from
-`/Users/mac/Verifiable_Financial_Agent_System/.venv/bin/python`, with `PYTHONPATH=.` so the
+`<repository-root>/.venv/bin/python`, with `PYTHONPATH=.` so the
 isolated checkout is authoritative.
 
 ## Delivered artifacts
@@ -117,18 +117,18 @@ use of `CalculationRecord`/`output_value` in owned implementation or tests.
 Commands were run from the isolated Workstream B checkout.
 
 ```text
-$ /Users/mac/Verifiable_Financial_Agent_System/.venv/bin/python --version
+$ <repository-root>/.venv/bin/python --version
 Python 3.11.16
 
-$ PYTHONPATH=. /Users/mac/Verifiable_Financial_Agent_System/.venv/bin/python -m pytest -q tests/unit/agentic
+$ PYTHONPATH=. <repository-root>/.venv/bin/python -m pytest -q tests/unit/agentic
 ..................                                                       [100%]
 18 passed in 0.07s
 
-$ PYTHONPATH=. /Users/mac/Verifiable_Financial_Agent_System/.venv/bin/python -m pytest -q
+$ PYTHONPATH=. <repository-root>/.venv/bin/python -m pytest -q
 ........................                                                 [100%]
 24 passed in 0.08s
 
-$ PYTHONPATH=. /Users/mac/Verifiable_Financial_Agent_System/.venv/bin/python -m ruff check .
+$ PYTHONPATH=. <repository-root>/.venv/bin/python -m ruff check .
 All checks passed!
 
 $ git diff --check

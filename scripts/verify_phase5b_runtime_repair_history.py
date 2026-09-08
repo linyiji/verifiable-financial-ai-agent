@@ -42,7 +42,7 @@ async def main():
     )
     assert guard() == safety["history_guard_after"]
     engine = create_async_engine(
-        Settings(_env_file="/Users/mac/Verifiable_Financial_Agent_System/.env.local").database_url
+        Settings().database_url
     )
     sessions = async_sessionmaker(engine)
     try:

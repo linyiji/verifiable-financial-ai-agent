@@ -18,7 +18,7 @@ analysis, evidence acceptance, proof decision, API route, or FinRobot import.
 | npm | project tooling | `11.12.1` | observed only |
 
 All Python commands used the required interpreter:
-`/Users/mac/Verifiable_Financial_Agent_System/.venv/bin/python`, with `PYTHONPATH=.` so the
+`<repository-root>/.venv/bin/python`, with `PYTHONPATH=.` so the
 isolated worktree sources were tested rather than the editable install from `main`.
 
 ## Delivered implementation
@@ -92,7 +92,7 @@ isolated worktree sources were tested rather than the editable install from `mai
 Command:
 
 ```text
-PYTHONPATH=. /Users/mac/Verifiable_Financial_Agent_System/.venv/bin/python -m pytest -q
+PYTHONPATH=. <repository-root>/.venv/bin/python -m pytest -q
 ```
 
 Result:
@@ -118,7 +118,7 @@ The eight WS-C integration tests cover:
 Command:
 
 ```text
-PYTHONPATH=. /Users/mac/Verifiable_Financial_Agent_System/.venv/bin/python -m ruff check \
+PYTHONPATH=. <repository-root>/.venv/bin/python -m ruff check \
   src/runtime tests/integration/test_runtime_execution.py
 ```
 

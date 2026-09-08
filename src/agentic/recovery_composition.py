@@ -52,7 +52,7 @@ async def build_adaptive_recovery(settings, sessions, *, forbidden_values=()):
             authority_exists=bool(config.api_key and config.api_key.get_secret_value()),
         )
     try:
-        config = load_mimo_authority()
+        config = load_mimo_authority(settings=settings)
         client = MimoClient(config, execution_policy=policy)
         client.route_ids = {config.primary_model: "mimo-direct"}
         clients["mimo-direct"] = client

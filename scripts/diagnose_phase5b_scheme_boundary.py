@@ -60,7 +60,7 @@ async def main():
             except (ValueError, TypeError):
                 result["error_shape_observed"] = False
 
-    settings = Settings(_env_file="/Users/mac/Verifiable_Financial_Agent_System/.env.local")
+    settings = Settings()
     async with httpx.AsyncClient(event_hooks={"response": [response_hook]}) as http:
         client = TeamoRouterClient(
             settings.llm,

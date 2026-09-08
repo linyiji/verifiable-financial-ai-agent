@@ -121,6 +121,7 @@ class Settings(BaseSettings):
     teamorouter_model: str = "gpt-5.6-sol"
     teamorouter_fallback_model: str = "gpt-5.6-luna"
     mimo_api_key: SecretStr | None = None
+    mimo_authority_file: str | None = None
     mimo_base_url: str = "https://api.xiaomimimo.com/v1"
     mimo_data_model: str = "mimo-v2.5"
     mimo_chat_model: str = "mimo-v2.5"

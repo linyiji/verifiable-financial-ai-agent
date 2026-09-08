@@ -9,11 +9,7 @@ from dotenv import dotenv_values
 from src.adapters.llm.execution import ProviderExecutionPolicyV1
 from src.adapters.llm.mimo import MimoClient
 from src.adapters.llm.teamorouter import TeamoRouterClient
-from src.infrastructure.config.settings import LLMSettings
-
-MIMO_AUTHORITY = Path(
-    "/Users/mac/.atlasanalyse/secrets/production-runtime-v1/xiaomi-mimo-direct-provider.env"
-)
+from src.infrastructure.config.settings import LLMSettings, Settings
 
 
 @dataclass(frozen=True)
@@ -26,11 +22,21 @@ class ProviderRoute:
     timeout_policy: ProviderExecutionPolicyV1
 
 
-def load_mimo_authority(path=MIMO_AUTHORITY):
-    """Load the approved external authority only; never copy or emit its contents."""
-    if not path.is_file():
-        raise ValueError("MiMo authority unavailable")
-    values = dotenv_values(path)
+def load_mimo_authority(path=None, *, settings=None):
+    """Load evaluator configuration or an explicit private file, never emit values."""
+    settings = settings or Settings()
+    path = path or settings.mimo_authority_file
+    if path is not None:
+        path = Path(path)
+        if not path.is_file():
+            raise ValueError("MiMo authority unavailable")
+        values = dotenv_values(path)
+    else:
+        values = {
+            "MIMO_API_KEY": settings.mimo_api_key.get_secret_value() if settings.mimo_api_key else None,
+            "MIMO_BASE_URL": settings.mimo_base_url,
+            "MIMO_CHAT_MODEL": settings.mimo_chat_model,
+        }
     key, base, model = (values.get(k) for k in ("MIMO_API_KEY", "MIMO_BASE_URL", "MIMO_CHAT_MODEL"))
     if not all(isinstance(v, str) and v.strip() for v in (key, base, model)):
         raise ValueError("MiMo authority incomplete")
@@ -51,11 +57,11 @@ def load_mimo_authority(path=MIMO_AUTHORITY):
     )
 
 
-def configured_incremental_provider(settings, *, route_id=None, mimo_authority=MIMO_AUTHORITY):
+def configured_incremental_provider(settings, *, route_id=None, mimo_authority=None):
     """The only provider-specific choice is in composition, never in the researcher."""
     selected = route_id or settings.incremental_provider_route
     if selected == "mimo-direct":
-        client = MimoClient(load_mimo_authority(mimo_authority))
+        client = MimoClient(load_mimo_authority(mimo_authority, settings=settings))
         client.route_ids = {client.model_name: selected}
     elif selected in {"teamorouter-sol", "teamorouter-luna"}:
         config = settings.llm
@@ -72,7 +78,7 @@ def configured_incremental_provider(settings, *, route_id=None, mimo_authority=M
     return client
 
 
-def configured_specialist_providers(settings, *, mimo_authority=MIMO_AUTHORITY):
+def configured_specialist_providers(settings, *, mimo_authority=None):
     """Explicit task-profile overrides; unlisted profiles keep their existing provider."""
     allowed = {
         "fundamental_analysis",

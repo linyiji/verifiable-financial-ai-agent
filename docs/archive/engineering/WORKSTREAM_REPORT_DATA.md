@@ -50,7 +50,7 @@ bundle.
 
 Environment:
 
-- Python: `/Users/mac/Verifiable_Financial_Agent_System/.venv/bin/python` (`3.11.16`)
+- Python: `<repository-root>/.venv/bin/python` (`3.11.16`)
 - Import resolution: `PYTHONPATH=.` so this isolated checkout is tested
 
 Results:

@@ -1,0 +1,47 @@
+name: Local contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  offline-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+      ARTIFACT_ROOT: /tmp/vfas-ci-artifacts
+      WORKSPACE_ROOT: /tmp/vfas-ci-workspaces
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install Python test dependencies
+        run: python -m pip install -e '.[dev,postgres]'
+      - name: Offline backend contracts
+        run: >-
+          python -m pytest -q
+          tests/phase4/backend_product/test_evaluator_routes.py
+          tests/phase4/backend_product/test_mimo_foundation.py
+          tests/phase4/backend_product/test_specialist_routes.py
+          tests/phase4/backend_product/test_readonly_projection.py
+          tests/phase4/backend_product/test_api_contract.py
+          tests/phase4/backend_product/test_memory_contracts.py
+          tests/phase4/backend_product/test_memory_comparison.py
+          tests/unit/agentic/test_recovery_policy.py
+          tests/unit/agentic/test_adaptive_recovery.py
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm ci
+      - name: Frontend contracts and build
+        working-directory: apps/web
+        run: |
+          node scripts/readonly-memory-navigation.test.mjs
+          node scripts/object-workspace-v2.test.mjs
+          npm run build

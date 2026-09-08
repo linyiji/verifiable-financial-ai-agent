@@ -7,7 +7,7 @@ from tests.phase4.backend_product.test_mimo_foundation import config
 
 
 def test_explicit_specialist_overrides_preserve_other_profiles(monkeypatch):
-    monkeypatch.setattr(routes, "load_mimo_authority", lambda path: config())
+    monkeypatch.setattr(routes, "load_mimo_authority", lambda path, **kwargs: config())
     settings = Settings(_env_file=None)
     providers = routes.configured_specialist_providers(settings)
     assert set(providers) == {"peer_analysis", "research_news_analysis"}

@@ -12,7 +12,7 @@ recomputes business data.
 ## Authoritative baseline used
 
 - Python: `3.11.16` via the shared project virtual environment
-  `/Users/mac/Verifiable_Financial_Agent_System/.venv`
+  `<repository-root>/.venv`
 - `pyproject.toml`: unchanged at `requires-python = ">=3.11,<3.12"`
 - Node: not required by this backend-only workstream. The shell default observed during the
   boundary check was Node `v25.9.0`, which is outside the frozen Node `>=24,<25` baseline and

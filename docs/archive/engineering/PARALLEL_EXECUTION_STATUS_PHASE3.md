@@ -20,7 +20,7 @@ The untracked Frontend files in the original checkout are outside Phase 3 scope 
 
 - `FRONTEND_V8_PREINTEGRATION = PASS`
 - State: `PRE-INTEGRATION / PASS / FROZEN`
-- Worktree: `/Users/mac/Verifiable_Financial_Agent_System_frontend_v8`
+- Worktree: `<repository-root>_frontend_v8`
 - Branch: `ws/frontend-v8-preintegration`
 - Frontend final HEAD: `7eed83de623af7cfcd61493b329216366477f01c`
 - Forked from backend baseline: `ed8af4ba8c51ada227f433582654ced0e16ca3c4`

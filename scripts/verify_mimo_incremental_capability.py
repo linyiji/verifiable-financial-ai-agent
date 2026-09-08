@@ -25,7 +25,7 @@ KEY = "mimo-capability-exact-nvda-v1-20260907"
 
 
 async def main():
-    settings = Settings(_env_file="/Users/mac/Verifiable_Financial_Agent_System/.env.local")
+    settings = Settings()
     provider = configured_incremental_provider(settings, route_id="mimo-direct")
     before = await asyncio.to_thread(guard)
     engine = create_async_engine(settings.database_url)
