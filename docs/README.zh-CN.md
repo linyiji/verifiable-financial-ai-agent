@@ -25,6 +25,7 @@
 ## 架构与安全
 
 - [系统架构](architecture/SYSTEM_ARCHITECTURE.zh-CN.md)
+- [Phase 6A 可靠性与完成性](architecture/PHASE6A_RELIABILITY_COMPLETION.zh-CN.md)
 - [自适应运行时（Adaptive Runtime）](architecture/ADAPTIVE_RUNTIME.zh-CN.md)
 - [研究记忆（Research Memory）](architecture/RESEARCH_MEMORY.zh-CN.md)
 - [评估凭据安全](architecture/EVALUATOR_CREDENTIAL_SECURITY.zh-CN.md)

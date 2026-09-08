@@ -26,6 +26,7 @@ The gateway installer remains a separate source foundation, not a live hosted se
 
 - [System architecture](architecture/SYSTEM_ARCHITECTURE.md)
 - [Adaptive Runtime](architecture/ADAPTIVE_RUNTIME.md)
+- [Phase 6A reliability and completion](architecture/PHASE6A_RELIABILITY_COMPLETION.md)
 - [Research Memory](architecture/RESEARCH_MEMORY.md)
 - [Evaluator credential security](architecture/EVALUATOR_CREDENTIAL_SECURITY.md)
 
