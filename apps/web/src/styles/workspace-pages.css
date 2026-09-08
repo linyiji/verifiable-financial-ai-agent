@@ -176,3 +176,24 @@
 .memory-item p { line-height:1.6; }
 .memory-current dd { overflow-wrap:anywhere; }
 @media(max-width:700px) { .memory-item { align-items:flex-start; flex-direction:column; } }
+
+/* Object workspace: keep governed versions separate from execution history. */
+.object-comparison-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 18px; }
+.object-comparison-columns > div { min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.object-comparison-columns code, .memory-current dd, .run-lineage p { overflow-wrap: anywhere; }
+.comparison-run-id { display: block; font-size: 11px; color: var(--muted); }
+.comparison-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.object-pane .memory-item { gap: 18px; }
+.object-pane .memory-item > div { min-width: 0; }
+.object-pane .memory-item code { overflow-wrap: anywhere; }
+.run-lineage { margin-top: 8px; font-size: 12px; }
+.object-tabs { overflow-x: auto; }
+.object-tab { white-space: nowrap; }
+@media(max-width: 760px) { .object-comparison-columns { grid-template-columns: 1fr; } }
+.object-pane .research-memory .memory-category { margin-top: 12px; padding-top: 6px; }
+.object-pane .research-memory h3 { margin: 8px 0; }
+.object-pane .research-memory .memory-item { padding: 10px 14px; margin: 6px 0; }
+.object-pane .research-memory .memory-item p { margin: 5px 0; }
+.object-pane .research-memory footer { margin-top: 14px; }
+.object-pane [data-testid="comparison-changes"] { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+.object-pane .history-row { text-align: left; }

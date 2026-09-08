@@ -23,7 +23,7 @@ export function AppShell({ active, context, onNavigate, children }: AppShellProp
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark" aria-hidden="true" />
+        <img className="brand-logo" src="/verifiable-financial-agent-logo.png" alt="" width="32" height="32" />
         <div>
           <div className="brand-title">向风行 AI</div>
           <div className="brand-sub">Verifiable Financial Agent</div>

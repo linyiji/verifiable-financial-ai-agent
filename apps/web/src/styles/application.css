@@ -39,8 +39,7 @@ a { color: inherit; text-decoration: none; }
 
 .sidebar { position: fixed; inset: 0 auto 0 0; width: var(--sidebar); z-index: 60; display: flex; flex-direction: column; padding: 17px 13px; background: var(--navy); color: #b6c4d8; }
 .brand { display: flex; align-items: center; gap: 10px; height: 49px; padding: 0 10px 14px; font-weight: 750; letter-spacing: -.02em; }
-.brand-mark { position: relative; width: 31px; height: 31px; border-radius: 9px; background: linear-gradient(145deg, #466fff, #8aa9ff); box-shadow: 0 8px 20px rgba(49, 94, 251, .26); }
-.brand-mark::before { content: ""; position: absolute; left: 7px; top: 10px; width: 16px; height: 3px; border-radius: 4px; background: #fff; transform: rotate(-34deg); }
+.brand-logo { width: 32px; height: 32px; object-fit: contain; flex: 0 0 32px; background: transparent; }
 .brand-title { color: #fff; font-weight: 820; }
 .brand-sub { color: #8499b7; font-size: 10px; }
 .nav-label { padding: 14px 11px 6px; color: #6f85a4; font-size: 10px; letter-spacing: .11em; text-transform: uppercase; }

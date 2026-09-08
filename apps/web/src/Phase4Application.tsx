@@ -591,6 +591,7 @@ export function Phase4Application() {
       {error && <TypedError error={error} onRetry={() => { const objectId = pathObjectId(); if (objectId) void loadObject(objectId); }} onDismiss={() => setError(null)} />}
       {objectDetail
         ? <ResearchObjectDetailPage
+            source={source}
             memory={objectMemory}
             memoryUnavailable={objectMemoryUnavailable}
             onOpenMemorySource={(runId, anchor) => navigatePath(`/runs/${encodeURIComponent(runId)}/results/report${anchor ? `?anchor=${encodeURIComponent(anchor)}` : ""}`)}

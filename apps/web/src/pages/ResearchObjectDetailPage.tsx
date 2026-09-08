@@ -1,3 +1,5 @@
+import type { Phase4FrontendDataSource } from "../data/FrontendDataSource";
+import type { ResearchRunDetailV1 } from "../types/domain";
 import { useEffect, useState } from "react";
 import type { AvailabilityStatus, Phase4ResearchObjectDetail, RunCollectionItem, RunHistoryItem } from "../types/domain";
 import { PHASE4_RUN_STATUS_META } from "../state/status";
@@ -6,15 +8,19 @@ import {ResearchMemory} from "../components/ResearchMemory";
 import type {ResearchMemorySnapshot, MemoryHistoryRef} from "../types/researchMemory";
 import "../styles/workspace-pages.css";
 
-export type ObjectTab = "overview" | "history";
+export type ObjectTab = "overview" | "current" | "memories" | "compare" | "history";
 
-const OBJECT_TABS: readonly ObjectTab[] = ["overview", "history"];
+const OBJECT_TABS: readonly ObjectTab[] = ["overview", "current", "memories", "compare", "history"];
 const TAB_LABELS: Readonly<Record<ObjectTab, string>> = {
-  overview: "对象概览",
+  overview: "概述",
+  current: "Current Research View",
+  memories: "Memories",
+  compare: "对比",
   history: "研究记录"
 };
 
 export interface ResearchObjectDetailPageProps {
+  readonly source?: Phase4FrontendDataSource;
   readonly memory?: ResearchMemorySnapshot | null;
   readonly memoryUnavailable?: boolean;
   readonly onOpenMemorySource?: (runId: string, anchor: string | null) => void;
@@ -31,6 +37,7 @@ export interface ResearchObjectDetailPageProps {
 }
 
 export function ResearchObjectDetailPage({
+  source,
   memory = null,
   memoryUnavailable = false,
   onOpenMemorySource,
@@ -45,13 +52,25 @@ export function ResearchObjectDetailPage({
   onBeginResearch,
   onOpenRun
 }: ResearchObjectDetailPageProps) {
-  const [tab, setTab] = useState<ObjectTab>(initialTab);
+  const readTab = (): ObjectTab => {
+    if (typeof window === "undefined") return initialTab;
+    const value = new URLSearchParams(window.location.search).get("tab") as ObjectTab;
+    return OBJECT_TABS.includes(value) ? value : initialTab;
+  };
+  const [tab, setTab] = useState<ObjectTab>(readTab);
   const { object } = detail;
 
-  useEffect(() => setTab(initialTab), [initialTab]);
+  useEffect(() => {
+    const sync = () => setTab(readTab());
+    sync(); window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, [initialTab, object.objectId]);
+  const safeMemory = memory?.research_object_id === object.objectId ? memory : null;
 
   const selectTab = (next: ObjectTab) => {
     setTab(next);
+    const url = new URL(window.location.href); url.searchParams.set("tab", next);
+    window.history.pushState(null, "", url);
     onTabChange?.(next);
   };
 
@@ -67,6 +86,7 @@ export function ResearchObjectDetailPage({
           </div>
         </div>
         <div className="actions">
+          <span className="badge green">{safeMemory?.current_view ? `Current View v${safeMemory.current_view.research_view_version}` : safeMemory ? "尚未形成 Research View" : memoryUnavailable ? "Research View 暂不可用" : "Research View 读取中"}</span>
           <button type="button" className="btn primary" onClick={() => onBeginResearch(object.objectId)}>开始新研究</button>
         </div>
       </div>
@@ -94,10 +114,11 @@ export function ResearchObjectDetailPage({
     </div>
 
     {tab === "overview" && <>
-      {onOpenMemorySource && <ResearchMemory memory={memory?.research_object_id===object.objectId ? memory : null} unavailable={memoryUnavailable} onOpenSource={onOpenMemorySource} />}
+      {safeMemory?.current_view && <section className="card pad"><h2>当前研究摘要</h2><p>{safeMemory.current_view.summary ?? "尚未形成已验证摘要。"}</p><span className="badge green">RELEASED · View v{safeMemory.current_view.research_view_version}</span></section>}
       <OverviewPanel detail={detail} onOpenRun={onOpenRun} />
     </>}
-    {tab === "history" && <HistoryPanel onOpenResults={onOpenMemorySource} memoryHistory={memory?.historical_released_runs ?? []} detail={detail} runs={runs} loading={runsLoading} stale={runsStale} unavailable={runsUnavailable} onOpenRun={onOpenRun} />}
+    {(["current", "memories", "compare"] as string[]).includes(tab) && <div id={`object-panel-${tab}`} role="tabpanel" aria-labelledby={`object-tab-${tab}`} className="object-pane active">{onOpenMemorySource && <ResearchMemory pane={tab as "current" | "memories" | "compare"} memory={safeMemory} unavailable={memoryUnavailable} onOpenSource={onOpenMemorySource} />}</div>}
+    {tab === "history" && <HistoryPanel source={source} onOpenResults={onOpenMemorySource} memoryHistory={safeMemory?.historical_released_runs ?? []} detail={detail} runs={runs} loading={runsLoading} stale={runsStale} unavailable={runsUnavailable} onOpenRun={onOpenRun} />}
   </section>;
 }
 
@@ -114,18 +135,7 @@ function OverviewPanel({ detail, onOpenRun }: {
       <State label="计价货币" value={object.currency} />
     </div>
 
-    <div className="grid2 object-overview-grid">
-      <div className="card pad">
-        <div className="section-heading"><div><h2 className="panel-title">Research Object</h2><div className="small">公司研究对象与市场身份。</div></div></div>
-        <dl className="detail-grid object-detail-grid">
-          <Identity label="Object ID" value={object.objectId} mono />
-          <Identity label="公司" value={object.companyName} />
-          <Identity label="股票代码" value={object.symbol} />
-          <Identity label="交易所" value={object.exchange} />
-          <Identity label="行业" value={object.sector ?? "暂不可用"} />
-          <Identity label="货币" value={object.currency} />
-        </dl>
-      </div>
+    <div className="object-overview-grid">
 
       <div className="card pad">
         <div className="section-heading">
@@ -154,8 +164,9 @@ function OverviewPanel({ detail, onOpenRun }: {
   </div>;
 }
 
-function HistoryPanel({ detail, runs, loading, stale, unavailable, onOpenRun, memoryHistory, onOpenResults }: {
+function HistoryPanel({ source, detail, runs, loading, stale, unavailable, onOpenRun, memoryHistory, onOpenResults }: {
   readonly onOpenResults?: (runId: string, anchor: string | null) => void;
+  readonly source?: Phase4FrontendDataSource;
   readonly memoryHistory: readonly MemoryHistoryRef[];
   readonly detail: Phase4ResearchObjectDetail;
   readonly runs: readonly RunHistoryItem[] | null;
@@ -175,8 +186,13 @@ function HistoryPanel({ detail, runs, loading, stale, unavailable, onOpenRun, me
           ? <div className="empty-state" role="status">Run 历史尚未载入。</div>
           : runs.length === 0
             ? <div className="empty-state" role="status">该对象尚无 Research Run。</div>
-            : runs.map((item) => item.availability === "AVAILABLE"
-              ? <ObjectRunRow onOpenResults={onOpenResults} memoryHistory={memoryHistory.find(h=>h.source_run_id===item.run.runId&&h.research_object_id===detail.object.objectId)} key={item.run.runId} run={item.run} expectedObjectId={detail.object.objectId} onOpenRun={onOpenRun} />
+            : [...runs].sort((a,b) => {
+                const priority = (item: RunHistoryItem) => {
+                  const id = item.availability==="AVAILABLE" ? item.run.runId : item.runId;
+                  return id===detail.latestReleasedRunId ? 0 : memoryHistory.some(h=>h.source_run_id===id && h.research_view_version!==null) ? 1 : 2;
+                }; return priority(a)-priority(b);
+              }).map((item) => item.availability === "AVAILABLE"
+              ? <ObjectRunRow source={source} current={item.run.runId===detail.latestReleasedRunId} onOpenResults={onOpenResults} memoryHistory={memoryHistory.find(h=>h.source_run_id===item.run.runId&&h.research_object_id===detail.object.objectId)} key={item.run.runId} run={item.run} expectedObjectId={detail.object.objectId} onOpenRun={onOpenRun} />
               : <UnavailableObjectRunRow key={item.runId} item={item} expectedObjectId={detail.object.objectId} />)}
     </div>
   </div>;
@@ -209,29 +225,47 @@ function historyStatusLabel(status: RunCollectionItem["backendStatus"]): string 
   return "进行中";
 }
 
-function ObjectRunRow({ run, expectedObjectId, onOpenRun, memoryHistory, onOpenResults }: {
+function ObjectRunRow({ source, current, run, expectedObjectId, onOpenRun, memoryHistory, onOpenResults }: {
   readonly onOpenResults?: (runId: string, anchor: string | null) => void;
+  readonly source?: Phase4FrontendDataSource;
+  readonly current: boolean;
   readonly memoryHistory?: MemoryHistoryRef;
   readonly run: RunCollectionItem;
   readonly expectedObjectId: string;
   readonly onOpenRun: (runId: string, objectId: string) => void;
 }) {
+  const [lineage, setLineage] = useState<ResearchRunDetailV1 | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const [recoveries, setRecoveries] = useState<number | null>(null);
+  useEffect(() => {
+    let active = true; const controller = new AbortController();
+    setLineage(null); setRecoveries(null); setFailed(false);
+    if (!source || run.object.objectId !== expectedObjectId) { setFailed(true); return; }
+    source?.getResearchRun(run.runId, expectedObjectId, {signal:controller.signal}).then(value=>{if(active && value.runId===run.runId && value.researchObjectId===expectedObjectId)setLineage(value);}).catch(()=>{if(active)setFailed(true);});
+    if(current) source?.getRecoveryEvidence?.(run.runId, expectedObjectId, {signal:controller.signal}).then(rows=>{if(active)setRecoveries(new Set(rows.filter(r=>r.kind==="DECISION" && r.outcome==="ALLOW").map(r=>r.taskId)).size);}).catch(()=>{});
+    return ()=>{active=false;controller.abort();};
+  }, [source, run.runId, expectedObjectId, current, attempt]);
   if (run.object.objectId !== expectedObjectId) {
     return <div className="history-row history-row-invalid" role="alert">身份不匹配的 Run 行已拒绝显示。</div>;
   }
   const meta = PHASE4_RUN_STATUS_META[run.status];
   const hasResults = memoryHistory?.availability === "AVAILABLE" && onOpenResults;
-  return <button type="button" className="history-row" data-testid="object-history-run" data-run-id={run.runId} onClick={() => hasResults ? onOpenResults(run.runId,null) : onOpenRun(run.runId, run.object.objectId)}>
+  return <article className="history-row" data-testid="object-history-run" data-run-id={run.runId}>
     <span>
-      <strong>{run.object.companyName} · {run.asOf}</strong>
+      <strong>{current ? "当前已发布研究" : memoryHistory?.research_view_version ? "已发布历史研究 / 知识基线" : run.backendStatus==="FAILED" ? "研究执行未完成" : "研究执行"} · {run.asOf}</strong>
       <span className="small option-sub">Run ID · <code>{run.runId}</code></span>
+      {run.backendStatus==="FAILED" && <span className="small option-sub">失败执行历史 · 未形成 Research Memory 版本</span>}
+      {lineage && <details className="run-lineage"><summary>执行关系与身份</summary><p>知识基线：{lineage.baseRunId === undefined ? "历史记录未提供" : lineage.baseRunId ?? "无增量基线"}</p><p>前次执行：{lineage.reexecutionOfRunId === undefined ? "历史记录未提供" : lineage.reexecutionOfRunId ?? "无前次执行"}</p><p>Scheme：{lineage.schemeId}</p><p>状态：{lineage.backendStatus}</p></details>}
+      {!lineage && <span className="small option-sub">{failed ? <button className="btn ghost sm" onClick={()=>setAttempt(n=>n+1)}>执行关系暂不可用 · 重新读取</button> : "正在读取执行关系…"}</span>}
+      {recoveries !== null && recoveries > 0 && <a className="btn ghost sm" href={`/runs/${encodeURIComponent(run.runId)}/results/execution`}>Adaptive Recovery · {recoveries} 个 Task 的受控恢复 →</a>}
       {memoryHistory && <span className="small option-sub">{memoryHistory.source_released_result_id ?? "Released Result · UNAVAILABLE_INCOMPATIBLE"} · {memoryHistory.research_view_version ? `Research View v${memoryHistory.research_view_version}` : "尚未纳入研究记忆"}</span>}
     </span>
     <span className="history-meta">
-      <span className={`badge ${meta.color}`}>{meta.label}</span>
-      <span className="btn ghost sm">{hasResults ? "打开原始 Results →" : "打开 Research Run →"}</span>
+      <span className={`badge ${meta.color}`}>{run.backendStatus==="RELEASED" ? "RELEASED · 已发布" : run.backendStatus==="FAILED" ? "FAILED · 未完成" : meta.label}</span>
+      <button type="button" className="btn ghost sm" onClick={() => hasResults ? onOpenResults(run.runId,null) : onOpenRun(run.runId, run.object.objectId)}>{hasResults ? "打开原始 Results →" : "打开 Research Run →"}</button>
     </span>
-  </button>;
+  </article>;
 }
 
 function State({ label, value, tone }: { readonly label: string; readonly value: string; readonly tone?: string }) {
