@@ -1,5 +1,7 @@
 # AIx Origin Summit Hong Kong — recognition
 
+[简体中文](AIX_ORIGIN_SUMMIT.zh-CN.md)
+
 🥉 **Bronze Award — AIx Origin Summit Hong Kong · Flux Track**
 
 🥉 **AIx Origin Summit Hong Kong · Flux 赛道铜奖**

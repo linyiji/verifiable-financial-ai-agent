@@ -1,5 +1,7 @@
 # WS-D — Financial Capabilities
 
+[简体中文](WS_D_FINANCIAL_CAPABILITIES.zh-CN.md)
+
 Ownership:
 - `src/capabilities/**`
 - `src/tooling/**`

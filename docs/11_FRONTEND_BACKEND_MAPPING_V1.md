@@ -1,5 +1,7 @@
 # 11 — Frontend / Backend Mapping V1
 
+[简体中文](11_FRONTEND_BACKEND_MAPPING_V1.zh-CN.md)
+
 Frontend is still visually evolving, so this document freezes only the stable contract.
 
 ## 1. Primary pages

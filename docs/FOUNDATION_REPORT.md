@@ -1,5 +1,7 @@
 # Foundation Gate Report
 
+[简体中文](FOUNDATION_REPORT.zh-CN.md)
+
 ## Scope
 
 Foundation freezes the repository skeleton, Python/Node baselines, domain and transport contracts,

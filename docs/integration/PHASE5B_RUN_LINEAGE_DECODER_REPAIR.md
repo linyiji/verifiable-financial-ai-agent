@@ -1,5 +1,7 @@
 # Phase 5B Run lineage decoder repair
 
+[简体中文](PHASE5B_RUN_LINEAGE_DECODER_REPAIR.zh-CN.md)
+
 Start: `phase4`, `a0ae8aadf6da1881fc27a90f7a4c7cf94dc549d9`, tree
 `e2376d9dc79e9d0cfb43a6731ec324a3f2fb8874`; clean before edits.
 

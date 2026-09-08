@@ -1,5 +1,7 @@
 # Explicit Specialist availability routes
 
+[简体中文](SPECIALIST_PROFILE_ROUTES.zh-CN.md)
+
 Owner-approved Phase 5B configuration overrides only peer_analysis and
 research_news_analysis to mimo-direct / mimo-v2.5. Unlisted profiles retain
 the existing provider object; Fundamental is unchanged. This is static

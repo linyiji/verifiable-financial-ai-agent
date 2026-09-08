@@ -1,10 +1,12 @@
 # Phase 4 Wave 1 — Codex C Handoff
 
+[简体中文](PHASE4_CODEX_C_HANDOFF.zh-CN.md)
+
 Status: `C-OWNED ACCEPTANCE PASS; PARENT INTEGRATION REQUIRED`
 
 - Planned branch: `phase4/run-sse`
 - Parent-authorized actual branch: `p4-run-sse`
-- Worktree: `/Users/mac/Verifiable_Financial_Agent_System_phase4/run-sse`
+- Worktree: `<workspace-root>/run-sse`
 - Base SHA: `4b6721b6db433aae300f94750e1a405b6b450501`
 - Base tree: `35c47508ed65220c26620f5ec4bdd14cb798480d`
 - C implementation prerequisite SHA: `ad6a12043b7f5192bd2a8f89ce76448d4bcd4f86`

@@ -1,5 +1,7 @@
 # Adaptive recovery acceptance
 
+[简体中文](ADAPTIVE_RECOVERY_ACCEPTANCE.zh-CN.md)
+
 The accepted historical current Run reached RELEASED with an observed same-Run Peer invocation recovery: MiMo transport timeout, explicit ALLOW policy decision and Sol fallback success. Input/Task/Run lineage stayed bound; required financial review/proof and normal release gates were not bypassed.
 
 The interface exposes recovery attempt, decision, route and result evidence. This is distinct from semantic correction/replanning; provider failure alone does not authorize new research intent.

@@ -1,8 +1,10 @@
 # Phase 4.5 M3 — V17 HTML ↔ Current Visual Delta
 
+[简体中文](visual-delta.zh-CN.md)
+
 ## Comparison basis
 
-- Reference: `/Users/mac/Downloads/financial_agent_workspace_v17_1_minimal_c_execution_fanin.html`
+- Reference: `financial_agent_workspace_v17_1_minimal_c_execution_fanin.html`
 - Reference SHA-256: `1be45091827c6485b624f6a44bf2e0f48bc650836b1a15024a3f7c395718762e`
 - The requested `(3)` filename was not present. The canonical file above is byte-identical to the available `(1)` copy and the prior handoff copy, so it is the same reference asset.
 - Current: exact accepted Run `RUN-57aed683-75d6-4b47-acc6-a73053ea492e` at `/results/report`.

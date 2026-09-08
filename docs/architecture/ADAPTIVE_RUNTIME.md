@@ -1,5 +1,7 @@
 # Adaptive runtime
 
+[简体中文](ADAPTIVE_RUNTIME.zh-CN.md)
+
 Provider/model failure → owned error classification → Lead recovery proposal → independent policy gate → bounded same-Run invocation → ordinary structured-output validation.
 
 Recovery preserves Object, Run, Scheme, Task, actor/profile, exact input and output-contract hashes. It does not change financial evidence, regenerate the Scheme, replan the graph or admit another Run.

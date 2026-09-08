@@ -1,6 +1,8 @@
 # Phase 6 Adaptive Runtime Recovery Foundation
 
-Design authority: `/Users/mac/Downloads/PHASE6_ADAPTIVE_EXECUTION_RECOVERY_DESIGN.md`.
+[简体中文](PHASE6_RECOVERY_FOUNDATION.zh-CN.md)
+
+Design authority: `<local-design-directory>/PHASE6_ADAPTIVE_EXECUTION_RECOVERY_DESIGN.md` (Owner-supplied design document, not a repository file).
 Starting checkpoint: `e6d690364c4abd3e53113ad9f52205d50d8d8e40` (`phase4`).
 
 ## Frozen scope

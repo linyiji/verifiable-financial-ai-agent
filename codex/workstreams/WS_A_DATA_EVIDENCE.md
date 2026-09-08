@@ -1,5 +1,7 @@
 # WS-A — Data & Evidence
 
+[简体中文](WS_A_DATA_EVIDENCE.zh-CN.md)
+
 Ownership:
 - `src/data/**`
 - `src/adapters/fmp/**`

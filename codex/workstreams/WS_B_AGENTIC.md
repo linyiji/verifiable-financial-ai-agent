@@ -1,5 +1,7 @@
 # WS-B — Agentic Planning
 
+[简体中文](WS_B_AGENTIC.zh-CN.md)
+
 Ownership:
 - `src/agentic/**`
 - agentic unit tests

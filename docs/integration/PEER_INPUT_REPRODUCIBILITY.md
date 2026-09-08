@@ -1,5 +1,7 @@
 # Peer model-input reproducibility
 
+[简体中文](PEER_INPUT_REPRODUCIBILITY.zh-CN.md)
+
 Repeated assembly of identical persisted Peer authority produced different
 model inputs because newly constructed PeerCandidate/PeerSelectionDecision
 objects carry clock-based created_at metadata. The model support projection

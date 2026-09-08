@@ -1,6 +1,10 @@
 # Owner-operated Evaluation Gateway
 
+[简体中文](EVALUATOR_GATEWAY.zh-CN.md)
+
 Status: foundation implemented, offline acceptance only. **REAL_GATEWAY_DEPLOYMENT = NOT_DEPLOYED.** No automatic hosting, public issuance, commercial billing or SaaS authentication is supplied. Deploy deliberately before giving evaluators a live bundle.
+
+Current investors and testers should use [direct-provider BYOK](LOCAL_DEPLOYMENT.md): API integrations are built in, but API keys are not embedded. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner. The Docker installer supports gateway mode only, not turnkey BYOK, and its standard image does not package full proof tooling.
 
 ## Boundary and configuration
 

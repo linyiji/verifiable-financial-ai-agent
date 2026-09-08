@@ -1,11 +1,13 @@
 # Phase 4 Wave 1 — Codex C Internal Ownership
 
+[简体中文](PHASE4_CODEX_C_INTERNAL_OWNERSHIP.zh-CN.md)
+
 Status: `LOCKED`
 
 This file applies only to the Codex C Run Snapshot / SSE / Research Path worktree.
 The parent-authorized Git ref-prefix recovery maps the planned branch
 `phase4/run-sse` to the actual branch `p4-run-sse`; the worktree remains
-`/Users/mac/Verifiable_Financial_Agent_System_phase4/run-sse`.
+`<workspace-root>/run-sse`.
 
 ## Preconditions recorded
 

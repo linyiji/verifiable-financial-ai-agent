@@ -1,5 +1,7 @@
 # Phase 5B — explicit re-execution contract
 
+[简体中文](PHASE5B_REEXECUTION_CONTRACT.zh-CN.md)
+
 Start: branch `phase4`, clean worktree, commit
 `3cc8d9d7d7713762031564300993efadcbcbad20`, tree
 `d6595a8020718ce3b2dcb81785ec1f38ae78f1a7`.

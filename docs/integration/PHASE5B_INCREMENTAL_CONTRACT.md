@@ -1,5 +1,7 @@
 # Phase 5B — exact incremental research
 
+[简体中文](PHASE5B_INCREMENTAL_CONTRACT.zh-CN.md)
+
 This is an additive planning and memory slice. It uses the existing independent
 Run admission, task execution, review, proof, report and release machinery.
 No historical Run or version is rewritten. No inferred latest/ticker/title base.

@@ -1,5 +1,7 @@
 # Product acceptance
 
+[简体中文](PRODUCT_ACCEPTANCE.zh-CN.md)
+
 Accepted local closure: 2026-09-08, source f783d2cfd07e7e99621a7c053c162ba77f82f7a1. This is a technical acceptance record, not a user-adoption claim.
 
 - Real PostgreSQL/React journey covered Object V2, current view, memories, compare, history, R5 Plan/research/A/B/C, correction/recovery, exact source navigation, refresh, back/forward and close/reopen.

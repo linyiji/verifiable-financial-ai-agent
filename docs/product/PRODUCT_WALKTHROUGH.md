@@ -1,5 +1,7 @@
 # Product walkthrough
 
+[简体中文](PRODUCT_WALKTHROUGH.zh-CN.md)
+
 1. **Research Object:** choose the company; inspect Overview, Current Research View, Memories, Compare and Research Records.
 2. **Goal and Scheme:** state the question and as-of date. Generate and review the exact Scheme before confirming. These are real operations, not presenter controls.
 3. **AI Research:** inspect Lead/specialist tasks and planned versus actual paths. Correction addresses an issue; replan changes research work under explicit authority.

@@ -1,5 +1,7 @@
 # 10 — Database, Artifact & Storage V1
 
+[简体中文](10_DATABASE_STORAGE_V1.zh-CN.md)
+
 ## 1. Structured DB
 
 Target: PostgreSQL.

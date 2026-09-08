@@ -1,5 +1,7 @@
 # FMP credential pool configuration
 
+[简体中文](FMP_KEY_POOL_CONFIGURATION.zh-CN.md)
+
 Keep real FMP credentials outside the repository in a local file with mode `0600`.
 The supported environment shape is a contiguous, finite sequence:
 

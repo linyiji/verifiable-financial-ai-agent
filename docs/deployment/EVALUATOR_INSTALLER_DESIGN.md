@@ -1,8 +1,12 @@
 # Evaluator installer contract
 
+[简体中文](EVALUATOR_INSTALLER_DESIGN.zh-CN.md)
+
 Status: source/offline foundation; public installer assets are **PUBLICATION_REQUIRED**.
 The real Owner gateway is **NOT_DEPLOYED**. Neither publication nor clean-machine
 Windows/macOS acceptance is implied by portable tests or a local image build.
+
+Current investors and testers should use [direct-provider BYOK](LOCAL_DEPLOYMENT.md), not wait for this gateway-only installer. API integrations are built in; API keys are not embedded. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner. This installer is not turnkey BYOK and its standard image does not package full proof tooling.
 
 ## Common module and lifecycle
 

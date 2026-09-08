@@ -1,5 +1,7 @@
 # 12 — Open-source Integration & Reuse V1
 
+[简体中文](12_OPEN_SOURCE_INTEGRATION_REUSE_V1.zh-CN.md)
+
 Verified / reviewed on 2026-09-03.
 
 ## 1. FinRobot

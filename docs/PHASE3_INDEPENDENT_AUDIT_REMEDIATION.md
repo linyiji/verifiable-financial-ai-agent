@@ -1,5 +1,7 @@
 # Phase 3 Independent-Audit Remediation
 
+[简体中文](PHASE3_INDEPENDENT_AUDIT_REMEDIATION.zh-CN.md)
+
 This change set closes exactly four independent-audit findings in one new Phase 3
 candidate. It does not alter or replace the rejected candidate, its authoritative
 Run, or its audit evidence, and it does not authorize Phase 4.

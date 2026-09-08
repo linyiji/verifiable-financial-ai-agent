@@ -1,5 +1,7 @@
 # Phase 4 Codex A — Parent Handoff
 
+[简体中文](PHASE4_CODEX_A_PARENT_HANDOFF.zh-CN.md)
+
 Status: `A_WORK_COMPLETE_PARENT_INTEGRATION_REQUIRED`
 
 This handoff is scoped to the owner-authorized child branch

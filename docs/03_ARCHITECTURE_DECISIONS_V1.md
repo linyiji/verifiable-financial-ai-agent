@@ -1,5 +1,7 @@
 # 03 — Architecture Decisions V1
 
+[简体中文](03_ARCHITECTURE_DECISIONS_V1.zh-CN.md)
+
 本文件优先级最高。除非用户明确修改，否则 Codex 不得自行推翻。
 
 | ID | Frozen decision |

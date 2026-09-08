@@ -1,5 +1,7 @@
 # FinRobot Charts — Controlled Port Attribution
 
+[简体中文](FINROBOT_CHARTS_ATTRIBUTION.zh-CN.md)
+
 The deterministic SVG renderer in `src/adapters/finrobot/charts.py` is a controlled owned port
 informed by FinRobot's chart presentation concepts:
 

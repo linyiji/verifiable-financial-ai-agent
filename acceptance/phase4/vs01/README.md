@@ -1,5 +1,7 @@
 # Phase 4 VS01 acceptance gate
 
+[简体中文](README.zh-CN.md)
+
 This directory is acceptance infrastructure only. It does not import or alter product behavior.
 The frozen contract authority is verified before tests execute, and result files keep harness
 readiness separate from the real integrated VS01 decision.

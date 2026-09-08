@@ -1,5 +1,7 @@
 # Model transport observability
 
+[简体中文](MODEL_TRANSPORT_OBSERVABILITY.zh-CN.md)
+
 The shared OpenAI-compatible HTTP boundary records bounded transport metadata
 for both TeamoRouter and MiMo Direct. Existing `VFA_PERFORMANCE_PATH` opt-in
 performance recording enables it; the existing recorder snapshot/flush path

@@ -1,5 +1,7 @@
 # Phase 4.5 M6 — Product Closure Delta
 
+[简体中文](product-delta.zh-CN.md)
+
 ## Governed comparison
 
 - Reference: `financial_agent_workspace_v17_1_minimal_c_execution_fanin.html`

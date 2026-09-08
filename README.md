@@ -2,13 +2,15 @@
 
 # Verifiable Financial Agent
 
+[简体中文](README.zh-CN.md)
+
 Autonomous financial research that can execute, verify, recover, remember, and improve.
 
 Local Deployable Alpha · Controlled Alpha Ready
 
 Multi-Agent Research · Verifiable Results · Adaptive Recovery · Research Memory
 
-[简体中文](README.zh-CN.md) · [Evaluate / Run locally](docs/deployment/EVALUATOR_QUICKSTART.md) · [Product walkthrough](docs/product/PRODUCT_WALKTHROUGH.md)
+[Evaluate / Run locally](docs/deployment/EVALUATOR_QUICKSTART.md) · [Product walkthrough](docs/product/PRODUCT_WALKTHROUGH.md)
 
 [能用](#能用--make-it-useful) · [敢用](#敢用--make-it-trustworthy) · [越用越好](#越用越好--make-it-better-with-use)
 
@@ -105,9 +107,9 @@ Registered routes: `teamorouter-sol`, `teamorouter-luna`, `mimo-direct`. Only co
 
 ## Evaluate / Run Locally
 
-Use one guided command with an Owner-issued encrypted `.vfaeval` bundle. The installer prepares services and a private local database, checks authorization and opens the product. Evaluators do not configure FMP, MiMo or TeamoRouter keys.
+**Investors and testers should currently use BYOK direct-provider evaluation.** MiMo, TeamoRouter and FMP integrations are built in; usable API keys are not included in the public package. Use your own keys or test keys supplied privately by the Owner. Start with [BYOK setup](docs/deployment/ADVANCED_INSTALLATION.md).
 
-From the supplied, unpacked installer source package:
+The separate gateway-based installer source foundation uses these commands from an unpacked source package. It requires a deployed Owner gateway and `.vfaeval` bundle; it is not a one-command BYOK launcher:
 
 Windows (PowerShell):
 ```powershell
@@ -119,7 +121,7 @@ macOS (Terminal):
 bash scripts/install-evaluator.sh
 ```
 
-After setup, use `vfa start` in a new terminal. Public download commands are **PUBLICATION_REQUIRED**; this installer has not been released yet. Owner gateway deployment is also pending, so Owner-funded live evaluation is not available yet. Standard mode retains all proof/release gates; see the guide for its workflow limits.
+For that installer, subsequent startup is `vfa start`. Public installer delivery remains **PUBLICATION_REQUIRED**, and the real Owner gateway is not deployed. This blocks gateway-based zero-config evaluation, not independently configured BYOK. Standard mode retains all proof/release gates; full-proof workflows require the advanced environment.
 
 [Guided installation / troubleshooting](docs/deployment/INSTALL_EVALUATOR.md) · [Advanced / BYOK](docs/deployment/ADVANCED_INSTALLATION.md) · [Evaluator Gateway](docs/deployment/EVALUATOR_GATEWAY.md)
 

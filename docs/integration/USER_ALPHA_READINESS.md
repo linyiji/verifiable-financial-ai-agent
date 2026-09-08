@@ -1,5 +1,7 @@
 # Controlled User Alpha readiness — 2026-09-08
 
+[简体中文](USER_ALPHA_READINESS.zh-CN.md)
+
 ## Parent contract freeze
 
 **CONTROLLED_ALPHA_READY = YES**, limited to 3–5 invited design partners in

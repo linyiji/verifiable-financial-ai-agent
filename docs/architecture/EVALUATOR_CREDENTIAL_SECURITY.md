@@ -1,10 +1,14 @@
 # Evaluator credential security foundation
 
-Provider keys are server-side only. An evaluator machine receives an opaque, scoped, expiring, revocable, quota-limited bearer credential, not encrypted copies of upstream keys. Local machine owners/admins can extract process secrets: **no unextractable-local-secret claim** is made. Gateway policy is the authority boundary.
+[简体中文](EVALUATOR_CREDENTIAL_SECURITY.zh-CN.md)
+
+In gateway evaluator mode, provider keys are server-side only. An evaluator machine receives an opaque, scoped, expiring, revocable, quota-limited bearer credential, not encrypted copies of upstream keys. Local machine owners/admins can extract process secrets: **no unextractable-local-secret claim** is made. Gateway policy is the authority boundary.
+
+Current evaluation guidance (2026-09-08): the Owner gateway is NOT_DEPLOYED, so investors and testers should use direct-API BYOK for facilitated testing. BYOK uses a user's own key or an independently scoped test key supplied privately by the Owner and configured locally. Built-in API integration does not mean keys embedded in source, images or installers. The one-command installer remains a gateway-only foundation, not a one-command BYOK installation path; see [advanced installation](../deployment/ADVANCED_INSTALLATION.md).
 
 ## Components and authority
 
-Local product → EvaluatorGatewayLLM / EvaluatorGatewayFinancialData → Owner gateway → existing MiMo / TeamoRouter / FMP authority. Explicit `VFA_CREDENTIAL_MODE=evaluator` requires an activated in-process session. Missing gateway/session authority fails closed; it never selects BYOK based on missing keys. Legacy configuration defaults to BYOK for compatibility; the public template and investor instructions explicitly select evaluator mode.
+Local product → EvaluatorGatewayLLM / EvaluatorGatewayFinancialData → Owner gateway → existing MiMo / TeamoRouter / FMP authority. Explicit `VFA_CREDENTIAL_MODE=evaluator` requires an activated in-process session. Missing gateway/session authority fails closed; it never selects BYOK based on missing keys. Legacy configuration defaults to BYOK for compatibility. Investors/testers should explicitly configure BYOK following the current direct-API instructions rather than rely on defaults or an automatic gateway fallback.
 
 Gateway-issued bearer secrets are 32 random bytes (URL-safe encoding, `vfa_` prefix). The private SQLite store retains only SHA-256 verifier, public ID and policy/accounting state. High token entropy, not a human password, protects the verifier against guessing. Expiry/revocation/scope/quota/rate are checked transactionally before each dispatch; readiness also rechecks expiry/revocation. Tokens do not confer admin access, arbitrary models, host/path selection or provider secret retrieval. A stolen token can spend its remaining authorized allowance until expiry/revocation.
 

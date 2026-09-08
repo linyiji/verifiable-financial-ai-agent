@@ -1,5 +1,9 @@
 # Repository publication safety review
 
+[简体中文](PUBLICATION_SAFETY.zh-CN.md)
+
+> Historical-record clarification — 2026-09-08: the CI/publication and open-decision statements below describe this earlier preparation audit and are retained unchanged. The Owner subsequently confirmed AIx Origin Summit Hong Kong · Flux Track · Bronze Award on 2026-09-08; see [recognition](../recognition/AIX_ORIGIN_SUMMIT.md). Current investors/testers are directed to BYOK with privately configured credentials; this record is not evidence of a deployed evaluator gateway or a completed live-user acceptance.
+
 Scope: accepted baseline f783d2cfd07e7e99621a7c053c162ba77f82f7a1, current preparation tree, and all locally available Git refs/history. No remote mutation or history rewrite.
 
 ## Secret checks

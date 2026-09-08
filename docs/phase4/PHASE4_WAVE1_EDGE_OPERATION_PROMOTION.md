@@ -1,6 +1,8 @@
 # Phase 4 Wave 1 edge-operation wire promotion
 
-Status: Parent-approved VS01 contract clarification  
+[简体中文](PHASE4_WAVE1_EDGE_OPERATION_PROMOTION.zh-CN.md)
+
+Status: Parent-approved VS01 contract clarification<br>
 Scope: `PathChangeProjectionV1.operations` only
 
 The frozen Phase 4 API contract names `add_edge` and `remove_edge` but does not

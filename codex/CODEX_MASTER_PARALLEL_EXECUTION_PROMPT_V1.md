@@ -1,5 +1,7 @@
 # Codex Master Parallel Execution Prompt V1
 
+[简体中文](CODEX_MASTER_PARALLEL_EXECUTION_PROMPT_V1.zh-CN.md)
+
 You are the engineering coordinator for Verifiable Financial Agent System.
 
 Read first:
@@ -14,7 +16,7 @@ Read first:
 
 Target user path:
 
-`/user/mac/Verifiable_Financial_Agent_System`
+`<repository-root>`
 
 Do not assume the path exists. Confirm it.
 

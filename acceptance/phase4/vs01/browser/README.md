@@ -1,5 +1,7 @@
 # Phase 4 VS01 frontend acceptance
 
+[简体中文](README.zh-CN.md)
+
 This isolated Playwright package observes the production frontend journey:
 
 ```text

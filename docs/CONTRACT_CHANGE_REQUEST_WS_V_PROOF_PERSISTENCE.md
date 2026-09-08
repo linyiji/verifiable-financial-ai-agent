@@ -1,5 +1,7 @@
 # CONTRACT_CHANGE_REQUEST — WS-V Proof Persistence
 
+[简体中文](CONTRACT_CHANGE_REQUEST_WS_V_PROOF_PERSISTENCE.zh-CN.md)
+
 Status: `REQUESTED`
 
 Owner requested: Coordinator / PostgreSQL single writer

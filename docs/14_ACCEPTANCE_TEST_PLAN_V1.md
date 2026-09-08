@@ -1,5 +1,7 @@
 # 14 — Acceptance & Test Plan V1
 
+[简体中文](14_ACCEPTANCE_TEST_PLAN_V1.zh-CN.md)
+
 ## 1. Testing philosophy
 
 Do not stop entire acceptance at first non-critical failure.

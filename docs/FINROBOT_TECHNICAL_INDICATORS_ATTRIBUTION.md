@@ -1,5 +1,7 @@
 # FinRobot Technical Indicators — Attribution and Provenance
 
+[简体中文](FINROBOT_TECHNICAL_INDICATORS_ATTRIBUTION.zh-CN.md)
+
 The owned technical-indicator port in `src/adapters/finrobot/technical.py` was informed by the
 formula selection and output names in:
 

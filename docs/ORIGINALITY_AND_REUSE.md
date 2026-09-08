@@ -1,5 +1,7 @@
 # Originality and Reuse — Canonical Pointer
 
+[简体中文](ORIGINALITY_AND_REUSE.zh-CN.md)
+
 The repository's numbered authoritative document is
 [`18_ORIGINALITY_AND_REUSE.md`](18_ORIGINALITY_AND_REUSE.md). Its Phase-1 integration reuse audit
 records every reused boundary and the FinRobot/frontend gaps. The executable integration follows

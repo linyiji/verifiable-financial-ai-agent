@@ -1,5 +1,7 @@
 # Phase 4.5 M4 — V17 Financial Review visual delta
 
+[简体中文](visual-delta.zh-CN.md)
+
 Viewport for every captured artifact: **1440 × 900**, device scale factor **1**, browser zoom **100%**.
 
 Reference authority: `financial_agent_workspace_v17_1_minimal_c_execution_fanin.html` from the accepted V17.1 handoff (SHA-256 `1be45091827c6485b624f6a44bf2e0f48bc650836b1a15024a3f7c395718762e`). The requested `(3)` filename is not present; this is the byte-identical canonical asset already accepted for M3. Current authority: exact released Run `RUN-57aed683-75d6-4b47-acc6-a73053ea492e` served by the real Phase 4 backend.

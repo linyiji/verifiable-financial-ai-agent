@@ -1,5 +1,7 @@
 # WS-C — Dynamic Runtime
 
+[简体中文](WS_C_RUNTIME.zh-CN.md)
+
 Ownership:
 - `src/runtime/**`
 - runtime/event integration tests

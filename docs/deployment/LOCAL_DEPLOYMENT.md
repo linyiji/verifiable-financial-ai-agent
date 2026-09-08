@@ -1,8 +1,10 @@
 # Advanced local deployment — BYOK
 
+[简体中文](LOCAL_DEPLOYMENT.zh-CN.md)
+
 Entry point: [Evaluator Quickstart](EVALUATOR_QUICKSTART.md). Commands run from repository root unless stated.
 
-Investors should use evaluator mode instead. This advanced guide is for independent deployments or the Owner, who supplies their own upstream authority. After copying `.env.example` to `.env.local`, explicitly change `VFA_CREDENTIAL_MODE=byok`, provision DATABASE_URL, and privately fill FMP_API_KEY, TEAMOROUTER_API_KEY and MIMO_API_KEY. Install Python dependencies with `python -m pip install -e '.[dev,postgres]'` and frontend dependencies with `npm ci` in `apps/web`. Never send these upstream keys to evaluator machines. The shared template now defaults to evaluator mode.
+Current investors and testers should use this direct-provider BYOK path. API integrations are built in; no API keys are embedded in the repository, frontend or installer. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner; do not distribute the Owner's production credentials. After copying `.env.example` to `.env.local`, explicitly change `VFA_CREDENTIAL_MODE=byok`, provision DATABASE_URL, and privately fill FMP_API_KEY, TEAMOROUTER_API_KEY and MIMO_API_KEY. Install Python dependencies with `python -m pip install -e '.[dev,postgres]'` and frontend dependencies with `npm ci` in `apps/web`. The shared template still defaults to evaluator mode, so this explicit change is required. The real gateway is NOT_DEPLOYED; the Docker one-command installer is gateway-mode only, not turnkey BYOK, and its standard image does not package full proof tooling.
 
 ## Environment contract
 
@@ -66,4 +68,4 @@ Persistent state spans PostgreSQL, ARTIFACT_ROOT and WORKSPACE_ROOT. Preserve ma
 
 ## Verification boundary
 
-Current source/tests/build and BYOK composition are checked without live calls. This documentation task did not provision a fresh database, install proof tools or execute a new paid Run. See [local deployment acceptance](../validation/LOCAL_DEPLOYMENT_ACCEPTANCE.md). Docker one-command deployment is not provided.
+Current source/tests/build and BYOK composition are checked without live calls. This documentation task did not provision a fresh database, install proof tools or execute a new paid Run. See [local deployment acceptance](../validation/LOCAL_DEPLOYMENT_ACCEPTANCE.md). Docker one-command BYOK deployment is not provided; the separate installer foundation supports gateway mode only.

@@ -1,5 +1,7 @@
 # 06 — Data, Evidence & Financial Compute V1
 
+[简体中文](06_DATA_EVIDENCE_FINANCIAL_COMPUTE_V1.zh-CN.md)
+
 ## 1. Two financial hard gates
 
 > No unverified data enters formal financial reasoning.

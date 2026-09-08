@@ -1,5 +1,7 @@
 # Provider Runtime Foundation v0 — MiMo capability PASS
 
+[简体中文](PROVIDER_RUNTIME_FOUNDATION_V0.zh-CN.md)
+
 Start HEAD: 3fc3324c66ca995823f5020b9829d6f5ee9e27a8.
 This checkpoint adds explicit availability routes, not Phase 6 model selection.
 No automatic provider failover, ranking, quality routing, timeout increase or R2.

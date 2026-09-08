@@ -1,5 +1,7 @@
 # Phase 4 Wave 1 — Codex C Event Support Matrix
 
+[简体中文](PHASE4_CODEX_C_EVENT_SUPPORT_MATRIX.zh-CN.md)
+
 Contract: `phase4-runtime-event/v1` / payload schema `1`
 
 Disposition: `47 SUPPORTED`, `8 UNSUPPORTED_BY_FRONTEND`, `0 NOT_APPLICABLE_WAVE1`.

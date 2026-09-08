@@ -1,7 +1,9 @@
 # Phase 1 Acceptance Report
 
-Date: 2026-09-03  
-Baseline: Python 3.11 / Node.js 24  
+[简体中文](PHASE1_ACCEPTANCE_REPORT.zh-CN.md)
+
+Date: 2026-09-03<br>
+Baseline: Python 3.11 / Node.js 24<br>
 DB target: PostgreSQL; verified local mode: SQLite + SQLAlchemy async
 
 ## Result
@@ -39,4 +41,3 @@ tracked; local run artifacts may contain execution-specific IDs.
 
 All are explicitly outside the minimum Phase-1 chain. `NOT_IMPLEMENTED` is preserved for the ZK
 adapter and never presented as a proof pass.
-

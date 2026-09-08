@@ -1,5 +1,7 @@
 # 00 — READ FIRST
 
+[简体中文](00_READ_FIRST.zh-CN.md)
+
 ## Purpose
 
 本文件用于防止工程实施过程中再次混淆 Task、Agent、Skill、Capability、Scheme、Run、Object、Review、Langfuse、ZK。

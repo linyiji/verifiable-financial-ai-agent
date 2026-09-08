@@ -1,5 +1,7 @@
 # Phase 3 workload-aware provider reliability remediation
 
+[简体中文](PHASE3_PROVIDER_RELIABILITY_REMEDIATION.zh-CN.md)
+
 ## Preserved evidence
 
 - Candidate `66edc5110b6ab7d81578cef80190497a2f11e5b2` / tree

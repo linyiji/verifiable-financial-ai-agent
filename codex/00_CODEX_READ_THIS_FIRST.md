@@ -1,8 +1,10 @@
 # Codex — Read This First
 
+[简体中文](00_CODEX_READ_THIS_FIRST.zh-CN.md)
+
 Project target directory specified by user:
 
-`/user/mac/Verifiable_Financial_Agent_System`
+`<repository-root>`
 
 Before editing:
 

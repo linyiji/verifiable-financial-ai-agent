@@ -1,5 +1,7 @@
 # FinRobot Exact Audit & Reuse Report — WS-H
 
+[简体中文](FINROBOT_EXACT_AUDIT.zh-CN.md)
+
 Status: **COMPLETE — MODULE GATE PASS**
 
 Audit date: 2026-09-04

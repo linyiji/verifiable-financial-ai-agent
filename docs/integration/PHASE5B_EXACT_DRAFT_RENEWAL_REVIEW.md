@@ -1,5 +1,7 @@
 # Phase 5B — exact draft lease renewal and review
 
+[简体中文](PHASE5B_EXACT_DRAFT_RENEWAL_REVIEW.zh-CN.md)
+
 Start: `2da5d15760f3d91e3defd1d281eea5799e2399b0` (phase4, clean).
 
 ## Contract audit and narrow repair

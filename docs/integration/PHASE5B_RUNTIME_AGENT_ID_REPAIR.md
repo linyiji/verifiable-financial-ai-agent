@@ -1,5 +1,7 @@
 # Phase 5B runtime Agent identity repair
 
+[简体中文](PHASE5B_RUNTIME_AGENT_ID_REPAIR.zh-CN.md)
+
 Deterministic repair accepted on 2026-09-07. No live provider/model call and no
 new production Run. This checkpoint is not Phase 5B completion or live acceptance.
 

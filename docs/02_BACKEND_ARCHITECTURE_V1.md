@@ -1,7 +1,9 @@
 # Verifiable Financial AI — Backend Architecture & Execution Design V1
 
-> 日期：2026-09-03  
-> 状态：V1 后端基线 / 可开始工程实施  
+[简体中文](02_BACKEND_ARCHITECTURE_V1.zh-CN.md)
+
+> 日期：2026-09-03<br>
+> 状态：V1 后端基线 / 可开始工程实施<br>
 > 产品定位：**以 Research Object 为长期资产，以 Research Run 为一次研究执行，以 Agent 规划 + Dynamic Runtime 为执行核心，以 Evidence / Code / Review / ZK 提供可复核性，并以 Financial Report 作为业务主输出。**
 
 ---

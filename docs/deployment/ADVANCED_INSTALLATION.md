@@ -1,6 +1,8 @@
 # Advanced / developer installation
 
-Default investor setup is [Guided Installation](INSTALL_EVALUATOR.md). This page retains native toolchain and independent BYOK deployment.
+[简体中文](ADVANCED_INSTALLATION.zh-CN.md)
+
+Current investors and testers should use direct-provider BYOK via this page and [BYOK configuration](LOCAL_DEPLOYMENT.md). API integrations are built in; API keys are not embedded. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner. The Docker [Guided Installation](INSTALL_EVALUATOR.md) is gateway-mode only, not turnkey BYOK; the real gateway is NOT_DEPLOYED and its standard image does not package full proof tooling.
 
 Use Python 3.11, Node.js 24 and PostgreSQL 16-compatible storage. Full required-proof research needs Rust/RISC Zero SDK 3.0.6; generated-capability validation needs Docker. Follow the [proof workspace](../../zk/revenue_growth/README.md), build its accepted host and retain existing proof gates. Do not set development/fake-proof flags.
 
@@ -23,10 +25,15 @@ Provision your own PostgreSQL database and set DATABASE_URL in ignored `.env.loc
 ```bash
 python scripts/postgresql_migrate.py
 ./zk/revenue_growth/build-host.sh
-# Evaluator session-only backend:
+# BYOK backend, with VFA_CREDENTIAL_MODE=byok:
+python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8010
+```
+
+Optional native gateway mode uses this alternative instead, only after gateway deployment
+and after setting VFA_CREDENTIAL_MODE=evaluator:
+
+```bash
 python scripts/evaluator_start.py --bundle "/path/to/evaluation.vfaeval"
-# Or BYOK backend, in BYOK mode:
-# python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8010
 ```
 
 In another terminal, from apps/web:

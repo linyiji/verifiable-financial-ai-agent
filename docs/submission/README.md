@@ -1,5 +1,7 @@
 # Flux · 流境 — Submission Manifest
 
+[简体中文](README.zh-CN.md)
+
 **Primary Track C · Verifiable AI Inference Audit / Financial Agent**
 
 | Item | Accepted value |

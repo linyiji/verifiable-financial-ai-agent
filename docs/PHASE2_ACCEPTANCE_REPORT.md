@@ -1,5 +1,7 @@
 # Phase 2 Backend Acceptance Report
 
+[简体中文](PHASE2_ACCEPTANCE_REPORT.zh-CN.md)
+
 Date: 2026-09-04
 
 Baseline: Python `>=3.11,<3.12`; Node.js `>=24,<25`

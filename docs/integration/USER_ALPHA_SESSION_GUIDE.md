@@ -1,5 +1,7 @@
 # Controlled User Alpha session guide
 
+[简体中文](USER_ALPHA_SESSION_GUIDE.zh-CN.md)
+
 Authority: [readiness/scope/severity gate](USER_ALPHA_READINESS.md).
 Plan for 3–5 invited users, 20–30 minutes each. This is product research, not a
 technical benchmark, sales presentation, or investment recommendation.

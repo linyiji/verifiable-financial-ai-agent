@@ -1,5 +1,7 @@
 # Research Memory and incremental research
 
+[简体中文](RESEARCH_MEMORY.zh-CN.md)
+
 Released Research → typed Memory → Incremental Scheme → Refresh / Revalidate / Prevent → new released result → new Memory view → Base vs Current.
 
 Only supported persisted items are represented. Verified metrics/claims require their actual proof status; release alone is not blanket verification. Unobserved categories remain NOT_OBSERVED. Zero reuse is a valid outcome.

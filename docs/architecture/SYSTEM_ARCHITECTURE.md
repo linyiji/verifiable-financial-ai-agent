@@ -1,5 +1,7 @@
 # System architecture
 
+[简体中文](SYSTEM_ARCHITECTURE.zh-CN.md)
+
 React/TypeScript interface → FastAPI product API → application/domain contracts → dependency-aware runtime → financial-data/model/proof adapters → PostgreSQL and verified artifact stores.
 
 - Object + Goal define the question. A persisted Scheme records confirmed research intent.

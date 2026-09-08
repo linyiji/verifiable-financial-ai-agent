@@ -1,5 +1,7 @@
 # 04 — Domain & Data Model V1
 
+[简体中文](04_DOMAIN_DATA_MODEL_V1.zh-CN.md)
+
 ## 1. Aggregate overview
 
 ```text

@@ -1,5 +1,7 @@
 # 07 — Dynamic Runtime, Graph & Events V1
 
+[简体中文](07_DYNAMIC_RUNTIME_EVENTS_V1.zh-CN.md)
+
 ## 1. Runtime definition
 
 Dynamic Runtime = 状态化执行引擎，不是 Agent。

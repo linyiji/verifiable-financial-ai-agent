@@ -1,5 +1,7 @@
 # Phase 5A memory contract (v1)
 
+[简体中文](PHASE5A_MEMORY_CONTRACT.zh-CN.md)
+
 Parent-frozen after read-only persistence, lineage and V17 audits.
 
 The exact accepted source is RUN-57aed683-75d6-4b47-acc6-a73053ea492e,

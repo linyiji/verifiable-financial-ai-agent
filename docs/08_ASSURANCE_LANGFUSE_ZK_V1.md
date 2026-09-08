@@ -1,5 +1,7 @@
 # 08 — Assurance, Langfuse & ZK V1
 
+[简体中文](08_ASSURANCE_LANGFUSE_ZK_V1.zh-CN.md)
+
 ## 1. Control-plane principle
 
 > Agent has autonomy over execution, not over assurance.

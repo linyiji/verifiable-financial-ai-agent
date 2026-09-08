@@ -1,6 +1,8 @@
 # Windows evaluator installation
 
-The default path is PowerShell → guided installer → Docker Desktop → VFA.
+[简体中文](WINDOWS_EVALUATION.zh-CN.md)
+
+Current investors and testers should use [direct-provider BYOK](LOCAL_DEPLOYMENT.md) and [native setup](ADVANCED_INSTALLATION.md). API integrations are built in, not API keys: bring your own keys or receive separately scoped, revocable test keys privately from the Owner. The following PowerShell → guided installer → Docker Desktop → VFA path is gateway-only, not turnkey BYOK; its standard image does not package full proof tooling.
 
 From the supplied unpacked installer source package:
 

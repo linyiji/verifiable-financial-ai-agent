@@ -1,5 +1,7 @@
 # 05 — Agent / Skill / Capability / Tool Runtime V1
 
+[简体中文](05_AGENT_SKILL_CAPABILITY_RUNTIME_V1.zh-CN.md)
+
 ## 1. Mental model
 
 ```text

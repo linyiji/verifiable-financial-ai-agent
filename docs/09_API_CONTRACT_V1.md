@@ -1,5 +1,7 @@
 # 09 — API Contract V1
 
+[简体中文](09_API_CONTRACT_V1.zh-CN.md)
+
 Prefix: `/api`
 
 ## 1. Objects

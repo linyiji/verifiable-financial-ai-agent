@@ -1,7 +1,9 @@
 # ARCHITECTURE_BASELINE_CORRECTION_001
 
-Status: **AUTHORITATIVE**  
-Authorized by: User  
+[简体中文](ARCHITECTURE_BASELINE_CORRECTION_001.zh-CN.md)
+
+Status: **AUTHORITATIVE**<br>
+Authorized by: User<br>
 Date: 2026-09-03
 
 ## Superseded intermediate instruction

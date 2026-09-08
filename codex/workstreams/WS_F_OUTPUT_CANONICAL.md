@@ -1,5 +1,7 @@
 # WS-F — Canonical Record & Output
 
+[简体中文](WS_F_OUTPUT_CANONICAL.zh-CN.md)
+
 Ownership:
 - `src/output/**`
 - canonical execution domain model if foundation delegates it

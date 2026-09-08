@@ -1,5 +1,7 @@
 # Phase 5B invocation diagnosis — PARTIAL, no R2 authorization
 
+[简体中文](PHASE5B_INVOCATION_BLOCKER_RECEIPT.zh-CN.md)
+
 Start HEAD `3fc3324c66ca995823f5020b9829d6f5ee9e27a8`, tree
 `aa6ccb1c0bc3137a448dd4312b873129986dee6f`, branch phase4, initially clean.
 Neither HEAD nor frozen tags changed. Changes remain uncommitted because live

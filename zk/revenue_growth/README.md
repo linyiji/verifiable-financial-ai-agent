@@ -1,5 +1,7 @@
 # Revenue Growth RISC Zero Proof
 
+[简体中文](README.zh-CN.md)
+
 This workspace proves `revenue_growth_v1` as an exact reduced rational:
 
 ```text

@@ -2,13 +2,15 @@
 
 # Verifiable Financial Agent
 
+[English](README.md)
+
 向风行 AI：能够自主执行、验证、恢复、记忆并持续积累的金融研究 Agent。
 
 Local Deployable Alpha · Controlled Alpha Ready
 
 多 Agent 研究 · 可验证结果 · 自适应恢复 · 研究记忆
 
-[English](README.md) · [评估 / 本地运行](docs/deployment/EVALUATOR_QUICKSTART.md) · [产品导览](docs/product/PRODUCT_WALKTHROUGH.md)
+[评估 / 本地运行](docs/deployment/EVALUATOR_QUICKSTART.zh-CN.md) · [产品导览](docs/product/PRODUCT_WALKTHROUGH.zh-CN.md)
 
 [能用](#能用--make-it-useful) · [敢用](#敢用--make-it-trustworthy) · [越用越好](#越用越好--make-it-better-with-use)
 
@@ -83,7 +85,7 @@ Provider / Model Failure → Recovery Decision → Policy Gate → Same-Run Reco
 
 ![Base vs Current](docs/product/screenshots/base-vs-current.png)
 
-[截图来源与能力边界](docs/product/screenshots/PROVENANCE.md)。截图反映历史验收结果，不保证每次新调用都成功。
+[截图来源与能力边界](docs/product/screenshots/PROVENANCE.zh-CN.md)。截图反映历史验收结果，不保证每次新调用都成功。
 
 ## What Works Today · 当前可用能力
 
@@ -95,19 +97,19 @@ Provider / Model Failure → Recovery Decision → Policy Gate → Same-Run Reco
 - Research Memory v2、Incremental Research、Base vs Current。
 - PostgreSQL 持久化和真实 React/TypeScript 界面。
 
-[能力状态](docs/product/PRODUCT_STATUS.md)明确区分可用、部分可用和未实现。
+[能力状态](docs/product/PRODUCT_STATUS.zh-CN.md)明确区分可用、部分可用和未实现。
 
 ## Adaptive Runtime · 自适应运行时
 
 系统基于自有错误分类提出恢复决策，独立策略检查身份、路由权限、能力证据和剩余预算，再允许下一次调用。恢复不会重生成 Scheme、更换知识基线或悄悄新建 Run。
 
-注册路由仅包括 `teamorouter-sol`、`teamorouter-luna`、`mimo-direct`。[运行时架构与预算](docs/architecture/ADAPTIVE_RUNTIME.md)。
+注册路由仅包括 `teamorouter-sol`、`teamorouter-luna`、`mimo-direct`。[运行时架构与预算](docs/architecture/ADAPTIVE_RUNTIME.zh-CN.md)。
 
 ## Evaluate / Run Locally · 评估与本地运行
 
-使用 Owner 私下提供的加密 `.vfaeval` 凭据，一条命令进入引导安装。安装器自动准备服务、初始化本地数据库、检查授权，并在就绪后打开产品。无需配置 FMP、MiMo 或 TeamoRouter 密钥。
+**投资者和测试员当前建议使用 BYOK 直连模式。** 产品已内置 MiMo、TeamoRouter、FMP 的 API 对接能力，但公开安装包不包含可用密钥。使用自己的 Key，或由 Owner 私下提供测试 Key。请从 [BYOK 安装](docs/deployment/ADVANCED_INSTALLATION.zh-CN.md)开始。
 
-在已解压的安装器源码包目录中运行：
+另有网关模式的一键安装器源码基础版，可在解压目录运行以下命令。它需要已部署的 Owner 网关及 `.vfaeval` 凭据，不是 BYOK 一键启动器：
 
 Windows（PowerShell）：
 ```powershell
@@ -119,13 +121,13 @@ macOS（Terminal）：
 bash scripts/install-evaluator.sh
 ```
 
-之后在新终端运行 `vfa start`。公共下载命令仍为 **PUBLICATION_REQUIRED**，本次尚未发布安装器；Owner 网关也尚未部署，暂不可进行 Owner 付费的真实评估。标准模式保留全部证明与发布门，流程限制见指南。
+该安装器后续用 `vfa start` 启动。公共安装器交付仍为 **PUBLICATION_REQUIRED**，真实 Owner 网关尚未部署；受阻的是网关模式零配置评估，不是独立配置的 BYOK。标准模式保留全部证明与发布门，完整证明流程需要高级环境。
 
-[引导安装 / 故障排查](docs/deployment/INSTALL_EVALUATOR.md) · [高级 / BYOK 部署](docs/deployment/ADVANCED_INSTALLATION.md) · [Evaluator Gateway](docs/deployment/EVALUATOR_GATEWAY.md)
+[引导安装 / 故障排查](docs/deployment/INSTALL_EVALUATOR.zh-CN.md) · [高级 / BYOK 部署](docs/deployment/ADVANCED_INSTALLATION.zh-CN.md) · [Evaluator Gateway](docs/deployment/EVALUATOR_GATEWAY.zh-CN.md)
 
 ## Architecture & Validation · 架构与验证
 
-[系统架构](docs/architecture/SYSTEM_ARCHITECTURE.md) · [研究记忆](docs/architecture/RESEARCH_MEMORY.md) · [产品验收](docs/validation/PRODUCT_ACCEPTANCE.md) · [恢复验收](docs/validation/ADAPTIVE_RECOVERY_ACCEPTANCE.md) · [部署验收边界](docs/validation/LOCAL_DEPLOYMENT_ACCEPTANCE.md)。
+[系统架构](docs/architecture/SYSTEM_ARCHITECTURE.zh-CN.md) · [研究记忆](docs/architecture/RESEARCH_MEMORY.zh-CN.md) · [产品验收](docs/validation/PRODUCT_ACCEPTANCE.zh-CN.md) · [恢复验收](docs/validation/ADAPTIVE_RECOVERY_ACCEPTANCE.zh-CN.md) · [部署验收边界](docs/validation/LOCAL_DEPLOYMENT_ACCEPTANCE.zh-CN.md)。
 
 ## Current Status / Roadmap · 状态与路线图
 
@@ -135,7 +137,7 @@ Controlled Alpha 指有引导的评估就绪，不代表已验证规模化用户
 
 未来：Evaluation → POT → 基于证据的 Provider / Model Selection。完整 Evaluation/POT 尚未实现；研究记忆和增量研究已实现。
 
-[产品状态](docs/product/PRODUCT_STATUS.md) · [许可证待 Owner 决策](docs/LEGAL_AND_LICENSE_STATUS.md)。
+[产品状态](docs/product/PRODUCT_STATUS.zh-CN.md) · [许可证待 Owner 决策](docs/LEGAL_AND_LICENSE_STATUS.zh-CN.md)。
 
 ## Recognition · 外部里程碑
 
@@ -143,4 +145,4 @@ Controlled Alpha 指有引导的评估就绪，不代表已验证规模化用户
 
 Owner 已确认这一早期外部验证里程碑。当前产品身份和能力边界仍以上述实现与验证为准。
 
-[Recognition 记录](docs/recognition/AIX_ORIGIN_SUMMIT.md)。
+[Recognition 记录](docs/recognition/AIX_ORIGIN_SUMMIT.zh-CN.md)。

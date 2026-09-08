@@ -1,5 +1,7 @@
 # Local deployment acceptance boundary
 
+[简体中文](LOCAL_DEPLOYMENT_ACCEPTANCE.zh-CN.md)
+
 LOCAL DEPLOYABLE ALPHA = accepted existing local PostgreSQL + real API + React product. CONTROLLED ALPHA READY = facilitated evaluation readiness, not production SaaS.
 
 For this repository preparation:

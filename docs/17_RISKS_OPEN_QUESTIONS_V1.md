@@ -1,5 +1,7 @@
 # 17 — Risks & Open Questions V1
 
+[简体中文](17_RISKS_OPEN_QUESTIONS_V1.zh-CN.md)
+
 以下事项当前**没有冻结答案**，工程不得自行假设成正式产品事实。
 
 ## Data / Provider

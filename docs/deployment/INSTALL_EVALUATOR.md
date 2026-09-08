@@ -1,12 +1,16 @@
 # Guided evaluator installation
 
+[简体中文](INSTALL_EVALUATOR.zh-CN.md)
+
 ## 1. Thirty-second overview
+
+**Current investor/tester recommendation:** use [direct-provider BYOK](LOCAL_DEPLOYMENT.md) with [native setup](ADVANCED_INSTALLATION.md). API integrations are built in, not API keys. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner. This page describes the gateway-only Docker installer foundation, not a turnkey BYOK installer.
 
 Receive the installer source package and one encrypted `.vfaeval` bundle privately from the Owner. Unpack the source package, run the platform command below, and follow the prompts. Docker Desktop provides the local runtime; no separate database or language tools are needed. The installer creates local storage, migrates its own database, checks gateway permission and starts the real product. A successful first install opens your default browser.
 
-**Delivery status:** installer source foundation; public installer URL **PUBLICATION_REQUIRED**. The existing Alpha release does not contain this installer. This task does not push or create a new release. Do not substitute a mutable develop URL into a download-and-execute command. Published installers will resolve an accepted GitHub release and verify its SHA-256 package before executing it.
+**Delivery status:** installer source foundation; public installer URL **PUBLICATION_REQUIRED**. Publishing repository source is not the same as publishing accepted installer-specific assets and bootstrap URLs. Do not substitute a mutable develop URL into a download-and-execute command. Published installers will resolve an accepted GitHub release and verify its SHA-256 package before executing it.
 
-**Gateway status:** the real Owner gateway is **NOT_DEPLOYED**. Software installation can be prepared; Owner-funded live research remains **BLOCKED_BY_GATEWAY_DEPLOYMENT**. A valid bundle must reference a separately deployed gateway.
+**Gateway status:** the real Owner gateway is **NOT_DEPLOYED**. Software installation can be prepared; gateway-mode Owner-funded live research remains **BLOCKED_BY_GATEWAY_DEPLOYMENT**. This does not block separately configured BYOK test keys. A valid bundle must reference a separately deployed gateway.
 
 ## 2. Windows
 

@@ -1,5 +1,7 @@
 # Product overview
 
+[简体中文](PRODUCT_OVERVIEW.zh-CN.md)
+
 Verifiable Financial Agent (向风行 AI) turns a research objective into coordinated financial research with inspectable results and durable memory.
 
 **Make It Useful:** confirm a model-backed Scheme, then let the Research Lead and specialist Agents execute a dependency-aware task graph, correct local issues and replan when warranted.

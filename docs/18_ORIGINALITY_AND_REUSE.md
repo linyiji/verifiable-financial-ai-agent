@@ -1,5 +1,7 @@
 # 18 — Originality & Reuse
 
+[简体中文](18_ORIGINALITY_AND_REUSE.zh-CN.md)
+
 ## Purpose
 
 用于黑客松提交、开源归因、工程边界和后续商业审查。

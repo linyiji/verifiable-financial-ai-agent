@@ -1,5 +1,7 @@
 # WS-E — Assurance & Observability
 
+[简体中文](WS_E_ASSURANCE_OBSERVABILITY.zh-CN.md)
+
 Ownership:
 - `src/assurance/**`
 - `src/observability/**`

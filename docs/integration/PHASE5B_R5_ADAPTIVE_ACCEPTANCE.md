@@ -1,5 +1,7 @@
 # Phase 5B R5 adaptive execution acceptance — 2026-09-08
 
+[简体中文](PHASE5B_R5_ADAPTIVE_ACCEPTANCE.zh-CN.md)
+
 Phase 5 completion gate: **PASS**. One authorization and one new production Run;
 no R6, prepare, new Draft, or Scheme regeneration. No push. No Phase 6 evaluation,
 POT, rankings, or learned routing implemented.

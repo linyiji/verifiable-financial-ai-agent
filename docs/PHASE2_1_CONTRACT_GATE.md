@@ -1,5 +1,7 @@
 # Phase 2.1 Semantic Contract Gate
 
+[简体中文](PHASE2_1_CONTRACT_GATE.zh-CN.md)
+
 Baseline: `947496f482751493b97223d03ce2f85d2e6ddbfe`
 
 Status: PASS

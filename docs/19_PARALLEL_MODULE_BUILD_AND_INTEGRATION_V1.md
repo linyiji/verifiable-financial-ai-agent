@@ -1,5 +1,7 @@
 # 19 — Parallel Module Build & Integration Plan V1
 
+[简体中文](19_PARALLEL_MODULE_BUILD_AND_INTEGRATION_V1.zh-CN.md)
+
 ## 1. Purpose
 
 Backend implementation must not be executed as one long serial task.

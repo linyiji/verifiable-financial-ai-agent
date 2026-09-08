@@ -1,5 +1,7 @@
 # WS-W4 — FinRobot Peer Helper Controlled Port
 
+[简体中文](WS_W4_FINROBOT_PEER_HELPERS_REPORT.zh-CN.md)
+
 ## Result
 
 PASS. The owned peer helper port contains only deterministic period alignment,
@@ -90,7 +92,7 @@ parameters explicitly record `projection_policy=PROHIBITED` and
 Focused test command:
 
 ```text
-PYTHONPATH=$PWD /Users/mac/Verifiable_Financial_Agent_System/.venv/bin/pytest -q \
+PYTHONPATH=$PWD .venv/bin/pytest -q \
   tests/financial/test_finrobot_peer_port.py \
   tests/integration/test_finrobot_peer_runtime.py
 ```

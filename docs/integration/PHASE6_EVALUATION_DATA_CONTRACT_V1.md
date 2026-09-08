@@ -1,5 +1,7 @@
 # Phase 6 Evaluation Data Contract V1
 
+[简体中文](PHASE6_EVALUATION_DATA_CONTRACT_V1.zh-CN.md)
+
 Status: **parent-frozen preparation contract**, 2026-09-08. Documentation only;
 no new runtime model, table, API, extractor, scores or route policy implemented.
 Existing storage/APIs and safe retained telemetry suffice for the R5 vertical slice.

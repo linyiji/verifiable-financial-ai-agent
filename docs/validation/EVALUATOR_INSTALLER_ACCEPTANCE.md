@@ -1,5 +1,9 @@
 # One-command installer foundation acceptance
 
+[简体中文](EVALUATOR_INSTALLER_ACCEPTANCE.zh-CN.md)
+
+> Current guidance clarification — 2026-09-08: the checks below validate the gateway-only installer foundation, not a completed clean-machine or real-gateway evaluation. NOT_OBSERVED means not performed, not an observed failure. Investors/testers should currently use direct-API BYOK with locally configured private credentials; this installer does not currently provide one-command BYOK. The host-validation next step below applies to the installer workstream, not a requirement to wait for the gateway before facilitated BYOK testing.
+
 Date: 2026-09-08. Scope: local delivery changes only; no publication, gateway deployment,
 paid provider calls or production research Runs.
 

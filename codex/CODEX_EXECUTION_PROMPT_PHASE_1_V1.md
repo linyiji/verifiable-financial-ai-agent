@@ -1,5 +1,7 @@
 # Codex Execution Prompt — Verifiable Financial AI Backend Phase 1 V1
 
+[简体中文](CODEX_EXECUTION_PROMPT_PHASE_1_V1.zh-CN.md)
+
 你现在是本项目的工程执行 Agent。请直接开始执行，不要只输出建议。
 
 权威设计文档：
@@ -14,18 +16,18 @@
 
 完成 **Backend Phase 1 + 最小可运行 Vertical Slice**：
 
-> Research Object  
-> → 用户输入 Research Goal  
-> → AI Scheme Generator 接口 / deterministic fallback  
-> → 用户确认 Scheme Snapshot  
-> → Create Research Run  
-> → Research Lead Planner 生成 Planned Task Graph  
-> → Dynamic Runtime 启动  
-> → SSE 推送真实 Runtime Events  
-> → 至少一个 Financial Task 使用 Evidence + Deterministic Code  
-> → 形成 Calculation Record  
-> → Review Gate  
-> → Canonical Execution Record  
+> Research Object<br>
+> → 用户输入 Research Goal<br>
+> → AI Scheme Generator 接口 / deterministic fallback<br>
+> → 用户确认 Scheme Snapshot<br>
+> → Create Research Run<br>
+> → Research Lead Planner 生成 Planned Task Graph<br>
+> → Dynamic Runtime 启动<br>
+> → SSE 推送真实 Runtime Events<br>
+> → 至少一个 Financial Task 使用 Evidence + Deterministic Code<br>
+> → 形成 Calculation Record<br>
+> → Review Gate<br>
+> → Canonical Execution Record<br>
 > → Released Research Result
 
 本阶段不要试图一次做完 FinRobot、RD-Agent、完整 ZK、完整 POT、完整 Web UI。
@@ -104,7 +106,7 @@ Langfuse 是横切 Observability，不是 Agent Tool。
 
 A. Financial Report 是独立业务输出。
 
-B. Financial Review View  
+B. Financial Review View<br>
 C. Execution Details
 
 B/C 必须来自同一个 `CanonicalExecutionRecord`。

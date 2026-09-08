@@ -1,5 +1,7 @@
 # Phase 5B single live R2 — stopped at runtime failure
 
+[简体中文](PHASE5B_SINGLE_R2_RUNTIME_BLOCKER.zh-CN.md)
+
 Start SHA: c4a80adc1db8c83551ee8e3d97442f3a3568450b. Branch phase4 was clean.
 No final commit/tag/push: the full vertical slice did not pass. Implementation
 changes made before the live attempt are retained uncommitted for review.

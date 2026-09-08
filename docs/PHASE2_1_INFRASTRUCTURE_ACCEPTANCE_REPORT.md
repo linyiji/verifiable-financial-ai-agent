@@ -1,7 +1,9 @@
 # Phase 2.1 + Infrastructure Real-Integration Acceptance Report
 
-Date: 2026-09-04 (Asia/Shanghai)  
-Decision: **PASS**  
+[简体中文](PHASE2_1_INFRASTRUCTURE_ACCEPTANCE_REPORT.zh-CN.md)
+
+Date: 2026-09-04 (Asia/Shanghai)<br>
+Decision: **PASS**<br>
 Frontend / Generated Capability / RISC Zero / POT / Comparison: **DEFERRED / OUT OF SCOPE**
 
 ## A. Baseline HEAD

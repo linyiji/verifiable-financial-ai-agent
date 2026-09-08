@@ -1,5 +1,9 @@
 # Evaluator gateway foundation acceptance — 2026-09-08
 
+[简体中文](EVALUATOR_GATEWAY_ACCEPTANCE.zh-CN.md)
+
+> Current guidance clarification — 2026-09-08: this historical PASS is an offline code/contract acceptance, not a deployed gateway or successful external-user live-research journey. The gateway remains NOT_DEPLOYED. Investors and testers are now advised to use direct-API BYOK with their own keys or private, separately supplied Owner test keys configured locally. The historical evaluator-specific journey and next-step wording below are retained as the record of that task, not the current delivery recommendation.
+
 Starting checkpoint: `11837c3f9fc480c651f1c3663faac854bdce574b`, branch `phase4`, clean tracked worktree. This acceptance covers the credential/access foundation, not a deployed service or paid research run.
 
 ## Evidence

@@ -1,5 +1,7 @@
 # 01 — Product & Workflow V1
 
+[简体中文](01_PRODUCT_AND_WORKFLOW_V1.zh-CN.md)
+
 ## 1. Frontend navigation
 
 MVP 一级入口：

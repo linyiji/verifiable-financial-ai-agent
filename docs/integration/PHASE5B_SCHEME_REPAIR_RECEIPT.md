@@ -1,5 +1,7 @@
 # Phase 5B Scheme repair — pre-live only
 
+[简体中文](PHASE5B_SCHEME_REPAIR_RECEIPT.zh-CN.md)
+
 Start and final HEAD: `d414ec084aa03f65b56d6e465a7706dd3e2decef`.
 The pre-existing Phase 5B dirty worktree is preserved. No commit, tag or push.
 

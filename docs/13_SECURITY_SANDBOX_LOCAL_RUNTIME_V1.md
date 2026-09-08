@@ -1,5 +1,7 @@
 # 13 — Security, Sandbox & Local Runtime V1
 
+[简体中文](13_SECURITY_SANDBOX_LOCAL_RUNTIME_V1.zh-CN.md)
+
 ## 1. MVP execution target
 
 ```text

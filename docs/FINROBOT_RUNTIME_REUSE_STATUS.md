@@ -1,7 +1,9 @@
 # FinRobot Runtime Reuse Status — WS-T0
 
-Status: **COMPLETE — ACTIVATION AUDIT**  
-Audit date: 2026-09-04  
+[简体中文](FINROBOT_RUNTIME_REUSE_STATUS.zh-CN.md)
+
+Status: **COMPLETE — ACTIVATION AUDIT**<br>
+Audit date: 2026-09-04<br>
 Pinned upstream commit: `d221910096de87579b02f8f0674652bf1a175f51`
 
 ## Scope and decision rule

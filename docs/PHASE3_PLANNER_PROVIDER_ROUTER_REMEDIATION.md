@@ -1,5 +1,7 @@
 # Phase 3 Planner Provider Router Remediation
 
+[简体中文](PHASE3_PLANNER_PROVIDER_ROUTER_REMEDIATION.zh-CN.md)
+
 ## Disposition
 
 Candidate `38f66c603d61097005b3cf961dc93948bfceba83` and tree
@@ -48,4 +50,3 @@ consecutive owned planner probes in governed order, locks the first healthy
 provider/model, and uses that same identity for scheme generation, Lead
 planning, and Generated Capability construction. Provider loss or identity
 drift after selection fails the Run; it never triggers silent failover.
-

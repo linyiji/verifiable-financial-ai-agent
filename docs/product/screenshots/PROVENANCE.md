@@ -1,5 +1,7 @@
 # Real product screenshot provenance
 
+[简体中文](PROVENANCE.zh-CN.md)
+
 All five PNGs are byte-for-byte copies of approved images from the final local capture on 2026-09-08. 1440 × 900 viewport, 100% zoom, deviceScaleFactor 1. Normal React product chrome and orange logo; no prototype, crop, resize, retouch or injected labels.
 
 Source package (local/ignored): artifacts/bp_product_screenshots_20260908_final/selected. The public repository includes only these selected copies, not raw capture clutter or the production database.

@@ -1,5 +1,7 @@
 # WS-G — Integration
 
+[简体中文](WS_G_INTEGRATION.zh-CN.md)
+
 Ownership:
 - `src/application/**`
 - API orchestration

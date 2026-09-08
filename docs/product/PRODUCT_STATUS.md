@@ -1,10 +1,14 @@
 # Product status
 
+[简体中文](PRODUCT_STATUS.zh-CN.md)
+
 LOCAL DEPLOYABLE = YES
 
 CONTROLLED ALPHA READY = YES
 
 Controlled Alpha is readiness for facilitated, invited evaluation. Prior readiness scoped 3–5 design partners in read-only sessions; completed human comprehension studies or broad user adoption are not claimed.
+
+Current recommendation for investors and testers: use direct-API BYOK with your own credentials or separately and privately supplied Owner test credentials configured locally. Built-in API integration does not embed test keys. The Owner gateway is NOT_DEPLOYED; its one-command installer is a gateway-only foundation, not a currently available one-command BYOK workflow. See [advanced installation](../deployment/ADVANCED_INSTALLATION.md). A complete released research result still requires the applicable data/model access, proof tooling and release checks.
 
 | Capability | Status / boundary |
 | --- | --- |
@@ -17,7 +21,7 @@ Controlled Alpha is readiness for facilitated, invited evaluation. Prior readine
 | Complete Claim Trace drawer / deferred PDF | Not available |
 | Memory v2, Incremental Research, Base vs Current | Implemented; not future roadmap |
 | PostgreSQL + React product | Implemented local product |
-| Evaluator credential gateway | Code foundation implemented; Owner HTTPS gateway NOT_DEPLOYED. Private issued bundle required; BYOK remains available. |
+| Evaluator credential gateway | Code foundation implemented; Owner HTTPS gateway NOT_DEPLOYED. Gateway mode requires a private issued bundle; direct-API BYOK is currently recommended for investors/testers. |
 | Full Evaluation / POT / evidence-driven route optimization | Future; contract preparation is not execution |
 | Generalized context optimization / Phase 7 capability certification | Next layer; no learned routing or global production certification claimed |
 | ZK Agent Execution Conformance Proof | Planned actions/state-transition proof; current proofs cover bounded computations only |
