@@ -20,3 +20,11 @@ PostgreSQL 中的领域／运行时记录与已验证产物引用才是权威来
 系统不暴露隐藏思维链。公开执行轨迹描述声明的输入、已观测动作、输出、检查和策略决策。
 
 [API 组装](../../apps/api/main.py) · [后端／读取边界](../../src/phase4_product/postgresql_backend.py) · [自适应运行时](ADAPTIVE_RUNTIME.zh-CN.md) · [Memory](RESEARCH_MEMORY.zh-CN.md)。
+
+## 独立金融分支与默认对象
+
+独立金融分析并行执行；单项数据不足进入限制记录，不阻断无依赖结论。当前金融扩展采用最多三个并发分支；这不表示所有 Agent Task 都完全并行。每个已校验计算独立持久化。缺少输入的指标记录 INSUFFICIENT_DATA，不产生数值或依赖结论；真正的执行错误仍然失败。Task 可以带结构化限制完成。
+
+默认一般研究的技术分支为 SUPPORTING；Scheme.calculation_requirements 中显式指定的规范能力 ID 为 REQUIRED。既有完整公式集合的 Financial Review / Proof / Release 规则保持不变：任务继续不等于可以发布，缺项仍可能阻止最终 Release。任务详情展示分支状态与可用/所需输入数。当前改动尚未获得新版本实机发布验收，不应宣称 Alpha 2 已发布。
+
+PostgreSQL 迁移后，产品 API 启动会幂等创建空的 NVIDIA / NVDA Research Object，现有同 ticker 对象保持不变。不会初始化任何 Run、Scheme、证据、报告或 Research Memory，也不调用 provider。BYOK / Owner gateway 的凭证和部署边界没有改变。

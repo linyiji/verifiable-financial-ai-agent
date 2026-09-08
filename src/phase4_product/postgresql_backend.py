@@ -278,6 +278,9 @@ class PostgreSQLPhase4ProductBackend:
         self._projection_lock = asyncio.Lock()
 
     async def start(self) -> None:
+        from src.application.bootstrap import bootstrap_default_object
+
+        await bootstrap_default_object(self.sessions)
         if self._worker is None:
             self._worker = asyncio.create_task(self._scheduler_loop())
             self._wake.set()

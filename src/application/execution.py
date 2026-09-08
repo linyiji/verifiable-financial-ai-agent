@@ -22,6 +22,7 @@ from src.domain.enums import (
     ReplanDecision,
     TaskOrigin,
 )
+from src.domain.financial_branch import BranchRequirement
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import ReplanRequest, Task
 from src.observability.instrumentation import ObservationStage
@@ -49,6 +50,7 @@ class IntegratedTaskExecutor:
         )
         self._active = 0
         self.parallel_peak = 0
+        self._calculation_commit_lock = asyncio.Lock()
 
     @observe("task.execution", task="task")
     async def execute(
@@ -179,12 +181,7 @@ class IntegratedTaskExecutor:
             },
             context=context,
         )
-        await self._service.event_store.emit(
-            run_id=task.run_id,
-            task_id=task.task_id,
-            event_type=RuntimeEventType.CALCULATION_COMPLETED,
-            payload={"calculation_id": growth.calculation_id},
-        )
+        await self._commit_calculation(task, growth)
 
         # The fixture intentionally presents a quarterly revenue candidate first.
         # The real capability rejects its period mismatch and the same task corrects it.
@@ -251,42 +248,54 @@ class IntegratedTaskExecutor:
             },
             context=context,
         )
+        await self._commit_calculation(task, margin)
         extension_calculations = []
         extension_refs: list[str] = []
         extension_judgments: list[dict[str, object]] = []
         extension_output: dict[str, object] = {}
         for extension in self._service.calculation_extensions:
-            result = await extension.execute(
-                task=task,
-                state=self._aggregate.runtime,
-                evidence=evidence,
-                context=context,
-            )
+
+            async def commit(part):
+                async with self._calculation_commit_lock:
+                    for calculation in part.calculations:
+                        await self._commit_calculation(task, calculation)
+                    self._aggregate.artifacts.generated_capability_refs.extend(
+                        part.generated_capability_refs
+                    )
+                    self._aggregate.artifacts.judgments.extend(part.judgments)
+
+            async def publish(outcome):
+                async with self._calculation_commit_lock:
+                    self._aggregate.artifacts.financial_branches.append(outcome)
+                    await self._service.repository.save_runtime_events(
+                        list(await self._service.event_store.replay(task.run_id))
+                    )
+
+            incremental = getattr(extension, "execute_incremental", None)
+            if incremental is not None:
+                scheme = getattr(self._aggregate, "scheme", None)
+                required = getattr(scheme, "calculation_requirements", [])
+                result = await incremental(
+                    task=task,
+                    state=self._aggregate.runtime,
+                    evidence=evidence,
+                    context=context,
+                    commit=commit,
+                    publish=publish,
+                    requirements={key: BranchRequirement.REQUIRED for key in required},
+                )
+            else:
+                result = await extension.execute(
+                    task=task, state=self._aggregate.runtime, evidence=evidence, context=context
+                )
+                await commit(result)
             for calculation in result.calculations:
                 if calculation.run_id != task.run_id or calculation.task_id != task.task_id:
                     raise ValueError("calculation extension returned cross-task lineage")
-                await self._service.event_store.emit(
-                    run_id=task.run_id,
-                    task_id=task.task_id,
-                    event_type=RuntimeEventType.CALCULATION_COMPLETED,
-                    payload={
-                        "calculation_id": calculation.calculation_id,
-                        "capability_id": calculation.capability_id,
-                    },
-                )
             extension_calculations.extend(result.calculations)
             extension_refs.extend(result.generated_capability_refs)
             extension_judgments.extend(result.judgments)
             extension_output.update(result.task_output)
-        self._aggregate.artifacts.calculations.extend([growth, margin, *extension_calculations])
-        self._aggregate.artifacts.generated_capability_refs.extend(extension_refs)
-        self._aggregate.artifacts.judgments.extend(extension_judgments)
-        await self._service.event_store.emit(
-            run_id=task.run_id,
-            task_id=task.task_id,
-            event_type=RuntimeEventType.CALCULATION_COMPLETED,
-            payload={"calculation_id": margin.calculation_id},
-        )
         supporting_output = {
             "revenue_growth": str(growth.output_value),
             "ebitda_margin": str(margin.output_value),
@@ -342,6 +351,33 @@ class IntegratedTaskExecutor:
                     inputs,
                     context,
                 )
+
+    async def _commit_calculation(self, task, calculation):
+        if calculation.run_id != task.run_id or calculation.task_id != task.task_id:
+            raise ValueError("calculation commit returned cross-task lineage")
+        existing = next(
+            (
+                item
+                for item in self._aggregate.artifacts.calculations
+                if item.calculation_id == calculation.calculation_id
+            ),
+            None,
+        )
+        if existing is not None:
+            if existing != calculation:
+                raise ValueError("calculation identity is immutable")
+            return
+        await self._service.repository.save_calculation(calculation)
+        self._aggregate.artifacts.calculations.append(calculation)
+        await self._service.event_store.emit(
+            run_id=task.run_id,
+            task_id=task.task_id,
+            event_type=RuntimeEventType.CALCULATION_COMPLETED,
+            payload={
+                "calculation_id": calculation.calculation_id,
+                "capability_id": calculation.capability_id,
+            },
+        )
 
     async def _execute_risk_analysis(self, task: Task) -> TaskExecutionResult:
         agent_result = await self._invoke_research_agent(
@@ -724,6 +760,17 @@ class IntegratedTaskExecutor:
                 ]
             )
         )
+        supporting_output = {
+            **supporting_output,
+            "financial_branch_availability": [
+                item.model_dump(mode="json")
+                for item in self._aggregate.artifacts.financial_branches
+            ],
+            "availability_rule": (
+                "Use only COMPLETED calculations as numeric findings. Do not infer any "
+                "numeric result or directional claim for unavailable branches."
+            ),
+        }
         context = SpecialistExecutionContext(
             task=task,
             accepted_evidence_ids=[item["evidence_id"] for item in normalized_evidence],

@@ -6,6 +6,7 @@ from src.domain.calculation import CalculationRecord
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
 from src.domain.correction import CorrectionRecord
 from src.domain.evidence import EvidenceRecord
+from src.domain.financial_branch import FinancialBranchResult
 from src.domain.proof import ProofRecord, ProofResult
 from src.domain.released_research_result import ReleasedResearchResult
 from src.domain.report import ReportArtifactRecord
@@ -28,6 +29,7 @@ class ResearchRunDraft(DomainModel):
 
 
 class CompletedRunArtifacts(DomainModel):
+    financial_branches: list[FinancialBranchResult] = Field(default_factory=list)
     agent_outputs: list[ResearchAgentOutputRecord] = Field(default_factory=list)
     evidence: list[EvidenceRecord] = Field(default_factory=list)
     calculations: list[CalculationRecord] = Field(default_factory=list)

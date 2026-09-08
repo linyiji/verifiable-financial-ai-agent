@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from src.adapters.finrobot.technical import (
     MACD12269Capability,
@@ -45,12 +45,14 @@ from src.domain.enums import (
     FinancialUnit,
 )
 from src.domain.evidence import EvidenceRecord
+from src.domain.financial_branch import BranchRequirement, BranchStatus, FinancialBranchResult
 from src.domain.financial_semantics import evidence_unit_class
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
 from src.observability.instrumentation import RuntimeInstrumentation
 from src.runtime.diagnostics import InsufficientTechnicalHistoryError
 from src.runtime.events import RuntimeEventStore
+from src.runtime.financial_branches import FinancialBranch, execute_financial_branches
 from src.runtime.state import RuntimeState
 from src.tooling.native import NativeToolBackend
 from src.tooling.runtime import ToolRuntime
@@ -163,7 +165,166 @@ class Phase3FinancialCapabilityExtension:
         self._instrumentation = instrumentation
         self._judgments = TechnicalIndicatorJudgmentService()
 
-    async def execute(
+    async def execute(self, *, task, state, evidence, context):
+        return await self.execute_incremental(
+            task=task, state=state, evidence=evidence, context=context
+        )
+
+    async def execute_incremental(
+        self, *, task, state, evidence, context, commit=None, publish=None, requirements=None
+    ):
+        _validate_extension_evidence(task, evidence, context)
+        history = _ordered_historical_evidence(evidence, minimum=0)
+        grouped = {}
+        for item in history:
+            grouped.setdefault(item.as_of, set()).add(
+                "close" if item.normalized_field == "adjusted_close" else item.normalized_field
+            )
+        available = sum({"close", "volume"} <= fields for fields in grouped.values())
+        requirements = requirements or {}
+        parts = {}
+        outcomes = []
+        thresholds = {
+            FCF_MARGIN_CAPABILITY_ID: 3,
+            "technical_sma_50": 50,
+            "technical_sma_200": 200,
+            "technical_rsi_14": 15,
+            "technical_macd_12_26_9": 34,
+            "technical_volume_ratio_20": 20,
+        }
+
+        async def record(outcome):
+            outcomes.append(outcome)
+            await self._event_store.emit(
+                run_id=task.run_id,
+                task_id=task.task_id,
+                event_type=RuntimeEventType.TASK_PROGRESS,
+                payload={
+                    "progress": 0.5,
+                    "stage": (
+                        f"{outcome.calculation_type}:{outcome.status.value}:"
+                        f"{outcome.available_inputs}/{outcome.required_inputs}"
+                    ),
+                    "message_code": (
+                        f"FINANCIAL_BRANCH:{outcome.calculation_type}:{outcome.status.value}:"
+                        f"{outcome.available_inputs}/{outcome.required_inputs}:"
+                        f"{outcome.reason_code or 'NONE'}"
+                    ),
+                    "financial_branch": outcome.model_dump(mode="json"),
+                },
+            )
+            if publish is not None:
+                await publish(outcome)
+
+        def make_branch(capability_id, minimum):
+            required = requirements.get(capability_id, BranchRequirement.SUPPORTING)
+            if capability_id == FCF_MARGIN_CAPABILITY_ID:
+                required = requirements.get(capability_id, BranchRequirement.REQUIRED)
+                try:
+                    _select_fcf_margin_inputs(evidence)
+                    count = 3
+                except LookupError:
+                    count = 0
+            else:
+                count = available
+            identity = FinancialBranchResult(
+                branch_id=f"BRANCH-{task.task_id}-{capability_id}",
+                run_id=task.run_id,
+                task_id=task.task_id,
+                calculation_type=capability_id,
+                requirement=required,
+                status=BranchStatus.NOT_APPLICABLE,
+                required_inputs=minimum,
+                available_inputs=count,
+            )
+
+            async def execute():
+                if count < minimum:
+                    return identity.model_copy(
+                        update={
+                            "status": BranchStatus.INSUFFICIENT_DATA,
+                            "reason_code": (
+                                "INSUFFICIENT_FINANCIAL_INPUTS"
+                                if capability_id == FCF_MARGIN_CAPABILITY_ID
+                                else "INSUFFICIENT_TECHNICAL_HISTORY"
+                            ),
+                            "diagnostic_id": f"DIAG-{identity.branch_id}",
+                        }
+                    )
+                if capability_id == FCF_MARGIN_CAPABILITY_ID:
+                    part = await self._execute_fcf(
+                        task=task, state=state, evidence=evidence, context=context
+                    )
+                else:
+                    part = await self._execute_technical(
+                        task=task, capability_id=capability_id, history=history
+                    )
+                # A sibling is not permitted to delay persistence of this validated result.
+                if commit is not None:
+                    await commit(part)
+                parts[capability_id] = part
+                return identity.model_copy(
+                    update={
+                        "status": BranchStatus.COMPLETED,
+                        "calculation_ids": [item.calculation_id for item in part.calculations],
+                    }
+                )
+
+            return FinancialBranch(identity=identity, execute=execute)
+
+        ordered = await execute_financial_branches(
+            [make_branch(key, minimum) for key, minimum in thresholds.items()],
+            publish=record,
+            concurrency=3,
+        )
+        result = TaskCalculationExtensionResult(branch_results=ordered)
+        for key in thresholds:
+            if key not in parts:
+                continue
+            part = parts[key]
+            result.calculations.extend(part.calculations)
+            result.generated_capability_refs.extend(part.generated_capability_refs)
+            result.judgments.extend(part.judgments)
+            result.task_output.update(part.task_output)
+        result.task_output["financial_branches"] = [
+            item.model_dump(mode="json") for item in ordered
+        ]
+        return result
+
+    async def _execute_technical(self, *, task, capability_id, history):
+        await self._calculation_started(task, capability_id)
+        calculation_id = f"CALC-{task.run_id}-{capability_id.upper()}"
+        context = CapabilityContext(
+            run_id=task.run_id,
+            task_id=task.task_id,
+            accepted_evidence_ids=[item.evidence_id for item in history],
+        )
+        value = await self._execute_capability(
+            task=task,
+            capability_id=capability_id,
+            backend="finrobot_owned_native_port",
+            calculation_id=calculation_id,
+            execute=lambda: self._technical_runtime.execute(
+                capability_id, {"history": history, "calculation_id": calculation_id}, context
+            ),
+        )
+        records = list(value) if isinstance(value, tuple) else [value]
+        if not all(isinstance(item, CalculationRecord) for item in records):
+            raise TypeError("technical capability must return CalculationRecord values")
+        judgments = []
+        if capability_id == "technical_rsi_14":
+            judgments.append(
+                self._judgments.rsi(records[0], skill_version=task.skill_id).model_dump(mode="json")
+            )
+        if capability_id == "technical_macd_12_26_9":
+            judgments.append(
+                self._judgments.macd(
+                    records[0], records[1], skill_version=task.skill_id
+                ).model_dump(mode="json")
+            )
+        return TaskCalculationExtensionResult(calculations=records, judgments=judgments)
+
+    async def _execute_fcf(
         self,
         *,
         task: Task,
@@ -173,9 +334,6 @@ class Phase3FinancialCapabilityExtension:
     ) -> TaskCalculationExtensionResult:
         _validate_extension_evidence(task, evidence, context)
         operating_cash_flow, capital_expenditure, revenue = _select_fcf_margin_inputs(evidence)
-        # This extension also requires SMA200. Check its independent evidence
-        # prerequisite before building/invoking FCF, not after an FCF started event.
-        history = _ordered_historical_evidence(evidence)
         requirement = free_cash_flow_margin_requirement(task)
         request = SpecialistCapabilityRequest(
             run_id=task.run_id,
@@ -243,65 +401,10 @@ class Phase3FinancialCapabilityExtension:
             ),
         )
 
-        technical_context = CapabilityContext(
-            run_id=task.run_id,
-            task_id=task.task_id,
-            accepted_evidence_ids=[record.evidence_id for record in history],
-        )
-        technical: list[CalculationRecord] = []
-        by_capability: dict[str, list[CalculationRecord]] = {}
-        for capability_id in (
-            "technical_sma_50",
-            "technical_sma_200",
-            "technical_rsi_14",
-            "technical_macd_12_26_9",
-            "technical_volume_ratio_20",
-        ):
-            await self._calculation_started(task, capability_id)
-            calculation_id = f"CALC-{task.run_id}-{capability_id.upper()}"
-            value = await self._execute_capability(
-                task=task,
-                capability_id=capability_id,
-                backend="finrobot_owned_native_port",
-                calculation_id=calculation_id,
-                execute=lambda capability_id=capability_id, calculation_id=calculation_id: (
-                    self._technical_runtime.execute(
-                        capability_id,
-                        {
-                            "history": history,
-                            "calculation_id": calculation_id,
-                        },
-                        technical_context,
-                    )
-                ),
-            )
-            records = list(value) if isinstance(value, tuple) else [value]
-            if not all(isinstance(item, CalculationRecord) for item in records):
-                raise TypeError("technical capability must return CalculationRecord values")
-            typed_records = cast(list[CalculationRecord], records)
-            by_capability[capability_id] = typed_records
-            technical.extend(typed_records)
-
-        rsi = by_capability["technical_rsi_14"][0]
-        macd = by_capability["technical_macd_12_26_9"]
-        judgments: list[JsonObject] = [
-            self._judgments.rsi(rsi, skill_version=task.skill_id).model_dump(mode="json"),
-            self._judgments.macd(macd[0], macd[1], skill_version=task.skill_id).model_dump(
-                mode="json"
-            ),
-        ]
-        calculations = [generated_calculation, *technical]
         return TaskCalculationExtensionResult(
-            calculations=calculations,
+            calculations=[generated_calculation],
             generated_capability_refs=generated_refs,
-            judgments=judgments,
-            task_output={
-                "free_cash_flow_margin": str(generated_calculation.output_value),
-                "technical_calculation_refs": [
-                    calculation.calculation_id for calculation in technical
-                ],
-                "technical_judgment_refs": [str(judgment["judgment_id"]) for judgment in judgments],
-            },
+            task_output={"free_cash_flow_margin": str(generated_calculation.output_value)},
         )
 
     async def _calculation_started(self, task: Task, capability_id: str) -> None:
@@ -465,6 +568,8 @@ def _validate_extension_evidence(
 
 def _ordered_historical_evidence(
     evidence: Sequence[EvidenceRecord],
+    *,
+    minimum: int = 200,
 ) -> list[EvidenceRecord]:
     field_order = {"adjusted_close": 0, "close": 1, "volume": 2}
     candidates = sorted(
@@ -499,7 +604,7 @@ def _ordered_historical_evidence(
         if (record := grouped[observed].get(key)) is not None
     ]
     paired_days = sum("close" in fields and "volume" in fields for fields in grouped.values())
-    if paired_days < 200:
+    if paired_days < minimum:
         raise InsufficientTechnicalHistoryError(paired_days)
     return history
 

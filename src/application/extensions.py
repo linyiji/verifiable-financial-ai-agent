@@ -10,6 +10,7 @@ from src.domain.calculation import CalculationRecord
 from src.domain.capability import CapabilityContext
 from src.domain.enums import ProofRequirement
 from src.domain.evidence import EvidenceRecord
+from src.domain.financial_branch import FinancialBranchResult
 from src.domain.proof import (
     ProofArtifactReference,
     ProofInputCommitment,
@@ -22,6 +23,7 @@ from src.runtime.state import RuntimeState
 
 
 class TaskCalculationExtensionResult(DomainModel):
+    branch_results: list[FinancialBranchResult] = Field(default_factory=list)
     calculations: list[CalculationRecord] = Field(default_factory=list)
     generated_capability_refs: list[str] = Field(default_factory=list)
     judgments: list[JsonObject] = Field(default_factory=list)

@@ -20,3 +20,11 @@ Run identity, confirmed Scheme identity and knowledge-base lineage remain fixed 
 No hidden chain-of-thought is exposed. Public execution traces describe declared inputs, observed actions, outputs, checks and policy decisions.
 
 [API composition](../../apps/api/main.py) · [Backend/read seam](../../src/phase4_product/postgresql_backend.py) · [Adaptive Runtime](ADAPTIVE_RUNTIME.md) · [Memory](RESEARCH_MEMORY.md).
+
+## Independent financial branches and default object
+
+Independent financial analyses run concurrently; a data-shortfall limitation does not block findings without that dependency. The financial extension bounds concurrency at three branches; not every Agent Task is fully parallel. Each validated calculation is persisted independently. Missing inputs produce INSUFFICIENT_DATA, no number and no dependent claim; genuine execution errors still fail. A Task may complete with structured limitations.
+
+Technical branches in the general preset are SUPPORTING; canonical capability IDs explicitly listed in Scheme.calculation_requirements are REQUIRED. Existing full-formula Financial Review / Proof / Release controls remain unchanged: task continuation does not authorize release, and missing formulas can still block Release. Task details show branch status and available/required input counts. This change has not yet earned new-version host publication acceptance; Alpha 2 must not be described as published.
+
+After PostgreSQL migration, product API startup idempotently creates an empty NVIDIA / NVDA Research Object, preserving any existing object with that ticker. No Run, Scheme, evidence, report or Research Memory is seeded and no provider is called. BYOK / Owner gateway credential and deployment boundaries are unchanged.

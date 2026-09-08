@@ -84,6 +84,17 @@ export function TaskDetailDrawer({ projection, taskId, onClose }: {
                   <span className={`task-state-dot ${task.status.toLowerCase()}`} aria-hidden="true" />
                   <div><span>当前状态</span><strong>{PHASE4_TASK_STATUS_LABELS[task.status]}</strong><small>研究进度 {Math.round(task.progress * 100)}%</small></div>
                 </div>
+                {activity.some((item) => item.messageCode.startsWith("FINANCIAL_BRANCH:")) &&
+                  <section className="drawer-section"><h3>金融分析分支 / Financial branches</h3>
+                    {activity.filter((item) => item.messageCode.startsWith("FINANCIAL_BRANCH:")).map((item) => {
+                      const [, branch, status, coverage] = item.messageCode.split(":");
+                      return <p key={item.eventId}><strong>{branch}</strong> · {
+                        status === "COMPLETED" ? "已完成 / Completed" :
+                        status === "INSUFFICIENT_DATA" ? "数据不足 / Insufficient data — 不生成依赖结论" :
+                        status === "FAILED" ? "执行失败 / Failed" : "不适用 / Not applicable"
+                      } · 输入数量（可用/所需）{coverage}</p>;
+                    })}
+                  </section>}
                 <section className="drawer-section"><h3>研究任务</h3><p>{taskPurpose(task.taskType, task.goal)}</p><dl className="drawer-facts"><dt>负责人</dt><dd>{agentLabel(task.assignedAgent)}</dd><dt>创建来源</dt><dd>{task.origin === "REPLAN" ? "Research Lead 批准的 Replan" : "初始研究计划"}</dd><dt>创建时间</dt><dd>{formatTimestamp(task.createdAt)}</dd></dl></section>
                 <section className="drawer-section"><h3>依赖关系</h3>{task.dependencies.length === 0 ? <p className="muted">该 Task 没有前置依赖。</p> : <ul className="reference-list">{task.dependencies.map((dependency) => <li key={dependency}>{taskById.has(dependency) ? researchPlanLabel(taskById.get(dependency)!.taskType) : dependency}</li>)}</ul>}</section>
                 {changes.length > 0 && <section className="drawer-section"><h3>路径调整</h3>{changes.map((change) => <div className="drawer-change" key={change.pathChangeId}><strong>{change.changeKind === "SELF_CORRECTION" ? "期间数据修正" : "新增风险跟进任务"}</strong><span>{change.reasonCode ?? "研究路径调整"} · {change.decision ?? change.status}</span></div>)}</section>}

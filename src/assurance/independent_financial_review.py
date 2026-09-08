@@ -25,6 +25,7 @@ from src.domain.enums import (
     TechnicalPriceBasis,
 )
 from src.domain.evidence import EvidenceRecord
+from src.domain.financial_branch import BranchRequirement, BranchStatus, FinancialBranchResult
 from src.domain.financial_semantics import (
     MaterialFinancialClaim,
     ReleasedFinancialMetric,
@@ -102,6 +103,7 @@ class IndependentFinancialReviewer:
         claims: Sequence[MaterialFinancialClaim],
         judgments: Sequence[JsonObject],
         proof_requirements: Mapping[str, ProofRequirement],
+        branch_results: Sequence[FinancialBranchResult] = (),
     ) -> ReviewRecord:
         checks: list[ReviewCheck] = []
         evidence_by_id = _unique(evidence, "evidence_id", "evidence")
@@ -109,6 +111,19 @@ class IndependentFinancialReviewer:
         metric_by_calculation = _unique(metrics, "calculation_id", "metric calculation")
         claim_by_metric = _unique(claims, "metric_id", "claim metric")
         formulas = [item.formula_id for item in calculations]
+        for branch in branch_results:
+            owned = [item.calculation_id for item in calculations
+                     if item.capability_id == branch.calculation_type]
+            eligible = branch.status is BranchStatus.COMPLETED
+            _check(checks, "FIN_BRANCH_CALCULATION_AVAILABILITY",
+                branch.run_id == run_id and set(owned) == set(branch.calculation_ids)
+                and (eligible or not owned),
+                refs=[branch.branch_id, *owned], expected={"status": "PASS"},
+                actual={"status": branch.status.value})
+            if branch.requirement is BranchRequirement.REQUIRED:
+                _check(checks, "FIN_REQUIRED_BRANCH_AVAILABILITY", eligible,
+                    refs=[branch.branch_id], expected={"status": "COMPLETED"},
+                    actual={"status": branch.status.value})
 
         _check(
             checks,

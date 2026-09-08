@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.application.execution import IntegratedTaskExecutor
+from src.application.persistence import CalculationRecordRow, SQLAlchemyApplicationRepository
 from src.application.phase3_financial import (
     FreeCashFlowMarginValidationPlanProvider,
     Phase3FinancialCapabilityExtension,
@@ -27,9 +28,11 @@ from src.capabilities.generated.validation import GeneratedCapabilityValidator, 
 from src.capabilities.registry import CapabilityRegistry
 from src.domain.calculation import CalculationRecord
 from src.domain.enums import TaskStatus
+from src.domain.financial_branch import BRANCH_FORMULAS, BranchStatus
 from src.infrastructure.database.base import Base
 from src.infrastructure.database.generated_workflow import PostgreSQLCapabilityWorkflowRecorder
 from src.infrastructure.database.phase3_records import SQLAlchemyPhase3RecordRepository
+from src.output.financial_metrics import build_material_financial_release
 from src.runtime.scheduler import DependencyScheduler
 from src.tooling.generated_sandbox import DEFAULT_SANDBOX_IMAGE, DockerSandboxBackend
 from tests.integration.test_generated_validation_pipeline import _docker_image_available
@@ -40,7 +43,8 @@ from tests.unit.test_phase3_financial_extension import _evidence, _state, _task
     not _docker_image_available(DEFAULT_SANDBOX_IMAGE), reason="Docker image required"
 )
 @pytest.mark.asyncio
-async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_path):
+@pytest.mark.parametrize("history_days", [20, 200])
+async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_path, history_days):
     task = _task()
     state = _state(task)
     fixtures = Path(__file__).parents[1] / "fixtures/generated_fcf"
@@ -91,6 +95,7 @@ async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_pat
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    service.repository = SQLAlchemyApplicationRepository(sessions)
     orchestrator = GeneratedCapabilityOrchestrator(
         registry=registry,
         research_lead=Phase3ResearchLeadCapabilityAuthority(),
@@ -116,6 +121,8 @@ async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_pat
         else e
         for e in _evidence()
     ]
+    dates = sorted({e.as_of for e in evidence if e.period == "DAILY"})[-history_days:]
+    evidence = [e for e in evidence if e.period != "DAILY" or e.as_of in dates]
     state.task(task.task_id).task_input_evidence_ids = [e.evidence_id for e in evidence]
     artifacts = SimpleNamespace(
         evidence=evidence,
@@ -124,6 +131,7 @@ async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_pat
         generated_capability_refs=[],
         judgments=[],
         task_outputs={},
+        financial_branches=[],
     )
     aggregate = SimpleNamespace(runtime=state, artifacts=artifacts)
 
@@ -157,4 +165,22 @@ async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_pat
     ]
     assert "calculation.started" in fcf_events
     assert "calculation.completed" in fcf_events
+    async with sessions() as session:
+        row = await session.get(CalculationRecordRow, fcf.calculation_id)
+        assert Decimal(str(row.payload["output_value"])) == fcf.output_value
+    sma = next(item for item in artifacts.financial_branches
+               if item.calculation_type == "technical_sma_200")
+    assert sma.status.value == ("COMPLETED" if history_days == 200 else "INSUFFICIENT_DATA")
+    if history_days == 20:
+        assert sma.calculation_ids == []
+        assert sma.reason_code == "INSUFFICIENT_TECHNICAL_HISTORY"
+        assert not any(c.capability_id == "technical_sma_200" for c in artifacts.calculations)
+        _, claims, _ = build_material_financial_release(run_id=task.run_id,
+            evidence=evidence, calculations=artifacts.calculations, judgments=artifacts.judgments,
+            unavailable_formulas=frozenset(formula for branch in artifacts.financial_branches
+                if branch.status is BranchStatus.INSUFFICIENT_DATA
+                for formula in BRANCH_FORMULAS[branch.calculation_type]))
+        assert any(fcf.calculation_id in claim.calculation_refs for claim in claims)
+        assert not any("TECHNICAL_SMA_200" in ref for claim in claims
+                       for ref in claim.calculation_refs)
     await engine.dispose()

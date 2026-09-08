@@ -4,12 +4,14 @@ import asyncio
 from typing import Protocol, runtime_checkable
 
 from src.application.models import ResearchRunDraft, RunAggregate
+from src.domain.calculation import CalculationRecord
 from src.domain.research_object import ResearchObject
 from src.domain.runtime_event import RuntimeEvent
 
 
 @runtime_checkable
 class ApplicationRepository(Protocol):
+    async def save_calculation(self, calculation: CalculationRecord) -> None: ...
     async def add_object(self, entity: ResearchObject) -> ResearchObject: ...
 
     async def get_object(self, object_id: str) -> ResearchObject | None: ...
@@ -37,6 +39,14 @@ class InMemoryApplicationRepository:
         self._drafts: dict[str, ResearchRunDraft] = {}
         self._runs: dict[str, RunAggregate] = {}
         self._lock = asyncio.Lock()
+        self._calculations: dict[str, CalculationRecord] = {}
+
+    async def save_calculation(self, calculation: CalculationRecord) -> None:
+        async with self._lock:
+            previous = self._calculations.get(calculation.calculation_id)
+            if previous is not None and previous != calculation:
+                raise ValueError("calculation identity is immutable")
+            self._calculations[calculation.calculation_id] = calculation.model_copy(deep=True)
 
     async def add_object(self, entity: ResearchObject) -> ResearchObject:
         async with self._lock:

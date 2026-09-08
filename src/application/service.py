@@ -41,6 +41,7 @@ from src.capabilities.registry import CapabilityRegistry
 from src.data.ingestion import EvidenceIngestionResult
 from src.data.repository import EvidenceRepository, InMemoryEvidenceRepository
 from src.domain.enums import CapabilityBackend, ProofRequirement, ProofStatus, RunStatus
+from src.domain.financial_branch import BRANCH_FORMULAS, BranchStatus
 from src.domain.proof import ProofRecord, ProofRequest
 from src.domain.report import ReportSourceContribution
 from src.domain.research_goal import ResearchGoal
@@ -440,6 +441,10 @@ class ResearchApplicationService:
                 evidence=aggregate.artifacts.evidence,
                 calculations=calculations_before_review,
                 judgments=judgments,
+                unavailable_formulas=frozenset(
+                    formula for branch in aggregate.artifacts.financial_branches
+                    if branch.status is BranchStatus.INSUFFICIENT_DATA
+                    for formula in BRANCH_FORMULAS[branch.calculation_type]),
             )
             source_coverage = build_research_source_coverage(research_news_result)
 
@@ -467,6 +472,7 @@ class ResearchApplicationService:
                     claims=material_claims,
                     judgments=judgments,
                     proof_requirements=proof_requirements,
+                    branch_results=aggregate.artifacts.financial_branches,
                 )
             else:
                 review = DeterministicReviewer().review(
@@ -659,6 +665,13 @@ class ResearchApplicationService:
                 "calculation_refs": technical_calculation_refs,
             }
         limitations = list(proof_outcome.limitations)
+        limitations.extend(
+            f"{branch.calculation_type}: {branch.reason_code}; "
+            f"required {branch.required_inputs}, available {branch.available_inputs}; "
+            "no dependent conclusion produced."
+            for branch in aggregate.artifacts.financial_branches
+            if branch.status is not BranchStatus.COMPLETED
+        )
         if not live_evidence:
             limitations.insert(0, "Offline controlled fixture only.")
         if research_news_result.get("limitation"):

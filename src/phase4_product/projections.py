@@ -1277,7 +1277,7 @@ def project_event(
             # Durable diagnostics are internal evidence, never public activity content.
             event_payload = {
                 key: value for key, value in event_payload.items()
-                if key != "internal_diagnostic"
+                if key not in {"internal_diagnostic", "financial_branch"}
             }
         payload = safe_json_object(
             event_payload,

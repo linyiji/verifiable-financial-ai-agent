@@ -20,6 +20,7 @@ from src.application.models import CompletedRunArtifacts, ResearchRunDraft, RunA
 from src.application.repository import InMemoryApplicationRepository
 from src.data.persistence import SQLAlchemyEvidenceRepository
 from src.data.repository import EvidenceRepository
+from src.domain.calculation import CalculationRecord
 from src.domain.enums import RunStatus
 from src.domain.evidence import EvidenceRecord
 from src.domain.research_goal import ResearchGoal
@@ -301,6 +302,18 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             row.projection_sequence = projection_sequence
             row.projection_revision += 1
             await self._persist_children(session, aggregate)
+
+    async def save_calculation(self, calculation: CalculationRecord) -> None:
+        async with self._sessions() as session:
+            payload = calculation.model_dump(mode="json")
+            row = await session.get(CalculationRecordRow, calculation.calculation_id)
+            if row is not None:
+                if row.payload != payload:
+                    raise ValueError("calculation identity is immutable")
+                return
+            session.add(CalculationRecordRow(calculation_id=calculation.calculation_id,
+                run_id=calculation.run_id, payload=payload))
+            await session.commit()
 
     async def save_runtime_events(self, events: list[RuntimeEvent]) -> None:
         async with self._sessions() as session:

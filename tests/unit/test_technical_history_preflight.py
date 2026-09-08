@@ -5,10 +5,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.application.persistence import RuntimeEventRow, SQLAlchemyApplicationRepository
 from src.application.phase3_financial import (
-    Phase3FinancialCapabilityExtension,
     _ordered_historical_evidence,
 )
-from src.domain.capability import CapabilityContext
 from src.domain.enums import TaskStatus
 from src.infrastructure.database.base import Base
 from src.phase4_product.projections import project_event
@@ -27,30 +25,15 @@ def short_evidence():
 
 
 @pytest.mark.asyncio
-async def test_short_history_fails_before_generation_and_records_private_diagnostic(tmp_path):
-    class NeverGenerate:
-        async def lookup_or_build(self, **kwargs):
-            pytest.fail("short history must not trigger capability generation")
-
+async def test_explicit_required_history_failure_records_private_diagnostic(tmp_path):
     task = _task()
     state = _state(task)
     state.task(task.task_id).status = TaskStatus.READY
     events = InMemoryRuntimeEventStore()
-    extension = Phase3FinancialCapabilityExtension(generated=NeverGenerate(), event_store=events)
 
     class Executor:
         async def execute(self, task, context):
-            evidence = short_evidence()
-            return await extension.execute(
-                task=task,
-                state=state,
-                evidence=evidence,
-                context=CapabilityContext(
-                    run_id=task.run_id,
-                    task_id=task.task_id,
-                    accepted_evidence_ids=[e.evidence_id for e in evidence],
-                ),
-            )
+            return _ordered_historical_evidence(short_evidence())
 
     scheduler = DependencyScheduler(
         event_store=events,

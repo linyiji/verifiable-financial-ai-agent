@@ -83,6 +83,7 @@ def build_material_financial_release(
     evidence: Sequence[EvidenceRecord],
     calculations: Sequence[CalculationRecord],
     judgments: Sequence[JsonObject],
+    unavailable_formulas: frozenset[str] = frozenset(),
 ) -> tuple[
     tuple[ReleasedFinancialMetric, ...],
     tuple[MaterialFinancialClaim, ...],
@@ -97,7 +98,7 @@ def build_material_financial_release(
         by_formula[calculation.formula_id] = calculation
     missing = set(MATERIAL_FORMULAS) - by_formula.keys()
     extra = by_formula.keys() - set(MATERIAL_FORMULAS)
-    if missing or extra or len(by_formula) != len(MATERIAL_FORMULAS):
+    if missing != unavailable_formulas or extra:
         raise ValueError(
             f"material calculation set mismatch; missing={sorted(missing)}, extra={sorted(extra)}"
         )
@@ -106,6 +107,8 @@ def build_material_financial_release(
     claims: list[MaterialFinancialClaim] = []
     dispositions: list[MaterialCalculationDisposition] = []
     for formula_id in MATERIAL_FORMULAS:
+        if formula_id in unavailable_formulas:
+            continue
         calculation = by_formula[formula_id]
         if calculation.run_id != run_id or not calculation.implementation_hash:
             raise ValueError("material calculation lacks run or implementation identity")
