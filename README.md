@@ -105,15 +105,23 @@ Registered routes: `teamorouter-sol`, `teamorouter-luna`, `mimo-direct`. Only co
 
 ## Evaluate / Run Locally
 
-**Evaluator mode is recommended for investors and platform evaluators.** Install, configure your own PostgreSQL database, open one privately Owner-issued encrypted `.vfaeval` bundle, enter its passphrase, and start the frontend. The launcher checks gateway authority without calling paid upstream services. No FMP, TeamoRouter or MiMo keys belong on the evaluator machine.
+Use one guided command with an Owner-issued encrypted `.vfaeval` bundle. The installer prepares services and a private local database, checks authorization and opens the product. Evaluators do not configure FMP, MiMo or TeamoRouter keys.
 
-Start with the [Evaluator Quickstart](docs/deployment/EVALUATOR_QUICKSTART.md), [local deployment guide](docs/deployment/LOCAL_DEPLOYMENT.md), and [safe configuration template](.env.example).
+From the supplied, unpacked installer source package:
 
-Use the [macOS guide](docs/deployment/MACOS_EVALUATION.md) or [Windows / WSL2 guide](docs/deployment/WINDOWS_EVALUATION.md). Python 3.11, Node.js 24 and PostgreSQL are required. Full required-proof Runs need RISC Zero; generated-capability validation needs Docker. WSL2 is recommended for full Windows evaluation; native proof parity is not claimed.
+Windows (PowerShell):
+```powershell
+& .\scripts\install-evaluator.ps1
+```
 
-The gateway foundation is implemented and tested offline; **a real Owner gateway is NOT_DEPLOYED by this repository task**. Request a deployed gateway and bundle from the Owner before live evaluation. Quotas are protective evaluation limits, not commercial credits, subscriptions or paid-plan entitlements. Actual cost is `NOT_OBSERVED`; research can incur upstream costs for the Owner.
+macOS (Terminal):
+```bash
+bash scripts/install-evaluator.sh
+```
 
-**Advanced / independent deployment:** [BYOK](docs/deployment/LOCAL_DEPLOYMENT.md) remains available with explicit `VFA_CREDENTIAL_MODE=byok`. [Owner gateway operations](docs/deployment/EVALUATOR_GATEWAY.md) · [Credential security and limits](docs/architecture/EVALUATOR_CREDENTIAL_SECURITY.md). The repository contains no Owner database, private runtime artifacts or credentials.
+After setup, use `vfa start` in a new terminal. Public download commands are **PUBLICATION_REQUIRED**; this installer has not been released yet. Owner gateway deployment is also pending, so Owner-funded live evaluation is not available yet. Standard mode retains all proof/release gates; see the guide for its workflow limits.
+
+[Guided installation / troubleshooting](docs/deployment/INSTALL_EVALUATOR.md) · [Advanced / BYOK](docs/deployment/ADVANCED_INSTALLATION.md) · [Evaluator Gateway](docs/deployment/EVALUATOR_GATEWAY.md)
 
 ## Architecture & Validation
 
@@ -131,6 +139,8 @@ Next: Evaluation → POT → Evidence-driven Provider / Model Selection. Full Ev
 
 ## Recognition
 
-An early external demonstration milestone: the repository records a Flux · 流境 submission for AIx Origin Summit Hong Kong. Award level and official track spelling are pending authoritative confirmation; no Bronze Award is claimed here.
+🥉 **Bronze Award — AIx Origin Summit Hong Kong · Flux Track**
+
+An early external validation milestone, confirmed by the Owner. The product's identity and current capability boundaries remain those described above.
 
 [Recognition record](docs/recognition/AIX_ORIGIN_SUMMIT.md).

@@ -1,9 +1,9 @@
-# AIX / AIx Origin Summit — recognition record
+# AIx Origin Summit Hong Kong — recognition
 
-The existing repository README and submission manifest record a **Flux · 流境** submission for **AIx Origin Summit Hong Kong**, with the submitted primary direction described as C · Verifiable AI Inference Audit / Financial Agent.
+🥉 **Bronze Award — AIx Origin Summit Hong Kong · Flux Track**
 
-These are repository submission records, not independent proof of an official award or canonical event/track spelling. The existing manifest is retained under docs/submission. No authoritative Bronze Award certificate/announcement was supplied or found in the inspected text material.
+🥉 **AIx Origin Summit Hong Kong · Flux 赛道铜奖**
 
-Accordingly the product README records an early external demonstration/submission milestone, **not an awarded rank**. Owner should provide the certificate or official announcement before publishing “Bronze Award” or changing Flux to FLUE. No award text is guessed.
+The Owner explicitly confirmed the event, Flux Track and Bronze Award on 2026-09-08. This record uses that Owner confirmation; it does not claim a separately inspected certificate or independently verified announcement.
 
-Competition is recognition/history, not the product identity.
+The award is an early external validation milestone. It is not the product identity or evidence that every current capability is certified. Existing submission records remain under docs/submission; current implementation boundaries are documented in [Product Status](../product/PRODUCT_STATUS.md).

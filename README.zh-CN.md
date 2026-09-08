@@ -105,15 +105,23 @@ Provider / Model Failure → Recovery Decision → Policy Gate → Same-Run Reco
 
 ## Evaluate / Run Locally · 评估与本地运行
 
-投资人和平台评估者默认使用 **Evaluator 模式**：安装依赖、配置自己的 PostgreSQL、打开 Owner 私下签发的加密 `.vfaeval` 文件、交互输入口令，再启动前端。启动器自动检查网关授权，不调用收费上游。评估者机器不需要也不应接收 FMP、TeamoRouter 或 MiMo 密钥。
+使用 Owner 私下提供的加密 `.vfaeval` 凭据，一条命令进入引导安装。安装器自动准备服务、初始化本地数据库、检查授权，并在就绪后打开产品。无需配置 FMP、MiMo 或 TeamoRouter 密钥。
 
-直接阅读[评估者快速开始](docs/deployment/EVALUATOR_QUICKSTART.md)、[本地部署说明](docs/deployment/LOCAL_DEPLOYMENT.md)和[安全环境变量模板](.env.example)。
+在已解压的安装器源码包目录中运行：
 
-参见 [macOS](docs/deployment/MACOS_EVALUATION.md) 和 [Windows / WSL2](docs/deployment/WINDOWS_EVALUATION.md) 指引。需要 Python 3.11、Node.js 24、PostgreSQL；完整必需证明需要 RISC Zero，生成能力验证需要 Docker。Windows 完整评估推荐 WSL2，不宣称原生证明工具链等价。
+Windows（PowerShell）：
+```powershell
+& .\scripts\install-evaluator.ps1
+```
 
-网关基础能力已实现并完成离线测试；本次任务没有部署真实 Owner 网关（`NOT_DEPLOYED`）。正式使用前须由 Owner 提供已部署网关和评估凭据。配额只是评估保护限制，不是商业积分、订阅或付费权益；实际费用为 `NOT_OBSERVED`，新研究可能产生 Owner 上游费用。
+macOS（Terminal）：
+```bash
+bash scripts/install-evaluator.sh
+```
 
-高级用户和独立部署仍可使用 [BYOK](docs/deployment/LOCAL_DEPLOYMENT.md)，明确设置 `VFA_CREDENTIAL_MODE=byok`。[Owner 网关管理](docs/deployment/EVALUATOR_GATEWAY.md) · [凭据安全边界](docs/architecture/EVALUATOR_CREDENTIAL_SECURITY.md)。仓库不包含 Owner 数据库、私有运行产物或凭据。
+之后在新终端运行 `vfa start`。公共下载命令仍为 **PUBLICATION_REQUIRED**，本次尚未发布安装器；Owner 网关也尚未部署，暂不可进行 Owner 付费的真实评估。标准模式保留全部证明与发布门，流程限制见指南。
+
+[引导安装 / 故障排查](docs/deployment/INSTALL_EVALUATOR.md) · [高级 / BYOK 部署](docs/deployment/ADVANCED_INSTALLATION.md) · [Evaluator Gateway](docs/deployment/EVALUATOR_GATEWAY.md)
 
 ## Architecture & Validation · 架构与验证
 
@@ -131,6 +139,8 @@ Controlled Alpha 指有引导的评估就绪，不代表已验证规模化用户
 
 ## Recognition · 外部里程碑
 
-仓库记录了面向 AIx Origin Summit Hong Kong 的 Flux · 流境提交，作为早期对外展示里程碑。奖项等级及官方赛道名称待权威材料确认，此处不宣称铜奖。
+🥉 **AIx Origin Summit Hong Kong · Flux 赛道铜奖**
+
+Owner 已确认这一早期外部验证里程碑。当前产品身份和能力边界仍以上述实现与验证为准。
 
 [Recognition 记录](docs/recognition/AIX_ORIGIN_SUMMIT.md)。

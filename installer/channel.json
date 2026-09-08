@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "publication_status": "PUBLICATION_REQUIRED",
+  "repository": "linyiji/verifiable-financial-ai-agent",
+  "release_asset": "evaluator-manifest.json",
+  "full_proof_runtime": "NOT_PACKAGED"
+}
