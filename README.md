@@ -10,6 +10,8 @@ Multi-Agent Research · Verifiable Results · Adaptive Recovery · Research Memo
 
 [简体中文](README.zh-CN.md) · [Evaluate / Run locally](docs/deployment/EVALUATOR_QUICKSTART.md) · [Product walkthrough](docs/product/PRODUCT_WALKTHROUGH.md)
 
+[能用](#能用--make-it-useful) · [敢用](#敢用--make-it-trustworthy) · [越用越好](#越用越好--make-it-better-with-use)
+
 ## 能用 · Make It Useful
 
 Give the Agent a research objective; it organizes and executes the research.
@@ -17,6 +19,8 @@ Give the Agent a research objective; it organizes and executes the research.
 Research Object → Research Goal → AI Research Scheme → Research Lead + Specialist Agents → Dynamic Research Path → Financial Research Result.
 
 Review the Scheme before execution. Follow specialist work, self-correction and replanning in the real interface—not just a final block of generated prose.
+
+**Agent handles uncertainty; code executes certainty.** The Agent interprets the goal, judges evidence, decomposes tasks, analyzes risk and decides when to correct, replan or request bounded recovery. It decides what needs analysis or calculation. Supported deterministic capabilities define how authoritative calculations execute: typed inputs, period/unit checks, versioned calculation records and Financial Review linkage. The generated-capability workflow can build and validate a scoped missing calculation capability; it is not a universal Formula Registry or production-wide capability certification.
 
 ## 敢用 · Make It Trustworthy
 
@@ -28,6 +32,15 @@ Provider / Model Failure → Recovery Decision → Policy Gate → Same-Run Reco
 
 Recovery is bounded and auditable. Report ↔ Execution trace works where exact persisted mappings exist; source and contribution coverage remains **partial**. A complete Claim Trace drawer is not available.
 
+Four separate trust layers make the boundary explicit:
+
+- Result verifiability: Claim → Evidence → Calculation → Review.
+- Deterministic execution: Typed Inputs → deterministic code → Calculation Record → Review → bounded Proof where supported.
+- Execution auditability: Task → Agent → Input → Observable Process → Structured Output → available Report Contribution mapping. Observable records do not expose hidden chain-of-thought.
+- Process conformance: Initial Plan + authorized Correction / Replan / Recovery → Actual Execution. The product records initial/actual graph versions, corrections, replan approvals, recovery decisions, policy gates, attempts and Review / Proof / Release transitions.
+
+**The path may change; the rules for changing it may not be bypassed.** Current RISC Zero proofs cover bounded computations. ZK Agent Execution Conformance Proof is a planned next trust layer: commit approved graph/policy transitions, then prove that actions and state transitions match the initial plan plus authorized changes. It does not currently prove the entire Agent path and would not prove private model reasoning.
+
 ## 越用越好 · Make It Better With Use
 
 The research-memory loop is implemented today:
@@ -35,6 +48,16 @@ The research-memory loop is implemented today:
 Released Research → Research Memory → Incremental Research → Refresh / Revalidate / Prevent → New Released Research → Memory v2 → Base vs Current.
 
 History helps determine what must be updated, independently reverified, or prevented from recurring. A new result does not inherit the previous Run's approval. This is durable research reuse, **not model training or a claim that investment outcomes automatically improve**.
+
+The intelligence flywheel has three stages:
+
+| Stage | Status and role |
+| --- | --- |
+| Phase 5 — Research Memory / Incremental Research | Implemented. Compact governed prior context changes the next plan through Refresh / Revalidate / Prevent, reducing repeated research; released Memory v2 supports Base vs Current. |
+| Phase 6 — Adaptive Runtime → Full Evaluation | Attempts, failure classification, Provider Detector, Recovery Supervisor, Policy Gate, RecoveryBudget and same-Run recovery are implemented, with accepted live-run evidence. Full TaskProfile × ProviderRoute × Model Evaluation → POT → governed Provider / Model / Context / Path recommendations is next; learned routing is not implemented. |
+| Phase 7 — Capability Certification | Planned. Versioned reusable capabilities, repeated-success evidence and human/policy approval would govern global deterministic/Agent capability reuse. Current scoped capability validation is not this production certification system. |
+
+For comparable repeated research, the optimization target is lower marginal input tokens, unnecessary output tokens, latency, provider cost, failed attempts and recovery overhead. Research Memory and Incremental Research provide today's base; generalized context compression, progressive retrieval, graph optimization, evidence-driven route selection and certified capability reuse are next layers. No percentage savings are claimed. The goal is to reduce marginal research cost while preserving required Financial Review, Proof Policy, Evidence Coverage, Safety and Release Gates.
 
 ## Real Product Screenshots
 

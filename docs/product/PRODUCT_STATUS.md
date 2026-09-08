@@ -17,7 +17,10 @@ Controlled Alpha is readiness for facilitated, invited evaluation. Prior readine
 | Complete Claim Trace drawer / deferred PDF | Not available |
 | Memory v2, Incremental Research, Base vs Current | Implemented; not future roadmap |
 | PostgreSQL + React product | Implemented local product |
+| Evaluator credential gateway | Code foundation implemented; Owner HTTPS gateway NOT_DEPLOYED. Private issued bundle required; BYOK remains available. |
 | Full Evaluation / POT / evidence-driven route optimization | Future; contract preparation is not execution |
+| Generalized context optimization / Phase 7 capability certification | Next layer; no learned routing or global production certification claimed |
+| ZK Agent Execution Conformance Proof | Planned actions/state-transition proof; current proofs cover bounded computations only |
 | Public SaaS, enterprise Auth/RBAC/SSO, billing | Not claimed / not implemented here |
 | Investment-advice suitability / production enterprise readiness | Not claimed |
 

@@ -10,6 +10,8 @@ Local Deployable Alpha · Controlled Alpha Ready
 
 [English](README.md) · [评估 / 本地运行](docs/deployment/EVALUATOR_QUICKSTART.md) · [产品导览](docs/product/PRODUCT_WALKTHROUGH.md)
 
+[能用](#能用--make-it-useful) · [敢用](#敢用--make-it-trustworthy) · [越用越好](#越用越好--make-it-better-with-use)
+
 ## 能用 · Make It Useful
 
 用户提出研究目标，Agent 负责组织和执行研究。
@@ -17,6 +19,8 @@ Local Deployable Alpha · Controlled Alpha Ready
 Research Object → Research Goal → AI Research Scheme → Research Lead + Specialist Agents → Dynamic Research Path → Financial Research Result。
 
 先审阅并确认研究方案，再观察专家协作、任务内纠错与受控重规划，而不是只收到一段生成文字。
+
+**Agent 处理不确定性，代码执行确定性。** Agent 解释目标、判断证据、拆解任务、分析风险，并决定何时纠错、重规划或请求有限恢复。Agent 决定需要分析或计算什么；受支持的确定性能力规定权威计算如何执行：类型化输入、期间与单位检查、带版本的计算记录和 Financial Review 关联。当前生成能力流程可构建并验证缺失的局部计算能力；尚不是通用 Formula Registry 或全局生产能力认证。
 
 ## 敢用 · Make It Trustworthy
 
@@ -28,6 +32,15 @@ Provider / Model Failure → Recovery Decision → Policy Gate → Same-Run Reco
 
 恢复受预算和策略约束，有公开可观察的记录。Report ↔ Execution 仅使用已持久化的精确映射；来源和贡献覆盖仍为 **PARTIAL**，完整 Claim Trace drawer 尚不可用。
 
+信任由四个独立层次组成：
+
+- 结果可验证：Claim → Evidence → Calculation → Review。
+- 确定性执行：类型化输入 → 确定性代码 → Calculation Record → Review → 已支持范围内的 Proof。
+- 执行可审计：Task → Agent → Input → 可观察过程 → Structured Output → 已有的 Report Contribution 映射；不暴露隐藏思维链。
+- 过程合规：初始计划 + 授权 Correction / Replan / Recovery → 实际执行。产品已记录初始/实际 Graph 版本、纠错、重规划批准、恢复决策、策略门、执行尝试以及 Review / Proof / Release 状态变化。
+
+**路径可以变化，改变路径的规则不能被绕过。** 当前 RISC Zero 证明仅覆盖有限计算。ZK Agent Execution Conformance Proof 属于下一信任层：承诺已批准的图与策略转换，再证明实际动作和状态转换符合初始计划及授权变化。目前不证明完整 Agent 执行路径，未来也不以证明私有模型推理为目标。
+
 ## 越用越好 · Make It Better With Use
 
 以下研究记忆闭环已经实现，不是路线图：
@@ -35,6 +48,16 @@ Provider / Model Failure → Recovery Decision → Policy Gate → Same-Run Reco
 已发布研究 → Research Memory → 增量研究 → 更新 / 重新验证 / 避免重复问题 → 新的已发布研究 → Memory v2 → Base vs Current。
 
 历史帮助决定哪些材料需更新、哪些结论需独立重验、哪些问题不应重复。新的研究不继承上次批准。这是研究资产积累，不是模型训练，也不承诺投资收益自动改善。
+
+智能积累分为三个阶段：
+
+| 阶段 | 状态与作用 |
+| --- | --- |
+| Phase 5 — 研究记忆 / 增量研究 | 已实现。紧凑且受治理的历史上下文通过 Refresh / Revalidate / Prevent 改变下次计划，减少重复研究；已发布 Memory v2 支持 Base vs Current。 |
+| Phase 6 — 自适应运行时 → 完整评估 | 执行尝试、失败分类、Provider Detector、Recovery Supervisor、Policy Gate、RecoveryBudget 和同 Run 恢复已实现并有已验收的真实运行证据。TaskProfile × ProviderRoute × Model → Evaluation → POT → Provider / Model / Context / Path 建议属于下一层；尚未实现学习式路由。 |
+| Phase 7 — 能力认证 | 规划中。通过版本化能力注册、重复成功证据和人工/策略批准，治理全局可复用的确定性及 Agent 能力。当前局部能力验证不等同于这套生产认证。 |
+
+对可比的重复研究，优化目标是降低边际输入 Token、不必要的输出 Token、延迟、提供方费用、失败尝试和恢复开销。研究记忆和增量研究是现有基础；通用上下文压缩、渐进检索、任务图优化、基于证据的模型选择和已认证能力复用属于下一层。不宣称未经测量的节省比例。目标是在保留必需 Financial Review、Proof Policy、Evidence Coverage、Safety 和 Release Gates 的前提下降低边际研究成本。
 
 ## Real Product Screenshots · 真实产品截图
 
