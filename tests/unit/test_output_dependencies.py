@@ -175,6 +175,16 @@ async def test_integrated_partial_synthesis_persists_but_release_stays_strict(
 
     monkeypatch.setattr(IntegratedTaskExecutor, "_invoke_research_agent", narrative)
     service = ResearchApplicationService()
+    proof_calls = 0
+    original_proof = service._execute_proof_workflow
+
+    async def once(aggregate):
+        nonlocal proof_calls
+        proof_calls += 1
+        assert proof_calls == 1, "A partial execution must not regenerate the same Proof"
+        return await original_proof(aggregate)
+
+    monkeypatch.setattr(service, "_execute_proof_workflow", once)
     obj = await service.create_object(symbol="NVDA", company_name="NVIDIA", exchange="NASDAQ")
     draft = await service.prepare_run(
         research_object_id=obj.object_id,
@@ -184,6 +194,7 @@ async def test_integrated_partial_synthesis_persists_but_release_stays_strict(
     )
     aggregate = await service.confirm_run(draft_id=draft.draft_id, confirm_scheme=True)
     await service.execute_run(aggregate.run.run_id)
+    assert proof_calls == 1
     assert aggregate.run.status is (RunStatus.FAILED if synthesis_fails else RunStatus.RELEASED)
     if synthesis_fails:
         assert aggregate.artifacts.released_result is None

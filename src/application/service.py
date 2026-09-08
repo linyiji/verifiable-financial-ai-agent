@@ -334,6 +334,7 @@ class ResearchApplicationService:
                     branch.status is not BranchStatus.COMPLETED
                     for branch in aggregate.artifacts.financial_branches
                 )
+                partial_proof_outcome = None
                 if limited:
                     aggregate.artifacts.partial_research = {
                         **availability_map(aggregate),
@@ -344,9 +345,10 @@ class ResearchApplicationService:
                     # This artifact remains inspectable even if strict Review rejects release.
                     if aggregate.artifacts.calculations:
                         proof = await self._execute_proof_workflow(aggregate)
+                        partial_proof_outcome = proof
                         aggregate.artifacts.proofs = list(proof.proofs.values())
                         aggregate.runtime.proof_state = proof.runtime_state
-                await self._assure_and_release(aggregate)
+                await self._assure_and_release(aggregate, proof_outcome=partial_proof_outcome)
         except Exception as exc:
             policy_blocked = isinstance(exc, ApplicationError) and exc.code in {
                 "REVIEW_BLOCKED",
@@ -448,7 +450,9 @@ class ResearchApplicationService:
         aggregate.runtime.evidence_refs = list(store.select_ids())
         return routing
 
-    async def _assure_and_release(self, aggregate: RunAggregate) -> None:
+    async def _assure_and_release(
+        self, aggregate: RunAggregate, *, proof_outcome: ProofWorkflowOutcome | None = None
+    ) -> None:
         run_id = aggregate.run.run_id
         calculations_before_review = list(aggregate.artifacts.calculations)
         judgments = list(aggregate.artifacts.judgments)
@@ -549,7 +553,8 @@ class ResearchApplicationService:
                 details={"reason_codes": list(gaps)},
             )
 
-        proof_outcome = await self._execute_proof_workflow(aggregate)
+        if proof_outcome is None:
+            proof_outcome = await self._execute_proof_workflow(aggregate)
         if proof_outcome.requirements != proof_requirements:
             raise ApplicationError(
                 "PROOF_POLICY_CHANGED_AFTER_REVIEW",

@@ -36,6 +36,7 @@ from src.domain.research_run import ResearchRun
 from src.domain.research_scheme import ResearchSchemeSnapshot
 from src.domain.runtime_event import RuntimeEvent, RuntimeEventType, normalize_runtime_event_v1
 from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph
+from src.infrastructure.database.models import ProofRecordRow
 from src.infrastructure.database.phase3_records import SQLAlchemyPhase3RecordRepository
 from src.infrastructure.database.phase4_product import (
     PHASE4_SINGLE_INSTANCE_SCOPE,
@@ -946,6 +947,31 @@ class PostgreSQLPhase4ProductBackend:
                 )
             if run.status is not RunStatus.RELEASED:
                 updates = {}
+                proof_rows = list(
+                    (
+                        await session.scalars(
+                            select(ProofRecordRow).where(ProofRecordRow.run_id == run_id)
+                        )
+                    ).all()
+                )
+                proofs_by_id = {
+                    p.proof_id: p for p in artifacts.proofs if isinstance(p, ProofRecord)
+                }
+                for proof_row in proof_rows:
+                    proof = ProofRecord.model_validate(proof_row.payload)
+                    if proof.run_id != run_id or proof.proof_id != proof_row.proof_id:
+                        raise product_error(
+                            "IDENTITY_MISMATCH", "Durable Proof row identity mismatch"
+                        )
+                    existing = proofs_by_id.get(proof.proof_id)
+                    if existing is not None and existing != proof:
+                        raise product_error(
+                            "INTEGRITY_FAILURE", "Aggregate and durable Proof disagree"
+                        )
+                    proofs_by_id[proof.proof_id] = proof
+                # Read projection only: never rewrite the historical aggregate.
+                if proofs_by_id:
+                    artifacts = artifacts.model_copy(update={"proofs": list(proofs_by_id.values())})
                 if artifacts.review is not None:
                     surface = retained_review_surface(run, artifacts, actual.tasks)
                     updates["review"] = ReviewSummaryV1(

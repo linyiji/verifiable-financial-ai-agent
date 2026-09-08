@@ -95,7 +95,37 @@ function payloadMatchesSurface(payload: SurfacePayload, surface: ResultsSurfaceR
   return payload.schemaVersion === "phase4.5-execution-record-surface/v1";
 }
 
-export function ResultsWorkspacePage({ source, backendOrigin, runId, surface, onNavigate, onReplace }: ResultsWorkspacePageProps) {
+export function ResultsWorkspacePage(props: ResultsWorkspacePageProps) {
+  return props.surface === "review" ? <ExactReviewRoute {...props} /> : <ReleasedResultsWorkspacePage {...props} />;
+}
+
+function ExactReviewRoute(props: ResultsWorkspacePageProps) {
+  const [review, setReview] = useState<Loadable<FinancialReviewSurfaceV1>>(initialLoad);
+  useEffect(() => {
+    const controller = new AbortController();
+    let current = true;
+    setReview(initialLoad());
+    void props.source.getFinancialReviewSurface(props.runId, undefined, { signal: controller.signal })
+      .then(value => { if (current) setReview({ status: "READY", value }); })
+      .catch(() => { if (current) setReview({ status: "ERROR", value: null }); });
+    return () => { current = false; controller.abort(); };
+  }, [props.source, props.runId]);
+  if (review.status === "ERROR") return <section role="alert">此 Run 的权威复核暂不可用；未改用其他 Run。</section>;
+  if (review.status !== "READY" || review.value.runId !== props.runId) return <section role="status">正在载入精确 Run 复核…</section>;
+  if (review.value.releasedResultId !== null) return <ReleasedResultsWorkspacePage {...props} />;
+  const focus = parseResultsFocus(props.runId, "review", window.location.search);
+  const requested = focus !== null && "reviewId" in focus ? focus : null;
+  return <section className="results-shell" data-testid="retained-review" data-run-id={props.runId}>
+    <button type="button" className="btn" onClick={() => props.onNavigate(runPath(props.runId))}>返回 Research Run</button>
+    <h1>财务复核 · 未释放的研究</h1>
+    <p>Run：{props.runId} · Object：{review.value.objectId}。复核通过不代表报告已释放。</p>
+    <InteractiveFinancialReview review={review.value} context="run" requestedSelector={requested === null ? null : {
+      reviewId: requested.reviewId, checkCode: requested.checkCode, subjectRefs: requested.subjectRefs
+    }} />
+  </section>;
+}
+
+function ReleasedResultsWorkspacePage({ source, backendOrigin, runId, surface, onNavigate, onReplace }: ResultsWorkspacePageProps) {
   const [root, setRoot] = useState<Loadable<ResultsWorkspaceV1>>(initialLoad);
   const [object, setObject] = useState<Loadable<Phase4ResearchObjectDetail>>(initialLoad);
   const [payload, setPayload] = useState<Loadable<SurfacePayload>>(initialLoad);

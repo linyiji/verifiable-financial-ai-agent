@@ -2,6 +2,22 @@
 
 [English](PHASE6A_RELIABILITY_COMPLETION.md)
 
+## Live 后续：Proof 执行归属重复
+
+后续唯一一次 live 验收在真实 VERIFIED Proof 和 PASS Review 之后失败。
+`execute_run` 先为部分研究执行证明，随后 `_assure_and_release` 再次执行同一证明。
+第二次正确拒绝已存在的输入路径，但返回的空结果覆盖了聚合里的第一次成功证明，
+导致释放阻塞，公开投影也隐藏了仍然持久化存在的 Proof。之前离线故障重放直接进入
+`_assure_and_release`，遗漏了这一完整组合路径。
+
+单独获得修复授权后，闭环改为接收调用方已产生的精确 Proof 结果，仍执行原有策略与
+血缘校验。完整 `execute_run` 回归断言证明工作流仅调用一次。只读投影同时读取精确
+持久化 Proof，不更新历史；跨 Run 或相互冲突的记录仍被拒绝。未释放 Run 的完整
+Review 页面独立读取已保留 Review，不再依赖已释放的 Results Workspace。
+
+这次修正不会复活失败 Run。现有重新执行接口会创建新的完整流程，目前没有节点级
+续执行契约。不宣称最终 live 验收、发布或 Phase 6B 已通过。
+
 ## 门禁与范围
 
 Completion → Trust → Performance。本次是经过离线测试的 Phase 6A 基础修复，

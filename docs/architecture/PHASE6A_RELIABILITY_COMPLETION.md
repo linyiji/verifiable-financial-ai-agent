@@ -2,6 +2,26 @@
 
 [简体中文](PHASE6A_RELIABILITY_COMPLETION.zh-CN.md)
 
+## Live follow-up: duplicate Proof ownership
+
+The subsequent single live gate failed after a genuine VERIFIED Proof and PASS
+Review. `execute_run` proved partial research first, then `_assure_and_release`
+proved it again. The second attempt correctly rejected its existing input path,
+but its empty outcome displaced the first proof in the aggregate. This blocked
+release and hid the durable Proof from public projection. The previous offline
+incident replay entered `_assure_and_release` directly and missed this composition.
+
+After separate repair authorization, the closure now consumes the exact proof
+outcome produced by its caller, with unchanged policy/lineage validation. A full
+`execute_run` regression asserts exactly one proof workflow invocation. Read-only
+projection also joins exact durable Proof rows without updating historical state;
+foreign or conflicting records fail closed. An un-released Run's full Review page
+loads its retained Review independently of the released Results Workspace.
+
+This correction does not resurrect the failed Run. Existing re-execution starts a
+new full workflow; a node-only continuation contract is not currently available.
+Neither final live acceptance nor publication nor Phase 6B is claimed.
+
 ## Gate and scope
 
 Completion → Trust → Performance. This is an offline-tested Phase 6A foundation,

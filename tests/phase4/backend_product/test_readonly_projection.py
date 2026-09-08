@@ -26,8 +26,7 @@ class Projection:
         return self.facts
 
     def model_copy(self, *, update):
-        assert not update
-        return self
+        return Projection({**self.facts, **update})
 
 
 class Session:
@@ -49,6 +48,8 @@ class Session:
 
     async def scalars(self, statement):
         assert isinstance(statement, Select), "Read issued non-SELECT SQL"
+        if "proof_records" in str(statement):
+            return SimpleNamespace(all=lambda: getattr(self.owner, "proof_rows", []))
         return SimpleNamespace(
             all=lambda: [SimpleNamespace(payload=SimpleNamespace(payload={"status": "FAILED"}))]
         )
@@ -151,4 +152,34 @@ async def test_missing_run_fails_without_persistence(setup):
     owner.row = None
     with pytest.raises(module.ProductError):
         await backend.get_projection("RUN-MISSING")
+    assert owner.commits == 0 and owner.writes == []
+
+
+@pytest.mark.parametrize("foreign", [False, True])
+async def test_durable_proof_is_read_without_rewriting_missing_aggregate_proofs(setup, foreign):
+    backend, owner = setup(RunStatus.FAILED, None)
+    proof = module.ProofRecord(
+        proof_id="PROOF-A",
+        run_id="RUN-FOREIGN" if foreign else "RUN-A",
+        calculation_id="CALC-A",
+        backend="risc0",
+        program_id="growth",
+        image_id="sha256:image",
+        implementation_hash="sha256:implementation",
+        input_commitment="sha256:input",
+        status="VERIFIED",
+    )
+    owner.proof_rows = [SimpleNamespace(proof_id="PROOF-A", payload=proof.model_dump(mode="json"))]
+    artifacts = owner.row.payload["artifacts"]
+    artifacts.calculations = [SimpleNamespace(run_id="RUN-A", calculation_id="CALC-A")]
+    artifacts.model_copy = lambda *, update: SimpleNamespace(**(vars(artifacts) | update))
+    if foreign:
+        with pytest.raises(module.ProductError):
+            await backend.get_projection("RUN-A")
+    else:
+        projected = await backend.get_projection("RUN-A")
+        assert projected.facts["proof"].status == "VERIFIED"
+        assert projected.facts["proof"].proof_refs == ("PROOF-A",)
+        assert projected.facts["proof"].availability.status.value == "AVAILABLE"
+    assert artifacts.proofs == []
     assert owner.commits == 0 and owner.writes == []
