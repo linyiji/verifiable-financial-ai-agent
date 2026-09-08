@@ -370,6 +370,8 @@ class OpenAICompatiblePlannerClient:
             )
             annotate(
                 actual_model=metadata.get("model"),
+                preferred_model=model,
+                requested_wire_model=model,
                 actual_model_reported=isinstance(metadata.get("model"), str),
                 input_tokens=_optional_int(usage_metadata.get("prompt_tokens")),
                 output_tokens=_optional_int(usage_metadata.get("completion_tokens")),

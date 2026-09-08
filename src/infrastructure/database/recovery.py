@@ -92,6 +92,10 @@ def capability_provenance(records, scope, routes):
         ):
             continue
         if record.outcome == "PASS" and record.output_hash:
+            if record.execution_outcome == "MODEL_EXECUTION_SUBSTITUTED":
+                # Observation is retained under actual_model; it does not certify
+                # either the preferred route or a new actual-model capability.
+                continue
             result[record.route] = (Capability.VERIFIED, record.record_id)
         elif record.outcome != "PASS" and (
             record.capability_check or record.failure_class == "MODEL_IDENTITY_MISMATCH"

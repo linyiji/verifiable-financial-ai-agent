@@ -112,6 +112,8 @@ class LLMStructuredResponse(Generic[StructuredModel]):
     request_id: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    execution_policy: dict | None = None
+    execution_outcome: str | None = None
 
     @property
     def used_model_fallback(self) -> bool:

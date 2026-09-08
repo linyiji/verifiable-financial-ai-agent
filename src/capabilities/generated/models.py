@@ -181,6 +181,8 @@ class GeneratedCapabilityCandidate:
     compiler_id: str | None = None
     compiler_version: str | None = None
     compiler_runtime_policy: str | None = None
+    execution_policy: dict | None = None
+    execution_outcome: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -77,6 +77,8 @@ class ResearchAgentOutputArtifactStore:
             "provider": response.provider,
             "requested_model": response.requested_model,
             "actual_model": response.actual_model,
+            "execution_policy": response.execution_policy,
+            "execution_outcome": response.execution_outcome,
             "attempted_models": list(response.attempted_models),
             "input_tokens": response.input_tokens,
             "output_tokens": response.output_tokens,
@@ -104,7 +106,7 @@ class ResearchAgentOutputArtifactStore:
         failure_code = getattr(classification, "value", None) or str(
             classification or "provider_failure"
         )
-        actual_model = getattr(error, "model", None)
+        actual_model = getattr(error, "actual_model", None)
         payload = {
             "schema_version": "research-agent-output/v1",
             "run_id": task.run_id,
@@ -182,6 +184,8 @@ class ResearchAgentOutputArtifactStore:
             actor=task.assigned_agent,
             provider=str(payload["provider"]),
             requested_model=str(payload["requested_model"]),
+            execution_policy=payload.get("execution_policy"),
+            execution_outcome=payload.get("execution_outcome"),
             actual_model=(
                 str(payload["actual_model"])
                 if isinstance(payload.get("actual_model"), str)

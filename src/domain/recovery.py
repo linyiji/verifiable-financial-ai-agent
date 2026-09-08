@@ -173,6 +173,17 @@ class RecoveryEvidence(Frozen):
     failure_class: FailureClass | None = None
     actual_model: ModelId | None = None
     requested_model: ModelId | None = None
+    execution_policy: dict | None = None
+    execution_outcome: (
+        Literal[
+            "MODEL_EXECUTION_DIRECT",
+            "MODEL_EXECUTION_SUBSTITUTED",
+            "MODEL_IDENTITY_OUT_OF_POLICY",
+            "PROVIDER_IDENTITY_OUT_OF_POLICY",
+        ]
+        | None
+    ) = None
+    policy_gate_result: Literal["ALLOW", "DENY"] | None = None
     candidate_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     reason_code: Literal[
         "OBSERVED",
@@ -189,3 +200,26 @@ class RecoveryEvidence(Frozen):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     output_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_execution_policy(self):
+        if self.execution_policy is not None:
+            from src.domain.model_execution import ModelExecutionPolicy
+
+            policy = ModelExecutionPolicy.model_validate(self.execution_policy)
+            if (
+                policy.task_profile != self.scope.task_profile
+                or policy.provider_route != self.route
+                or policy.preferred_model != self.requested_model
+                or policy.provider != self.provider
+            ):
+                raise ValueError("Execution policy scope mismatch")
+            if self.outcome == "PASS":
+                outcome = policy.outcome(self.provider, self.requested_model, self.actual_model)
+                if (
+                    outcome not in {"MODEL_EXECUTION_DIRECT", "MODEL_EXECUTION_SUBSTITUTED"}
+                    or outcome != self.execution_outcome
+                    or self.policy_gate_result != "ALLOW"
+                ):
+                    raise ValueError("Execution identity is outside policy")
+        return self

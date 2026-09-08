@@ -101,6 +101,8 @@ Provider / Model Failure → Recovery Decision → Policy Gate → Same-Run Reco
 
 ## Adaptive Runtime · 自适应运行时
 
+Provider / Model 恢复允许在策略预授权模型集合内进行受控动态替换；Preferred Model 与真实 Actual Model 分开记录，包含 MiMo Provider / mimo-v2.5 授权，超出授权集合仍会被拒绝。
+
 系统基于自有错误分类提出恢复决策，独立策略检查身份、路由权限、能力证据和剩余预算，再允许下一次调用。恢复不会重生成 Scheme、更换知识基线或悄悄新建 Run。
 
 注册路由仅包括 `teamorouter-sol`、`teamorouter-luna`、`mimo-direct`。[运行时架构与预算](docs/architecture/ADAPTIVE_RUNTIME.zh-CN.md)。

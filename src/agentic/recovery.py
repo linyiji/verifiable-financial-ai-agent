@@ -17,6 +17,7 @@ from src.agentic.recovery_policy import (
     classify,
     policy_allows,
 )
+from src.domain.model_execution import resolve_model_execution
 from src.domain.recovery import (
     Action,
     Capability,
@@ -59,6 +60,7 @@ class AdaptiveRecovery:
         budget=None,
         supervisor=None,
         forbidden_values=(),
+        model_grants=None,
     ):
         self.detector = ProviderDetector(routes)
         self.clients = dict(clients)
@@ -69,6 +71,7 @@ class AdaptiveRecovery:
         self.budget = budget or RecoveryBudget()
         self.supervisor = supervisor or ResearchLeadRecoverySupervisor()
         self.forbidden = tuple(value for value in forbidden_values if value)
+        self.model_grants = model_grants
 
     async def execute(self, context, initial_provider, **kwargs):
         task = context.task
@@ -133,7 +136,10 @@ class AdaptiveRecovery:
                 and (datetime.now(UTC) - datetime.fromisoformat(observed.timestamp)).total_seconds()
                 < 86400
             ):
-                if observed.outcome == "PASS":
+                if (
+                    observed.outcome == "PASS"
+                    and observed.execution_outcome != "MODEL_EXECUTION_SUBSTITUTED"
+                ):
                     health[observed.route] = Health.HEALTHY
                 elif observed.failure_class in {
                     FailureClass.READ_TIMEOUT,
@@ -211,6 +217,15 @@ class AdaptiveRecovery:
             if remaining() <= 0:
                 await stop("RECOVERY_BUDGET_EXHAUSTED")
             attempt_id = "ATT-" + str(uuid4())
+            model_policy = resolve_model_execution(
+                scope,
+                route,
+                routes,
+                capabilities,
+                self.budget,
+                check=check,
+                grants=self.model_grants,
+            )
             common = dict(
                 attempt_id=attempt_id,
                 attempt_number=checks if check else len(history),
@@ -219,10 +234,12 @@ class AdaptiveRecovery:
                 model=candidate.model,
                 requested_model=candidate.model,
                 capability_check=check,
+                execution_policy=model_policy.model_dump(mode="json"),
             )
             await record("ATTEMPT_STARTED", "STARTED", **common)
             clock = monotonic()
             actual_model = None
+            execution_outcome = None
             try:
                 async with asyncio.timeout(remaining()):
                     response = await self.clients[route].complete_structured(**kwargs)
@@ -234,12 +251,10 @@ class AdaptiveRecovery:
                     "mimo-v2.5-pro",
                 }:
                     actual_model = response.actual_model
-                if (
-                    response.provider != candidate.provider
-                    or response.actual_model != candidate.model
-                    or generated
-                    and response.requested_model != candidate.model
-                ):
+                execution_outcome = model_policy.outcome(
+                    response.provider, response.requested_model, response.actual_model
+                )
+                if execution_outcome.endswith("OUT_OF_POLICY"):
                     raise LLMProviderError(
                         "Provider response route identity mismatch",
                         failure_classification=Code.MODEL_IDENTITY_MISMATCH,
@@ -268,8 +283,14 @@ class AdaptiveRecovery:
                     output_hash=digest(output.model_dump(mode="json")),
                     actual_model=actual_model,
                     candidate_hash=candidate_hash,
+                    execution_outcome=execution_outcome,
+                    policy_gate_result="ALLOW",
                 )
-                return response, None
+                return replace(
+                    response,
+                    execution_policy=model_policy.model_dump(mode="json"),
+                    execution_outcome=execution_outcome,
+                ), None
             except asyncio.CancelledError:
                 await record(
                     "ATTEMPT_COMPLETED",
@@ -311,6 +332,10 @@ class AdaptiveRecovery:
                     latency_ms=(monotonic() - clock) * 1000,
                     failure_class=assessment.failure_class,
                     actual_model=actual_model,
+                    execution_outcome=execution_outcome,
+                    policy_gate_result="DENY"
+                    if execution_outcome and execution_outcome.endswith("OUT_OF_POLICY")
+                    else None,
                 )
                 last_failure = assessment.failure_class
                 last_failure_route = route
@@ -405,6 +430,17 @@ class AdaptiveRecovery:
             if decision.action == Action.CAPABILITY_CHECK:
                 checks += 1
                 checked, check_failure = await invoke(target, check=True)
+                if (
+                    checked is not None
+                    and checked.execution_outcome == "MODEL_EXECUTION_SUBSTITUTED"
+                ):
+                    # A successful bounded check already executed and validated the exact
+                    # task input. Consume that output, not a free duplicate HTTP attempt.
+                    # It is observed success, not certification of the preferred route.
+                    history.append(target)
+                    attempted_models.append(routes[target].model)
+                    response = checked
+                    break
                 capabilities[target] = (
                     Capability.VERIFIED if checked is not None else Capability.QUARANTINED
                 )

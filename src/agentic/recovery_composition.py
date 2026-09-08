@@ -139,6 +139,10 @@ async def build_adaptive_recovery(settings, sessions, *, forbidden_values=()):
                     health[matched] = Health.DEGRADED
             if retained.status != "SUCCESS":
                 continue
+            if retained.execution_outcome == "MODEL_EXECUTION_SUBSTITUTED":
+                # Restart must not turn an observed substituted success into
+                # capability certification; independent exact evidence is required.
+                continue
             schema = (
                 RiskResearchAgentStructuredOutput
                 if task["task_type"] == "risk_analysis"

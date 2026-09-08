@@ -58,6 +58,8 @@ class ResearchAgentOutputRecord(TimestampedModel):
     provider: str
     requested_model: str
     actual_model: str | None = None
+    execution_policy: dict | None = None
+    execution_outcome: str | None = None
     attempted_models: list[str] = Field(default_factory=list)
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
@@ -73,6 +75,16 @@ class ResearchAgentOutputRecord(TimestampedModel):
 
     @model_validator(mode="after")
     def validate_identity_and_status(self) -> ResearchAgentOutputRecord:
+        if self.execution_policy is not None:
+            from src.domain.model_execution import ModelExecutionPolicy
+
+            policy = ModelExecutionPolicy.model_validate(self.execution_policy)
+            outcome = policy.outcome(self.provider, policy.preferred_model, self.actual_model)
+            if self.status == "SUCCESS" and (
+                outcome not in {"MODEL_EXECUTION_DIRECT", "MODEL_EXECUTION_SUBSTITUTED"}
+                or outcome != self.execution_outcome
+            ):
+                raise ValueError("Agent output execution identity is outside policy")
         required = (
             self.output_id,
             self.run_id,

@@ -56,6 +56,8 @@ class CapabilityGapRecord(TimestampedModel):
 
 
 class GeneratedCapabilityRecord(TimestampedModel):
+    generated_by_actual_model: str | None = None
+    execution_policy: dict | None = None
     generated_capability_id: str
     run_id: str
     task_id: str
@@ -120,6 +122,8 @@ class GeneratedCapabilityArtifactRecord(TimestampedModel):
 
 
 class CapabilityBuildRecord(TimestampedModel):
+    execution_policy: dict | None = None
+    execution_outcome: str | None = None
     build_id: str
     gap_id: str
     run_id: str

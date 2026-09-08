@@ -6,7 +6,7 @@ const profiles: Record<string, string> = { fundamental_analysis: "Fundamental An
 const actions: Record<string, string> = { SWITCH_PROVIDER: "切换供应商", SWITCH_MODEL: "切换模型", CAPABILITY_CHECK: "能力检查", RETRY_SAME_ROUTE: "重试当前路由", WAIT_AND_RETRY: "等待后重试", FAIL_TASK: "停止 Task", FAIL_RUN: "停止 Run", REPLAN_TASK: "申请重新规划", CORRECT_RESEARCH_PATH: "申请研究修正" };
 
 export function RecoveryTimeline({ rows }: { rows: readonly RecoveryRow[] }) {
-  const tasks = [...new Set(rows.filter(r => r.kind === "DECISION" || r.kind === "TERMINAL").map(r => r.taskId))];
+  const tasks = [...new Set(rows.map(r => r.taskId))];
   return <section className="runtime-recovery" aria-label="同 Run 运行恢复">
     <h3>同 Run 运行恢复</h3>
     <p>原 Task / Run 身份保持不变。Main Agent 提议，Policy Gate 审核；以下只读记录不触发重试，也不展示私有推理。</p>
@@ -17,6 +17,7 @@ export function RecoveryTimeline({ rows }: { rows: readonly RecoveryRow[] }) {
           <strong>{r.kind === "DECISION" ? `Recovery Decision · ${actions[r.action ?? ""] ?? "未提供动作"}` : r.kind === "TERMINAL" ? "恢复终止" : `${r.check ? "能力检查" : "执行尝试"} #${r.attempt} · ${r.kind === "ATTEMPT_STARTED" ? "开始" : "完成"}`}</strong>
           <span>{r.route ?? "无目标路由"}{r.model ? ` / ${r.model}` : ""} · {r.kind === "DECISION" ? "Policy Gate: " : ""}{r.outcome}{r.failure ? ` · ${r.failure}` : ""}{r.reason !== "OBSERVED" ? ` · ${r.reason}` : ""}{r.latencyMs !== null ? ` · ${(r.latencyMs / 1000).toFixed(2)}s` : ""}</span>
           <small>{r.id}</small>
+          {r.actualModel && <span>Preferred Model: {r.preferredModel ?? "历史记录未提供"} · Actual Model: {r.actualModel} · {r.routing === "MODEL_EXECUTION_SUBSTITUTED" ? "受控动态模型替换" : r.routing ?? "历史精确模型记录"} · Policy: {r.policyGate ?? "历史记录未提供"}</span>}
         </li>)}</ol>
       </article>;
     })}

@@ -101,6 +101,8 @@ Current local React product, real persisted research, accepted orange logo. No p
 
 ## Adaptive Runtime
 
+Provider/model recovery supports bounded dynamic substitution within the policy-authorized model set; preferred and actual models are recorded separately, including MiMo Provider / mimo-v2.5 authority.
+
 An owned failure classification produces a recovery proposal; an independent policy checks exact identity, route authority, capability evidence and remaining budgets before another invocation. Recovery does not regenerate the Scheme, change the knowledge base, or silently create another Run.
 
 Registered routes: `teamorouter-sol`, `teamorouter-luna`, `mimo-direct`. Only configured, permitted candidates can execute. [Architecture and limits](docs/architecture/ADAPTIVE_RUNTIME.md).

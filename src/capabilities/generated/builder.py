@@ -23,7 +23,19 @@ from src.capabilities.generated.spec import (
     expected_spec,
 )
 from src.capabilities.generated.telemetry import GeneratedCapabilityTrace
+from src.domain.model_execution import ModelExecutionPolicy
 from src.observability.performance import observe, span
+
+
+def _authorized_execution(response):
+    if response.execution_policy is None:
+        return False
+    policy = ModelExecutionPolicy.model_validate(response.execution_policy)
+    return (
+        policy.outcome(response.provider, response.requested_model, response.actual_model)
+        == response.execution_outcome
+        == "MODEL_EXECUTION_SUBSTITUTED"
+    )
 
 
 class CodeBuilderOutputMismatch(GeneratedCapabilityBundleValidationError):
@@ -130,7 +142,10 @@ class PlannerProviderCodeBuilder:
                         responses.append(response)
                         if self._exact_model is not None and (
                             response.actual_model != self._exact_model
-                            or response.requested_model != self._exact_model
+                            or (
+                                response.requested_model != self._exact_model
+                                and not _authorized_execution(response)
+                            )
                             or response.provider != self.provider_name
                         ):
                             raise CodeBuilderModelIdentityError(
@@ -258,6 +273,8 @@ class PlannerProviderCodeBuilder:
                         requested_model=responses[0].requested_model,
                         actual_model=response.actual_model,
                         attempted_models=attempted_models,
+                        execution_policy=response.execution_policy,
+                        execution_outcome=response.execution_outcome,
                         input_tokens=input_tokens,
                         output_tokens=output_tokens,
                         latency_ms=latency_ms,

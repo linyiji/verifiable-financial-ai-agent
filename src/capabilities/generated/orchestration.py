@@ -286,6 +286,8 @@ class GeneratedCapabilityOrchestrator:
                     update={
                         "requested_model": candidate.requested_model,
                         "actual_model": candidate.actual_model,
+                        "execution_policy": candidate.execution_policy,
+                        "execution_outcome": candidate.execution_outcome,
                         "provider": candidate.provider,
                         "lifecycle": CapabilityLifecycle.GENERATED,
                         "generated_capability_ref": generated.generated_capability_id,
@@ -665,6 +667,8 @@ def _generated_record(
     generated_id = f"GEN-{uuid4()}"
     return GeneratedCapabilityRecord(
         generated_capability_id=generated_id,
+        generated_by_actual_model=candidate.actual_model,
+        execution_policy=candidate.execution_policy,
         run_id=request.run_id,
         task_id=request.task_id,
         gap_id=gap.gap_id,
