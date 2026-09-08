@@ -49,6 +49,7 @@ from src.domain.financial_semantics import evidence_unit_class
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
 from src.observability.instrumentation import RuntimeInstrumentation
+from src.runtime.diagnostics import InsufficientTechnicalHistoryError
 from src.runtime.events import RuntimeEventStore
 from src.runtime.state import RuntimeState
 from src.tooling.native import NativeToolBackend
@@ -172,6 +173,9 @@ class Phase3FinancialCapabilityExtension:
     ) -> TaskCalculationExtensionResult:
         _validate_extension_evidence(task, evidence, context)
         operating_cash_flow, capital_expenditure, revenue = _select_fcf_margin_inputs(evidence)
+        # This extension also requires SMA200. Check its independent evidence
+        # prerequisite before building/invoking FCF, not after an FCF started event.
+        history = _ordered_historical_evidence(evidence)
         requirement = free_cash_flow_margin_requirement(task)
         request = SpecialistCapabilityRequest(
             run_id=task.run_id,
@@ -239,7 +243,6 @@ class Phase3FinancialCapabilityExtension:
             ),
         )
 
-        history = _ordered_historical_evidence(evidence)
         technical_context = CapabilityContext(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -495,9 +498,9 @@ def _ordered_historical_evidence(
         for key in ("close", "volume")
         if (record := grouped[observed].get(key)) is not None
     ]
-    days = {record.as_of for record in history}
-    if len(days) < 200:
-        raise LookupError("at least 200 accepted paired historical observations are required")
+    paired_days = sum("close" in fields and "volume" in fields for fields in grouped.values())
+    if paired_days < 200:
+        raise InsufficientTechnicalHistoryError(paired_days)
     return history
 
 

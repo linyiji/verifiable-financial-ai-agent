@@ -1,0 +1,23 @@
+def run_tests(execute, fixture):
+    result = execute(fixture)
+    with localcontext() as decimal_context:
+        decimal_context.prec = _DECIMAL_PRECISION
+        operating_cash_flow = Decimal(str(fixture["operating_cash_flow"]))
+        capital_expenditure = Decimal(str(fixture["capital_expenditure"]))
+        revenue = Decimal(str(fixture["revenue"]))
+        expected = ((operating_cash_flow + capital_expenditure) / revenue)
+    assert Decimal(str(result["value"])) == expected
+    assert result["unit"] == "RATIO"
+    known_fixture = {'operating_cash_flow': '125', 'capital_expenditure': '-25', 'revenue': '200'}
+    known_result = execute(known_fixture)
+    assert Decimal(str(known_result["value"])) == Decimal("0.5")
+    assert known_result["unit"] == "RATIO"
+    zero_denominator = dict(fixture)
+    zero_denominator["revenue"] = "0"
+    denominator_rejected = False
+    try:
+        execute(zero_denominator)
+    except ValueError:
+        denominator_rejected = True
+    assert denominator_rejected
+    return True

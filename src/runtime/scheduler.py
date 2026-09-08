@@ -9,6 +9,7 @@ from src.domain.enums import RunStatus, TaskStatus
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
 from src.runtime.checkpoint import CheckpointStore, RuntimeCheckpoint
+from src.runtime.diagnostics import task_failure_diagnostic
 from src.runtime.events import RuntimeEventStore
 from src.runtime.lifecycle import transition_task
 from src.runtime.state import RuntimeState
@@ -253,6 +254,7 @@ class DependencyScheduler:
             except Exception as error:
                 task = state.task(task_id)
                 last_error = error
+                diagnostic = task_failure_diagnostic(error, task=task, attempt=attempt)
                 if task.status is TaskStatus.CAPABILITY_BUILD_FAILED:
                     await self._event_store.emit(
                         run_id=state.run_id,
@@ -263,6 +265,7 @@ class DependencyScheduler:
                             "failure_code": "CAPABILITY_BUILD_FAILED",
                             "status": TaskStatus.CAPABILITY_BUILD_FAILED.value,
                             "retry_suppressed": True,
+                            "internal_diagnostic": diagnostic,
                         },
                     )
                     raise
@@ -281,6 +284,7 @@ class DependencyScheduler:
                             "action": "retry_scheduled",
                             "attempt": attempt,
                             "error_code": "TASK_EXECUTION_FAILED",
+                            "internal_diagnostic": diagnostic,
                         },
                     )
                     if self._retry_policy.backoff_seconds:
@@ -294,6 +298,7 @@ class DependencyScheduler:
                     payload={
                         "attempt": attempt,
                         "failure_code": "TASK_EXECUTION_FAILED",
+                        "internal_diagnostic": diagnostic,
                     },
                 )
                 raise

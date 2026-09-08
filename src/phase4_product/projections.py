@@ -1272,8 +1272,15 @@ def project_event(
     if task_id is not None and task_id not in set(known_task_ids):
         raise ProjectionIntegrityError("RuntimeEvent names a Task outside the Run graph")
     try:
+        event_payload = _field(event, "payload")
+        if event_type in {"task.failed", "task.progress"} and isinstance(event_payload, dict):
+            # Durable diagnostics are internal evidence, never public activity content.
+            event_payload = {
+                key: value for key, value in event_payload.items()
+                if key != "internal_diagnostic"
+            }
         payload = safe_json_object(
-            _field(event, "payload"),
+            event_payload,
             allowed_keys=allowed_keys,
             context=f"RuntimeEvent[{event_type}].payload",
         )

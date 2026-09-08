@@ -428,7 +428,10 @@ async def test_sse_replays_by_sequence_and_emits_heartbeat_when_idle() -> None:
     store = InMemoryRuntimeEventStore()
     first = await store.emit(run_id="RUN-1", event_type=RuntimeEventType.RUN_STARTED)
     await store.emit(run_id="RUN-1", event_type=RuntimeEventType.TASK_READY, task_id="A")
-    third = await store.emit(run_id="RUN-1", event_type=RuntimeEventType.TASK_STARTED, task_id="A")
+    third = await store.emit(
+        run_id="RUN-1", event_type=RuntimeEventType.TASK_STARTED,
+        task_id="A", payload={"attempt": 1},
+    )
 
     stream = runtime_event_stream(
         store=store,

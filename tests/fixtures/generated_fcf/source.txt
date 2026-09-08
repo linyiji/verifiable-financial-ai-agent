@@ -1,0 +1,17 @@
+from decimal import Decimal, localcontext
+
+_DECIMAL_PRECISION = 28
+
+def execute(inputs):
+    with localcontext() as decimal_context:
+        decimal_context.prec = _DECIMAL_PRECISION
+        operating_cash_flow = Decimal(str(inputs["operating_cash_flow"]))
+        capital_expenditure = Decimal(str(inputs["capital_expenditure"]))
+        revenue = Decimal(str(inputs["revenue"]))
+        if revenue == Decimal("0"):
+            raise ValueError("revenue_non_zero")
+        signed_free_cash_flow = (operating_cash_flow + capital_expenditure)
+        result = (signed_free_cash_flow / revenue)
+        if not result.is_finite():
+            raise ValueError("result_is_finite")
+        return {"value": str(result), "unit": "RATIO"}
