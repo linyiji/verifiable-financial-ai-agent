@@ -174,6 +174,23 @@ class PostgresRuntimeEventStore:
                 .order_by(RuntimeEventRow.sequence)
             )
             rows = (await session.scalars(statement)).all()
+            if rows and rows[0].payload.get("type") == "closure.recovery_started":
+                # A suffix beginning at the recovery boundary must validate its
+                # failed predecessor, rather than treating it as an unbound restart.
+                full_rows = (
+                    await session.scalars(
+                        select(RuntimeEventRow)
+                        .where(RuntimeEventRow.run_id == run_id)
+                        .order_by(RuntimeEventRow.sequence)
+                    )
+                ).all()
+                return [
+                    event
+                    for event in self._decode_rows(
+                        run_id=run_id, rows=full_rows, committed_sequence=0
+                    )
+                    if event.sequence > after_sequence
+                ]
         return self._decode_rows(
             run_id=run_id,
             rows=rows,

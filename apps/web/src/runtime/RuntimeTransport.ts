@@ -5,6 +5,7 @@ export const RUNTIME_EVENT_CONTRACT_VERSION = "phase4-runtime-event/v1" as const
 export const RUNTIME_PAYLOAD_SCHEMA_VERSION = 1 as const;
 
 export const RUNTIME_EVENT_TYPES_V1 = [
+  "closure.recovery_started",
   "run.created", "run.started", "run.status_changed", "run.completed", "run.failed",
   "scheme.generation_started", "scheme.generated", "scheme.confirmed", "plan.generated",
   "task.created", "task.ready", "task.started", "task.progress",
@@ -53,6 +54,7 @@ export type RuntimeEventEffectV1 =
   | "TERMINAL";
 
 export const RUNTIME_EVENT_EFFECT_BY_TYPE_V1 = Object.freeze({
+  "closure.recovery_started": "REFRESH_PROJECTION",
   "run.started": "PATCH_PROJECTION",
   "run.status_changed": "PATCH_PROJECTION",
   "task.ready": "PATCH_PROJECTION",
@@ -276,6 +278,8 @@ const EMPTY_PAYLOAD_TYPES = new Set<SupportedRuntimeEventTypeV1>([
 ]);
 
 const PAYLOAD_SPECS = Object.freeze({
+  "closure.recovery_started": spec({attempt_id: isSafeString, failed_event_id: isSafeString,
+    snapshot_hash: isSafeString, status: isLiteral("REVIEW")}),
   "run.created": spec({ object_id: isSafeString }),
   "run.status_changed": spec({ status: isOneOf(NONTERMINAL_RUN_STATUSES) }),
   "run.completed": spec({ status: isLiteral("RELEASED") }),

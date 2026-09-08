@@ -3333,10 +3333,17 @@ export function decodeRunProjection(
   }
   if (terminal.isTerminal) {
     const finalActivity = activity.at(-1);
-    const completedActivityCount = activity.filter(
+    const recoveryIndex = activity.findIndex(event => event.type === "closure.recovery_started");
+    if (recoveryIndex >= 0 && (
+      activity.filter(event => event.type === "closure.recovery_started").length !== 1 ||
+      activity[recoveryIndex - 1]?.type !== "run.failed" ||
+      activity[recoveryIndex - 1]?.status !== "FAILED"
+    )) return fail("$.activity", "closure recovery must follow one historical failure");
+    const currentActivity = recoveryIndex < 0 ? activity : activity.slice(recoveryIndex + 1);
+    const completedActivityCount = currentActivity.filter(
       (event) => event.type === "run.completed"
     ).length;
-    const failedActivityCount = activity.filter((event) => event.type === "run.failed").length;
+    const failedActivityCount = currentActivity.filter((event) => event.type === "run.failed").length;
     if (
       finalActivity === undefined ||
       finalActivity.eventId !== terminal.eventId ||

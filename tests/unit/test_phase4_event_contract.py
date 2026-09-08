@@ -51,11 +51,11 @@ def test_frozen_inventory_schema_and_effect_table_are_total() -> None:
     supported = {event_type.value for event_type in SUPPORTED_RUNTIME_EVENT_TYPES}
     unsupported = {event_type.value for event_type in UNSUPPORTED_RUNTIME_EVENT_TYPES}
 
-    assert len(raw_types) == len(set(raw_types)) == disposition["raw_type_count"] == 55
+    assert len(raw_types) == len(set(raw_types)) == disposition["raw_type_count"] == 56
     assert schema["properties"]["type"]["enum"] == raw_types
     assert supported.isdisjoint(unsupported)
     assert supported | unsupported == set(raw_types)
-    assert len(supported) == disposition["supported_v1_count"] == 47
+    assert len(supported) == disposition["supported_v1_count"] == 48
     assert unsupported == set(disposition["unsupported_v1"])
     assert {event_type.value for event_type in GRAPH_VERSION_RUNTIME_EVENT_TYPES} == set(
         disposition["graph_version_required_v1"]
@@ -64,7 +64,7 @@ def test_frozen_inventory_schema_and_effect_table_are_total() -> None:
         disposition["task_id_required_v1"]
     )
     assert set(EVENT_EFFECT_BY_TYPE) == SUPPORTED_RUNTIME_EVENT_TYPES
-    assert sum(disposition["effect_counts"].values()) == 47
+    assert sum(disposition["effect_counts"].values()) == 48
     for effect, expected_count in disposition["effect_counts"].items():
         actual_count = sum(value.value == effect for value in EVENT_EFFECT_BY_TYPE.values())
         assert actual_count == expected_count
@@ -173,8 +173,8 @@ def test_frontend_decoder_guard_and_fingerprint_fail_closed_without_payload_leak
       const runtime = await import({json.dumps(module_url)});
       const schema = JSON.parse(await readFile(new URL({json.dumps(schema_url)}), "utf8"));
       const disposition = schema["x-runtime-event-disposition"];
-      assert.equal(runtime.RUNTIME_EVENT_TYPES_V1.length, 55);
-      assert.equal(runtime.SUPPORTED_RUNTIME_EVENT_TYPES_V1.length, 47);
+      assert.equal(runtime.RUNTIME_EVENT_TYPES_V1.length, 56);
+      assert.equal(runtime.SUPPORTED_RUNTIME_EVENT_TYPES_V1.length, 48);
       assert.equal(runtime.UNSUPPORTED_RUNTIME_EVENT_TYPES_V1.length, 8);
       assert.deepEqual(
         [...runtime.GRAPH_VERSION_RUNTIME_EVENT_TYPES_V1].sort(),

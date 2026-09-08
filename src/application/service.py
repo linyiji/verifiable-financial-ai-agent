@@ -451,7 +451,11 @@ class ResearchApplicationService:
         return routing
 
     async def _assure_and_release(
-        self, aggregate: RunAggregate, *, proof_outcome: ProofWorkflowOutcome | None = None
+        self,
+        aggregate: RunAggregate,
+        *,
+        proof_outcome: ProofWorkflowOutcome | None = None,
+        retain_review: bool = False,
     ) -> None:
         run_id = aggregate.run.run_id
         calculations_before_review = list(aggregate.artifacts.calculations)
@@ -497,6 +501,76 @@ class ResearchApplicationService:
             calculation.calculation_id: proof_policy.requirement_for(calculation)
             for calculation in calculations_before_review
         }
+        if retain_review:
+            if proof_outcome is None or aggregate.artifacts.review is None:
+                raise ApplicationError(
+                    "RECOVERY_ASSURANCE_MISSING", "Retained assurance is required"
+                )
+            # ReleaseGate below revalidates the retained Review input hash and exact
+            # Scheme requirement context; a PASS label alone cannot authorize release.
+            review = aggregate.artifacts.review
+        else:
+            await self._review_for_release(
+                aggregate,
+                strict_financial_release,
+                calculations_before_review,
+                released_metrics,
+                material_claims,
+                judgments,
+                proof_requirements,
+            )
+            review = aggregate.artifacts.review
+
+        if review.status.value != "PASS":
+            raise ApplicationError(
+                "REVIEW_BLOCKED",
+                "independent review did not pass",
+                details={"review_id": review.review_id, "status": review.status.value},
+            )
+
+        gaps = release_requirement_gaps(aggregate)
+        if gaps:
+            raise ApplicationError(
+                "INCOMPLETE_RESEARCH_NOT_RELEASED",
+                "Required research outputs remain unavailable.",
+                details={"reason_codes": list(gaps)},
+            )
+
+        if proof_outcome is None:
+            proof_outcome = await self._execute_proof_workflow(aggregate)
+        if proof_outcome.requirements != proof_requirements:
+            raise ApplicationError(
+                "PROOF_POLICY_CHANGED_AFTER_REVIEW",
+                "proof requirements changed after independent review",
+            )
+        aggregate.artifacts.proofs = list(proof_outcome.proofs.values())
+        aggregate.runtime.proof_state = proof_outcome.runtime_state
+
+        await self._release_reviewed_artifacts(
+            aggregate,
+            review,
+            proof_outcome,
+            strict_financial_release,
+            calculations_before_review,
+            released_metrics,
+            material_claims,
+            material_dispositions,
+            judgments,
+            source_coverage,
+            research_news_result,
+        )
+
+    async def _review_for_release(
+        self,
+        aggregate,
+        strict_financial_release,
+        calculations_before_review,
+        released_metrics,
+        material_claims,
+        judgments,
+        proof_requirements,
+    ):
+        run_id = aggregate.run.run_id
         async with self.instrumentation.review(
             run_id=run_id,
             attributes={"review_id": f"REVIEW-{run_id}"},
@@ -538,31 +612,21 @@ class ResearchApplicationService:
                 payload={"review_id": review.review_id, "status": review.status.value},
             )
 
-        if review.status.value != "PASS":
-            raise ApplicationError(
-                "REVIEW_BLOCKED",
-                "independent review did not pass",
-                details={"review_id": review.review_id, "status": review.status.value},
-            )
-
-        gaps = release_requirement_gaps(aggregate)
-        if gaps:
-            raise ApplicationError(
-                "INCOMPLETE_RESEARCH_NOT_RELEASED",
-                "Required research outputs remain unavailable.",
-                details={"reason_codes": list(gaps)},
-            )
-
-        if proof_outcome is None:
-            proof_outcome = await self._execute_proof_workflow(aggregate)
-        if proof_outcome.requirements != proof_requirements:
-            raise ApplicationError(
-                "PROOF_POLICY_CHANGED_AFTER_REVIEW",
-                "proof requirements changed after independent review",
-            )
-        aggregate.artifacts.proofs = list(proof_outcome.proofs.values())
-        aggregate.runtime.proof_state = proof_outcome.runtime_state
-
+    async def _release_reviewed_artifacts(
+        self,
+        aggregate,
+        review,
+        proof_outcome,
+        strict_financial_release,
+        calculations_before_review,
+        released_metrics,
+        material_claims,
+        material_dispositions,
+        judgments,
+        source_coverage,
+        research_news_result,
+    ):
+        run_id = aggregate.run.run_id
         release_decision = ReleaseGate().evaluate(
             requirement_context=requirement_context(
                 aggregate.scheme, aggregate.artifacts.financial_branches

@@ -334,6 +334,9 @@ _SAFE_FAILURE_CODES_BY_STAGE: dict[str, frozenset[str]] = {
 }
 
 _EVENT_PAYLOAD_KEYS: dict[str, frozenset[str]] = {
+    "closure.recovery_started": frozenset(
+        {"attempt_id", "failed_event_id", "snapshot_hash", "status"}
+    ),
     "run.created": frozenset({"object_id"}),
     "run.started": frozenset(),
     "run.status_changed": frozenset({"status"}),

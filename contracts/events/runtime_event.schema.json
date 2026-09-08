@@ -19,6 +19,7 @@
       "type": "string",
       "enum": [
         "run.created", "run.started", "run.status_changed", "run.completed", "run.failed",
+        "closure.recovery_started",
         "scheme.generation_started", "scheme.generated", "scheme.confirmed", "plan.generated",
         "task.created", "task.ready", "task.started", "task.progress",
         "task.waiting_for_capability", "task.resumed", "task.self_correcting",
@@ -76,7 +77,7 @@
               "graph.task_added", "graph.edge_added", "graph.edge_removed",
               "graph.version_changed", "review.started", "review.resolved", "proof.started",
               "proof.required", "proof.generated", "proof.verified", "proof.failed",
-              "release.completed"
+              "release.completed", "closure.recovery_started"
             ]},
             "effect": {"const": "REFRESH_PROJECTION"},
             "projection_refresh_required": {"const": true}
@@ -155,6 +156,7 @@
     {
       "oneOf": [
         {"properties": {"type": {"const": "run.created"}, "payload": {"$ref": "#/$defs/runCreated"}}},
+        {"properties": {"type": {"const": "closure.recovery_started"}, "payload": {"$ref": "#/$defs/closureRecovery"}}},
         {"properties": {"type": {"const": "run.started"}, "payload": {"$ref": "#/$defs/empty"}}},
         {"properties": {"type": {"const": "run.status_changed"}, "payload": {"$ref": "#/$defs/runStatusChanged"}}},
         {"properties": {"type": {"const": "run.completed"}, "payload": {"$ref": "#/$defs/runCompleted"}}},
@@ -205,6 +207,9 @@
     }
   ],
   "$defs": {
+    "closureRecovery": {"type": "object", "additionalProperties": false,
+      "required": ["attempt_id", "failed_event_id", "snapshot_hash", "status"],
+      "properties": {"attempt_id": {"$ref": "#/$defs/safeString"}, "failed_event_id": {"$ref": "#/$defs/safeString"}, "snapshot_hash": {"$ref": "#/$defs/safeString"}, "status": {"const": "REVIEW"}}},
     "safeString": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f]+$"},
     "utcTimestamp": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|\\+00:00)$"},
     "positiveInteger": {"type": "integer", "minimum": 1},
@@ -290,8 +295,8 @@
     "releaseCompleted": {"type": "object", "additionalProperties": false, "required": ["canonical_record_id", "result_id"], "properties": {"canonical_record_id": {"$ref": "#/$defs/safeString"}, "result_id": {"$ref": "#/$defs/safeString"}}}
   },
   "x-runtime-event-disposition": {
-    "raw_type_count": 55,
-    "supported_v1_count": 47,
+    "raw_type_count": 56,
+    "supported_v1_count": 48,
     "unsupported_v1": [
       "scheme.generation_started", "replan.rejected", "evidence.conflict",
       "workspace.created", "capability.generation_started", "capability.tested",
@@ -312,6 +317,6 @@
       "capability.test_failed", "capability.financial_validated", "capability.approved",
       "capability.registered", "capability.build_failed"
     ],
-    "effect_counts": {"PATCH_PROJECTION": 10, "REFRESH_PROJECTION": 20, "OBSERVATION_ONLY": 15, "TERMINAL": 2}
+    "effect_counts": {"PATCH_PROJECTION": 10, "REFRESH_PROJECTION": 21, "OBSERVATION_ONLY": 15, "TERMINAL": 2}
   }
 }

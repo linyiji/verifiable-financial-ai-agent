@@ -8,6 +8,7 @@ from types import MappingProxyType
 from src.domain.runtime_event import (
     EVENT_CONTRACT_VERSION,
     RuntimeEvent,
+    RuntimeEventType,
     normalize_runtime_event_v1,
 )
 from src.runtime.events import (
@@ -123,8 +124,10 @@ async def runtime_event_stream(
 
     cursor = RuntimeEventCursor(
         run_id=run_id,
-        committed_sequence=admitted.cursor.sequence,
     )
+    for prior in await store.replay(run_id):
+        if prior.sequence <= admitted.cursor.sequence:
+            cursor.accept(prior)
     while True:
         events = await store.wait_for_events(
             run_id,
@@ -139,7 +142,11 @@ async def runtime_event_stream(
             disposition = cursor.accept(event)
             if disposition is EventApplyDisposition.DUPLICATE_IGNORED:
                 continue
-            if cursor.terminal_sequence is not None and index != len(events) - 1:
+            if (
+                cursor.terminal_sequence is not None
+                and index != len(events) - 1
+                and events[index + 1].type is not RuntimeEventType.CLOSURE_RECOVERY_STARTED
+            ):
                 raise EventReconciliationRequired(
                     EventRecoveryReason.POST_TERMINAL_EVENT,
                     run_id=run_id,

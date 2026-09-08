@@ -18,11 +18,21 @@ projection also joins exact durable Proof rows without updating historical state
 foreign or conflicting records fail closed. An un-released Run's full Review page
 loads its retained Review independently of the released Results Workspace.
 
-This correction does not resurrect the failed Run. Existing re-execution starts a
-new full workflow; a node-only continuation contract is not currently available.
-Neither final live acceptance nor publication nor Phase 6B is claimed.
+The original failure remains a historical fact. Following separate explicit owner
+authorization, `recover_closure` adds one closure-only attempt: immutable failed
+snapshot and event digest → retained Review/VERIFIED Proof gate → Release/Report
+→ Memory. Migration `20260909_0015` makes audit records append-only and permits only
+one STARTED record per Run. A consumed or interrupted attempt is never retried.
+No scheduler, model, calculation, or proof generation is invoked. Original events
+remain unchanged; `closure.recovery_started` binds the failed terminal event and
+starts the single recovery segment. Normal terminal event writes remain forbidden.
+Release is atomic with its new aggregate/event watermark; Memory completion is
+separately recorded so a writeback failure cannot be hidden.
 
-## Gate and scope
+Recovered acceptance does not mean the original frozen source passed its live
+gate. Neither GitHub publication nor Phase 6B is implied by this recovery.
+
+## Historical foundation gate and scope (before the live follow-up)
 
 Completion → Trust → Performance. This is an offline-tested Phase 6A foundation,
 not Phase 6B implementation or a new live acceptance claim. No paid provider call,

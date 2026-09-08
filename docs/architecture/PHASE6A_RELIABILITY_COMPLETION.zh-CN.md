@@ -15,10 +15,18 @@
 持久化 Proof，不更新历史；跨 Run 或相互冲突的记录仍被拒绝。未释放 Run 的完整
 Review 页面独立读取已保留 Review，不再依赖已释放的 Results Workspace。
 
-这次修正不会复活失败 Run。现有重新执行接口会创建新的完整流程，目前没有节点级
-续执行契约。不宣称最终 live 验收、发布或 Phase 6B 已通过。
+原始失败仍是历史事实。单独获得 Owner 明确授权后，`recover_closure` 增加一次
+仅闭环恢复：不可变失败快照与事件摘要 → 已保留 Review/VERIFIED Proof 门禁
+→ Release/Report → Memory。迁移 `20260909_0015` 让审计记录仅可追加，每个 Run
+只允许一条 STARTED 记录；已消耗或中断的恢复尝试均不自动重试。
+不调用调度器、模型、计算或证明生成。原事件不变，`closure.recovery_started`
+绑定原失败终态事件，开启唯一恢复段；普通终态后的事件写入仍被禁止。
+释放结果与新的聚合/事件水位原子提交；Memory 完成单独记录，不能隐藏写回失败。
 
-## 门禁与范围
+恢复后通过不代表原冻结版本通过了 live 门禁，也不意味着 GitHub 发布或 Phase 6B
+获得授权。
+
+## 历史基础修复的门禁与范围（live 后续之前）
 
 Completion → Trust → Performance。本次是经过离线测试的 Phase 6A 基础修复，
 不是 Phase 6B 实现，也不代表新一轮 live 验收通过。本轮没有付费 Provider 调用、

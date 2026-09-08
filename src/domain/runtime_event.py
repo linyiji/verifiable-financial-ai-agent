@@ -17,6 +17,7 @@ class RuntimeEventType(StrEnum):
     RUN_STATUS_CHANGED = "run.status_changed"
     RUN_COMPLETED = "run.completed"
     RUN_FAILED = "run.failed"
+    CLOSURE_RECOVERY_STARTED = "closure.recovery_started"
     SCHEME_GENERATION_STARTED = "scheme.generation_started"
     SCHEME_GENERATED = "scheme.generated"
     SCHEME_CONFIRMED = "scheme.confirmed"
@@ -96,6 +97,7 @@ _PATCH_TYPES = frozenset(
 )
 _REFRESH_TYPES = frozenset(
     {
+        RuntimeEventType.CLOSURE_RECOVERY_STARTED,
         RuntimeEventType.RUN_CREATED,
         RuntimeEventType.SCHEME_GENERATED,
         RuntimeEventType.SCHEME_CONFIRMED,
@@ -285,6 +287,15 @@ _PAYLOAD_SPECS: Mapping[
 ] = MappingProxyType(
     {
         RuntimeEventType.RUN_CREATED: ({"object_id": _string}, {}),
+        RuntimeEventType.CLOSURE_RECOVERY_STARTED: (
+            {
+                "attempt_id": _string,
+                "failed_event_id": _string,
+                "snapshot_hash": _string,
+                "status": _literal("REVIEW"),
+            },
+            {},
+        ),
         RuntimeEventType.RUN_STATUS_CHANGED: ({"status": _one_of(_NONTERMINAL_RUN_STATUSES)}, {}),
         RuntimeEventType.RUN_COMPLETED: ({"status": _literal("RELEASED")}, {}),
         RuntimeEventType.RUN_FAILED: (

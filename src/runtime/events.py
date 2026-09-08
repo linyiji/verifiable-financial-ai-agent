@@ -121,6 +121,9 @@ class RuntimeEventCursor:
     committed_sequence: int = 0
     terminal_sequence: int | None = None
     _by_sequence: dict[int, tuple[str, str]] = field(default_factory=dict, repr=False)
+    _terminal_type: RuntimeEventType | None = None
+    _terminal_status: str | None = None
+    _recovered: bool = False
     _sequence_by_event_id: dict[str, int] = field(default_factory=dict, repr=False)
 
     def accept(self, event: RuntimeEvent) -> EventApplyDisposition:
@@ -143,6 +146,16 @@ class RuntimeEventCursor:
             raise self._recovery(EventRecoveryReason.DUPLICATE_EVENT_ID, event.sequence)
 
         if self.terminal_sequence is not None:
+            prior_id = self._by_sequence[self.terminal_sequence][0]
+            if not (
+                event.type is RuntimeEventType.CLOSURE_RECOVERY_STARTED
+                and event.payload.get("failed_event_id") == prior_id
+                and self._terminal_type is RuntimeEventType.RUN_FAILED
+                and self._terminal_status == "FAILED"
+                and not self._recovered
+            ):
+                raise self._recovery(EventRecoveryReason.POST_TERMINAL_EVENT, event.sequence)
+        elif event.type is RuntimeEventType.CLOSURE_RECOVERY_STARTED:
             raise self._recovery(EventRecoveryReason.POST_TERMINAL_EVENT, event.sequence)
 
         expected = self.committed_sequence + 1
@@ -154,8 +167,13 @@ class RuntimeEventCursor:
         self._by_sequence[event.sequence] = (event.event_id, fingerprint)
         self._sequence_by_event_id[event.event_id] = event.sequence
         self.committed_sequence = event.sequence
+        if event.type is RuntimeEventType.CLOSURE_RECOVERY_STARTED:
+            self.terminal_sequence = None
+            self._recovered = True
         if event.type in _TERMINAL_EVENT_TYPES:
             self.terminal_sequence = event.sequence
+            self._terminal_type = event.type
+            self._terminal_status = event.payload.get("status")
         return EventApplyDisposition.APPLIED
 
     def _recovery(
@@ -227,6 +245,8 @@ def validate_event_log(run_id: str, events: Sequence[RuntimeEvent]) -> RuntimeEv
             )
         if event.type in _TERMINAL_EVENT_TYPES:
             terminal = event
+        elif event.type is RuntimeEventType.CLOSURE_RECOVERY_STARTED:
+            terminal = None
     return terminal
 
 
@@ -306,7 +326,11 @@ class InMemoryRuntimeEventStore:
     async def append(self, event: RuntimeEvent) -> None:
         async with self._locks[event.run_id]:
             current = self._events[event.run_id]
-            if current and current[-1].type in _TERMINAL_EVENT_TYPES:
+            if (
+                current
+                and current[-1].type in _TERMINAL_EVENT_TYPES
+                and event.type is not RuntimeEventType.CLOSURE_RECOVERY_STARTED
+            ):
                 raise EventSequenceError(f"run {event.run_id} is already terminal")
             expected = current[-1].sequence + 1 if current else 1
             if event.sequence != expected:
@@ -315,6 +339,7 @@ class InMemoryRuntimeEventStore:
                 )
             if any(existing.event_id == event.event_id for existing in current):
                 raise EventSequenceError(f"duplicate event id: {event.event_id}")
+            validate_event_log(event.run_id, [*current, event])
             current.append(event.model_copy(deep=True))
         await self._notify(event.run_id)
 
@@ -329,7 +354,11 @@ class InMemoryRuntimeEventStore:
     ) -> RuntimeEvent:
         async with self._locks[run_id]:
             current = self._events[run_id]
-            if current and current[-1].type in _TERMINAL_EVENT_TYPES:
+            if (
+                current
+                and current[-1].type in _TERMINAL_EVENT_TYPES
+                and event_type is not RuntimeEventType.CLOSURE_RECOVERY_STARTED
+            ):
                 raise EventSequenceError(f"run {run_id} is already terminal")
             event_data: dict[str, Any] = {
                 "event_id": f"EVT-{uuid4()}",
@@ -342,6 +371,8 @@ class InMemoryRuntimeEventStore:
             if timestamp is not None:
                 event_data["timestamp"] = timestamp
             event = RuntimeEvent(**event_data)
+            if event_type is RuntimeEventType.CLOSURE_RECOVERY_STARTED:
+                validate_event_log(run_id, [*current, event])
             current.append(event.model_copy(deep=True))
         await self._notify(run_id)
         return event
