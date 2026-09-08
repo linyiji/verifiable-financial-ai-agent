@@ -91,8 +91,21 @@ export function TaskDetailDrawer({ projection, taskId, onClose }: {
                       return <p key={item.eventId}><strong>{branch}</strong> · {
                         status === "COMPLETED" ? "已完成 / Completed" :
                         status === "INSUFFICIENT_DATA" ? "数据不足 / Insufficient data — 不生成依赖结论" :
+                        status === "BLOCKED_BY_RUNTIME" ? "运行环境不可用 / Blocked by runtime" :
                         status === "FAILED" ? "执行失败 / Failed" : "不适用 / Not applicable"
                       } · 输入数量（可用/所需）{coverage}</p>;
+                    })}
+                  </section>}
+                {activity.some((item) => item.messageCode.startsWith("BLOCKED_BY_DEPENDENCY:")) &&
+                  <section className="drawer-section"><h3>缺失必需输出 / Missing required outputs</h3>
+                    {activity.filter((item) => item.messageCode.startsWith("BLOCKED_BY_DEPENDENCY:")).map((item) =>
+                      <p key={item.eventId}>{item.messageCode.slice("BLOCKED_BY_DEPENDENCY:".length)}</p>)}
+                  </section>}
+                {activity.some((item) => item.messageCode.startsWith("SOURCE_OUTCOME:")) &&
+                  <section className="drawer-section"><h3>数据来源 / Data sources</h3>
+                    {activity.filter((item) => item.messageCode.startsWith("SOURCE_OUTCOME:")).map((item) => {
+                      const [, source, status, count] = item.messageCode.split(":");
+                      return <p key={item.eventId}><strong>{source}</strong> · {status} · 已接受证据 {count}</p>;
                     })}
                   </section>}
                 <section className="drawer-section"><h3>研究任务</h3><p>{taskPurpose(task.taskType, task.goal)}</p><dl className="drawer-facts"><dt>负责人</dt><dd>{agentLabel(task.assignedAgent)}</dd><dt>创建来源</dt><dd>{task.origin === "REPLAN" ? "Research Lead 批准的 Replan" : "初始研究计划"}</dd><dt>创建时间</dt><dd>{formatTimestamp(task.createdAt)}</dd></dl></section>

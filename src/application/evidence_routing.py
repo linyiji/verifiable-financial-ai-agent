@@ -71,9 +71,18 @@ class TaskEvidenceRoutingResult:
                 "http_status": item.http_status,
                 "error_code": item.error_code,
                 "accepted_count": item.accepted_count,
+                "access_status": item.status.value,
+                "outcome": (
+                    "COMPLETED"
+                    if item.accepted_count > 0
+                    else "UNAVAILABLE_ENTITLEMENT"
+                    if item.status.value == "ENTITLEMENT_DENIED"
+                    else "INSUFFICIENT_EVIDENCE"
+                    if item.status.value in {"AVAILABLE", "NO_DATA"}
+                    else "UNAVAILABLE_PROVIDER"
+                ),
             }
             for item in self.endpoint_statuses
-            if item.endpoint.value in {"news", "transcript"}
         }
         return task
 

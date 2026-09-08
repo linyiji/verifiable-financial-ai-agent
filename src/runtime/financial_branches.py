@@ -4,7 +4,10 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from src.capabilities.generated.validation import GeneratedCapabilityExecutionError
 from src.domain.financial_branch import BranchStatus, FinancialBranchResult
+from src.domain.output_dependency import LocalOutputFailure
+from src.tooling.generated_sandbox import SandboxEnvironmentUnavailableError
 
 
 @dataclass
@@ -70,6 +73,13 @@ async def execute_financial_branches(
                     except Exception:
                         pass
                     raise
+                except SandboxEnvironmentUnavailableError:
+                    result = identity.model_copy(
+                        update={
+                            "status": BranchStatus.BLOCKED_BY_RUNTIME,
+                            "reason_code": "SANDBOX_ENVIRONMENT_UNAVAILABLE",
+                        }
+                    )
                 except Exception as error:
                     errors[identity.branch_id] = error
                     result = identity.model_copy(
@@ -85,5 +95,10 @@ async def execute_financial_branches(
     # Do not swallow a real defect or turn it into data unavailability. Independent
     # siblings have settled and durably published before the original error is raised.
     if errors:
-        raise next(errors[key] for key in ids if key in errors)
+        error = next(errors[key] for key in ids if key in errors)
+        # Only the owned deterministic execution error is research-local. Unknown
+        # validation, authority and persistence defects still terminate globally.
+        if all(isinstance(value, GeneratedCapabilityExecutionError) for value in errors.values()):
+            raise LocalOutputFailure("Recorded deterministic calculation failure") from error
+        raise error
     return [outcomes[key] for key in ids]

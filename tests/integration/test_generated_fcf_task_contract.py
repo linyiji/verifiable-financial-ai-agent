@@ -43,7 +43,7 @@ from tests.unit.test_phase3_financial_extension import _evidence, _state, _task
     not _docker_image_available(DEFAULT_SANDBOX_IMAGE), reason="Docker image required"
 )
 @pytest.mark.asyncio
-@pytest.mark.parametrize("history_days", [20, 200])
+@pytest.mark.parametrize("history_days", [20, 131, 200])
 async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_path, history_days):
     task = _task()
     state = _state(task)
@@ -104,8 +104,10 @@ async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_pat
             sandbox=DockerSandboxBackend(), plans=FreeCashFlowMarginValidationPlanProvider()
         ),
         event_store=service.event_store,
-        recorder=PostgreSQLCapabilityWorkflowRecorder(SQLAlchemyPhase3RecordRepository(sessions),
-            artifact_store=GeneratedCapabilityArtifactStore(tmp_path / "generated")),
+        recorder=PostgreSQLCapabilityWorkflowRecorder(
+            SQLAlchemyPhase3RecordRepository(sessions),
+            artifact_store=GeneratedCapabilityArtifactStore(tmp_path / "generated"),
+        ),
     )
     service.add_calculation_extension(
         Phase3FinancialCapabilityExtension(
@@ -141,15 +143,32 @@ async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_pat
             return await self._execute_fundamental_analysis(task)
 
         async def _invoke_research_agent(self, *args, **kwargs):
+            if history_days == 131:
+                from src.domain.output_dependency import LocalOutputFailure
+
+                raise LocalOutputFailure("offline injected narrative model identity failure")
             return None
 
     state.task(task.task_id).status = TaskStatus.READY
-    await DependencyScheduler(
+    scheduler = DependencyScheduler(
         event_store=service.event_store, checkpoint_store=service.checkpoint_store
-    )._execute_task(state, state.task(task.task_id), OfflineTaskExecutor(service, aggregate))
+    )
+    if history_days == 131:
+        from src.domain.output_dependency import LocalOutputFailure
+
+        with pytest.raises(LocalOutputFailure):
+            await scheduler._execute_task(
+                state, state.task(task.task_id), OfflineTaskExecutor(service, aggregate)
+            )
+    else:
+        await scheduler._execute_task(
+            state, state.task(task.task_id), OfflineTaskExecutor(service, aggregate)
+        )
     assert builder.calls == 1
     assert len(registry.registrations()) == 1
-    assert state.task(task.task_id).status is TaskStatus.COMPLETED
+    assert state.task(task.task_id).status is (
+        TaskStatus.FAILED if history_days == 131 else TaskStatus.COMPLETED
+    )
     fcf = next(c for c in artifacts.calculations if c.capability_id == requirement.capability_id)
     assert isinstance(fcf, CalculationRecord)
     persisted = CalculationRecord.model_validate_json(fcf.model_dump_json())
@@ -168,19 +187,30 @@ async def test_saved_generated_fcf_through_real_fundamental_task_runtime(tmp_pat
     async with sessions() as session:
         row = await session.get(CalculationRecordRow, fcf.calculation_id)
         assert Decimal(str(row.payload["output_value"])) == fcf.output_value
-    sma = next(item for item in artifacts.financial_branches
-               if item.calculation_type == "technical_sma_200")
+    sma = next(
+        item
+        for item in artifacts.financial_branches
+        if item.calculation_type == "technical_sma_200"
+    )
     assert sma.status.value == ("COMPLETED" if history_days == 200 else "INSUFFICIENT_DATA")
-    if history_days == 20:
+    if history_days < 200:
         assert sma.calculation_ids == []
         assert sma.reason_code == "INSUFFICIENT_TECHNICAL_HISTORY"
         assert not any(c.capability_id == "technical_sma_200" for c in artifacts.calculations)
-        _, claims, _ = build_material_financial_release(run_id=task.run_id,
-            evidence=evidence, calculations=artifacts.calculations, judgments=artifacts.judgments,
-            unavailable_formulas=frozenset(formula for branch in artifacts.financial_branches
+        _, claims, _ = build_material_financial_release(
+            run_id=task.run_id,
+            evidence=evidence,
+            calculations=artifacts.calculations,
+            judgments=artifacts.judgments,
+            unavailable_formulas=frozenset(
+                formula
+                for branch in artifacts.financial_branches
                 if branch.status is BranchStatus.INSUFFICIENT_DATA
-                for formula in BRANCH_FORMULAS[branch.calculation_type]))
+                for formula in BRANCH_FORMULAS[branch.calculation_type]
+            ),
+        )
         assert any(fcf.calculation_id in claim.calculation_refs for claim in claims)
-        assert not any("TECHNICAL_SMA_200" in ref for claim in claims
-                       for ref in claim.calculation_refs)
+        assert not any(
+            "TECHNICAL_SMA_200" in ref for claim in claims for ref in claim.calculation_refs
+        )
     await engine.dispose()

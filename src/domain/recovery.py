@@ -11,6 +11,7 @@ class Frozen(BaseModel):
 
 
 class FailureClass(StrEnum):
+    MODEL_IDENTITY_MISMATCH = "MODEL_IDENTITY_MISMATCH"
     READ_TIMEOUT = "READ_TIMEOUT"
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
     REMOTE_PROTOCOL_ERROR = "REMOTE_PROTOCOL_ERROR"
@@ -49,8 +50,8 @@ class Capability(StrEnum):
     QUARANTINED = "QUARANTINED"
 
 
-RouteId = Literal["teamorouter-sol", "teamorouter-luna", "mimo-direct"]
-ModelId = Literal["gpt-5.6-sol", "gpt-5.6-luna", "mimo-v2.5", "mimo-v2.5-pro"]
+RouteId = Literal["teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"]
+ModelId = Literal["gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra", "mimo-v2.5", "mimo-v2.5-pro"]
 
 
 class Scope(Frozen):
@@ -115,6 +116,7 @@ class Candidate(Frozen):
         expected = {
             "teamorouter-sol": ("teamorouter", {"gpt-5.6-sol"}),
             "teamorouter-luna": ("teamorouter", {"gpt-5.6-luna"}),
+            "teamorouter-terra": ("teamorouter", {"gpt-5.6-terra"}),
             "mimo-direct": ("mimo", {"mimo-v2.5", "mimo-v2.5-pro"}),
         }
         provider, models = expected[self.route]
@@ -142,7 +144,7 @@ class RecoveryContext(Frozen):
     scope: Scope
     failure: FailureAssessment
     current_route: RouteId
-    candidates: tuple[Candidate, ...] = Field(max_length=3)
+    candidates: tuple[Candidate, ...] = Field(max_length=4)
     attempt_history: tuple[RouteId, ...] = Field(max_length=3)
     remaining_attempts: int = Field(ge=0, le=3)
     remaining_checks: int = Field(ge=0, le=1)
@@ -166,6 +168,7 @@ class RecoveryEvidence(Frozen):
     capability_check: bool = False
     outcome: Literal["STARTED", "PASS", "FAIL", "ALLOW", "DENY", "CANCELLED"]
     failure_class: FailureClass | None = None
+    actual_model: ModelId | None = None
     reason_code: Literal[
         "OBSERVED",
         "POLICY_DENIED",

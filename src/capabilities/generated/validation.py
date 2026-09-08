@@ -33,6 +33,7 @@ from src.tooling.generated_sandbox import (
     SandboxBackend,
     SandboxRequest,
     SandboxResult,
+    require_sandbox_environment,
 )
 
 VALIDATION_SCHEMA_VERSION = "generated-capability-validation/v1"
@@ -348,6 +349,7 @@ class GeneratedCapabilityValidator:
 
     @staticmethod
     def _require_sandbox_passed(result: SandboxResult, stage: str) -> None:
+        require_sandbox_environment(result)
         if result.passed and result.exit_code == 0 and result.output.get("ok") is True:
             return
         error = result.output.get("error", {})
@@ -445,6 +447,7 @@ class SandboxValidatedGeneratedCapability:
                 fixture=sandbox_inputs,
             ),
         )
+        require_sandbox_environment(result)
         if not result.passed or result.exit_code != 0 or result.output.get("ok") is not True:
             raise GeneratedCapabilityExecutionError("generated capability sandbox execution failed")
         output = result.output["result"]

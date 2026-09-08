@@ -121,13 +121,14 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 Path(settings.artifact_root) / "phase4-agent-outputs",
                 forbidden_values=forbidden_values,
             )
+            adaptive_recovery = await build_adaptive_recovery(
+                settings, persistence.sessions, forbidden_values=forbidden_values
+            )
             research_agents = build_research_agent_registry(
                 model_provider,
                 research_output_artifacts,
                 profile_providers=specialist_providers,
-                recovery=await build_adaptive_recovery(
-                    settings, persistence.sessions, forbidden_values=forbidden_values
-                ),
+                recovery=adaptive_recovery,
             )
             app.state.postgresql_persistence = persistence
             research_service = ResearchApplicationService(
@@ -137,6 +138,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 event_store=persistence.event_store,
                 checkpoint_store=persistence.checkpoint_store,
                 agent_registry=research_agents,
+                recovery_evidence_store=adaptive_recovery.store,
                 report_publisher=ProfessionalReportPublisher(
                     ControlledArtifactStore(Path(settings.artifact_root) / "phase4-report")
                 ),

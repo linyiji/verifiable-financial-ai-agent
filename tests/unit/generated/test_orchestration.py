@@ -345,6 +345,34 @@ def orchestrator(
 
 
 @pytest.mark.asyncio
+async def test_sandbox_unavailable_never_regenerates_or_invalidates_formula():
+    from src.tooling.generated_sandbox import SandboxEnvironmentUnavailableError
+
+    class Unavailable(FakeValidator):
+        async def validate(self, candidate, *, progress):
+            await progress.static_validated(candidate.implementation_hash)
+            await progress.sandbox_started(candidate.implementation_hash)
+            raise SandboxEnvironmentUnavailableError("DOCKER_START_UNAVAILABLE")
+
+    builder = FakeBuilder()
+    recorder = MemoryRecorder()
+    service, events = orchestrator(builder=builder, validator=Unavailable(), recorder=recorder)
+    state = make_state()
+    with pytest.raises(SandboxEnvironmentUnavailableError):
+        await service.lookup_or_build(request=make_request(), state=state)
+    assert len(builder.calls) == 1
+    assert state.task("TASK-1").status is TaskStatus.RUNNING
+    assert not recorder.registrations
+    assert not any(
+        item.lifecycle is CapabilityLifecycle.BUILD_FAILED for item in recorder.generated
+    )
+    assert not any(
+        event.type is RuntimeEventType.CAPABILITY_TEST_FAILED
+        for event in await events.replay("RUN-1")
+    )
+
+
+@pytest.mark.asyncio
 async def test_full_governed_path_scopes_and_resumes_same_task_without_graph_mutation() -> None:
     state = make_state()
     initial_task_ids = [task.task_id for task in state.actual_graph.tasks]

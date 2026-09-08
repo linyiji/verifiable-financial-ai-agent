@@ -42,7 +42,7 @@ async def build_adaptive_recovery(settings, sessions, *, forbidden_values=()):
 
         session = active_session()
         # Preserve existing supervisor candidate priority, independent of wire order.
-        for route in ("teamorouter-sol", "teamorouter-luna", "mimo-direct"):
+        for route in ("teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"):
             if route not in session.metadata["routes"]:
                 continue
             config = session.metadata["routes"][route]
@@ -57,6 +57,7 @@ async def build_adaptive_recovery(settings, sessions, *, forbidden_values=()):
         for route, model in (
             ("teamorouter-sol", settings.llm.primary_model),
             ("teamorouter-luna", settings.llm.fallback_model),
+            ("teamorouter-terra", "gpt-5.6-terra"),
         ):
             config = settings.llm.model_copy(
                 update={"primary_model": model, "fallback_model": model}

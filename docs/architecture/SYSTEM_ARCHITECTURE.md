@@ -23,6 +23,14 @@ No hidden chain-of-thought is exposed. Public execution traces describe declared
 
 ## Independent financial branches and default object
 
+### Output-dependent continuation
+
+Failures propagate through real output dependencies, not coarse task states. The runtime completes all independently valid research it can; Review, Proof and Release gates still decide whether the result may be released. Task edges preserve ordering. Explicit contracts use producer-scoped capability IDs, HARD_REQUIRED, ANY_OF, SUPPORTING and ENRICHMENT sufficiency. Unknown task profiles retain strict dependencies.
+
+The current qualitative Valuation, Risk and Synthesis profiles require completed revenue-growth and EBITDA calculations, not successful Fundamental narrative. This does not authorize a numeric valuation model, DCF or any conclusion with missing inputs. Downstream context carries persisted calculations, available Agent findings, source outcomes and limitations. Missing required outputs block only their consumers. Unknown integrity/authorization/storage errors remain global failures.
+
+All endpoint coverage is retained separately: financial success and News/Transcript HTTP 402 can coexist. Entitlement failures are not retried or bypassed. Docker start unavailability is BLOCKED_BY_RUNTIME and never causes formula regeneration. Completed calculations retain their normal proof policy. A PARTIAL_NOT_RELEASED artifact can retain valid work and synthesis, but cannot become Released Research or Memory. Offline tests do not constitute live or publication acceptance.
+
 Independent financial analyses run concurrently; a data-shortfall limitation does not block findings without that dependency. The financial extension bounds concurrency at three branches; not every Agent Task is fully parallel. Each validated calculation is persisted independently. Missing inputs produce INSUFFICIENT_DATA, no number and no dependent claim; genuine execution errors still fail. A Task may complete with structured limitations.
 
 Technical branches in the general preset are SUPPORTING; canonical capability IDs explicitly listed in Scheme.calculation_requirements are REQUIRED. Existing full-formula Financial Review / Proof / Release controls remain unchanged: task continuation does not authorize release, and missing formulas can still block Release. Task details show branch status and available/required input counts. This change has not yet earned new-version host publication acceptance; Alpha 2 must not be described as published.

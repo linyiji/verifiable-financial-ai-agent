@@ -10,6 +10,11 @@ from src.agentic.decisions import ResearchLeadReplanDecider
 from src.agentic.registry import RegistrationNotFoundError
 from src.agentic.research_agent import ResearchAgentInvocationError
 from src.agentic.specialist import SpecialistExecutionContext, SpecialistResult
+from src.application.research_outputs import (
+    availability_map,
+    configure_output_contracts,
+    publish_output,
+)
 from src.data.peers import PeerCompanyFacts, PeerSelectionService
 from src.domain.agent_output import ResearchAgentOutputRecord
 from src.domain.capability import CapabilityContext
@@ -23,6 +28,7 @@ from src.domain.enums import (
     TaskOrigin,
 )
 from src.domain.financial_branch import BranchRequirement
+from src.domain.output_dependency import LocalOutputFailure, OutputStatus
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import ReplanRequest, Task
 from src.observability.instrumentation import ObservationStage
@@ -41,6 +47,7 @@ class IntegratedTaskExecutor:
     def __init__(self, service: object, aggregate: object) -> None:
         self._service = service
         self._aggregate = aggregate
+        configure_output_contracts(aggregate.runtime)
         self._has_specialized_collection_tasks = (
             sum(
                 task.task_type == "evidence_collection"
@@ -115,6 +122,31 @@ class IntegratedTaskExecutor:
                 for record in self._aggregate.artifacts.evidence
                 if record.evidence_id in produced
             ]
+            authoritative = self._aggregate.runtime.task(task.task_id)
+            for endpoint, coverage in authoritative.evidence_source_coverage.items():
+                refs = [
+                    record.evidence_id
+                    for record in records
+                    if record.source_endpoint == endpoint and record.status.value == "ACCEPTED"
+                ]
+                status = OutputStatus(coverage["outcome"])
+                if status is OutputStatus.COMPLETED and not refs:
+                    status = OutputStatus.INSUFFICIENT_EVIDENCE
+                publish_output(
+                    authoritative,
+                    "source." + endpoint,
+                    status,
+                    refs=refs,
+                    reason=coverage.get("error_code"),
+                )
+                await self._service.event_store.emit(
+                    run_id=task.run_id,
+                    task_id=task.task_id,
+                    event_type=RuntimeEventType.TASK_PROGRESS,
+                    payload={
+                        "message_code": f"SOURCE_OUTCOME:{endpoint}:{status.value}:{len(refs)}"
+                    },
+                )
             status_counts: dict[str, int] = {}
             for record in records:
                 status_counts[record.status.value] = status_counts.get(record.status.value, 0) + 1
@@ -267,6 +299,14 @@ class IntegratedTaskExecutor:
             async def publish(outcome):
                 async with self._calculation_commit_lock:
                     self._aggregate.artifacts.financial_branches.append(outcome)
+                    if outcome.status.value != "NOT_APPLICABLE":
+                        publish_output(
+                            self._aggregate.runtime.task(task.task_id),
+                            outcome.calculation_type,
+                            OutputStatus(outcome.status.value),
+                            refs=outcome.calculation_ids,
+                            reason=outcome.reason_code,
+                        )
                     await self._service.repository.save_runtime_events(
                         list(await self._service.event_store.replay(task.run_id))
                     )
@@ -369,6 +409,15 @@ class IntegratedTaskExecutor:
             return
         await self._service.repository.save_calculation(calculation)
         self._aggregate.artifacts.calculations.append(calculation)
+        # Technical MACD has multiple records; branch-level publication owns that
+        # compound output. Single native anchors are published only after durable save.
+        if calculation.capability_id in {"revenue_growth", "ebitda_margin"}:
+            publish_output(
+                self._aggregate.runtime.task(task.task_id),
+                calculation.capability_id,
+                OutputStatus.COMPLETED,
+                refs=[calculation.calculation_id],
+            )
         await self._service.event_store.emit(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -607,6 +656,9 @@ class IntegratedTaskExecutor:
             if candidate:
                 source_coverage.update(candidate)
         source_coverage.update(self._aggregate.runtime.task(task.task_id).evidence_source_coverage)
+        source_coverage = {
+            key: value for key, value in source_coverage.items() if key in {"news", "transcript"}
+        }
         category_by_source = {
             "news": EvidenceCategory.NEWS,
             "transcript": EvidenceCategory.TRANSCRIPT,
@@ -692,28 +744,25 @@ class IntegratedTaskExecutor:
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
     async def _execute_report_synthesis(self, task: Task) -> TaskExecutionResult:
-        supporting_output = {"status": "specialist_outputs_ready"}
+        supporting_output = {
+            "status": "best_effort_not_released",
+            **availability_map(self._aggregate, task),
+        }
         agent_result = await self._invoke_research_agent(
             task,
             supporting_output=supporting_output,
         )
         if agent_result is not None:
-            required_actors = {
-                "fundamental_analyst",
-                "peer_analyst",
-                "research_news_analyst",
-                "valuation_analyst",
-                "risk_analyst",
-            }
+            required_actors = {output.output_id for output in self._upstream_agent_outputs(task)}
             consumed_actors = {
-                output.actor
+                output.output_id
                 for output in self._upstream_agent_outputs(task)
                 if output.output_id in agent_result.agent_output.input_refs
             }
             missing = required_actors - consumed_actors
             if missing:
                 raise ValueError(
-                    "research synthesis did not consume every required specialist output: "
+                    "research synthesis did not consume every available specialist output: "
                     f"{sorted(missing)}"
                 )
             return self._accept_research_agent_output(
@@ -749,6 +798,26 @@ class IntegratedTaskExecutor:
 
         normalized_evidence = self._normalized_evidence_for_task(task)
         upstream_outputs = self._upstream_agent_outputs(task)
+        availability = availability_map(self._aggregate, task)
+        recovery_store = self._service.recovery_evidence_store
+        recovery_scope = {item["task_id"] for item in availability["output_availability"]}
+        recovery_scope.add(task.task_id)
+        availability["recovery_evidence"] = [
+            {
+                key: record.model_dump(mode="json")[key]
+                for key in (
+                    "record_id",
+                    "route",
+                    "model",
+                    "actual_model",
+                    "outcome",
+                    "failure_class",
+                    "capability_check",
+                )
+            }
+            for record in (await recovery_store.records(task.run_id) if recovery_store else [])
+            if record.scope.task_id in recovery_scope
+        ]
         input_refs = list(
             dict.fromkeys(
                 [
@@ -757,18 +826,26 @@ class IntegratedTaskExecutor:
                     *(item["evidence_id"] for item in normalized_evidence),
                     *(item.output_id for item in upstream_outputs),
                     *additional_input_refs,
+                    *(item["calculation_id"] for item in availability["available_calculations"]),
+                    *(
+                        ref
+                        for item in availability["available_calculations"]
+                        for ref in item["input_evidence_ids"]
+                    ),
+                    *(ref for item in availability["output_availability"] for ref in item["refs"]),
+                    *(item["record_id"] for item in availability["recovery_evidence"]),
                 ]
             )
         )
         supporting_output = {
             **supporting_output,
-            "financial_branch_availability": [
-                item.model_dump(mode="json")
-                for item in self._aggregate.artifacts.financial_branches
-            ],
+            **availability,
+            "financial_branch_availability": availability["financial_branches"],
             "availability_rule": (
                 "Use only COMPLETED calculations as numeric findings. Do not infer any "
                 "numeric result or directional claim for unavailable branches."
+                " Never reconstruct failed Agent narratives or absent transcript content. "
+                "Every conclusion requires its own accepted evidence/calculation references."
             ),
         }
         context = SpecialistExecutionContext(
@@ -803,6 +880,27 @@ class IntegratedTaskExecutor:
             result = await agent.execute(context)
         except ResearchAgentInvocationError as exc:
             self._append_agent_output(exc.record, task)
+            publish_output(
+                self._aggregate.runtime.task(task.task_id),
+                "agent_output",
+                OutputStatus.FAILED,
+                refs=[exc.record.output_id],
+                reason=exc.record.failure_code,
+            )
+            # Authorization, unknown preflight and storage errors are NOT localized.
+            if exc.record.failure_code in {
+                "read_timeout",
+                "connect_timeout",
+                "provider_unavailable",
+                "remote_protocol_error",
+                "quota_or_rate_limit",
+                "retryable_http_failure",
+                "overall_deadline_exceeded",
+                "invalid_provider_response",
+                "semantic_schema_failure",
+                "model_identity_mismatch",
+            }:
+                raise LocalOutputFailure("Recorded model output failure") from exc
             raise
         record = result.agent_output
         if record is None or record.status != "SUCCESS":
@@ -827,6 +925,12 @@ class IntegratedTaskExecutor:
             **supporting_output,
             **result.output,
         }
+        publish_output(
+            self._aggregate.runtime.task(task.task_id),
+            "agent_output",
+            OutputStatus.COMPLETED,
+            refs=[record.output_id],
+        )
         return TaskExecutionResult(
             result_ref=record.artifact_ref,
             output_refs=tuple(dict.fromkeys([*additional_output_refs, record.output_id])),

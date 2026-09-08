@@ -32,6 +32,29 @@ def run_tests(execute, fixture):
 """
 
 
+@pytest.mark.parametrize("missing", [True, False])
+def test_docker_environment_start_failure_is_typed(monkeypatch, missing):
+    from src.tooling.generated_sandbox import (
+        SandboxEnvironmentUnavailableError,
+        require_sandbox_environment,
+    )
+
+    def run(*args, **kwargs):
+        if missing:
+            raise FileNotFoundError()
+        return subprocess.CompletedProcess(args[0], 125, stdout="", stderr="private daemon text")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    result = DockerSandboxBackend().execute(
+        SandboxRequest(
+            source=SAFE_SOURCE, test_source=SAFE_TESTS, fixture={"revenue": "100", "cost": "40"}
+        )
+    )
+    with pytest.raises(SandboxEnvironmentUnavailableError):
+        require_sandbox_environment(result)
+    assert "private daemon text" not in str(result.output)
+
+
 @pytest.mark.parametrize("module", sorted(ALLOWED_IMPORTS))
 def test_ast_preflight_accepts_explicit_allowlist(module: str) -> None:
     result = GeneratedCodeASTPreflight().validate(f"import {module}\n")

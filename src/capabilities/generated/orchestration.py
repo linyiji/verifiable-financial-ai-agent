@@ -33,6 +33,7 @@ from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
 from src.runtime.events import RuntimeEventStore
 from src.runtime.state import RuntimeState
+from src.tooling.generated_sandbox import SandboxEnvironmentUnavailableError
 
 
 class CapabilityBuildFailedError(RuntimeError):
@@ -370,6 +371,16 @@ class GeneratedCapabilityOrchestrator:
                     registration=active,
                     capability=resolved,
                 )
+            except SandboxEnvironmentUnavailableError:
+                # Preserve generated/validated state. No code regeneration and no
+                # assertion that the formula failed: the sandbox did not start.
+                task.status = TaskStatus.RUNNING
+                await self._emit(
+                    RuntimeEventType.TASK_PROGRESS,
+                    request=request,
+                    payload={"message_code": "BLOCKED_BY_RUNTIME", "build_id": build.build_id},
+                )
+                raise
             except Exception as exc:
                 last_error = exc
                 if (

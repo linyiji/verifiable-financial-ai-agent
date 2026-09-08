@@ -86,7 +86,10 @@ async def test_real_loopback_stages_and_owned_client(recorder, kind, scenario):
                 await writer.drain()
             elif scenario == "success":
                 body = json.dumps(
-                    {"choices": [{"message": {"content": '{"value":"BODY-CANARY"}'}}]}
+                    {
+                        "model": "mimo-v2.5" if kind == "mimo" else "gpt-5.6-sol",
+                        "choices": [{"message": {"content": '{"value":"BODY-CANARY"}'}}],
+                    }
                 ).encode()
                 writer.write(
                     b"HTTP/1.1 200 OK\r\nContent-Length: "
@@ -254,7 +257,10 @@ async def test_disabled_instrumentation_preserves_wire_and_result(recorder):
     async def handler(request):
         payloads.append(request.content)
         traces.append("trace" in request.extensions)
-        return httpx.Response(200, json={"choices": [{"message": {"content": '{"value":"ok"}'}}]})
+        return httpx.Response(
+            200,
+            json={"model": "mimo-v2.5", "choices": [{"message": {"content": '{"value":"ok"}'}}]},
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         p = provider("mimo", "https://offline.invalid", client)

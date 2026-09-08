@@ -19,6 +19,20 @@ from typing import Any, Protocol, runtime_checkable
 
 from src.domain.base import JsonObject
 
+
+class SandboxEnvironmentUnavailableError(RuntimeError):
+    """Sandbox could not start; says nothing about generated code correctness."""
+
+
+def require_sandbox_environment(result):
+    error = result.output.get("error", {})
+    if isinstance(error, dict) and error.get("code") in {
+        "DOCKER_NOT_FOUND",
+        "DOCKER_START_UNAVAILABLE",
+    }:
+        raise SandboxEnvironmentUnavailableError(error["code"])
+
+
 ALLOWED_IMPORTS = frozenset({"dataclasses", "datetime", "decimal", "math", "statistics", "typing"})
 FORBIDDEN_IMPORTS = frozenset(
     {
@@ -414,6 +428,14 @@ class DockerSandboxBackend:
 
         stdout = completed.stdout
         stderr = completed.stderr
+        if completed.returncode == 125:
+            return SandboxResult(
+                passed=False,
+                exit_code=125,
+                output={"ok": False, "error": {"code": "DOCKER_START_UNAVAILABLE"}},
+                duration_ms=_elapsed_ms(started),
+                security=self.security_profile,
+            )
         if len(stdout.encode("utf-8")) > self.limits.max_output_bytes:
             return SandboxResult(
                 passed=False,

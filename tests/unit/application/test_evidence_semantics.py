@@ -330,6 +330,11 @@ async def test_router_separates_global_evidence_from_task_refs_and_events() -> N
     news.apply_to(news_task)
     assert company_task.task_output_evidence_ids == list(company.output_evidence_ids)
     assert news_task.evidence_acquisition_status is EvidenceAcquisitionStatus.ENTITLEMENT_BLOCKED
+    assert company_task.evidence_source_coverage["income"]["outcome"] == "COMPLETED"
+    assert company_task.evidence_source_coverage["historical"]["outcome"] == "COMPLETED"
+    for endpoint in ("news", "transcript"):
+        assert news_task.evidence_source_coverage[endpoint]["outcome"] == "UNAVAILABLE_ENTITLEMENT"
+        assert news_task.evidence_source_coverage[endpoint]["http_status"] == 402
 
     revenue_id = next(
         record.evidence_id for record in records if record.normalized_field == "revenue"

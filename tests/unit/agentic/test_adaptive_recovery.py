@@ -117,6 +117,134 @@ def agent(tmp_path, recovery, clients):
 
 
 @pytest.mark.asyncio
+async def test_luna_terra_identity_rejected_and_persisted(tmp_path):
+    recovery, clients, store = setup()
+    clients["teamorouter-luna"].failures = []
+    clients["teamorouter-luna"].model_name = "gpt-5.6-terra"
+    with pytest.raises(ResearchAgentInvocationError) as failure:
+        await agent(tmp_path, recovery, clients).execute(context())
+    assert failure.value.record.failure_code == "model_identity_mismatch"
+    mismatch = [r for r in store.values if r.failure_class == "MODEL_IDENTITY_MISMATCH"]
+    assert mismatch
+    assert mismatch[0].route == "teamorouter-luna"
+    assert mismatch[0].model == "gpt-5.6-luna"
+    assert mismatch[0].actual_model == "gpt-5.6-terra"
+    assert clients["mimo-direct"].calls == 0
+
+
+@pytest.mark.asyncio
+async def test_unknown_terra_requires_check_then_exact_execution(tmp_path):
+    recovery, clients, store = setup()
+    terra = Client("teamorouter", "gpt-5.6-terra")
+    clients["teamorouter-terra"] = terra
+    recovery.clients = {"teamorouter-sol": clients["teamorouter-sol"], "teamorouter-terra": terra}
+    from src.agentic.recovery_policy import ProviderDetector
+
+    recovery.detector = ProviderDetector(
+        {
+            key: Candidate(
+                route=key,
+                provider=client.provider_name,
+                model=client.model_name,
+                authority_exists=True,
+            )
+            for key, client in recovery.clients.items()
+        }
+    )
+    result = await agent(tmp_path, recovery, clients).execute(context())
+    assert result.agent_output.actual_model == "gpt-5.6-terra"
+    assert terra.calls == 2  # capability check is not silently used as research output
+    terra_attempts = [
+        r for r in store.values if r.route == "teamorouter-terra" and r.kind == "ATTEMPT_COMPLETED"
+    ]
+    assert [r.capability_check for r in terra_attempts] == [True, False]
+    assert all(r.outcome == "PASS" for r in terra_attempts)
+
+
+@pytest.mark.asyncio
+async def test_unavailable_terra_authority_makes_no_call(tmp_path):
+    recovery, clients, store = setup()
+    terra = Client("teamorouter", "gpt-5.6-terra")
+    recovery.clients["teamorouter-terra"] = terra
+    recovery.detector.routes = {
+        "teamorouter-sol": recovery.detector.routes["teamorouter-sol"],
+        "teamorouter-terra": Candidate(
+            route="teamorouter-terra",
+            provider="teamorouter",
+            model="gpt-5.6-terra",
+            authority_exists=False,
+        ),
+    }
+    with pytest.raises(ResearchAgentInvocationError):
+        await agent(tmp_path, recovery, clients).execute(context())
+    assert terra.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_terra_cannot_consume_check_after_model_switch_budget_exhausted(tmp_path):
+    recovery, clients, store = setup()
+    terra = Client("teamorouter", "gpt-5.6-terra")
+    recovery.clients["teamorouter-terra"] = terra
+    old = recovery.detector.routes
+    recovery.detector.routes = {
+        "teamorouter-sol": old["teamorouter-sol"],
+        "teamorouter-luna": old["teamorouter-luna"],
+        "teamorouter-terra": Candidate(
+            route="teamorouter-terra",
+            provider="teamorouter",
+            model="gpt-5.6-terra",
+            authority_exists=True,
+        ),
+        "mimo-direct": old["mimo-direct"],
+    }
+    result = await agent(tmp_path, recovery, clients).execute(context())
+    assert result.agent_output.actual_model == "mimo-v2.5"
+    assert terra.calls == 0
+    assert (
+        len([r for r in store.values if r.kind == "ATTEMPT_STARTED" and not r.capability_check])
+        == 3
+    )
+
+
+@pytest.mark.asyncio
+async def test_check_failure_terminal_identifies_checked_route(tmp_path):
+    recovery, clients, store = setup()
+    terra = Client("teamorouter", "gpt-5.6-luna")
+    recovery.clients["teamorouter-terra"] = terra
+    recovery.detector.routes = {
+        "teamorouter-sol": recovery.detector.routes["teamorouter-sol"],
+        "teamorouter-terra": Candidate(
+            route="teamorouter-terra",
+            provider="teamorouter",
+            model="gpt-5.6-terra",
+            authority_exists=True,
+        ),
+    }
+    with pytest.raises(ResearchAgentInvocationError):
+        await agent(tmp_path, recovery, clients).execute(context())
+    terminal = store.values[-1]
+    assert terminal.kind == "TERMINAL" and terminal.route == "teamorouter-terra"
+    assert terminal.failure_class == "MODEL_IDENTITY_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_quarantined_initial_route_never_calls_provider(tmp_path):
+    recovery, clients, store = setup()
+    recovery.certifications[
+        (
+            "fundamental_analysis",
+            "teamorouter-sol",
+            "gpt-5.6-sol",
+            digest(Output.model_json_schema()),
+        )
+    ] = Capability.QUARANTINED
+    with pytest.raises(ResearchAgentInvocationError):
+        await agent(tmp_path, recovery, clients).execute(context())
+    assert sum(c.calls for c in clients.values()) == 0
+    assert not any(r.kind == "ATTEMPT_STARTED" for r in store.values)
+
+
+@pytest.mark.asyncio
 async def test_same_task_sol_luna_unknown_check_mimo_success(tmp_path):
     recovery, clients, store = setup()
     result = await agent(tmp_path, recovery, clients).execute(context())

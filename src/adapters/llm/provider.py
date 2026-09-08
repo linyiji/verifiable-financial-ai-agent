@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 
 class LLMFailureClassification(StrEnum):
+    MODEL_IDENTITY_MISMATCH = "model_identity_mismatch"
     PREFLIGHT_FAILURE = "preflight_failure"
     AUTHENTICATION_FAILURE = "authentication_failure"
     QUOTA_OR_RATE_LIMIT = "quota_or_rate_limit"

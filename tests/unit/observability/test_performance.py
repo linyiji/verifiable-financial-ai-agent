@@ -162,11 +162,8 @@ async def test_nonretryable_and_missing_metadata(recorder, mode):
         return httpx.Response(200, json=body)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-        if mode == "missing_model":
+        with pytest.raises((LLMRequestError, StructuredOutputError)):
             await invoke(task(), client(http))
-        else:
-            with pytest.raises((LLMRequestError, StructuredOutputError)):
-                await invoke(task(), client(http))
     (attempt,) = records(recorder, "model.attempt")
     assert not records(recorder, "model.retry_backoff")
     if mode == "schema":

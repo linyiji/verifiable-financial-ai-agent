@@ -34,10 +34,10 @@ from src.phase4_product.hashing import canonical_json_sha256 as digest
 
 
 class RecoveryStopped(LLMProviderError):
-    def __init__(self, reason, candidate, attempted):
+    def __init__(self, reason, candidate, attempted, failure_code=Code.PREFLIGHT_FAILURE):
         super().__init__(
             reason,
-            failure_classification=Code.PREFLIGHT_FAILURE,
+            failure_classification=failure_code,
             provider=candidate.provider,
             model=candidate.model,
             requested_model=attempted[0] if attempted else candidate.model,
@@ -134,6 +134,8 @@ class AdaptiveRecovery:
                 }:
                     health[observed.route] = Health.DEGRADED
         refs = []
+        last_failure = None
+        last_failure_route = current
 
         def remaining():
             return max(0.0, self.budget.max_total_recovery_time - (monotonic() - started))
@@ -152,18 +154,40 @@ class AdaptiveRecovery:
             return value
 
         async def stop(reason):
-            await record("TERMINAL", "FAIL", route=current, reason_code=reason)
-            raise RecoveryStopped(reason, routes[current], attempted_models)
+            await record(
+                "TERMINAL",
+                "FAIL",
+                route=last_failure_route,
+                reason_code=reason,
+                failure_class=last_failure,
+            )
+            codes = {
+                FailureClass.MODEL_IDENTITY_MISMATCH: Code.MODEL_IDENTITY_MISMATCH,
+                FailureClass.READ_TIMEOUT: Code.READ_TIMEOUT,
+                FailureClass.PROVIDER_UNAVAILABLE: Code.PROVIDER_UNAVAILABLE,
+                FailureClass.REMOTE_PROTOCOL_ERROR: Code.REMOTE_PROTOCOL_ERROR,
+                FailureClass.RATE_LIMIT: Code.QUOTA_OR_RATE_LIMIT,
+                FailureClass.OUTPUT_CONTRACT_FAILURE: Code.SEMANTIC_SCHEMA_FAILURE,
+            }
+            raise RecoveryStopped(
+                reason,
+                routes[last_failure_route],
+                attempted_models,
+                codes.get(last_failure, Code.PREFLIGHT_FAILURE),
+            )
 
         # Re-delivery cannot reset budgets after crash or duplicate task scheduling.
         if await self.store.records(scope.run_id, scope.task_id):
             await stop("INTERRUPTED_EXECUTION")
         if self.budget.max_total_recovery_cost is not None:
             await stop("POLICY_DENIED")  # No cost authority in this repository.
+        if capabilities[current] in {Capability.QUARANTINED, Capability.UNSUPPORTED}:
+            await stop("POLICY_DENIED")
 
         frozen_input = digest([message.model_dump() for message in kwargs["messages"]])
 
         async def invoke(route, check=False):
+            nonlocal last_failure, last_failure_route
             candidate = routes[route]
             if (
                 digest(context.model_dump(mode="json")) != scope.context_hash
@@ -183,14 +207,28 @@ class AdaptiveRecovery:
             )
             await record("ATTEMPT_STARTED", "STARTED", **common)
             clock = monotonic()
+            actual_model = None
             try:
                 async with asyncio.timeout(remaining()):
                     response = await self.clients[route].complete_structured(**kwargs)
+                if response.actual_model in {
+                    "gpt-5.6-sol",
+                    "gpt-5.6-luna",
+                    "gpt-5.6-terra",
+                    "mimo-v2.5",
+                    "mimo-v2.5-pro",
+                }:
+                    actual_model = response.actual_model
                 if (
                     response.provider != candidate.provider
                     or response.actual_model != candidate.model
                 ):
-                    raise ValueError("Provider response route identity mismatch")
+                    raise LLMProviderError(
+                        "Provider response route identity mismatch",
+                        failure_classification=Code.MODEL_IDENTITY_MISMATCH,
+                        provider=candidate.provider,
+                        model=candidate.model,
+                    )
                 output = kwargs["response_model"].model_validate(
                     response.output.model_dump(mode="json")
                 )
@@ -245,7 +283,10 @@ class AdaptiveRecovery:
                     **common,
                     latency_ms=(monotonic() - clock) * 1000,
                     failure_class=assessment.failure_class,
+                    actual_model=actual_model,
                 )
+                last_failure = assessment.failure_class
+                last_failure_route = route
                 return None, assessment
 
         history.append(current)
@@ -259,6 +300,26 @@ class AdaptiveRecovery:
             health[current] = Health.DEGRADED
             candidates = self.detector.candidates(
                 capabilities, history, self.budget, health, capability_refs
+            )
+            # Never spend a capability check on a route that cannot be used under
+            # the remaining switch budget. Independent policy still rechecks it.
+            candidates = tuple(
+                candidate.model_copy(
+                    update={"eligible": False, "next_allowed_action": Action.FAIL_TASK}
+                )
+                if candidate.route != current
+                and (
+                    (
+                        candidate.provider == routes[current].provider
+                        and model_switches >= self.budget.max_model_fallbacks
+                    )
+                    or (
+                        candidate.provider != routes[current].provider
+                        and provider_switches >= self.budget.max_cross_provider_switches
+                    )
+                )
+                else candidate
+                for candidate in candidates
             )
             recovery_context = RecoveryContext(
                 scope=scope,

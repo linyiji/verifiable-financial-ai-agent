@@ -73,12 +73,22 @@ class Recorder:
             return value if type(value) in (int, float) and 0 <= value < 10**15 else None
         if key == "provider_route_id":
             return (
-                value if value in {"teamorouter-sol", "teamorouter-luna", "mimo-direct"} else None
+                value
+                if value
+                in {"teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"}
+                else None
             )
         if key == "effective_provider_route":
             return (
                 value
-                if value in {"teamorouter-sol", "teamorouter-luna", "mimo-direct", "UNKNOWN"}
+                if value
+                in {
+                    "teamorouter-sol",
+                    "teamorouter-luna",
+                    "teamorouter-terra",
+                    "mimo-direct",
+                    "UNKNOWN",
+                }
                 else None
             )
         if key == "task_profile":

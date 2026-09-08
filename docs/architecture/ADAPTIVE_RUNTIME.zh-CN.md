@@ -6,7 +6,9 @@
 
 恢复过程保留 Object、Run、Scheme、Task、actor/profile，以及精确的输入和输出契约哈希。它不会改变财务证据、重新生成 Scheme、重新规划图，也不会准入另一个 Run。
 
-已注册候选为 teamorouter-sol、teamorouter-luna 和 mimo-direct。健康状态与能力不同：供应商可连接，并不代表它已针对特定 profile/model/schema 完成验证。已有的已验证输出可以提供限定范围的能力证据；否则，只有经单独许可的能力检查才能建立这种证据。新数据库不得导入伪造的认证。
+已注册候选为 teamorouter-sol、teamorouter-luna、teamorouter-terra（gpt-5.6-terra）和 mimo-direct。Terra 在没有精确任务／profile／schema 证据时为 UNKNOWN，不代表已验证能力。健康状态与能力不同：供应商可连接，并不代表它已针对特定 profile/model/schema 完成验证。已有的已验证输出可以提供限定范围的能力证据；否则，只有经单独许可的能力检查才能建立这种证据。新数据库不得导入伪造的认证。
+
+请求 Luna 却返回 Terra 仍记录 MODEL_IDENTITY_MISMATCH 并拒绝。只有明确获准的 Terra 请求和精确 Terra 响应才能通过；缺少实际模型身份也会被拒绝。注册第四条候选不增加任何调用或恢复预算。这是受控维护，不是学习型路由或能力认证。
 
 默认上限：任务总调用最多三次，每条路由一次调用，一次模型回退，一次供应商切换，一次能力检查，五次决策，零次运行时重新规划，总时限 300 秒（包括初始调用）。配置后，同一路由的调用上限可以达到两次，但仍受总计三次的限制。恢复用的单路由客户端禁用隐藏重试／回退。
 

@@ -6,12 +6,14 @@ from typing import Protocol, runtime_checkable
 from uuid import uuid4
 
 from src.domain.enums import RunStatus, TaskStatus
+from src.domain.output_dependency import LocalOutputFailure
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
 from src.runtime.checkpoint import CheckpointStore, RuntimeCheckpoint
 from src.runtime.diagnostics import task_failure_diagnostic
 from src.runtime.events import RuntimeEventStore
 from src.runtime.lifecycle import transition_task
+from src.runtime.output_dependencies import SETTLED, resolve_outputs
 from src.runtime.state import RuntimeState
 
 
@@ -65,6 +67,7 @@ class DependencyScheduler:
         self._event_store = event_store
         self._checkpoint_store = checkpoint_store
         self._retry_policy = retry_policy or RetryPolicy()
+        self._reported_blocks: set[str] = set()
 
     async def execute(
         self,
@@ -97,6 +100,21 @@ class DependencyScheduler:
                     return state
 
                 self._block_failed_dependents(state)
+                for blocked in state.actual_graph.tasks:
+                    if (
+                        blocked.missing_output_dependencies
+                        and blocked.task_id not in self._reported_blocks
+                    ):
+                        await self._event_store.emit(
+                            run_id=state.run_id,
+                            task_id=blocked.task_id,
+                            event_type=RuntimeEventType.TASK_PROGRESS,
+                            payload={
+                                "message_code": "BLOCKED_BY_DEPENDENCY:"
+                                + ",".join(blocked.missing_output_dependencies)
+                            },
+                        )
+                        self._reported_blocks.add(blocked.task_id)
                 ready = self._promote_ready_tasks(state)
                 for task in ready:
                     await self._event_store.emit(
@@ -106,6 +124,19 @@ class DependencyScheduler:
                     )
 
                 if not ready:
+                    if all(task.status in SETTLED for task in state.actual_graph.tasks) and any(
+                        task.task_type == "report_synthesis"
+                        and task.output_requirements is not None
+                        for task in state.actual_graph.tasks
+                    ):
+                        state.run_status = RunStatus.REVIEW
+                        await self._event_store.emit(
+                            run_id=state.run_id,
+                            event_type=RuntimeEventType.RUN_STATUS_CHANGED,
+                            payload={"status": RunStatus.REVIEW.value},
+                        )
+                        await self._checkpoint(state)
+                        return state
                     state.run_status = RunStatus.FAILED
                     await self._event_store.emit(
                         run_id=state.run_id,
@@ -132,7 +163,18 @@ class DependencyScheduler:
                 if any(isinstance(result, asyncio.CancelledError) for result in results):
                     raise asyncio.CancelledError
                 await self._checkpoint(state)
-                errors = [result for result in results if isinstance(result, BaseException)]
+                errors = [
+                    result
+                    for task, result in zip(ready, results, strict=True)
+                    if isinstance(result, BaseException)
+                    and (
+                        not isinstance(result, LocalOutputFailure)
+                        or not any(
+                            output.status.value != "COMPLETED"
+                            for output in state.task(task.task_id).output_outcomes
+                        )
+                    )
+                ]
                 if errors:
                     self._block_failed_dependents(state)
                     state.run_status = RunStatus.FAILED
@@ -187,37 +229,25 @@ class DependencyScheduler:
                 transition_task(task, TaskStatus.WAITING)
 
     def _promote_ready_tasks(self, state: RuntimeState) -> list[Task]:
-        completed = {
-            task.task_id for task in state.actual_graph.tasks if task.status is TaskStatus.COMPLETED
-        }
         ready: list[Task] = []
         for task in state.actual_graph.tasks:
-            if task.status in {TaskStatus.WAITING, TaskStatus.BLOCKED} and set(
-                task.dependencies
-            ).issubset(completed):
+            if (
+                task.status in {TaskStatus.WAITING, TaskStatus.BLOCKED}
+                and resolve_outputs(state, task)[0] == "READY"
+            ):
                 transition_task(task, TaskStatus.READY)
                 ready.append(task)
         return ready
 
     def _block_failed_dependents(self, state: RuntimeState) -> None:
-        failed = {
-            task.task_id
-            for task in state.actual_graph.tasks
-            if task.status
-            in {
-                TaskStatus.FAILED,
-                TaskStatus.CAPABILITY_BUILD_FAILED,
-                TaskStatus.CANCELLED,
-                TaskStatus.BLOCKED,
-            }
-        }
         changed = True
         while changed:
             changed = False
             for task in state.actual_graph.tasks:
-                if task.status is TaskStatus.WAITING and failed.intersection(task.dependencies):
+                decision, missing = resolve_outputs(state, task)
+                if task.status is TaskStatus.WAITING and decision == "BLOCKED":
                     transition_task(task, TaskStatus.BLOCKED)
-                    failed.add(task.task_id)
+                    task.missing_output_dependencies = missing
                     changed = True
 
     async def _execute_task(
@@ -269,9 +299,7 @@ class DependencyScheduler:
                         },
                     )
                     raise
-                if attempt < self._retry_policy.max_attempts and getattr(
-                    error, "retryable", True
-                ):
+                if attempt < self._retry_policy.max_attempts and getattr(error, "retryable", True):
                     transition_task(task, TaskStatus.READY)
                     await self._event_store.emit(
                         run_id=state.run_id,

@@ -42,6 +42,12 @@ def classify(exc, *, stage=None):
     }
     if isinstance(exc, LLMProviderError):
         code = exc.failure_classification
+        if code is Code.MODEL_IDENTITY_MISMATCH:
+            return FailureAssessment(
+                failure_class=Failure.MODEL_IDENTITY_MISMATCH,
+                failure_stage="IDENTITY",
+                recoverable=False,
+            )
         if code in mapping:
             return FailureAssessment(
                 failure_class=mapping[code], failure_stage="PROVIDER", recoverable=True
@@ -66,7 +72,7 @@ class ProviderDetector:
     """Registry resolution, never discovery or network I/O."""
 
     def __init__(self, routes):
-        if len(routes) > 3 or any(key != route.route for key, route in routes.items()):
+        if len(routes) > 4 or any(key != route.route for key, route in routes.items()):
             raise ValueError("Invalid governed registry")
         self.routes = dict(routes)
 
@@ -186,7 +192,14 @@ def policy_allows(decision, context, budget, *, model_switches, provider_switche
         return (
             context.remaining_checks > 0
             and candidate.capability in {Capability.UNKNOWN, Capability.CANDIDATE}
-            and provider_switches < budget.max_cross_provider_switches
+            and (
+                candidate.route == current.route
+                or (
+                    model_switches < budget.max_model_fallbacks
+                    if candidate.provider == current.provider
+                    else provider_switches < budget.max_cross_provider_switches
+                )
+            )
         )
     if not candidate.eligible or candidate.capability != Capability.VERIFIED:
         return False

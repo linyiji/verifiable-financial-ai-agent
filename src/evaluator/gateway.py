@@ -76,9 +76,9 @@ class OwnerUpstreams:
                 if len(response.content) > 8_000_000:
                     return {"provider_failure": "invalid_provider_response"}
                 payload = response.json()
-                actual = payload.get("model", client.model_name)
+                actual = payload.get("model")
                 if actual != client.model_name:
-                    return {"provider_failure": "invalid_provider_response"}
+                    return {"provider_failure": "model_identity_mismatch"}
                 # Never forward headers, reasoning_content, tool calls or upstream diagnostics.
                 content = payload["choices"][0]["message"]["content"]
                 output = json.loads(content) if isinstance(content, str) else content

@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-ROUTES = {"teamorouter-sol", "teamorouter-luna", "mimo-direct"}
+ROUTES = {"teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"}
 PATHS = {
     "profile": "/stable/profile",
     "income": "/stable/income-statement",
@@ -66,7 +66,7 @@ class Message(Strict):
 
 
 class ModelOperation(Strict):
-    route_id: Literal["teamorouter-sol", "teamorouter-luna", "mimo-direct"]
+    route_id: Literal["teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"]
     messages: list[Message] = Field(min_length=1, max_length=64)
     schema_name: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     response_schema: dict
@@ -155,7 +155,7 @@ class DataOperation(Strict):
 
 
 class CredentialPolicy(Strict):
-    routes: set[Literal["teamorouter-sol", "teamorouter-luna", "mimo-direct"]]
+    routes: set[Literal["teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"]]
     financial_data_allowed: bool = False
     expires_at: int = Field(gt=0)
     max_llm_requests: int = Field(ge=0, le=10000)

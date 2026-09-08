@@ -13,6 +13,14 @@ React/TypeScript 界面 → FastAPI 产品 API → 应用／领域契约 → 依
 
 ## 权威边界
 
+### 按输出依赖继续执行
+
+独立研究分支按真实输出依赖传播失败。数据不足、单一数据源不可用或局部 Agent 失败不会自动终止无依赖研究；系统尽可能完成所有合法可完成工作，最终由 Review / Proof / Release Gate 决定是否发布。任务边保留先后顺序；显式契约使用生产者范围内的能力 ID，以及 HARD_REQUIRED、ANY_OF、SUPPORTING、ENRICHMENT 充分性语义。未知任务类型保持严格依赖。
+
+当前定性 Valuation、Risk、Synthesis 至少需要已完成的收入增长和 EBITDA 计算，不要求基本面叙述成功。这不授权数值估值模型、DCF 或输入缺失的结论。下游上下文携带已持久化计算、可用 Agent 发现、来源状态及限制。必需输出缺失只阻塞消费者；未知完整性、授权和存储错误仍全局终止。
+
+每个端点分别保留覆盖状态：财报成功可以与新闻／电话会 HTTP 402 并存，不重试或绕过套餐权限。Docker 无法启动记录为 BLOCKED_BY_RUNTIME，不因此重新生成公式。已完成计算仍应用原证明策略。PARTIAL_NOT_RELEASED 产物可保留有效工作及综合叙述，但不是已发布研究，也不写入 Memory。离线测试不等同于实机或发布验收。
+
 PostgreSQL 中的领域／运行时记录与已验证产物引用才是权威来源。投影缓存是派生数据，不是研究事实。普通 get_projection 在内存中计算，不执行 upsert 或 commit；显式 materialize_projection 仍是独立的写操作。generated_at 是响应生成元数据，而不是研究事实。
 
 恢复期间，Run 身份、已确认的 Scheme 身份和知识基线保持不变。未来的重新执行会拥有新的 Run，并显式引用其执行前序；它不会复活失败的 Run，也不会挪用 base_run_id 表示执行前序。

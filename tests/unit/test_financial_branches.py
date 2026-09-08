@@ -26,6 +26,68 @@ def identity(name, dependencies=()):
 
 
 @pytest.mark.asyncio
+async def test_environment_unavailable_is_not_invalid_formula():
+    from src.tooling.generated_sandbox import SandboxEnvironmentUnavailableError
+
+    published = []
+
+    async def unavailable():
+        raise SandboxEnvironmentUnavailableError("DOCKER_NOT_FOUND")
+
+    async def good():
+        return identity("good").model_copy(
+            update={
+                "status": BranchStatus.COMPLETED,
+                "calculation_ids": ["CALC-good"],
+            }
+        )
+
+    async def publish(value):
+        published.append(value)
+
+    results = await execute_financial_branches(
+        [
+            FinancialBranch(identity("FCF"), unavailable),
+            FinancialBranch(identity("good"), good),
+        ],
+        publish=publish,
+    )
+    assert results[0].status is BranchStatus.BLOCKED_BY_RUNTIME
+    assert results[0].calculation_ids == []
+    assert results[1].status is BranchStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_true_owned_calculation_failure_is_failed_not_unavailable():
+    from src.capabilities.generated.validation import GeneratedCapabilityExecutionError
+    from src.domain.output_dependency import LocalOutputFailure
+
+    published = []
+
+    async def bad():
+        raise GeneratedCapabilityExecutionError("invalid deterministic output")
+
+    async def good():
+        return identity("good").model_copy(
+            update={"status": BranchStatus.COMPLETED, "calculation_ids": ["CALC-good"]}
+        )
+
+    async def publish(value):
+        published.append(value)
+
+    with pytest.raises(LocalOutputFailure) as failure:
+        await execute_financial_branches(
+            [FinancialBranch(identity("bad"), bad), FinancialBranch(identity("good"), good)],
+            publish=publish,
+        )
+    assert isinstance(failure.value.__cause__, GeneratedCapabilityExecutionError)
+    assert {p.branch_id: p.status for p in published} == {
+        "bad": BranchStatus.FAILED,
+        "good": BranchStatus.COMPLETED,
+    }
+
+
+@pytest.mark.asyncio
 async def test_independent_parallelism_dependency_block_and_claim_gating():
     active = 0
     peak = 0

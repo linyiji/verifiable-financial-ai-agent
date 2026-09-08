@@ -408,7 +408,15 @@ class OpenAICompatiblePlannerClient:
         usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
         actual_model = body.get("model")
         if not isinstance(actual_model, str) or not actual_model:
-            actual_model = model
+            raise LLMRequestError(
+                "Provider did not report model identity",
+                failure_classification=LLMFailureClassification.MODEL_IDENTITY_MISMATCH,
+                requested_model=requested_model,
+                attempted_models=attempted_models,
+                provider=self.provider_name,
+                model=model,
+                retryable=False,
+            )
         request_id = response.headers.get("x-request-id")
         return LLMStructuredResponse(
             output=output,

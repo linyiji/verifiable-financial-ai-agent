@@ -32,6 +32,7 @@ from src.application.extensions import (
 )
 from src.application.models import ResearchRunDraft, RunAggregate
 from src.application.repository import ApplicationRepository, InMemoryApplicationRepository
+from src.application.research_outputs import availability_map
 from src.assurance import DeterministicReviewer, IndependentFinancialReviewer, ReleaseGate
 from src.assurance.proof_policy import ProofPolicy
 from src.capabilities.calculation_lineage import link_calculation_lineage
@@ -104,6 +105,7 @@ class ResearchApplicationService:
         proof_workflow: ProofWorkflow | None = None,
         agent_registry: AgentRegistry | None = None,
         report_publisher: ProfessionalReportPublisher | None = None,
+        recovery_evidence_store=None,
     ) -> None:
         self.repository = repository or InMemoryApplicationRepository()
         self.event_store = event_store or InMemoryRuntimeEventStore()
@@ -131,6 +133,7 @@ class ResearchApplicationService:
         self.proof_workflow = proof_workflow
         self.agent_registry = agent_registry or AgentRegistry()
         self.report_publisher = report_publisher
+        self.recovery_evidence_store = recovery_evidence_store
 
         registry = CapabilityRegistry()
         registry.register(RevenueGrowthCapability())
@@ -322,6 +325,25 @@ class ResearchApplicationService:
                     emit_run_started=emit_run_started,
                 )
                 aggregate.artifacts.parallel_task_peak = executor.parallel_peak
+                limited = any(
+                    task.status.value != "COMPLETED"
+                    for task in aggregate.runtime.actual_graph.tasks
+                ) or any(
+                    branch.status is not BranchStatus.COMPLETED
+                    for branch in aggregate.artifacts.financial_branches
+                )
+                if limited:
+                    aggregate.artifacts.partial_research = {
+                        **availability_map(aggregate),
+                        "task_outputs": aggregate.artifacts.task_outputs,
+                        "status": "PARTIAL_NOT_RELEASED",
+                    }
+                    # Apply the existing ProofPolicy only to real persisted records.
+                    # This artifact remains inspectable even if strict Review rejects release.
+                    if aggregate.artifacts.calculations:
+                        proof = await self._execute_proof_workflow(aggregate)
+                        aggregate.artifacts.proofs = list(proof.proofs.values())
+                        aggregate.runtime.proof_state = proof.runtime_state
                 await self._assure_and_release(aggregate)
         except Exception:
             durable_events = list(await self.event_store.replay(run_id))
@@ -442,9 +464,12 @@ class ResearchApplicationService:
                 calculations=calculations_before_review,
                 judgments=judgments,
                 unavailable_formulas=frozenset(
-                    formula for branch in aggregate.artifacts.financial_branches
-                    if branch.status is BranchStatus.INSUFFICIENT_DATA
-                    for formula in BRANCH_FORMULAS[branch.calculation_type]),
+                    formula
+                    for branch in aggregate.artifacts.financial_branches
+                    if branch.status
+                    in {BranchStatus.INSUFFICIENT_DATA, BranchStatus.BLOCKED_BY_RUNTIME}
+                    for formula in BRANCH_FORMULAS[branch.calculation_type]
+                ),
             )
             source_coverage = build_research_source_coverage(research_news_result)
 
@@ -494,6 +519,12 @@ class ResearchApplicationService:
                 "REVIEW_BLOCKED",
                 "independent review did not pass",
                 details={"review_id": review.review_id, "status": review.status.value},
+            )
+
+        if aggregate.artifacts.partial_research is not None:
+            raise ApplicationError(
+                "INCOMPLETE_RESEARCH_NOT_RELEASED",
+                "Independent work completed; failed or blocked research still prevents release.",
             )
 
         proof_outcome = await self._execute_proof_workflow(aggregate)
@@ -874,8 +905,7 @@ class ResearchApplicationService:
             or calculation.task_id != task.task_id
             or output.run_id != run_id
             or task.result_ref != output.artifact_ref
-            or output.output_id
-            not in aggregate.runtime.completed_output_refs.get(task.task_id, [])
+            or output.output_id not in aggregate.runtime.completed_output_refs.get(task.task_id, [])
             or calculation.calculation_id
             not in aggregate.runtime.completed_output_refs.get(task.task_id, [])
         ):
@@ -899,8 +929,7 @@ class ResearchApplicationService:
             (
                 record
                 for record in proof_records
-                if record.run_id == run_id
-                and record.calculation_id == calculation.calculation_id
+                if record.run_id == run_id and record.calculation_id == calculation.calculation_id
             ),
             None,
         )

@@ -9,6 +9,7 @@ from src.domain.enums import (
     TaskOrigin,
     TaskStatus,
 )
+from src.domain.output_dependency import OutputOutcome, OutputRequirements
 
 
 class Task(TimestampedModel):
@@ -30,6 +31,9 @@ class Task(TimestampedModel):
     task_output_evidence_ids: list[str] = Field(default_factory=list)
     evidence_acquisition_status: EvidenceAcquisitionStatus | None = None
     evidence_source_coverage: JsonObject = Field(default_factory=dict)
+    output_requirements: OutputRequirements | None = None
+    output_outcomes: list[OutputOutcome] = Field(default_factory=list)
+    missing_output_dependencies: list[str] = Field(default_factory=list)
 
 
 class PlannedTaskGraph(TimestampedModel):

@@ -51,6 +51,28 @@ def response(model: str, content: object, *, status: int = 200) -> httpx.Respons
 
 
 @pytest.mark.asyncio
+async def test_missing_actual_model_is_not_assumed_to_match():
+    from src.adapters.llm.provider import LLMProviderError
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": '{"value":"ok"}'}}]},
+            )
+        )
+    ) as http:
+        client = TeamoRouterClient(settings(), client=http)
+        with pytest.raises(LLMProviderError) as failure:
+            await client.complete_structured(
+                messages=[LLMMessage(role="user", content="test")],
+                response_model=Answer,
+                schema_name="answer",
+            )
+    assert failure.value.failure_classification is LLMFailureClassification.MODEL_IDENTITY_MISMATCH
+
+
+@pytest.mark.asyncio
 async def test_primary_structured_response_records_safe_routing_metadata() -> None:
     requested_payloads: list[dict] = []
 

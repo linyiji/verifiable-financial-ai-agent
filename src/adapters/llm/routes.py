@@ -71,6 +71,15 @@ def configured_incremental_provider(settings, *, route_id=None, mimo_authority=N
     if selected == "mimo-direct":
         client = MimoClient(load_mimo_authority(mimo_authority, settings=settings))
         client.route_ids = {client.model_name: selected}
+    elif selected == "teamorouter-terra":
+        config = settings.llm.model_copy(
+            update={
+                "primary_model": "gpt-5.6-terra",
+                "fallback_model": "gpt-5.6-terra",
+            }
+        )
+        client = TeamoRouterClient(config)
+        client.route_ids = {"gpt-5.6-terra": selected}
     elif selected in {"teamorouter-sol", "teamorouter-luna"}:
         config = settings.llm
         if selected == "teamorouter-luna":

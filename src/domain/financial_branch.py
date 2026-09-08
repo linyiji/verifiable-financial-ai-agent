@@ -12,6 +12,7 @@ class BranchStatus(StrEnum):
     INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
     NOT_APPLICABLE = "NOT_APPLICABLE"
     FAILED = "FAILED"
+    BLOCKED_BY_RUNTIME = "BLOCKED_BY_RUNTIME"
 
 
 class BranchRequirement(StrEnum):

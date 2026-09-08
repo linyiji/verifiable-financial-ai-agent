@@ -92,7 +92,9 @@ def capability_provenance(records, scope, routes):
             continue
         if record.outcome == "PASS" and record.output_hash:
             result[record.route] = (Capability.VERIFIED, record.record_id)
-        elif record.capability_check and record.outcome != "PASS":
+        elif record.outcome != "PASS" and (
+            record.capability_check or record.failure_class == "MODEL_IDENTITY_MISMATCH"
+        ):
             result[record.route] = (Capability.QUARANTINED, record.record_id)
     return result
 
