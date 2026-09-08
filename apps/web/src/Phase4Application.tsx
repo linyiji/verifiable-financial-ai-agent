@@ -6,6 +6,7 @@ import { HttpFrontendDataSource } from "./data/HttpFrontendDataSource";
 import { NewResearchTaskPage, type NewResearchStep } from "./pages/NewResearchTaskPage";
 import { ExactDraftReviewPage } from "./pages/ExactDraftReviewPage";
 import { ResearchObjectDetailPage } from "./pages/ResearchObjectDetailPage";
+import { isObservedIncrementalRelease } from "./state/memoryWriteback";
 import { ResearchObjectsPage } from "./pages/ResearchObjectsPage";
 import { CreateResearchObjectModal } from "./pages/CreateResearchObjectModal";
 import { ResearchRunPage } from "./pages/ResearchRunPage";
@@ -129,9 +130,12 @@ export function Phase4Application() {
   const [selectedRunProjection, setSelectedRunProjection] = useState<RunProjection | null>(null);
   const [selectedRunError, setSelectedRunError] = useState<ErrorEnvelope | null>(null);
   const memoryWriteAttempt=useRef<string|null>(null);
+  const memoryPreviousProjection=useRef<RunProjection|null>(null);
   useEffect(()=>{
     const p=selectedRunProjection;
-    if(!p || p.run.backendStatus!=="RELEASED" || !p.confirmedScheme.incrementalContext || memoryWriteAttempt.current===p.run.runId) return;
+    const previous=memoryPreviousProjection.current;
+    memoryPreviousProjection.current=p;
+    if(!p || !isObservedIncrementalRelease(previous,p) || memoryWriteAttempt.current===p.run.runId) return;
     memoryWriteAttempt.current=p.run.runId;
     void source.materializeResearchMemory(p.object.objectId,p.run.runId).catch(caught=>setSelectedRunError(safeEnvelope(caught)));
   },[selectedRunProjection,source]);

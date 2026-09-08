@@ -842,6 +842,18 @@ class PostgreSQLPhase4ProductBackend:
             )
 
     async def get_projection(self, run_id: str):
+        """Compute current authority-backed state without materializing a cache.
+
+        generated_at is response-generation metadata, not a durable research fact.
+        Missing/stale cache rows cannot affect the returned projection.
+        """
+        return await self._build_projection(run_id, persist=False)
+
+    async def materialize_projection(self, run_id: str):
+        """Explicit write operation; never invoked by ordinary HTTP read routes."""
+        return await self._build_projection(run_id, persist=True)
+
+    async def _build_projection(self, run_id: str, *, persist: bool):
         async with self.sessions() as session:
             row = await session.get(ResearchRunAggregateRow, run_id)
             if row is None:
@@ -924,27 +936,28 @@ class PostgreSQLPhase4ProductBackend:
                     terminal_event=terminal_event,
                     safe_failure=safe_failure,
                 )
-            await session.execute(
-                pg_insert(Phase4RunProjectionRow)
-                .values(
-                    run_id=run_id,
-                    object_id=row.object_id,
-                    revision=row.projection_revision,
-                    sequence=row.projection_sequence,
-                    payload=projection.model_dump(mode="json"),
-                    generated_at=projection.generated_at,
+            if persist:
+                await session.execute(
+                    pg_insert(Phase4RunProjectionRow)
+                    .values(
+                        run_id=run_id,
+                        object_id=row.object_id,
+                        revision=row.projection_revision,
+                        sequence=row.projection_sequence,
+                        payload=projection.model_dump(mode="json"),
+                        generated_at=projection.generated_at,
+                    )
+                    .on_conflict_do_update(
+                        index_elements=[Phase4RunProjectionRow.run_id],
+                        set_={
+                            "revision": row.projection_revision,
+                            "sequence": row.projection_sequence,
+                            "payload": projection.model_dump(mode="json"),
+                            "generated_at": projection.generated_at,
+                        },
+                    )
                 )
-                .on_conflict_do_update(
-                    index_elements=[Phase4RunProjectionRow.run_id],
-                    set_={
-                        "revision": row.projection_revision,
-                        "sequence": row.projection_sequence,
-                        "payload": projection.model_dump(mode="json"),
-                        "generated_at": projection.generated_at,
-                    },
-                )
-            )
-            await session.commit()
+                await session.commit()
             return projection
 
     async def list_runs(
