@@ -4,6 +4,10 @@
 
 [简体中文](README.zh-CN.md)
 
+Current Alpha capability scope: Bocha Web Search evidence/discovery support only.
+The Owner-authorized FMP pool contains **four distinct keys**; a fifth key is not
+required. Provider credentials are private and are never included in this repository.
+
 Autonomous financial research that can execute, verify, recover, remember, and improve.
 
 Local Deployable Alpha · Controlled Alpha Ready

@@ -29,7 +29,7 @@ TypeScript/Vite、Docker 安装器镜像构建、Ruff、`git diff --check` 通�
 新增本回执前，全库 Markdown 本地目标扫描 464 个，失效 0 个；随后另行检查新增回执
 及中英文互链。仓库可发布文件和构建后前端的本地真实凭证精确值扫描无泄漏。
 
-## 剩余外部门禁
+## 历史外部门禁（已被后续决定替代）
 
 Web Search = CONFIGURED + LIVE_PROVEN，追加 Web 调用 0。
 AI Search = CONFIGURED + LIVE_HEALTH_UNPROVEN/403；原响应正文未保留，根因 NOT_PROVEN。
@@ -38,3 +38,11 @@ Owner 外部确认并修正权限、余额、配置后，允许恰好一次 AI-o
 
 下一精确动作：`BOCHA_AI_ACCESS_FIX`。本轮付费 NVDA Run 为 0。GitHub 发布、加密注册表
 交付和全新下载后的实测尚未执行。
+
+## 当前 Owner 授权的 Alpha 范围
+
+上述历史 AI 访问门禁已移除。当前 Alpha 仅支持 Bocha Web Search，地址为
+`https://api.bocha.cn/v1/web-search`；活动注册表及投资者包不包含其他 Bocha 能力或凭证。
+FMP 明确采用 **四个不同的 Key**，已获 Owner 授权，本次验收不再要求五个。
+原有有界凭证池策略保持不变。MiMo `mimo-v2.5` 与 TeamoRouter Sol/Luna/Terra
+继续遵守任务级模型策略。

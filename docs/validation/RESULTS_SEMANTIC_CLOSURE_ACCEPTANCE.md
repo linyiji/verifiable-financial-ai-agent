@@ -32,7 +32,7 @@ Repository Markdown local-link scan: 464 targets, zero unresolved before adding 
 new receipt and counterpart links were subsequently checked. Exact local credential-value
 scan found no exposure in tracked/untracked publishable files or built frontend assets.
 
-## Remaining external gate
+## Historical external gate (superseded)
 
 Web Search = CONFIGURED + LIVE_PROVEN; additional Web calls = 0.
 AI Search = CONFIGURED + LIVE_HEALTH_UNPROVEN/403. Original body unavailable;
@@ -42,3 +42,12 @@ Do not claim invalid credentials without evidence or advertise healthy AI Search
 
 Next exact action: `BOCHA_AI_ACCESS_FIX`. Local paid NVDA Runs = 0. GitHub publication,
 encrypted registry handoff and fresh-download live acceptance remain unperformed.
+
+## Current Owner-approved Alpha scope
+
+The historical AI access gate above is removed. Bocha Web Search is the supported
+Bocha capability in this Alpha (`https://api.bocha.cn/v1/web-search`). No other Bocha
+capability or credential is included in the active registry or investor bundle.
+FMP uses **four distinct keys**, explicitly approved by Owner; five keys are not
+required for this acceptance. Existing bounded credential-pool policies remain unchanged.
+MiMo `mimo-v2.5` and TeamoRouter Sol/Luna/Terra retain their task-scoped policies.

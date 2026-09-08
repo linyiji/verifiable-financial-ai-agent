@@ -4,6 +4,10 @@
 
 ## Freeze and gate
 
+Current Owner calibration supersedes historical gates below: Bocha Web Search only;
+other Bocha capabilities and credentials are out of scope. The active FMP pool has
+four distinct Owner-authorized keys. There is no Bocha AI troubleshooting/live gate.
+
 W1 contract frozen against authorized clean baseline `a1019f5be8b51597055775cca4e446523e3e0a75`
 (tree `d73ece10766d1db9a53a5ce9b81e9027c7eb1209`). W2 is not implemented by this document.
 W3, local live, publication and fresh-download live remain separately gated.

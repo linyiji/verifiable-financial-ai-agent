@@ -4,6 +4,9 @@
 
 [English](README.md)
 
+当前 Alpha 仅支持 Bocha Web Search 证据与发现能力。Owner 已明确授权 FMP 使用
+**四个不同的 Key**，不再要求第五个。Provider 凭证仅私下配置，不包含在本仓库中。
+
 向风行 AI：能够自主执行、验证、恢复、记忆并持续积累的金融研究 Agent。
 
 Local Deployable Alpha · Controlled Alpha Ready

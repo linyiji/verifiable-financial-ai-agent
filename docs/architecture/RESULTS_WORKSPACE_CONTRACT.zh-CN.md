@@ -4,6 +4,9 @@
 
 ## 冻结与门禁
 
+当前 Owner 校准覆盖下述历史门禁：仅保留 Bocha Web Search，其他 Bocha 能力及凭证
+不在范围内。FMP 活动池为已获授权的四个不同 Key，不存在 Bocha AI 排障或实测门禁。
+
 W1 契约基于已授权的干净基线 `a1019f5be8b51597055775cca4e446523e3e0a75`
 （tree `d73ece10766d1db9a53a5ce9b81e9027c7eb1209`）冻结。本文件不代表 W2 已实现。
 W3、本地 live、发布与全新下载 live 分别受门禁约束。Phase 6B 不在范围内。
