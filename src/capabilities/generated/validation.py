@@ -52,6 +52,10 @@ class GeneratedCapabilityExecutionError(RuntimeError):
     pass
 
 
+class GeneratedCapabilityIntegrityError(RuntimeError):
+    """A trusted runtime invariant broke; never an output-local rejection."""
+
+
 @runtime_checkable
 class FinancialValidationPolicy(Protocol):
     """Trusted, owned financial oracle; generated source cannot implement this policy."""
@@ -464,7 +468,7 @@ class SandboxValidatedGeneratedCapability:
             ) from exc
         actual_runtime = _runtime_version(result, self._sandbox)
         if not actual_runtime.startswith("Python 3.11."):
-            raise GeneratedCapabilityExecutionError(
+            raise GeneratedCapabilityIntegrityError(
                 f"generated capability runtime left Python 3.11 baseline: {actual_runtime}"
             )
         output_value = output.get("value") if isinstance(output, dict) else output

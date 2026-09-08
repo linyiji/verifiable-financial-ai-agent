@@ -14,6 +14,7 @@ class RecoveryEvidenceRow(Base):
             "phase6_recovery_single_entry",
             "run_id",
             "task_id",
+            text("(coalesce(payload->'scope'->>'operation_id', 'specialist'))"),
             unique=True,
             postgresql_where=text(
                 "payload->>'kind'='ATTEMPT_STARTED' AND payload->>'attempt_number'='1' "
@@ -115,6 +116,8 @@ class MemoryRecoveryEvidenceStore:
             and not record.capability_check
             and any(
                 value.scope.task_id == record.scope.task_id
+                and value.scope.run_id == record.scope.run_id
+                and value.scope.operation_id == record.scope.operation_id
                 and value.kind == "ATTEMPT_STARTED"
                 and value.attempt_number == 1
                 and not value.capability_check

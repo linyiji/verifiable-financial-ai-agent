@@ -149,20 +149,27 @@ _TASK_STATUS: dict[str, tuple[str, bool]] = {
 }
 
 _TASK_COVERAGE_ALLOWLIST: JsonAllowlist = {
-    "news": {
+    endpoint: {
         "status": None,
         "http_status": None,
         "error_code": None,
         "accepted_count": None,
         "accepted_evidence_ids": None,
-    },
-    "transcript": {
-        "status": None,
-        "http_status": None,
-        "error_code": None,
-        "accepted_count": None,
-        "accepted_evidence_ids": None,
-    },
+        "access_status": None,
+        "outcome": None,
+    }
+    for endpoint in (
+        "profile",
+        "income",
+        "balance",
+        "cashflow",
+        "peers",
+        "quote",
+        "historical",
+        "analyst",
+        "news",
+        "transcript",
+    )
 }
 
 _REVIEW_JSON_KEYS = frozenset(
@@ -1276,7 +1283,8 @@ def project_event(
         if event_type in {"task.failed", "task.progress"} and isinstance(event_payload, dict):
             # Durable diagnostics are internal evidence, never public activity content.
             event_payload = {
-                key: value for key, value in event_payload.items()
+                key: value
+                for key, value in event_payload.items()
                 if key not in {"internal_diagnostic", "financial_branch"}
             }
         payload = safe_json_object(

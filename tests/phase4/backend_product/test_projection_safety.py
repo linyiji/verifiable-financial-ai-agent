@@ -115,6 +115,20 @@ def test_positive_allowlist_rejects_unknown_nested_fields() -> None:
 
 
 @pytest.mark.parametrize(
+    "coverage",
+    [
+        {"invented_endpoint": {"status": "AVAILABLE"}},
+        {"quote": {"status": "AVAILABLE", "debug": "hidden"}},
+    ],
+)
+def test_source_coverage_rejects_unowned_fields(coverage):
+    from src.phase4_product.projections import _TASK_COVERAGE_ALLOWLIST
+
+    with pytest.raises(UnsafeProjectionData):
+        safe_json_object(coverage, allowed_keys=_TASK_COVERAGE_ALLOWLIST)
+
+
+@pytest.mark.parametrize(
     "unsafe_value",
     [
         "artifact://reports/internal.html",

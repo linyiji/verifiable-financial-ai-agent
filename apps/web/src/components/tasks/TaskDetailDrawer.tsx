@@ -87,11 +87,12 @@ export function TaskDetailDrawer({ projection, taskId, onClose }: {
                 {activity.some((item) => item.messageCode.startsWith("FINANCIAL_BRANCH:")) &&
                   <section className="drawer-section"><h3>金融分析分支 / Financial branches</h3>
                     {activity.filter((item) => item.messageCode.startsWith("FINANCIAL_BRANCH:")).map((item) => {
-                      const [, branch, status, coverage] = item.messageCode.split(":");
+                      const [, branch, status, coverage, reason] = item.messageCode.split(":");
                       return <p key={item.eventId}><strong>{branch}</strong> · {
                         status === "COMPLETED" ? "已完成 / Completed" :
                         status === "INSUFFICIENT_DATA" ? "数据不足 / Insufficient data — 不生成依赖结论" :
                         status === "BLOCKED_BY_RUNTIME" ? "运行环境不可用 / Blocked by runtime" :
+                        status === "FAILED" && reason === "CAPABILITY_BUILD_FAILED" ? "能力构建失败 / Capability build failed" :
                         status === "FAILED" ? "执行失败 / Failed" : "不适用 / Not applicable"
                       } · 输入数量（可用/所需）{coverage}</p>;
                     })}

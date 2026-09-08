@@ -167,7 +167,15 @@ class FakeBuilder:
     async def generate(self, request: CapabilityBuildRequest) -> GeneratedCapabilityCandidate:
         self.calls.append(request)
         if len(self.calls) <= self.failures:
-            raise RuntimeError("generation unavailable")
+            from src.adapters.llm.provider import (
+                LLMFailureClassification,
+                LLMProviderUnavailableError,
+            )
+
+            raise LLMProviderUnavailableError(
+                "generation unavailable",
+                failure_classification=LLMFailureClassification.PROVIDER_UNAVAILABLE,
+            )
         output = _candidate_output()
         return GeneratedCapabilityCandidate(
             build_id=request.build_id,
@@ -267,7 +275,11 @@ class RejectFirstValidator(FakeValidator):
         self.calls += 1
         if self.calls == 1:
             await progress.static_validated(candidate.implementation_hash)
-            raise ValueError("precision fixture rejected generated output")
+            from src.capabilities.generated.validation import GeneratedCapabilityValidationError
+
+            raise GeneratedCapabilityValidationError(
+                "financial_validation", "precision fixture rejected generated output"
+            )
         return await super().validate(candidate, progress=progress)
 
 
@@ -558,6 +570,35 @@ async def test_only_classified_generation_failures_are_output_local(kind):
     assert raised.value.__cause__ is errors[kind]
     if kind == "identity":
         assert len(builder.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "stage,local",
+    [
+        ("financial_validation", True),
+        ("unit_tests", True),
+        ("output_schema", True),
+        ("sandbox_security", False),
+        ("implementation_hash", False),
+        ("runtime_version", False),
+        ("static_validation", False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_validation_failure_isolation_preserves_security_gates(stage, local):
+    from src.capabilities.generated.orchestration import CapabilityGenerationUnavailableError
+    from src.capabilities.generated.validation import GeneratedCapabilityValidationError
+
+    class RejectValidator(FakeValidator):
+        async def validate(self, candidate, *, progress):
+            raise GeneratedCapabilityValidationError(stage, "offline typed rejection")
+
+    builder = FakeBuilder()
+    service, _ = orchestrator(builder=builder, validator=RejectValidator())
+    with pytest.raises(CapabilityBuildFailedError) as raised:
+        await service.lookup_or_build(state=make_state(), request=make_request())
+    assert isinstance(raised.value, CapabilityGenerationUnavailableError) == local
+    assert len(builder.calls) == (2 if local else 1)
 
 
 @pytest.mark.asyncio

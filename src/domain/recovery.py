@@ -61,6 +61,9 @@ class Scope(Frozen):
     scheme_id: str
     task_profile: str
     agent_id: str
+    operation_id: str = Field(
+        default="specialist", min_length=1, max_length=256, pattern=r"^[A-Za-z0-9:_-]+$"
+    )
     context_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     contract_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
@@ -169,6 +172,8 @@ class RecoveryEvidence(Frozen):
     outcome: Literal["STARTED", "PASS", "FAIL", "ALLOW", "DENY", "CANCELLED"]
     failure_class: FailureClass | None = None
     actual_model: ModelId | None = None
+    requested_model: ModelId | None = None
+    candidate_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     reason_code: Literal[
         "OBSERVED",
         "POLICY_DENIED",

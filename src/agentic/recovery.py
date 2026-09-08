@@ -82,6 +82,15 @@ class AdaptiveRecovery:
             context_hash=digest(context.model_dump(mode="json")),
             contract_hash=digest(kwargs["response_model"].model_json_schema()),
         )
+        return await self.execute_scope(context, scope, initial_provider, **kwargs)
+
+    async def execute_scope(
+        self, context, scope, initial_provider, *, output_validator=None, **kwargs
+    ):
+        """Shared authority and ledger; generated operations use exact owned scope."""
+        generated = scope.operation_id.startswith("generated-capability:")
+        if digest(context.model_dump(mode="json")) != scope.context_hash:
+            raise ValueError("Recovery scope/context mismatch")
         routes = self.detector.routes
         current = next(
             (
@@ -92,7 +101,7 @@ class AdaptiveRecovery:
             ),
             None,
         )
-        if current is None or not routes[current].authority_exists:
+        if current is None or (not generated and not routes[current].authority_exists):
             raise ValueError("Initial provider is outside governed recovery authority")
         history, health, attempted_models = [], dict(self.initial_health), []
         checks = decisions = model_switches = provider_switches = 0
@@ -177,8 +186,13 @@ class AdaptiveRecovery:
             )
 
         # Re-delivery cannot reset budgets after crash or duplicate task scheduling.
-        if await self.store.records(scope.run_id, scope.task_id):
+        if any(
+            r.scope.operation_id == scope.operation_id
+            for r in await self.store.records(scope.run_id, scope.task_id)
+        ):
             await stop("INTERRUPTED_EXECUTION")
+        if not routes[current].authority_exists:
+            await stop("POLICY_DENIED")
         if self.budget.max_total_recovery_cost is not None:
             await stop("POLICY_DENIED")  # No cost authority in this repository.
         if capabilities[current] in {Capability.QUARANTINED, Capability.UNSUPPORTED}:
@@ -203,6 +217,7 @@ class AdaptiveRecovery:
                 route=route,
                 provider=candidate.provider,
                 model=candidate.model,
+                requested_model=candidate.model,
                 capability_check=check,
             )
             await record("ATTEMPT_STARTED", "STARTED", **common)
@@ -222,6 +237,8 @@ class AdaptiveRecovery:
                 if (
                     response.provider != candidate.provider
                     or response.actual_model != candidate.model
+                    or generated
+                    and response.requested_model != candidate.model
                 ):
                     raise LLMProviderError(
                         "Provider response route identity mismatch",
@@ -235,6 +252,7 @@ class AdaptiveRecovery:
                 text = output.model_dump_json()
                 if any(secret in text for secret in self.forbidden):
                     raise ValueError("Unsafe output")
+                candidate_hash = output_validator(output) if output_validator is not None else None
                 if (
                     digest(context.model_dump(mode="json")) != scope.context_hash
                     or digest([m.model_dump() for m in kwargs["messages"]]) != frozen_input
@@ -248,6 +266,8 @@ class AdaptiveRecovery:
                     input_tokens=response.input_tokens,
                     output_tokens=response.output_tokens,
                     output_hash=digest(output.model_dump(mode="json")),
+                    actual_model=actual_model,
+                    candidate_hash=candidate_hash,
                 )
                 return response, None
             except asyncio.CancelledError:
@@ -277,6 +297,13 @@ class AdaptiveRecovery:
                             "failure_stage": "OUTPUT",
                         }
                     )
+                if generated and assessment.failure_class in {
+                    FailureClass.MODEL_IDENTITY_MISMATCH,
+                    FailureClass.OUTPUT_CONTRACT_FAILURE,
+                }:
+                    assessment = assessment.model_copy(update={"recoverable": True})
+                if generated and assessment.failure_class is FailureClass.MODEL_IDENTITY_MISMATCH:
+                    capabilities[route] = Capability.QUARANTINED
                 await record(
                     "ATTEMPT_COMPLETED",
                     "FAIL",
@@ -395,6 +422,6 @@ class AdaptiveRecovery:
             response, failure = await invoke(current)
         return replace(
             response,
-            requested_model=attempted_models[0],
+            requested_model=response.requested_model if generated else attempted_models[0],
             attempted_models=tuple(dict.fromkeys(attempted_models)),
         )

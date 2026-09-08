@@ -87,10 +87,23 @@ async def execute_financial_branches(
                         update={
                             "status": BranchStatus.FAILED,
                             "reason_code": (
-                                "CAPABILITY_GENERATION_UNAVAILABLE"
+                                "CAPABILITY_BUILD_FAILED"
                                 if isinstance(error, CapabilityGenerationUnavailableError)
                                 else "CALCULATION_FAILURE"
                             ),
+                            "failure_stage": (
+                                "CAPABILITY_VALIDATION"
+                                if error.failure_stage == "validation"
+                                else "CAPABILITY_BUILD"
+                            )
+                            if isinstance(error, CapabilityGenerationUnavailableError)
+                            else None,
+                            "build_record_ids": [record.build_id for record in error.build_records]
+                            if isinstance(error, CapabilityGenerationUnavailableError)
+                            else [],
+                            "diagnostic_id": error.diagnostic_id
+                            if isinstance(error, CapabilityGenerationUnavailableError)
+                            else None,
                         }
                     )
         await publish(result)
@@ -115,5 +128,12 @@ async def execute_financial_branches(
             raise LocalOutputFailure(
                 "Recorded output construction or calculation failure"
             ) from error
-        raise error
+        # Keep the actual global blocker, even if a local branch failed first.
+        raise next(
+            value
+            for value in errors.values()
+            if not isinstance(
+                value, (GeneratedCapabilityExecutionError, CapabilityGenerationUnavailableError)
+            )
+        )
     return [outcomes[key] for key in ids]

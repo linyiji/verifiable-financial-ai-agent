@@ -1,6 +1,7 @@
 """Financial availability is distinct from computation failure and claim eligibility."""
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -48,6 +49,8 @@ class FinancialBranchResult(DomainModel):
     dependency_ids: list[str] = Field(default_factory=list)
     reason_code: str | None = None
     diagnostic_id: str | None = None
+    failure_stage: Literal["CAPABILITY_BUILD", "CAPABILITY_VALIDATION"] | None = None
+    build_record_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def no_unavailable_numbers(self):

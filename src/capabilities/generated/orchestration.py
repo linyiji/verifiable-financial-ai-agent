@@ -6,6 +6,10 @@ from uuid import uuid4
 
 from src.adapters.llm.provider import LLMFailureClassification, LLMProviderError
 from src.capabilities.generated.builder import CodeBuilderModelIdentityError
+from src.capabilities.generated.builder import (
+    GeneratedCapabilityDeadlineExceededError as BuilderDeadline,
+)
+from src.capabilities.generated.contract import GeneratedCapabilityBundleValidationError
 from src.capabilities.generated.models import (
     CapabilityBuildRequest,
     CapabilityOrchestrationResult,
@@ -22,7 +26,9 @@ from src.capabilities.generated.ports import (
     ResearchLeadCapabilityAuthority,
     ScopedCapabilityRegistryPort,
 )
+from src.capabilities.generated.spec import GeneratedCapabilitySpecValidationError
 from src.capabilities.generated.telemetry import GeneratedCapabilityTrace
+from src.capabilities.generated.validation import GeneratedCapabilityValidationError
 from src.domain.capability import (
     Capability,
     CapabilityBuildRecord,
@@ -33,6 +39,7 @@ from src.domain.capability import (
 from src.domain.enums import CapabilityLifecycle, CapabilityScope, TaskStatus
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
+from src.runtime.diagnostics import task_failure_diagnostic
 from src.runtime.events import RuntimeEventStore
 from src.runtime.state import RuntimeState
 from src.tooling.generated_sandbox import SandboxEnvironmentUnavailableError
@@ -45,10 +52,14 @@ class CapabilityBuildFailedError(RuntimeError):
         *,
         gap: CapabilityGapRecord,
         build_records: tuple[CapabilityBuildRecord, ...],
+        failure_stage: str | None = None,
+        diagnostic_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.gap = gap
         self.build_records = build_records
+        self.failure_stage = failure_stage
+        self.diagnostic_id = diagnostic_id
 
 
 class CapabilityAuthorityError(ValueError):
@@ -56,7 +67,44 @@ class CapabilityAuthorityError(ValueError):
 
 
 class CapabilityGenerationUnavailableError(CapabilityBuildFailedError):
-    """Exhausted, classified provider generation failure, scoped to its output."""
+    """Classified generation/validation rejection, scoped to its financial output."""
+
+
+def local_build_failure(error, stage):
+    if stage == "generation":
+        if isinstance(error, (GeneratedCapabilityDeadlineExceededError, BuilderDeadline)):
+            return True
+        if isinstance(error, GeneratedCapabilitySpecValidationError):
+            return True
+        if isinstance(error, GeneratedCapabilityBundleValidationError):
+            return bool(error.codes) and all(
+                not code.startswith("GC_SECURITY") for code in error.codes
+            )
+        return isinstance(error, LLMProviderError) and error.failure_classification in {
+            LLMFailureClassification.PROVIDER_UNAVAILABLE,
+            LLMFailureClassification.CONNECT_TIMEOUT,
+            LLMFailureClassification.READ_TIMEOUT,
+            LLMFailureClassification.OVERALL_DEADLINE_EXCEEDED,
+            LLMFailureClassification.REMOTE_PROTOCOL_ERROR,
+            LLMFailureClassification.RETRYABLE_HTTP_FAILURE,
+            LLMFailureClassification.SEMANTIC_SCHEMA_FAILURE,
+            LLMFailureClassification.INVALID_PROVIDER_RESPONSE,
+        }
+    return (
+        stage == "validation"
+        and isinstance(error, GeneratedCapabilityValidationError)
+        and error.stage
+        in {
+            "syntax_compile",
+            "unit_tests",
+            "edge_cases",
+            "deterministic_double_run",
+            "financial_validation",
+            "financial_invariants",
+            "output_schema",
+            "unit_validation",
+        }
+    )
 
 
 class GeneratedCapabilityDeadlineExceededError(RuntimeError):
@@ -102,7 +150,9 @@ class GeneratedCapabilityOrchestrator:
         self._event_store = event_store
         self._recorder = recorder or NoopCapabilityWorkflowRecorder()
         self._trace = trace or GeneratedCapabilityTrace()
-        self._max_attempts = max_attempts
+        self._max_attempts = min(
+            max_attempts, getattr(code_builder, "max_build_attempts", max_attempts)
+        )
         self._overall_generation_deadline_seconds = (
             float(deadline) if deadline is not None else None
         )
@@ -169,6 +219,7 @@ class GeneratedCapabilityOrchestrator:
 
         builds: list[CapabilityBuildRecord] = []
         last_error: Exception | None = None
+        last_diagnostic = None
         generation_deadline_at = (
             asyncio.get_running_loop().time() + self._overall_generation_deadline_seconds
             if self._overall_generation_deadline_seconds is not None
@@ -389,6 +440,7 @@ class GeneratedCapabilityOrchestrator:
                 raise
             except Exception as exc:
                 last_error = exc
+                last_diagnostic = task_failure_diagnostic(exc, task=task, attempt=attempt)
                 if (
                     generated is not None
                     and generated.lifecycle is not CapabilityLifecycle.ACTIVE_FOR_SCOPE
@@ -411,7 +463,7 @@ class GeneratedCapabilityOrchestrator:
                     update={
                         "lifecycle": CapabilityLifecycle.BUILD_FAILED,
                         "error_code": type(exc).__name__,
-                        "error_detail": "Generated capability attempt failed validation or build.",
+                        "error_detail": f"Generated capability failed during {failure_stage}.",
                     }
                 )
                 builds[-1] = failed_build
@@ -426,32 +478,27 @@ class GeneratedCapabilityOrchestrator:
                         "error_type": type(exc).__name__,
                         "terminal": (
                             attempt == self._max_attempts
-                            or isinstance(exc, GeneratedCapabilityDeadlineExceededError)
+                            or isinstance(
+                                exc, (GeneratedCapabilityDeadlineExceededError, BuilderDeadline)
+                            )
                             or isinstance(exc, CodeBuilderModelIdentityError)
+                            or not local_build_failure(exc, failure_stage)
                         ),
+                        "internal_diagnostic": last_diagnostic,
                     },
                 )
                 if isinstance(
-                    exc, (GeneratedCapabilityDeadlineExceededError, CodeBuilderModelIdentityError)
-                ):
+                    exc,
+                    (
+                        GeneratedCapabilityDeadlineExceededError,
+                        BuilderDeadline,
+                        CodeBuilderModelIdentityError,
+                    ),
+                ) or not local_build_failure(exc, failure_stage):
                     break
 
         task.status = TaskStatus.CAPABILITY_BUILD_FAILED
-        local_generation_failure = failure_stage == "generation" and (
-            isinstance(last_error, GeneratedCapabilityDeadlineExceededError)
-            or isinstance(last_error, LLMProviderError)
-            and last_error.failure_classification
-            in {
-                LLMFailureClassification.PROVIDER_UNAVAILABLE,
-                LLMFailureClassification.CONNECT_TIMEOUT,
-                LLMFailureClassification.READ_TIMEOUT,
-                LLMFailureClassification.OVERALL_DEADLINE_EXCEEDED,
-                LLMFailureClassification.REMOTE_PROTOCOL_ERROR,
-                LLMFailureClassification.RETRYABLE_HTTP_FAILURE,
-                LLMFailureClassification.SEMANTIC_SCHEMA_FAILURE,
-                LLMFailureClassification.INVALID_PROVIDER_RESPONSE,
-            }
-        )
+        local_generation_failure = local_build_failure(last_error, failure_stage)
         error_type = (
             CapabilityGenerationUnavailableError
             if local_generation_failure
@@ -462,6 +509,8 @@ class GeneratedCapabilityOrchestrator:
             f"{type(last_error).__name__ if last_error else 'unknown'}",
             gap=gap,
             build_records=tuple(builds),
+            failure_stage=failure_stage,
+            diagnostic_id=last_diagnostic["diagnostic_id"] if last_diagnostic else None,
         ) from last_error
 
     async def _fail_without_build(

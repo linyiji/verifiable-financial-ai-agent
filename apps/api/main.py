@@ -42,7 +42,7 @@ from src.application.phase3_financial import (
 from src.application.phase3_proof import RevenueGrowthRiscZeroProofWorkflow
 from src.application.service import ResearchApplicationService
 from src.capabilities.generated.artifacts import GeneratedCapabilityArtifactStore
-from src.capabilities.generated.builder import PlannerProviderCodeBuilder
+from src.capabilities.generated.governed_builder import GovernedCodeBuilder
 from src.capabilities.generated.orchestration import GeneratedCapabilityOrchestrator
 from src.capabilities.generated.scoped_registry import ScopedCapabilityRegistry
 from src.capabilities.generated.validation import GeneratedCapabilityValidator
@@ -96,10 +96,6 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 else TeamoRouterClient(settings.llm)
             )
             incremental_provider = configured_incremental_provider(settings)
-            generated_provider = configured_incremental_provider(
-                settings, route_id="teamorouter-terra"
-            )
-            generated_provider.task_profile = "GENERATED_CAPABILITY"
             specialist_providers = configured_specialist_providers(settings)
             forbidden_values = (
                 (gateway_session._token.get_secret_value(),)
@@ -175,9 +171,7 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
             generated = GeneratedCapabilityOrchestrator(
                 registry=ScopedCapabilityRegistry(research_service.capability_registry),
                 research_lead=Phase3ResearchLeadCapabilityAuthority(),
-                code_builder=PlannerProviderCodeBuilder(
-                    generated_provider, exact_model="gpt-5.6-terra"
-                ),
+                code_builder=GovernedCodeBuilder(adaptive_recovery, research_service.repository),
                 validator=GeneratedCapabilityValidator(
                     sandbox=DockerSandboxBackend(),
                     plans=FreeCashFlowMarginValidationPlanProvider(),
