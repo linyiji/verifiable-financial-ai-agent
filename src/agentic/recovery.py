@@ -28,6 +28,7 @@ from src.domain.recovery import (
     RecoveryEvidence,
     Scope,
 )
+from src.evaluator.contracts import EvaluationAuthorizationError
 from src.infrastructure.database.recovery import capability_provenance
 from src.phase4_product.hashing import canonical_json_sha256 as digest
 
@@ -219,6 +220,16 @@ class AdaptiveRecovery:
                     latency_ms=(monotonic() - clock) * 1000,
                 )
                 raise
+            except EvaluationAuthorizationError:
+                await record(
+                    "ATTEMPT_COMPLETED",
+                    "FAIL",
+                    **common,
+                    latency_ms=(monotonic() - clock) * 1000,
+                    failure_class=FailureClass.NON_RECOVERABLE_RUNTIME_FAILURE,
+                )
+                await record("TERMINAL", "FAIL", route=route, reason_code="NONRECOVERABLE")
+                raise
             except Exception as exc:
                 assessment = classify(exc)
                 if isinstance(exc, ValidationError):
@@ -274,6 +285,8 @@ class AdaptiveRecovery:
                 decision = RecoveryDecision.model_validate(decision)
             except TimeoutError:
                 await stop("RECOVERY_BUDGET_EXHAUSTED")
+            except EvaluationAuthorizationError:
+                raise
             except Exception:
                 await stop("POLICY_DENIED")
             allowed = policy_allows(

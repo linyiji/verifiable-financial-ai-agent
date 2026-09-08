@@ -82,11 +82,15 @@ Registered routes: `teamorouter-sol`, `teamorouter-luna`, `mimo-direct`. Only co
 
 ## Evaluate / Run Locally
 
-**BYOK—Bring Your Own Key**, or owner-issued temporary provider credentials shared out of band. Commercial billing is not part of Local Deployable Alpha.
+**Evaluator mode is recommended for investors and platform evaluators.** Install, configure your own PostgreSQL database, open one privately Owner-issued encrypted `.vfaeval` bundle, enter its passphrase, and start the frontend. The launcher checks gateway authority without calling paid upstream services. No FMP, TeamoRouter or MiMo keys belong on the evaluator machine.
 
 Start with the [Evaluator Quickstart](docs/deployment/EVALUATOR_QUICKSTART.md), [local deployment guide](docs/deployment/LOCAL_DEPLOYMENT.md), and [safe configuration template](.env.example).
 
-Python 3.11, Node.js 24, PostgreSQL and financial-data/model credentials are required. The full required-proof path also needs the RISC Zero toolchain; generated-capability validation needs Docker. The repository does not bundle the owner's database, private runtime artifacts or keys. Fresh local runs can incur provider costs.
+Use the [macOS guide](docs/deployment/MACOS_EVALUATION.md) or [Windows / WSL2 guide](docs/deployment/WINDOWS_EVALUATION.md). Python 3.11, Node.js 24 and PostgreSQL are required. Full required-proof Runs need RISC Zero; generated-capability validation needs Docker. WSL2 is recommended for full Windows evaluation; native proof parity is not claimed.
+
+The gateway foundation is implemented and tested offline; **a real Owner gateway is NOT_DEPLOYED by this repository task**. Request a deployed gateway and bundle from the Owner before live evaluation. Quotas are protective evaluation limits, not commercial credits, subscriptions or paid-plan entitlements. Actual cost is `NOT_OBSERVED`; research can incur upstream costs for the Owner.
+
+**Advanced / independent deployment:** [BYOK](docs/deployment/LOCAL_DEPLOYMENT.md) remains available with explicit `VFA_CREDENTIAL_MODE=byok`. [Owner gateway operations](docs/deployment/EVALUATOR_GATEWAY.md) · [Credential security and limits](docs/architecture/EVALUATOR_CREDENTIAL_SECURITY.md). The repository contains no Owner database, private runtime artifacts or credentials.
 
 ## Architecture & Validation
 

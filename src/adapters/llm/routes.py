@@ -33,7 +33,9 @@ def load_mimo_authority(path=None, *, settings=None):
         values = dotenv_values(path)
     else:
         values = {
-            "MIMO_API_KEY": settings.mimo_api_key.get_secret_value() if settings.mimo_api_key else None,
+            "MIMO_API_KEY": settings.mimo_api_key.get_secret_value()
+            if settings.mimo_api_key
+            else None,
             "MIMO_BASE_URL": settings.mimo_base_url,
             "MIMO_CHAT_MODEL": settings.mimo_chat_model,
         }
@@ -60,6 +62,12 @@ def load_mimo_authority(path=None, *, settings=None):
 def configured_incremental_provider(settings, *, route_id=None, mimo_authority=None):
     """The only provider-specific choice is in composition, never in the researcher."""
     selected = route_id or settings.incremental_provider_route
+    if settings.vfa_credential_mode == "evaluator":
+        from src.evaluator.client import EvaluatorGatewayLLM, active_session
+
+        client = EvaluatorGatewayLLM(active_session(), selected)
+        client.task_profile = "INCREMENTAL_RESEARCH_PLANNING"
+        return client
     if selected == "mimo-direct":
         client = MimoClient(load_mimo_authority(mimo_authority, settings=settings))
         client.route_ids = {client.model_name: selected}

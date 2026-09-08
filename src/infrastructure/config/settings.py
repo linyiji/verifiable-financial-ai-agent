@@ -2,6 +2,7 @@ import os
 import re
 from collections.abc import Mapping
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -104,6 +105,8 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "sqlite+aiosqlite:///./verifiable_financial.db"
+    vfa_credential_mode: Literal["byok", "evaluator"] = "byok"
+    vfa_evaluator_gateway_url: str | None = None
     artifact_root: str = "artifacts"
     workspace_root: str = "workspaces"
     fmp_api_key: SecretStr | None = None

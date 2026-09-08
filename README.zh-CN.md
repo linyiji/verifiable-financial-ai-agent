@@ -82,11 +82,15 @@ Provider / Model Failure → Recovery Decision → Policy Gate → Same-Run Reco
 
 ## Evaluate / Run Locally · 评估与本地运行
 
-使用 **BYOK（自备密钥）**，或 Owner 通过仓库之外渠道分发的临时提供方凭据。当前 Alpha 不包含商业计费。
+投资人和平台评估者默认使用 **Evaluator 模式**：安装依赖、配置自己的 PostgreSQL、打开 Owner 私下签发的加密 `.vfaeval` 文件、交互输入口令，再启动前端。启动器自动检查网关授权，不调用收费上游。评估者机器不需要也不应接收 FMP、TeamoRouter 或 MiMo 密钥。
 
 直接阅读[评估者快速开始](docs/deployment/EVALUATOR_QUICKSTART.md)、[本地部署说明](docs/deployment/LOCAL_DEPLOYMENT.md)和[安全环境变量模板](.env.example)。
 
-需要 Python 3.11、Node.js 24、PostgreSQL 和金融数据/模型凭据。完整必需证明流程还需要 RISC Zero 工具链；生成能力验证需要 Docker。仓库不包含 Owner 的数据库、私有运行产物或密钥；新研究会产生提供方费用。
+参见 [macOS](docs/deployment/MACOS_EVALUATION.md) 和 [Windows / WSL2](docs/deployment/WINDOWS_EVALUATION.md) 指引。需要 Python 3.11、Node.js 24、PostgreSQL；完整必需证明需要 RISC Zero，生成能力验证需要 Docker。Windows 完整评估推荐 WSL2，不宣称原生证明工具链等价。
+
+网关基础能力已实现并完成离线测试；本次任务没有部署真实 Owner 网关（`NOT_DEPLOYED`）。正式使用前须由 Owner 提供已部署网关和评估凭据。配额只是评估保护限制，不是商业积分、订阅或付费权益；实际费用为 `NOT_OBSERVED`，新研究可能产生 Owner 上游费用。
+
+高级用户和独立部署仍可使用 [BYOK](docs/deployment/LOCAL_DEPLOYMENT.md)，明确设置 `VFA_CREDENTIAL_MODE=byok`。[Owner 网关管理](docs/deployment/EVALUATOR_GATEWAY.md) · [凭据安全边界](docs/architecture/EVALUATOR_CREDENTIAL_SECURITY.md)。仓库不包含 Owner 数据库、私有运行产物或凭据。
 
 ## Architecture & Validation · 架构与验证
 

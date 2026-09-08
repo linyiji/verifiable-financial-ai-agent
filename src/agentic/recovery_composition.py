@@ -37,32 +37,54 @@ async def build_adaptive_recovery(settings, sessions, *, forbidden_values=()):
         overall_workload_deadline_seconds=90,
     )
     clients, routes = {}, {}
-    for route, model in (
-        ("teamorouter-sol", settings.llm.primary_model),
-        ("teamorouter-luna", settings.llm.fallback_model),
-    ):
-        config = settings.llm.model_copy(update={"primary_model": model, "fallback_model": model})
-        client = TeamoRouterClient(config, execution_policy=policy)
-        client.route_ids = {model: route}
-        clients[route] = client
-        routes[route] = Candidate(
-            route=route,
-            provider="teamorouter",
-            model=model,
-            authority_exists=bool(config.api_key and config.api_key.get_secret_value()),
-        )
-    try:
-        config = load_mimo_authority(settings=settings)
-        client = MimoClient(config, execution_policy=policy)
-        client.route_ids = {config.primary_model: "mimo-direct"}
-        clients["mimo-direct"] = client
-        routes["mimo-direct"] = Candidate(
-            route="mimo-direct", provider="mimo", model=config.primary_model, authority_exists=True
-        )
-    except ValueError:
-        routes["mimo-direct"] = Candidate(
-            route="mimo-direct", provider="mimo", model="mimo-v2.5", authority_exists=False
-        )
+    if settings.vfa_credential_mode == "evaluator":
+        from src.evaluator.client import EvaluatorGatewayLLM, active_session
+
+        session = active_session()
+        # Preserve existing supervisor candidate priority, independent of wire order.
+        for route in ("teamorouter-sol", "teamorouter-luna", "mimo-direct"):
+            if route not in session.metadata["routes"]:
+                continue
+            config = session.metadata["routes"][route]
+            clients[route] = EvaluatorGatewayLLM(session, route, policy=policy)
+            routes[route] = Candidate(
+                route=route,
+                provider=config["provider"],
+                model=config["model"],
+                authority_exists=True,
+            )
+    else:
+        for route, model in (
+            ("teamorouter-sol", settings.llm.primary_model),
+            ("teamorouter-luna", settings.llm.fallback_model),
+        ):
+            config = settings.llm.model_copy(
+                update={"primary_model": model, "fallback_model": model}
+            )
+            client = TeamoRouterClient(config, execution_policy=policy)
+            client.route_ids = {model: route}
+            clients[route] = client
+            routes[route] = Candidate(
+                route=route,
+                provider="teamorouter",
+                model=model,
+                authority_exists=bool(config.api_key and config.api_key.get_secret_value()),
+            )
+        try:
+            config = load_mimo_authority(settings=settings)
+            client = MimoClient(config, execution_policy=policy)
+            client.route_ids = {config.primary_model: "mimo-direct"}
+            clients["mimo-direct"] = client
+            routes["mimo-direct"] = Candidate(
+                route="mimo-direct",
+                provider="mimo",
+                model=config.primary_model,
+                authority_exists=True,
+            )
+        except ValueError:
+            routes["mimo-direct"] = Candidate(
+                route="mimo-direct", provider="mimo", model="mimo-v2.5", authority_exists=False
+            )
     # No historical attempt backfill. Read-only local revalidation of already
     # accepted output is passive evidence, scoped to current schema + exact model.
     capabilities = {}

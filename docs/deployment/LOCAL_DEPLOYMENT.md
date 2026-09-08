@@ -1,6 +1,8 @@
-# Local deployment
+# Advanced local deployment — BYOK
 
 Entry point: [Evaluator Quickstart](EVALUATOR_QUICKSTART.md). Commands run from repository root unless stated.
+
+Investors should use evaluator mode instead. This advanced guide is for independent deployments or the Owner, who supplies their own upstream authority. After copying `.env.example` to `.env.local`, explicitly change `VFA_CREDENTIAL_MODE=byok`, provision DATABASE_URL, and privately fill FMP_API_KEY, TEAMOROUTER_API_KEY and MIMO_API_KEY. Install Python dependencies with `python -m pip install -e '.[dev,postgres]'` and frontend dependencies with `npm ci` in `apps/web`. Never send these upstream keys to evaluator machines. The shared template now defaults to evaluator mode.
 
 ## Environment contract
 
@@ -29,7 +31,7 @@ Governed route IDs:
 
 These are repository route configurations, not universal claims of provider availability. No other provider is advertised. INCREMENTAL_PROVIDER_ROUTE and SPECIALIST_PROVIDER_ROUTES select registered routes. Base URL variables configure adapters; direct MiMo authority deliberately restricts HTTPS api.xiaomimimo.com/v1 and rejects credentials/query/fragment in the URL. It is not an arbitrary-proxy route.
 
-MiMo direct authority now uses injected evaluator Settings by default. Optional MIMO_AUTHORITY_FILE names a private file with MIMO_API_KEY, MIMO_BASE_URL, MIMO_CHAT_MODEL. An explicitly configured missing/incomplete file fails closed; it does not silently fall back to another credential. No developer-home path is required.
+MiMo direct authority uses injected BYOK Settings by default. Optional MIMO_AUTHORITY_FILE names a private file with MIMO_API_KEY, MIMO_BASE_URL, MIMO_CHAT_MODEL. An explicitly configured missing/incomplete file fails closed; it does not silently fall back to another credential. No developer-home path is required.
 
 FMP supports the primary key or configured contiguous numbered pool. Keep provider keys server-side. A frontend variable must never contain a secret. Vite runs in apps/web and does not read the repository-root dotenv file: default API is already :8010; for an override, export VITE_API_BASE_URL in the frontend shell before starting/building.
 

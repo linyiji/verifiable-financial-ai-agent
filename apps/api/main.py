@@ -66,34 +66,57 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
             yield
             return
         settings = get_settings()
+        evaluator = settings.vfa_credential_mode == "evaluator"
+        if evaluator and not settings.database_url.startswith("postgresql"):
+            raise RuntimeError("Evaluator product requires PostgreSQL")
         if settings.database_url.startswith("postgresql"):
-            selection = select_financial_provider(
-                mode=FinancialProviderMode.FMP,
-                fmp_settings=settings.fmp,
-                fixture_path=Path("tests/fixtures/nvda_financials.json"),
-            )
-            if not isinstance(selection.provider, FMPProvider) or not selection.live:
-                raise RuntimeError("Phase 4 production composition requires live FMP evidence")
+            if evaluator:
+                from src.evaluator.client import EvaluatorGatewayFinancialData, active_session
+
+                gateway_session = active_session()
+                financial_provider = FMPProvider(EvaluatorGatewayFinancialData(gateway_session))
+            else:
+                selection = select_financial_provider(
+                    mode=FinancialProviderMode.FMP,
+                    fmp_settings=settings.fmp,
+                    fixture_path=Path("tests/fixtures/nvda_financials.json"),
+                )
+                if not isinstance(selection.provider, FMPProvider) or not selection.live:
+                    raise RuntimeError("Phase 4 production composition requires live FMP evidence")
+                financial_provider = selection.provider
             persistence = create_postgresql_persistence(settings.database)
             evidence_collector = LiveFMPEvidenceCollector.with_local_artifacts(
-                provider=selection.provider,
+                provider=financial_provider,
                 repository=persistence.evidence_repository,
                 artifact_root=Path(settings.artifact_root) / "phase4-raw",
             )
-            model_provider = TeamoRouterClient(settings.llm)
+            model_provider = (
+                configured_incremental_provider(settings, route_id="teamorouter-sol")
+                if evaluator
+                else TeamoRouterClient(settings.llm)
+            )
             incremental_provider = configured_incremental_provider(settings)
             specialist_providers = configured_specialist_providers(settings)
-            forbidden_values = tuple(
-                secret.get_secret_value()
-                for secret in (
-                    *settings.fmp.credentials,
-                    settings.llm.api_key,
-                    incremental_provider._settings.api_key,
-                    *(client._settings.api_key for client in specialist_providers.values()),
+            forbidden_values = (
+                (gateway_session._token.get_secret_value(),)
+                if evaluator
+                else tuple(
+                    secret.get_secret_value()
+                    for secret in (
+                        *settings.fmp.credentials,
+                        settings.llm.api_key,
+                        incremental_provider._settings.api_key,
+                        *(client._settings.api_key for client in specialist_providers.values()),
+                    )
+                    if secret is not None
                 )
-                if secret is not None
             )
-            configure_from_environment(forbidden_values=forbidden_values)
+            if evaluator:
+                from src.observability.performance import configure
+
+                configure(None)
+            else:
+                configure_from_environment(forbidden_values=forbidden_values)
             research_output_artifacts = ResearchAgentOutputArtifactStore(
                 Path(settings.artifact_root) / "phase4-agent-outputs",
                 forbidden_values=forbidden_values,

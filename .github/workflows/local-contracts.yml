@@ -27,6 +27,7 @@ jobs:
       - name: Offline backend contracts
         run: >-
           python -m pytest -q
+          tests/evaluator
           tests/phase4/backend_product/test_evaluator_routes.py
           tests/phase4/backend_product/test_mimo_foundation.py
           tests/phase4/backend_product/test_specialist_routes.py

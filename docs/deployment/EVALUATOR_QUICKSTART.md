@@ -1,79 +1,57 @@
-# Evaluate Verifiable Financial Agent locally
+# Investor / platform evaluator quickstart
 
-This is a BYOK local product, not a hosted subscription. Use your own FMP, TeamoRouter and MiMo credentials, or temporary provider credentials supplied by the owner **out of band**. Never put secrets in Git, issues, screenshots or browser VITE variables. A temporary credential is not enterprise authentication.
+Recommended mode: **Evaluator**. You receive one encrypted `evaluation.vfaeval` privately from the Owner and its passphrase through a separate channel. This opaque credential grants bounded gateway access; it contains no FMP, TeamoRouter or MiMo keys. Do not configure upstream keys locally.
 
-## 1. Clone and install
+**Deployment prerequisite:** this foundation was tested with fake upstreams only. No real Owner gateway was deployed by this task. Ask the Owner for a deployed HTTPS gateway and bundle before live evaluation. No usable credential or public service is bundled in Git.
 
-Use the clone URL of the repository you are evaluating. Until deliberate publication, the accepted product is on the local `phase4` branch; the default branch has not been changed.
+## 1. Install for your platform
+
+Follow [macOS](MACOS_EVALUATION.md) or [Windows / WSL2](WINDOWS_EVALUATION.md). Use the actual repository URL supplied by the Owner; publication/branch promotion is separate. Prerequisites: Python 3.11, Node.js 24, PostgreSQL 16-compatible server. Generated capability validation requires Docker; full required-proof Runs require the [RISC Zero toolchain](../../zk/revenue_growth/README.md), SDK 3.0.6. Do not enable development/fake proof mode.
+
+## 2. Configure your database, not provider keys
+
+Copy `.env.example` to ignored `.env.local`. Keep `VFA_CREDENTIAL_MODE=evaluator`. Set DATABASE_URL to a newly provisioned evaluator-owned database, not the Owner's historical database. URL-encode password special characters. Leave provider and telemetry keys empty. Optional `VFA_EVALUATOR_GATEWAY_URL` pins the public HTTPS origin; otherwise the authenticated bundle supplies it. Never place a bearer token in dotenv or environment variables.
+
+From repository root in the active virtual environment:
 
 ```bash
-git clone <repository-clone-url>
-cd <repository-directory>
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[dev,postgres]'
+python scripts/postgresql_migrate.py
+```
+
+This changes your configured database. A fresh clone contains no Owner production data, capability certifications, reports or Research Memory. Research/release gates remain unchanged.
+
+## 3. Open the bundle and start
+
+```bash
+python scripts/evaluator_start.py --bundle "/path/to/evaluation.vfaeval"
+```
+
+Use a real interactive terminal. Enter the passphrase at the hidden prompt, never as a command argument. The launcher decrypts in process memory, checks gateway authority, then starts the backend on `127.0.0.1:8010`. It does not save the token, spawn a credential-bearing subprocess, use a reload worker, or contact upstream during readiness. Restarting requires the bundle and passphrase again. A failed replacement import clears prior session authority.
+
+Readiness displays credential PASS, gateway CONFIGURED, allowed routes, data access, expiry (Unix UTC seconds) and remaining quotas. CONFIGURED does **not** mean providers are live-verified or capability-certified. Zero quota/restricted scope is shown explicitly. Local DB/proof/Docker prerequisites are separate. Add `--readiness-only` for a handshake without backend startup.
+
+In a second terminal:
+
+```bash
 cd apps/web
-npm ci
-cd ../..
-cp .env.example .env.local
-```
-
-Prerequisites: Python 3.11 (not 3.12), Node.js 24, a running PostgreSQL server, and access to the configured financial-data/model services. The accepted local environment uses PostgreSQL 16; other versions are not newly certified here.
-
-## 2. Configure and provision
-
-Edit ignored `.env.local` using the grouped [example](../../.env.example). Supply your own PostgreSQL URL/password, FMP key, TeamoRouter key and MiMo key. Default Peer and Research News routes require MiMo. Ensure provider accounts permit the configured model IDs and FMP endpoints; a syntactically valid key does not establish entitlement.
-
-Create a new, evaluator-owned PostgreSQL database with the name in DATABASE_URL using your database administration tool. Do not point a first evaluation at the owner's historical database.
-
-```bash
-PYTHONPATH=. python scripts/postgresql_migrate.py
-```
-
-This command changes the configured database. The repository contains migrations, not the owner's production dump or private report artifacts.
-
-## 3. Prepare full-execution dependencies
-
-Install Rust and the official RISC Zero toolchain required by the [bounded proof workspace](../../zk/revenue_growth/README.md), then:
-
-```bash
-./zk/revenue_growth/build-host.sh
-```
-
-RISC Zero SDK crates are pinned to 3.0.6. Proof tooling is optional for browsing an existing deployment, but **not optional for a new Run whose required proof must pass**. Do not enable development/fake-proof mode. Docker is also required when generated-capability validation is invoked. See [deployment details](LOCAL_DEPLOYMENT.md); no one-command Docker deployment is claimed.
-
-## 4. Start the real product
-
-Backend, from repository root with the virtual environment active:
-
-```bash
-PYTHONPATH=. uvicorn apps.api.main:app --host 127.0.0.1 --port 8010
-```
-
-In another terminal:
-
-```bash
-cd <repository-directory>/apps/web
 npm exec vite -- --host 127.0.0.1 --port 4173 --strictPort
 ```
 
-Health check: `curl http://127.0.0.1:8010/health` → `{"status":"ok"}`.
-Open [the local product](http://127.0.0.1:4173). Use 127.0.0.1 rather than localhost to match the current CORS policy.
+Open [the local product](http://127.0.0.1:4173). Keep both terminals running; Ctrl+C stops them. Exact loopback host/ports match CORS. Backend `/health` means liveness, not paid-provider health. Do not expose this local Alpha to the Internet.
 
-## 5. Evaluate a real research workflow
+## 4. Evaluate real research
 
-1. Open Research Object and create a company object (e.g. NVIDIA / NVDA) with accurate identity fields.
-2. Start new research, select the object and define the goal/as-of date.
-3. Generate a Scheme. This is a real paid model operation.
-4. Review and confirm the exact Scheme. Confirmation admits a real Run and starts execution; it can invoke graph planning and live data/models.
-5. Follow AI Research, correction/replanning and any bounded recovery evidence.
-6. If RELEASED, inspect A Report, B Financial Review and C Execution. Follow only available exact source links.
-7. Inspect Research Object → Current Research View / Memories. A subsequent incremental study uses the prior released knowledge base; compare the resulting views.
+1. Create a Research Object with accurate company identity; define its goal/as-of date.
+2. Generate a Scheme (a quota-limited model operation), review and confirm exact intent.
+3. Confirmation can call graph planning and admit a real Run. Follow research, data, financial review, proof and bounded recovery.
+4. If RELEASED, inspect Report / Financial Review / Execution and Research Memory. A later incremental study uses the released base; inspect Base vs Current.
 
-Failure is a real result, not a reason to bypass gates. Fresh databases do not inherit the screenshot Run, Memory v2, provider capability evidence or authorization. Complete the first released study before expecting incremental memory. Do not invent historical certification to force a fallback route.
+Failure is a real outcome. Do not bypass proof, certification, release, Scheme or recovery gates. Expired/revoked credentials, exhausted quotas or lost gateway authority stop access; they do not trigger other-provider attempts or direct local fallback. Ask the Owner to resolve authorization. Do not post credentials, passwords or raw diagnostic payloads to issues.
 
-## Facilitated read-only Alpha
+Gateway quotas are protective evaluation limits, **not billing, commercial credits, subscriptions or paid-plan entitlements**. Cost is `NOT_OBSERVED`; live research can incur Owner upstream costs. Readiness consumes zero model/data quota. [Owner operations](EVALUATOR_GATEWAY.md) · [Security](../architecture/EVALUATOR_CREDENTIAL_SECURITY.md).
 
-For a separately supplied, existing accepted database and matching artifact files, use `scripts.readonly_product_server:app` instead of the writable launcher. Set `VFAS_ACCEPTANCE_ENV_FILE` to your private configuration file. This disables scheduler, outbound HTTP and mutation endpoints. It cannot create research, and an empty clone does not acquire existing research by using it.
+## Advanced options
 
-Commercial billing, credits and subscriptions are not part of Local Deployable Alpha. Read [license status](../LEGAL_AND_LICENSE_STATUS.md) before reuse.
+[BYOK / independent deployment](LOCAL_DEPLOYMENT.md) is preserved with explicit `VFA_CREDENTIAL_MODE=byok`; it is not an evaluator fallback. Optional macOS Keychain and Windows Credential Manager persistence are **NOT_IMPLEMENTED**. Session-only import is universal, including WSL2 without a keychain.
+
+For facilitated read-only Alpha with a separately supplied accepted database and matching artifacts, existing `scripts.readonly_product_server:app` and private `VFAS_ACCEPTANCE_ENV_FILE` remain available. They cannot create research or populate an empty clone with screenshot data. [License status](../LEGAL_AND_LICENSE_STATUS.md).
