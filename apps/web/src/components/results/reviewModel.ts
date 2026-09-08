@@ -24,6 +24,9 @@ type CheckPresentation = Readonly<{
 }>;
 
 const CHECK_PRESENTATION: Readonly<Record<string, CheckPresentation>> = {
+  FIN_BRANCH_CALCULATION_AVAILABILITY: { label: "分支计算可用性", logic: "核对该财务分支实际保留的计算与声明状态，不把缺失结果当作零值。", groupKey: "GENERAL" },
+  FIN_REQUIRED_BRANCH_AVAILABILITY: { label: "必需研究分支", logic: "核对研究意图要求的分支可用性及明确限制。", groupKey: "GENERAL" },
+  FIN_SCHEME_REQUIREMENT_CLOSURE: { label: "研究方案要求闭合", logic: "核对确认方案中的要求与实际完成结果、未完成限制之间的对应。", groupKey: "GENERAL" },
   FIN_CALCULATION_IDENTITY: { label: "计算身份一致性", logic: "核对计算记录与被复核对象是否保持同一权威身份。", groupKey: "CALCULATION" },
   FIN_CALCULATION_INPUT_SNAPSHOT: { label: "计算输入快照", logic: "检查计算所使用的输入快照是否被明确记录并可追溯。", groupKey: "CALCULATION" },
   FIN_CALCULATION_RECOMPUTATION: { label: "计算重算一致性", logic: "依据已记录输入执行可观察的确定性重算检查。", groupKey: "CALCULATION" },
@@ -45,7 +48,7 @@ const GROUP_META: readonly Readonly<{ key: FinancialReviewGroupKey; title: strin
 
 export function reviewSelectorKey(selector: ReviewCheckSelectorV1): string | null {
   const sorted = [...selector.subjectRefs].sort();
-  if (selector.subjectRefs.length === 0 || selector.subjectRefs.some((ref, index) => ref !== sorted[index])) return null;
+  if (selector.subjectRefs.some((ref, index) => ref !== sorted[index])) return null;
   return JSON.stringify([selector.reviewId, selector.checkCode, sorted]);
 }
 
@@ -126,6 +129,6 @@ export function subjectKind(ref: string): string {
   if (ref.startsWith("CLAIM-")) return "结论";
   if (ref.startsWith("METRIC-")) return "指标";
   if (ref.startsWith("JUDGMENT-")) return "判断";
-  if (ref.startsWith("EVIDENCE-")) return "证据";
+  if (ref.startsWith("EVIDENCE-") || ref.startsWith("EVD-")) return "证据";
   return "对象";
 }

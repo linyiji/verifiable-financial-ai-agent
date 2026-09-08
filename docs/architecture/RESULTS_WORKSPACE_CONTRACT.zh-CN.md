@@ -15,6 +15,18 @@ W3、本地 live、发布与全新下载 live 分别受门禁约束。Phase 6B �
 
 ## 同一份权威事实
 
+### Owner 门禁校准 — PHASE6A_RESULTS_CLOSURE_2
+
+后续决定覆盖上面的初始停止条件：AI Search HTTP 403 不阻塞 W2、W3、截图和离线回归。
+原响应正文未保留，因此根因为 NOT_PROVEN。Web 为 CONFIGURED + LIVE_PROVEN，禁止
+追加 Web 调用；AI 为 CONFIGURED + LIVE_HEALTH_UNPROVEN/403。Owner 在外部确认并修正
+权限、余额、配置后，允许恰好一次 AI-only smoke，不得重试，不得写入研究证据。
+先完成离线工作，再等待该外部门禁。本次 W2/W3 修改未执行付费 NVDA Run，也未发布。
+
+实现新增只读 GET `/api/research-runs/{run_id}/results-semantics`，校验已发布 Claim、
+原 Review 快照、唯一计算事件和不可变恢复审计之间的精确关系。新 HTML/PDF 不展示未经
+复核的自由叙述；历史导出保留原文件，浏览器明确提示其版本边界。
+
 A（报告）、B（财务复核）、C（执行记录）是同一 Run、Scheme、ReleasedResult、
 Claim、Review、Calculation、Evidence、AgentOutput、Event、Proof 和恢复记录的
 只读投影。名称和相同 Actor 标签不能作为关联依据。每条关系必须有精确身份、类型

@@ -46,7 +46,7 @@ export function parseResultsFocus(runId: string, surface: ResultsSurfaceRoute, s
     const reviewId = safeFocusValue(query.get("review"));
     const checkCode = safeFocusValue(query.get("check"));
     const subjectRefs = query.getAll("subject").map(safeFocusValue);
-    if (reviewId === null || checkCode === null || subjectRefs.length === 0 || subjectRefs.some((item) => item === null)) return null;
+    if (reviewId === null || checkCode === null || subjectRefs.some((item) => item === null)) return null;
     const refs = subjectRefs as string[];
     if (new Set(refs).size !== refs.length || refs.some((item, index) => item !== [...refs].sort()[index])) return null;
     return { runId, reviewId, checkCode, subjectRefs: refs, returnAnchor };

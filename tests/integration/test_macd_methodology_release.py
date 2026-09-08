@@ -136,6 +136,7 @@ async def test_macd_methodology_persists_across_restart_and_renders(tmp_path) ->
         run_id=restored.run_id,
         research_object="NVDA",
         released_metrics=restored.released_metrics,
+        material_claims=restored.material_claims,
     )
     html = ProfessionalHTMLRenderer().render(dto)
     pdf = ProfessionalPDFRenderer().render(dto)

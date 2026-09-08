@@ -16,6 +16,22 @@ Do not advertise both capabilities as healthy or publish before this gate is res
 
 ## One canonical truth
 
+### Owner gate calibration — PHASE6A_RESULTS_CLOSURE_2
+
+This later decision supersedes the initial stop above: AI Search HTTP 403 does
+not block W2, W3, screenshots or offline regression. The original response body
+was not retained, so its root cause is NOT_PROVEN. Web is CONFIGURED + LIVE_PROVEN;
+additional Web calls are forbidden. AI is CONFIGURED + LIVE_HEALTH_UNPROVEN/403.
+Exactly one AI-only smoke is authorized after Owner external access/balance/config
+checks and corrections. No retry or evidence ingestion is allowed. Complete the
+offline work first, then wait for that external gate. No local paid NVDA Run or
+publication has been performed by this W2/W3 change.
+
+Implementation: additive GET `/api/research-runs/{run_id}/results-semantics` closes
+the released claims, exact Review snapshot, unique calculation events and immutable
+recovery audit over retained data. New HTML/PDF suppress unreviewed narrative fields;
+legacy stored exports stay unchanged and carry a browser caveat.
+
 A (Report), B (Financial Review) and C (Execution) are read-only projections of the
 same Run, Scheme, ReleasedResult, Claim, Review, Calculation, Evidence, AgentOutput,
 event, Proof and recovery records. Names and shared actor labels are not joins.

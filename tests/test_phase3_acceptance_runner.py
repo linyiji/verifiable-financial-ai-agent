@@ -33,7 +33,7 @@ from src.adapters.finrobot.professional_reporting import (
     ProfessionalReportPublisher,
 )
 from src.domain.enums import FinancialActuality, FinancialPeriodBasis, FinancialUnit
-from src.domain.financial_semantics import ReleasedFinancialMetric
+from src.domain.financial_semantics import MaterialFinancialClaim, ReleasedFinancialMetric
 from src.domain.financial_validation import REVENUE_GROWTH_VALIDATION_REASON
 from src.domain.report import CanonicalReportDTO
 from src.domain.review import ReviewCheck
@@ -572,6 +572,24 @@ async def test_cross_view_content_contains_metric_value_unit_period_and_as_of(
         run_id="RUN-1",
         research_object="NVDA",
         released_metrics=(metric,),
+        material_claims=(
+            MaterialFinancialClaim(
+                claim_id="CLAIM-GROWTH",
+                run_id="RUN-1",
+                claim_type="MATERIAL_FINANCIAL_METRIC",
+                statement="Revenue Growth was 65.47% for FY2026 as of 2026-01-31.",
+                metric_id=metric.metric_id,
+                value=metric.canonical_value,
+                unit=metric.canonical_unit,
+                period=metric.period,
+                period_basis=metric.period_basis,
+                actuality=metric.actuality,
+                as_of=metric.as_of,
+                currency=metric.currency,
+                calculation_refs=(metric.calculation_id,),
+                evidence_refs=metric.evidence_ids,
+            ),
+        ),
     )
     chart = await CanonicalReportChartAdapter(
         PinnedFinRobotAdapter(

@@ -33,6 +33,7 @@ def test_parent_registers_one_frozen_product_route_inventory() -> None:
                 "",
                 "/projection",
                 "/results",
+                "/results-semantics",
                 "/result",
                 "/report-view",
                 "/claims/{claim_id}",

@@ -22,7 +22,7 @@ from src.adapters.finrobot.professional_reporting import (
 )
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
 from src.domain.enums import FinancialActuality, FinancialPeriodBasis, FinancialUnit
-from src.domain.financial_semantics import ReleasedFinancialMetric
+from src.domain.financial_semantics import MaterialFinancialClaim, ReleasedFinancialMetric
 from src.domain.released_research_result import ReleasedResearchResult
 from src.domain.report import ReportSourceContribution
 
@@ -120,12 +120,12 @@ def test_html_is_self_contained_structured_and_escapes_all_released_content() ->
     assert {"head", "body", "article", "header", "main", "footer", "section", "dl"} <= set(
         parser.tags
     )
-    assert parser.sections == 9
+    assert parser.sections == 5
     assert "default-src 'none'" in rendered
     assert "https://" not in rendered
     assert "<script>alert" not in rendered
     assert "&lt;script&gt;alert(&quot;owned&quot;)&lt;/script&gt;" in rendered
-    assert "RELEASED-HOLD" in rendered
+    assert "RELEASED-HOLD" not in rendered
     assert canonical.record_id in rendered
     assert released.result_id in rendered
     assert FINROBOT_PINNED_COMMIT in rendered
@@ -146,7 +146,7 @@ def test_pdf_has_valid_signature_released_content_and_deterministic_bytes() -> N
     assert b"NVDA" in first
     assert b"CALC-GROWTH" in first
     assert b"PROOF-GROWTH" in first
-    assert b"RELEASED-HOLD" in first
+    assert b"RELEASED-HOLD" not in first
     assert first == second
     assert hashlib.sha256(first).hexdigest() == hashlib.sha256(second).hexdigest()
     assert len(first) > 3_000
@@ -244,6 +244,29 @@ def test_html_only_report_links_metric_to_exact_safe_execution_and_back(tmp_path
             )
         }
     )
+    metric = dto.released_metrics[0]
+    dto = dto.model_copy(
+        update={
+            "material_claims": (
+                MaterialFinancialClaim(
+                    claim_id="CLAIM-GROWTH",
+                    run_id="RUN-1",
+                    claim_type="metric",
+                    statement="Reviewed revenue growth is 65.47 %.",
+                    metric_id=metric.metric_id,
+                    value=metric.canonical_value,
+                    unit=metric.canonical_unit,
+                    period=metric.period,
+                    period_basis=metric.period_basis,
+                    actuality=metric.actuality,
+                    as_of=metric.as_of,
+                    currency=metric.currency,
+                    calculation_refs=(metric.calculation_id,),
+                    evidence_refs=metric.evidence_ids,
+                ),
+            )
+        }
+    )
     store = ControlledArtifactStore(tmp_path / "artifacts")
     publisher = ProfessionalReportPublisher(store)
 
@@ -256,6 +279,9 @@ def test_html_only_report_links_metric_to_exact_safe_execution_and_back(tmp_path
     assert 'href="#metric-revenue-growth">返回报告</a>' in rendered
     assert "NVIDIA Corporation" in rendered
     assert "65.47 %" in rendered
+    assert "Reviewed revenue growth is 65.47 %." in rendered
+    assert source.output_summary not in rendered
+    assert source.key_findings[0] not in rendered
     assert "EVENT-TASK-1-COMPLETED" in rendered
     assert artifact.run_id == "RUN-1"
     assert artifact.anchor_manifest_hash is not None

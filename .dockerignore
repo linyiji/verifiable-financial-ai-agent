@@ -1,6 +1,8 @@
 **/.env
 **/.env.*
 **/*.vfaeval
+**/*.vfacred
+credentials
 **/*.sqlite*
 **/*.db
 **/*.pem

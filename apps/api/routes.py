@@ -10,9 +10,19 @@ from src.infrastructure.database.recovery import RecoveryEvidenceStore
 from src.phase4_product.api import _admit_contract, create_phase4_product_router
 from src.phase4_product.contracts import PHASE4_CONTRACT_VERSION
 from src.phase4_product.errors import product_error
+from src.phase4_product.results_semantics import ResultsSemantics, read_semantics
 from src.runtime.events import CursorPreflightError
 
 router = create_phase4_product_router()
+
+
+@router.get("/research-runs/{run_id}/results-semantics", response_model=ResultsSemantics)
+async def results_semantics(run_id: str, request: Request, response: Response):
+    _admit_contract(request, response)
+    try:
+        return await read_semantics(request.app.state.phase4_product_backend.sessions, run_id)
+    except ValueError as exc:
+        raise product_error("INTEGRITY_FAILURE", "Exact Results semantic closure failed") from exc
 
 
 @router.get("/research-runs/{run_id}/recovery", response_model=list[RecoveryEvidence])

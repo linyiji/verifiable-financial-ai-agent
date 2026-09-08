@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Phase4FrontendDataSource } from "../data/FrontendDataSource";
 import { InteractiveExecutionRecord } from "../components/results/InteractiveExecutionRecord";
+import { SemanticResultsWorkspace } from "../components/results/SemanticResultsWorkspace";
 import { RuntimeRecoveryEvidence } from "../components/results/RuntimeRecoveryEvidence";
 import { InteractiveFinancialReview } from "../components/results/InteractiveFinancialReview";
 import { InteractiveResearchReport } from "../components/results/InteractiveResearchReport";
@@ -96,7 +97,7 @@ function payloadMatchesSurface(payload: SurfacePayload, surface: ResultsSurfaceR
 }
 
 export function ResultsWorkspacePage(props: ResultsWorkspacePageProps) {
-  return props.surface === "review" ? <ExactReviewRoute {...props} /> : <ReleasedResultsWorkspacePage {...props} />;
+  return props.surface === "review" ? <ExactReviewRoute {...props} /> : <SemanticResultsWorkspace {...props} />;
 }
 
 function ExactReviewRoute(props: ResultsWorkspacePageProps) {
@@ -112,7 +113,7 @@ function ExactReviewRoute(props: ResultsWorkspacePageProps) {
   }, [props.source, props.runId]);
   if (review.status === "ERROR") return <section role="alert">此 Run 的权威复核暂不可用；未改用其他 Run。</section>;
   if (review.status !== "READY" || review.value.runId !== props.runId) return <section role="status">正在载入精确 Run 复核…</section>;
-  if (review.value.releasedResultId !== null) return <ReleasedResultsWorkspacePage {...props} />;
+  if (review.value.releasedResultId !== null) return <SemanticResultsWorkspace {...props} />;
   const focus = parseResultsFocus(props.runId, "review", window.location.search);
   const requested = focus !== null && "reviewId" in focus ? focus : null;
   return <section className="results-shell" data-testid="retained-review" data-run-id={props.runId}>

@@ -22,6 +22,8 @@ build/
 *.log
 logs/
 *.vfaeval
+*.vfacred
+credentials/
 *.gateway.sqlite*
 .idea/
 .vscode/

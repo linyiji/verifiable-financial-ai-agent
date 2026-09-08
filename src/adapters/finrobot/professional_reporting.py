@@ -37,7 +37,7 @@ from src.domain.report import (
     ReportSourceContribution,
 )
 
-RENDERER_VERSION = f"finrobot-professional-port/1.0.0+{FINROBOT_PINNED_COMMIT[:12]}"
+RENDERER_VERSION = f"finrobot-professional-port/2.0.0+{FINROBOT_PINNED_COMMIT[:12]}+reviewed-claims"
 REPORT_SEMANTIC_SCHEMA = "canonical-report-presentation/v1"
 UPSTREAM_ATTRIBUTION = (
     "Presentation design adapted from FinRobot (AI4Finance Foundation), "
@@ -229,6 +229,34 @@ class ControlledArtifactStore:
                 raise ArtifactPathError("symlinks are forbidden inside the artifact root")
 
 
+def _reviewed_metrics(report: CanonicalReportDTO):
+    """No legacy prose fallback; claims must close over exact typed metric inputs."""
+    metrics = {m.metric_id: m for m in report.released_metrics}
+    if len(metrics) != len(report.released_metrics):
+        raise CanonicalReportMappingError("Ambiguous released metrics")
+    seen = set()
+    for claim in report.material_claims:
+        metric = metrics.get(claim.metric_id)
+        if (
+            claim.claim_id in seen
+            or claim.run_id != report.run_id
+            or metric is None
+            or metric.calculation_id not in claim.calculation_refs
+            or not set(metric.evidence_ids) <= set(claim.evidence_refs)
+            or claim.value != metric.canonical_value
+            or claim.unit != metric.canonical_unit
+            or claim.period != metric.period
+            or claim.period_basis != metric.period_basis
+            or claim.actuality != metric.actuality
+            or claim.as_of != metric.as_of
+            or claim.currency != metric.currency
+        ):
+            raise CanonicalReportMappingError("Material claim metric binding mismatch")
+        seen.add(claim.claim_id)
+    used = {c.metric_id for c in report.material_claims}
+    return tuple(m for m in report.released_metrics if m.metric_id in used)
+
+
 class ProfessionalHTMLRenderer:
     """Deterministic, self-contained HTML presentation of one canonical DTO."""
 
@@ -236,13 +264,9 @@ class ProfessionalHTMLRenderer:
 
     def render(self, report: CanonicalReportDTO) -> bytes:
         technical_sections = (
-            _html_section("Released financial metrics", report.released_metrics),
+            _html_section("Released financial metrics", _reviewed_metrics(report)),
             _html_section("Material claims", report.material_claims),
             _html_section("Research source coverage", report.research_source_coverage),
-            _html_section("Financial results", report.structured_financial_results),
-            _html_section("Released claims", report.released_claims),
-            _html_section("Judgments", report.judgments),
-            _html_section("Risk review", report.risk_output),
             _html_section("Limitations", report.limitations),
             _html_section(
                 "Verification lineage",
@@ -484,26 +508,13 @@ def _artifact_record(
 def _html_demo_sections(report: CanonicalReportDTO) -> str:
     if report.company_name is None and report.symbol is None and not report.source_contributions:
         return ""
-    financial_results = report.structured_financial_results
-    thesis = financial_results.get("investment_thesis", {})
-    if not isinstance(thesis, Mapping):
-        thesis = {}
-    summary = thesis.get("summary")
     summary_html = (
-        f"<p>{_html_text(summary)}</p>"
-        if isinstance(summary, str) and summary.strip()
-        else '<p class="empty">No released synthesis summary.</p>'
+        "".join(
+            f'<p data-claim-id="{_html_text(c.claim_id)}">{_html_text(c.statement)}</p>'
+            for c in report.material_claims
+        )
+        or '<p class="empty">No reviewed material claims.</p>'
     )
-    findings = thesis.get("key_findings", ())
-    if not isinstance(findings, Sequence) or isinstance(findings, (str, bytes, bytearray)):
-        findings = ()
-    risks = thesis.get("risks", ())
-    if not isinstance(risks, Sequence) or isinstance(risks, (str, bytes, bytearray)):
-        risks = ()
-    if not risks:
-        risk_value = report.risk_output.get("risks", ())
-        if isinstance(risk_value, Sequence) and not isinstance(risk_value, (str, bytes, bytearray)):
-            risks = risk_value
 
     source_by_calculation = {
         source.calculation_id: source
@@ -511,9 +522,8 @@ def _html_demo_sections(report: CanonicalReportDTO) -> str:
         if source.calculation_id is not None
     }
     metric_cards: list[str] = []
-    wanted_capabilities = {"revenue_growth", "ebitda_margin", "free_cash_flow_margin"}
     for metric in report.released_metrics:
-        if metric.capability_id not in wanted_capabilities:
+        if not any(c.metric_id == metric.metric_id for c in report.material_claims):
             continue
         source = source_by_calculation.get(metric.calculation_id)
         anchor = source.report_anchor if source is not None else f"metric-{metric.capability_id}"
@@ -542,8 +552,6 @@ def _html_demo_sections(report: CanonicalReportDTO) -> str:
                 '<section id="research-summary"><h2>研究结论 / Research Summary</h2>'
                 f"{summary_html}</section>"
             ),
-            f'<section id="key-findings"><h2>Key Findings</h2>{_html_value(findings)}</section>',
-            f'<section id="key-risks"><h2>Key Risks</h2>{_html_value(risks)}</section>',
             f'<section id="key-metrics"><h2>Key Metrics</h2>{metrics_html}</section>',
             (
                 '<section id="execution-sources"><h2>Report ↔ Execution</h2>'
@@ -560,30 +568,14 @@ def _html_source_panel(source: ReportSourceContribution) -> str:
         f"{source.input_tokens if source.input_tokens is not None else 'N/A'} input / "
         f"{source.output_tokens if source.output_tokens is not None else 'N/A'} output"
     )
-    output = {
-        "summary": source.output_summary,
-        "key_findings": source.key_findings,
-        "risks": source.risks,
-        "limitations": source.limitations,
-    }
-    metric = (
-        f"{source.metric_name}: {source.metric_value} {source.metric_unit}"
-        if source.metric_name and source.metric_value and source.metric_unit
-        else "Not attached"
-    )
-    process = source.observable_process or (
-        "Provider-backed Agent invocation completed.",
-        "Strict structured output validated.",
-        "Content-addressed output retained.",
-    )
     details = {
         "Actor / Agent": source.actor_id,
         "Task": source.task_id,
         "Status": source.status,
         "Input": source.input_refs,
-        "Observable Process": process,
-        "Output": output,
-        "Report Contribution": f"{source.report_section} · {metric}",
+        "Observable Process": "Retained execution reference; no new analysis performed.",
+        "Output": source.agent_output_id or source.calculation_id,
+        "Report Contribution": "See typed material claims and exact calculation references.",
         "Provider / Model": f"{source.provider} / {source.actual_model or 'Not applicable'}",
         "Token Usage": token_usage,
         "Duration": f"{source.duration_ms} ms"
@@ -678,13 +670,9 @@ def _pdf_report_lines(report: CanonicalReportDTO) -> list[_PDFLine]:
         _PDFLine("small", f"Released: {report.released_result_id}"),
     ]
     sections = (
-        ("Released financial metrics", report.released_metrics),
+        ("Released financial metrics", _reviewed_metrics(report)),
         ("Material claims", report.material_claims),
         ("Research source coverage", report.research_source_coverage),
-        ("Financial results", report.structured_financial_results),
-        ("Released claims", report.released_claims),
-        ("Judgments", report.judgments),
-        ("Risk review", report.risk_output),
         ("Limitations", report.limitations),
         (
             "Verification lineage",
