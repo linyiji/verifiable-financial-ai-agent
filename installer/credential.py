@@ -4,13 +4,25 @@ from pathlib import Path
 from installer.errors import InstallError
 from src.evaluator.bundle import secure_prompt
 from src.evaluator.contracts import EvaluationAuthorizationError
+from src.evaluator.direct_bundle import DirectBundleError, decrypt_direct_bundle, read_direct_bundle
+from src.evaluator.direct_registry import DirectRegistrySession
 from src.evaluator.launcher import prepare_session
 
 
-def discover(locations, explicit=None, ask=input):
+def discover(locations, explicit=None, ask=input, *, direct_path=None):
+    if direct_path is not None:
+        fixed = Path(direct_path)
+        if fixed.exists() or fixed.is_symlink():
+            if fixed.is_symlink() or not fixed.is_file():
+                raise InstallError("DIRECT_CREDENTIAL_NOT_FOUND")
+            if explicit is not None and Path(explicit) != fixed:
+                raise InstallError("CREDENTIAL_MODE_CONFLICT")
+            return fixed
     if explicit:
         path = Path(explicit).expanduser()
-        if path.is_file() and path.suffix == ".vfaeval":
+        if path.suffix == ".vfacred" and (not path.is_file() or path.is_symlink()):
+            raise InstallError("DIRECT_CREDENTIAL_NOT_FOUND")
+        if path.is_file() and not path.is_symlink() and path.suffix in {".vfaeval", ".vfacred"}:
             return path
         raise InstallError("NO_EVALUATOR_CREDENTIAL")
     candidates = sorted(
@@ -54,6 +66,17 @@ def discover(locations, explicit=None, ask=input):
 
 
 def unlock(path, prompt=secure_prompt):
+    if Path(path).suffix == ".vfacred":
+        try:
+            raw = read_direct_bundle(path)
+            password = prompt("Credential passphrase: ")
+            registry = decrypt_direct_bundle(raw, password)
+            del password, raw
+            return DirectRegistrySession(registry)
+        except DirectBundleError as exc:
+            raise InstallError(exc.code) from None
+        except Exception:
+            raise InstallError("DIRECT_CREDENTIAL_UNLOCK_FAILED") from None
     try:
         password = prompt("Evaluation passphrase: ")
         session = asyncio.run(prepare_session(path, password))

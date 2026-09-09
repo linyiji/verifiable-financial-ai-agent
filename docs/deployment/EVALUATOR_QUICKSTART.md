@@ -4,7 +4,7 @@
 
 Current investors and testers: start with [direct-provider BYOK](LOCAL_DEPLOYMENT.md) and [native setup](ADVANCED_INSTALLATION.md). API integrations are built in, but API keys are not embedded. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner. This avoids dependence on the undeployed gateway; it does not waive provider entitlements or proof/release gates.
 
-The separate [Guided Installation](INSTALL_EVALUATOR.md) prepares Docker services in gateway mode only, not turnkey BYOK. After that installation, open a new terminal and run `vfa start`. Use `vfa stop`, `vfa status`, `vfa doctor`, `vfa update` and `vfa open` for everyday operation of that installer.
+The [Guided Installation](INSTALL_EVALUATOR.md) now supports an encrypted direct-provider bundle separately from gateway mode. Privately receive `VFA-Investor-Access.vfacred`, copy it to `<unpacked-repository>/credentials/active.vfacred`, then run the platform installer. After installation, run `vfa start` and enter the hidden `Credential passphrase:`. No individual provider key entry or gateway is required for this mode. See [exact scope and precedence](../../credentials/README.md). Use `vfa stop`, `vfa status`, `vfa doctor` and `vfa open` for everyday operation.
 
 Public installer URL: **PUBLICATION_REQUIRED**. Real Owner gateway: **NOT_DEPLOYED**. Until those operational prerequisites exist, use the source package for installer validation; do not assume gateway-mode Owner-funded research is available. Independently configured BYOK remains separate.
 

@@ -1,7 +1,6 @@
 """Container entry points. The accepted evaluator transport and product own authorization."""
 
 import asyncio
-import json
 import os
 import socket
 import sys
@@ -11,9 +10,19 @@ from pathlib import Path
 from pydantic import SecretStr
 
 from src.evaluator.client import GatewaySession, activate
+from src.evaluator.direct_bundle import strict_json
+from src.evaluator.direct_registry import DirectCredentialRegistry
 from src.infrastructure.config.settings import Settings
 
 SOCKET = "/run/vfa/credential.sock"
+MAX_HANDOFF_BYTES = 65536
+
+
+def direct_settings(authority, base):
+    if set(authority) != {"mode", "registry"} or authority["mode"] != "direct_registry":
+        raise ValueError("Invalid direct registry handoff")
+    registry = DirectCredentialRegistry.model_validate(authority["registry"])
+    return Settings(_env_file=None, **{**base.model_dump(), **registry.settings_values()})
 
 
 def settings():
@@ -36,8 +45,8 @@ def main():
             upgrade_postgresql_database(settings().database)
             return
         if mode == "handoff":
-            payload = sys.stdin.buffer.read(8193)
-            if len(payload) > 8192:
+            payload = sys.stdin.buffer.read(MAX_HANDOFF_BYTES + 1)
+            if len(payload) > MAX_HANDOFF_BYTES:
                 raise ValueError()
             for _attempt in range(60):
                 try:
@@ -64,12 +73,18 @@ def main():
                 chunks = bytearray()
                 while chunk := connection.recv(4096):
                     chunks.extend(chunk)
-                    if len(chunks) > 8192:
+                    if len(chunks) > MAX_HANDOFF_BYTES:
                         raise ValueError()
-                authority = json.loads(chunks)
-                session = GatewaySession(authority["url"], SecretStr(authority["token"]))
-                asyncio.run(session.readiness())
-                activate(session)
+                authority = strict_json(chunks)
+                config = settings()
+                if authority.get("mode") == "direct_registry":
+                    config = direct_settings(authority, config)
+                else:
+                    if set(authority) != {"url", "token"}:
+                        raise ValueError()
+                    session = GatewaySession(authority["url"], SecretStr(authority["token"]))
+                    asyncio.run(session.readiness())
+                    activate(session)
                 del authority, chunks
                 connection.sendall(b"READY")
         os.unlink(SOCKET)
@@ -77,7 +92,6 @@ def main():
 
         import apps.api.main as product
 
-        config = settings()
         product.get_settings = lambda: config
         uvicorn.run(
             product.create_app(), host="0.0.0.0", port=8010, access_log=False, log_level="critical"

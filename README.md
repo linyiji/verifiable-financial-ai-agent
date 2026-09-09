@@ -8,6 +8,13 @@ Current Alpha capability scope: Bocha Web Search evidence/discovery support only
 The Owner-authorized FMP pool contains **four distinct keys**; a fifth key is not
 required. Provider credentials are private and are never included in this repository.
 
+Direct encrypted investor credentials: privately receive `VFA-Investor-Access.vfacred`,
+copy it to `<unpacked-repository>/credentials/active.vfacred`, complete the
+[platform installer](docs/deployment/INSTALL_EVALUATOR.md), then run `vfa start`
+and enter the hidden passphrase. See [credential scope and delivery gates](credentials/README.md).
+This path does not require an Owner gateway. Full-proof Docker delivery and
+fresh-download live acceptance remain pending; configuration is not live certification.
+
 Autonomous financial research that can execute, verify, recover, remember, and improve.
 
 Local Deployable Alpha · Controlled Alpha Ready

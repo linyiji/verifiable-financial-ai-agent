@@ -1,6 +1,17 @@
 """Owned, secret-free errors with a single next action."""
 
 MESSAGES = {
+    "DIRECT_CREDENTIAL_NOT_FOUND": (
+        "Direct credential bundle not found. Expected credentials/active.vfacred."
+    ),
+    "DIRECT_CREDENTIAL_UNLOCK_FAILED": "Credential bundle unlock failed. Use hidden input.",
+    "DIRECT_CREDENTIAL_AUTHENTICATION_FAILED": (
+        "Credential bundle authentication failed. Check the passphrase and file."
+    ),
+    "DIRECT_CREDENTIAL_FORMAT_UNSUPPORTED": "Unsupported credential bundle format.",
+    "CREDENTIAL_MODE_CONFLICT": (
+        "Conflicting credential modes. Remove the override or the fixed direct bundle."
+    ),
     "DOCKER_NOT_INSTALLED": "Install Docker Desktop when prompted, then run the installer again.",
     "DOCKER_NOT_RUNNING": "Start Docker Desktop, then run vfa start.",
     "REBOOT_REQUIRED": "Restart Windows once, then run the same install command again.",

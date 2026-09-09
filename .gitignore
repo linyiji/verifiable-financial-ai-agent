@@ -23,7 +23,13 @@ build/
 logs/
 *.vfaeval
 *.vfacred
-credentials/
+!credentials/
+credentials/*
+!credentials/.gitkeep
+!credentials/README.md
+!credentials/README.zh-CN.md
+credentials/distribution/
+**/provider-registry.local.json
 *.gateway.sqlite*
 .idea/
 .vscode/

@@ -4,9 +4,9 @@
 
 ## 1. Thirty-second overview
 
-**Current investor/tester recommendation:** use [direct-provider BYOK](LOCAL_DEPLOYMENT.md) with [native setup](ADVANCED_INSTALLATION.md). API integrations are built in, not API keys. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner. This page describes the gateway-only Docker installer foundation, not a turnkey BYOK installer.
+This installer supports encrypted direct credentials (`.vfacred`) separately from `.vfaeval` gateway mode. Direct mode needs neither individual provider key entry nor an Owner gateway. Full-proof/generated-capability Docker delivery is still gated by the standard mode limits below; [native BYOK installation](ADVANCED_INSTALLATION.md) remains available for full research.
 
-Receive the installer source package and one encrypted `.vfaeval` bundle privately from the Owner. Unpack the source package, run the platform command below, and follow the prompts. Docker Desktop provides the local runtime; no separate database or language tools are needed. The installer creates local storage, migrates its own database, checks gateway permission and starts the real product. A successful first install opens your default browser.
+Privately receive `VFA-Investor-Access.vfacred`, copy it to `credentials/active.vfacred` within the unpacked repository, then run the platform command below. The installer prepares the local database, migrations, backend and frontend. Direct readiness validates configuration only, without paid calls.
 
 **Delivery status:** installer source foundation; public installer URL **PUBLICATION_REQUIRED**. Publishing repository source is not the same as publishing accepted installer-specific assets and bootstrap URLs. Do not substitute a mutable develop URL into a download-and-execute command. Published installers will resolve an accepted GitHub release and verify its SHA-256 package before executing it.
 
@@ -38,9 +38,11 @@ First-time image preparation downloads dependencies and can take several minutes
 
 ## 4. Where to place the credential
 
-Place the encrypted file in Downloads or Desktop. Exactly one candidate is selected automatically; multiple candidates display filenames for selection. With none present, place it in Downloads and press Enter, or enter a path. Inside the installer, these directories appear as `/credentials/downloads` and `/credentials/desktop`; use one of these paths if selecting a file manually. Other directories are not automatically searched or mounted.
+Direct credentials have one fixed location: `<unpacked-repository>/credentials/active.vfacred` (Windows: `<unpacked-repository>\credentials\active.vfacred`). Rename the privately received `VFA-Investor-Access.vfacred` when copying. The installer records the selected product path as non-secret metadata and mounts its credential directory read-only. Keep the unpacked directory; rerun the platform installer from a new release when changing versions.
 
-Enter the passphrase at the hidden terminal prompt. It is never a command argument, environment variable or saved setting. Provider keys remain on the Owner gateway. Do not place the passphrase beside the bundle. Reopening a session requires unlocking the bundle again.
+The fixed direct bundle takes precedence; conflicting explicit paths fail. Invalid direct credentials never fall back. Without a direct bundle, legacy `.vfaeval` discovery in Downloads/Desktop remains available. Direct bundles are never searched recursively. Native BYOK stays separate and is never merged into direct mode.
+
+Enter the passphrase at the hidden `Credential passphrase:` prompt. It is not a command argument or persisted setting. Direct provider keys are decrypted only in process memory and private socket handoff; gateway bundles still provide gateway authorization only. See [credential scope and security boundaries](../../credentials/README.md).
 
 ## 5. First startup
 
@@ -83,7 +85,7 @@ vfa status
 vfa doctor
 ```
 
-Status reports local service state. Doctor checks Docker, installed version, service state and (when you unlock a bundle) the same zero-cost gateway readiness. It does not test FMP/MiMo/TeamoRouter. Normal errors show an owned code and next action; no stack traces or raw service logs are printed.
+Status reports local service state. Doctor checks Docker, installed version, service state and (when you unlock a bundle) zero-cost mode-specific readiness (direct configuration or gateway permission). It does not test FMP/MiMo/TeamoRouter. Normal errors show an owned code and next action; no stack traces or raw service logs are printed.
 
 ## 10. Troubleshooting
 

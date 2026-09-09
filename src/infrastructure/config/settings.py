@@ -105,11 +105,12 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "sqlite+aiosqlite:///./verifiable_financial.db"
-    vfa_credential_mode: Literal["byok", "evaluator"] = "byok"
+    vfa_credential_mode: Literal["byok", "evaluator", "direct_registry"] = "byok"
     vfa_evaluator_gateway_url: str | None = None
     artifact_root: str = "artifacts"
     workspace_root: str = "workspaces"
     fmp_api_key: SecretStr | None = None
+    fmp_api_keys: tuple[SecretStr, ...] = ()
     bocha_api_key: SecretStr | None = None
     fmp_base_url: str = "https://financialmodelingprep.com"
     llm_provider: str = "teamorouter"
@@ -141,7 +142,11 @@ class Settings(BaseSettings):
 
     @property
     def fmp(self) -> FMPSettings:
-        configured_pool = load_numbered_fmp_credentials()
+        configured_pool = (
+            self.fmp_api_keys
+            if self.vfa_credential_mode == "direct_registry"
+            else load_numbered_fmp_credentials()
+        )
         return FMPSettings(
             api_key=None if configured_pool else self.fmp_api_key,
             api_keys=configured_pool,

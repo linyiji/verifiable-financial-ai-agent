@@ -314,7 +314,7 @@ def test_health_timeout_bounded(tmp_path):
 def test_cli_commands_route_to_owned_services(tmp_path, monkeypatch, name):
     service = FakeServices()
     monkeypatch.setattr(cli, "DockerServices", lambda *a: service)
-    monkeypatch.setattr(cli.Installer, "doctor", lambda self: service.doctor())
+    monkeypatch.setattr(cli.Installer, "doctor", lambda self, **kwargs: service.doctor())
     monkeypatch.setattr("sys.argv", ["vfa", name, "--root", str(tmp_path)])
     cli.main()
     assert ({"open": "health"}.get(name, name)) in service.calls

@@ -59,6 +59,7 @@ docker build -f "$VfaSource/installer/Dockerfile" -t vfa-evaluator:source $VfaSo
 if ($LASTEXITCODE -ne 0) { throw 'INSTALLATION_FAILED: Run this command again; private build logs are retained.' }
 Copy-Item "$VfaSource/installer/vfa.ps1" "$VfaRoot/bin/vfa.ps1" -Force
 Copy-Item "$VfaSource/installer/vfa.cmd" "$VfaRoot/bin/vfa.cmd" -Force
+[System.IO.File]::WriteAllText("$VfaRoot/product-root", $VfaSource)
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (($UserPath -split ';') -notcontains "$VfaRoot/bin") {
     [Environment]::SetEnvironmentVariable('Path', "$VfaRoot/bin;$UserPath", 'User')

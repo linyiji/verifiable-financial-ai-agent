@@ -2,7 +2,7 @@
 
 [简体中文](WINDOWS_EVALUATION.zh-CN.md)
 
-Current investors and testers should use [direct-provider BYOK](LOCAL_DEPLOYMENT.md) and [native setup](ADVANCED_INSTALLATION.md). API integrations are built in, not API keys: bring your own keys or receive separately scoped, revocable test keys privately from the Owner. The following PowerShell → guided installer → Docker Desktop → VFA path is gateway-only, not turnkey BYOK; its standard image does not package full proof tooling.
+The installer supports encrypted direct credentials (`.vfacred`) separately from `.vfaeval` gateway mode. Privately receive `VFA-Investor-Access.vfacred` and copy it to `<unpacked-repository>/credentials/active.vfacred` (backslashes on Windows) before installation. Direct mode does not require an Owner gateway. Full-proof image acceptance remains pending; use [native installation](ADVANCED_INSTALLATION.md) for full research meanwhile. See [credential instructions](../../credentials/README.md).
 
 From the supplied unpacked installer source package:
 
@@ -10,7 +10,7 @@ From the supplied unpacked installer source package:
 & .\scripts\install-evaluator.ps1
 ```
 
-Follow Docker Desktop installation/restart prompts if needed. No manual WSL distribution, Python, Node or PostgreSQL setup is required. Put the encrypted `.vfaeval` in Downloads and enter its passphrase when prompted. The first successful installation starts the product and opens the default browser.
+Follow Docker Desktop installation/restart prompts if needed. No manual WSL distribution, Python, Node or PostgreSQL setup is required. Enter the direct bundle passphrase at the hidden `Credential passphrase:` prompt. Legacy gateway users may instead put `.vfaeval` in Downloads. The first successful installation starts the product and opens the default browser.
 
 In a new terminal, relaunch with `vfa start`. [Full guided instructions and troubleshooting](INSTALL_EVALUATOR.md).
 

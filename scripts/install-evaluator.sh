@@ -63,6 +63,7 @@ if ! docker build -f "$vfa_source/installer/Dockerfile" -t vfa-evaluator:source 
 fi
 cp "$vfa_source/installer/vfa.sh" "$vfa_root/bin/vfa"
 chmod 700 "$vfa_root/bin/vfa"
+printf '%s' "$vfa_source" > "$vfa_root/product-root"
 # Per-user PATH only; no sudo or system-directory writes. Shell restart picks it up.
 vfa_path_line='export PATH="$HOME/Library/Application Support/Verifiable Financial Agent/bin:$PATH"'
 touch "$HOME/.zprofile"

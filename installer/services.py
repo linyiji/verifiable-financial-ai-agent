@@ -7,6 +7,7 @@ from pathlib import Path
 
 from installer.errors import InstallError
 from installer.state import private_write
+from src.evaluator.direct_registry import DirectRegistrySession
 
 
 class DockerServices:
@@ -113,7 +114,9 @@ class DockerServices:
         self.dc("stop", "api", "web")
         self.dc("up", "-d", "--force-recreate", "api", "web")
         payload = json.dumps(
-            {"url": session.url, "token": session._token.get_secret_value()}
+            {"mode": "direct_registry", "registry": session.registry.secret_payload()}
+            if isinstance(session, DirectRegistrySession)
+            else {"url": session.url, "token": session._token.get_secret_value()}
         ).encode()
         # Secret travels over stdin into a local private Unix socket, never a file/env/argv.
         self.dc(

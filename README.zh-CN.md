@@ -7,6 +7,11 @@
 当前 Alpha 仅支持 Bocha Web Search 证据与发现能力。Owner 已明确授权 FMP 使用
 **四个不同的 Key**，不再要求第五个。Provider 凭证仅私下配置，不包含在本仓库中。
 
+加密投资者凭据：私下取得 `VFA-Investor-Access.vfacred`，复制为
+`<解压仓库>/credentials/active.vfacred`，完成[平台安装](docs/deployment/INSTALL_EVALUATOR.zh-CN.md)
+后运行 `vfa start`，在隐藏提示中输入口令。详见[凭据范围与交付门禁](credentials/README.zh-CN.md)。
+此路径不依赖 Owner 网关。完整证明 Docker 交付与全新下载实时验收仍待通过；配置成功不等于实时认证。
+
 向风行 AI：能够自主执行、验证、恢复、记忆并持续积累的金融研究 Agent。
 
 Local Deployable Alpha · Controlled Alpha Ready

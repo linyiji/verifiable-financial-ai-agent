@@ -7,6 +7,7 @@ from installer import credential, release
 from installer.errors import InstallError
 from installer.services import DockerServices
 from installer.state import State, private_write
+from src.evaluator.direct_registry import DirectRegistrySession
 
 
 class Installer:
@@ -20,10 +21,31 @@ class Installer:
         unlock=credential.unlock,
         resolve=release.resolve,
         unpack=release.unpack,
+        direct_path=None,
     ):
         self.state, self.services = state, services
         self.locations, self.discover, self.unlock = locations, discover, unlock
         self.resolve, self.unpack = resolve, unpack
+        self.direct_path = direct_path
+
+    def discover_credential(self, bundle=None):
+        if self.direct_path is None:
+            return self.discover(self.locations, bundle)
+        return self.discover(self.locations, bundle, direct_path=self.direct_path)
+
+    def readiness(self, session, *, record_stage=True):
+        if isinstance(session, DirectRegistrySession):
+            if record_stage:
+                self.state.stage("DIRECT_REGISTRY_READINESS")
+            for name, value in session.metadata.items():
+                print(f"{name}: {value}")
+            print("Direct registry CONFIGURED; provider calls 0; not live-provider verified.")
+        else:
+            if record_stage:
+                self.state.stage("GATEWAY_READINESS")
+            print("Credential PASS · Gateway ALLOWED · Paid upstream calls 0")
+            for route in session.metadata["routes"]:
+                print(f"{route}: ALLOWED")
 
     def preflight(self):
         s = self.state
@@ -51,14 +73,11 @@ class Installer:
         s.stage("MIGRATION")
         self.services.migrate()
         s.stage("CREDENTIAL_DISCOVERY")
-        path = self.discover(self.locations, bundle)
+        path = self.discover_credential(bundle)
         s.save(credential_name=path.name)
         s.stage("CREDENTIAL_UNLOCK")
         session = self.unlock(path)
-        s.stage("GATEWAY_READINESS")
-        print("Credential PASS · Gateway ALLOWED · Paid upstream calls 0")
-        for route in session.metadata["routes"]:
-            print(f"{route}: ALLOWED")
+        self.readiness(session)
         s.stage("SERVICE_START")
         self.services.start(session)
         del session
@@ -98,18 +117,16 @@ class Installer:
         private_write(s.root / "image", image)
         self.start(checked=True, **start_args)
 
-    def doctor(self):
+    def doctor(self, bundle=None):
         print("VFA Doctor")
         self.services.check()
         print("Docker PASS")
         print("Product version:", self.state.data.get("version", "not installed"))
         print(self.services.status())
         try:
-            path = self.discover(self.locations)
+            path = self.discover_credential(bundle)
             session = self.unlock(path)
-            print("Credential PASS · Gateway READY (permission only)")
-            for route in session.metadata["routes"]:
-                print(route + ": ALLOWED")
+            self.readiness(session, record_stage=False)
         except InstallError as exc:
             print(str(exc))
             if exc.code == "NO_EVALUATOR_CREDENTIAL":
@@ -143,7 +160,10 @@ def main():
             args.root, args.host_root or args.root, state.data.get("image", args.image)
         )
         installer = Installer(
-            state, services, locations=["/credentials/downloads", "/credentials/desktop"]
+            state,
+            services,
+            locations=["/credentials/downloads", "/credentials/desktop"],
+            direct_path="/credentials/product/active.vfacred",
         )
         if args.command in {"install", "update"}:
             installer.install(
@@ -162,7 +182,7 @@ def main():
         elif args.command == "status":
             print(services.status())
         elif args.command == "doctor":
-            installer.doctor()
+            installer.doctor(bundle=args.bundle)
         elif args.command == "open":
             services.health()
             installer.open_browser()

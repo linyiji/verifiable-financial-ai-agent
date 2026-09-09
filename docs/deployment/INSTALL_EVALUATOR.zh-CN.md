@@ -4,9 +4,9 @@
 
 ## 1. 三十秒概览
 
-**当前投资者 / 测试员建议：**采用[直连供应商 BYOK](LOCAL_DEPLOYMENT.zh-CN.md)及[原生环境安装](ADVANCED_INSTALLATION.zh-CN.md)。产品内置 API 集成，不内置 API 密钥。使用自己的密钥，或由 Owner 私下提供独立限定权限、可撤销的测试密钥。本页描述仅支持网关模式的 Docker 安装器基础版，不是开箱即用的 BYOK 安装器。
+本安装器支持 `.vfacred` 加密直连凭据，并保留独立的 `.vfaeval` 网关模式。直连模式无需逐个配置 Provider Key 或部署 Owner 网关。完整证明与生成能力 Docker 交付仍待通过，下方标准模式限制继续有效；当前完整研究可使用[原生 BYOK 安装](ADVANCED_INSTALLATION.zh-CN.md)。
 
-从 Owner 私下取得安装器源码包和一个加密 `.vfaeval` 凭据包。解压源码包，运行以下平台命令并按提示操作。Docker Desktop 提供本地运行时；无需单独安装数据库或语言工具。安装器创建本地存储、迁移其独立数据库、检查网关权限并启动真实产品。首次安装成功后打开默认浏览器。
+私下取得 `VFA-Investor-Access.vfacred`，将其复制为解压仓库的 `credentials/active.vfacred`，再运行以下平台安装命令。安装器准备本地数据库、迁移、后端与前端；直连 readiness 仅验证配置，不发出付费调用。
 
 **交付状态：**安装器源码基础版；公开安装器 URL 为 **PUBLICATION_REQUIRED**。发布仓库源码不等于发布已验收的安装器专用资产和引导 URL。不要把可变的 develop URL 替换进下载后执行的命令。公开安装器将解析已接受的 GitHub Release，并在执行前验证其 SHA-256 软件包。
 
@@ -38,9 +38,11 @@ bash scripts/install-evaluator.sh
 
 ## 4. 凭据放在哪里
 
-将加密文件放入 Downloads 或 Desktop。只有一个候选时自动选择；有多个时显示文件名供选择。没有候选时，放入 Downloads 后按 Enter，或输入路径。安装器内部，这些目录显示为 `/credentials/downloads` 和 `/credentials/desktop`；手动选文件时须使用其中一个路径。不会自动搜索或挂载其他目录。
+直连凭据固定位置：`<解压仓库>/credentials/active.vfacred`；Windows 为 `<解压仓库>\credentials\active.vfacred`。收到的文件名是 `VFA-Investor-Access.vfacred`，复制时改名即可。安装器保存所选产品目录的非秘密路径，凭据目录仅以只读方式挂载。请保留该解压目录；换版本时从新版本重新执行平台安装器。
 
-在隐藏终端提示处输入口令。口令绝不会成为命令参数、环境变量或保存设置。供应商密钥保留在 Owner 网关上。不要把口令放在凭据包旁边。重新打开会话需要再次解锁凭据包。
+固定位置的直连包优先；冲突的显式路径报错。损坏的直连包不会回退。没有直连包时，旧 `.vfaeval` 可继续从 Downloads / Desktop 选择，不递归搜索直连凭据。BYOK 仍为独立原生配置，不与直连包合并。
+
+在隐藏的 `Credential passphrase:` 提示中输入口令。口令不进入命令参数或持久化设置。直连 Provider 密钥只在内存及私有 socket 交接中解密，网关包仍只提供网关授权。详见[凭据范围与安全边界](../../credentials/README.zh-CN.md)。
 
 ## 5. 首次启动
 
@@ -83,7 +85,7 @@ vfa status
 vfa doctor
 ```
 
-Status 报告本地服务状态。Doctor 检查 Docker、已安装版本、服务状态，并在解锁凭据包时执行相同的零费用网关 readiness。它不测试 FMP/MiMo/TeamoRouter。正常错误显示系统定义的错误码与下一步操作；不打印堆栈或原始服务日志。
+Status 报告本地服务状态。Doctor 检查 Docker、已安装版本、服务状态，并在解锁凭据包时执行对应模式的零费用 readiness（直连配置或网关权限）。它不测试 FMP/MiMo/TeamoRouter。正常错误显示系统定义的错误码与下一步操作；不打印堆栈或原始服务日志。
 
 ## 10. 故障排查
 
