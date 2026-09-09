@@ -6,6 +6,14 @@ Verifiable Financial Agent turns a reviewed research goal into an observable mul
 
 This is a Controlled Alpha snapshot. It is not production reliability certification, investment advice, or a claim that every task and upstream provider succeeds.
 
+## Latest fresh-download validation
+
+The published `evaluation-candidate-2026-09-09-v3` package was downloaded from GitHub, SHA-256 verified, unpacked into a fresh directory, given the private bundle at `credentials/active.vfacred`, installed with the embedded macOS script and checked with `vfa doctor`. The running API and Broker both matched package revision `fd5b3909ce1ff3fc27628ff1728de498c202a8a5` and image digest `sha256:8256d39ba01fecafb7ddc076d2908fd46a2e97f40996f137ab8cd34f26ea2274`.
+
+The one authorized fresh-download NVDA Run, `RUN-305a06c7-642d-42ed-8109-1a93b320aa48`, reached terminal `FAILED / FAILURE` at sequence 237. Evidence, fundamental, peer, news and synthesis tasks completed; valuation and risk failed. Synthesis itself correctly walked Sol timeout → Luna check timeout → Terra check timeout → authorized MiMo `mimo-v2.5` success. The Run then failed closed at `POST_SCHEDULER` with `REQUIRED_CALCULATION_UNAVAILABLE`; Review, Proof, Report, ReleasedResult and Memory were `NOT_GENERATED` / `NOT_OBSERVED`. No retry or second Run was performed.
+
+Therefore the latest investor-equivalent status is `LIVE_BLOCKED_WITH_KNOWN_ISSUE`, while the earlier exact-image local baseline below remains valid historical success evidence.
+
 ## Live-tested identity
 
 | Item | Observed value |
@@ -70,5 +78,11 @@ Then use `vfa start`, `vfa doctor`, and `vfa stop`. Startup is bound to the rele
 ![Accepted Closure-9 NVDA Live](../product/screenshots/closure9-live-accepted.png)
 
 This unretouched 1440 × 900 image is from the Run above. Older screenshots are separately identified in [screenshot provenance](../product/screenshots/PROVENANCE.md) and are not represented as the same execution.
+
+### Latest fresh-download Live — blocked with known issue
+
+![Fresh-download v3 Live failure](../product/screenshots/evaluation-v3-fresh-live-blocked.png)
+
+This second image is from the separate fresh-download Run and is intentionally not represented as the successful baseline Run.
 
 Next exact action: `PHASE6A_POLICY_AND_RECOVERY_AUDIT` — not started.

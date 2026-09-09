@@ -11,6 +11,7 @@
 `<解压仓库>/credentials/active.vfacred`，完成[平台安装](docs/deployment/INSTALL_EVALUATOR.zh-CN.md)
 后运行 `vfa start`，在隐藏提示中输入口令。详见[凭据范围与交付门禁](credentials/README.zh-CN.md)。
 此路径不依赖 Owner 网关。2026-09-09 已在精确镜像绑定的 Docker 运行时完成一次全新、隔离的 NVDA Live 本地验收；配置成功本身仍不等于 Provider 实时认证。详见[外部评估快照](EVALUATION_README.md)。
+随后从 GitHub fresh-download 的运行验证了安装身份，但以 `FAILED / REQUIRED_CALCULATION_UNAVAILABLE` 终止；精确事实已保留在评估快照中。
 
 向风行 AI：能够自主执行、验证、恢复、记忆并持续积累的金融研究 Agent。
 

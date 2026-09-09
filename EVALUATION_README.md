@@ -6,6 +6,8 @@ This snapshot is a truthful, runnable Alpha evaluation boundary, not a productio
 
 本快照是可运行、如实披露边界的 Alpha 外部评估版本，不代表生产级安全认证，也不构成投资建议或收益保证。
 
+Latest investor-equivalent validation: GitHub `v3` downloaded, unpacked, credential placed, installed and doctor-ready with exact revision/digest; its single NVDA Run `RUN-305a06c7-642d-42ed-8109-1a93b320aa48` terminated `FAILED / REQUIRED_CALCULATION_UNAVAILABLE`. See the canonical bilingual documents for the preserved baseline success and latest failure truth.
+
 ## Accepted local evidence / 已验收本地证据
 
 - Source candidate: `bcd3525a0e4a194f37775477027d988ed224bb6e`.

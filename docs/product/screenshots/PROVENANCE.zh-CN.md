@@ -14,6 +14,7 @@
 | research-memory.png | S11-research-memory.png | PASS；Object V2 Memories |
 | base-vs-current.png | S12-base-vs-current.png | PASS；Object V2 Compare 的 Metrics 面板 |
 | closure9-live-accepted.png | 全新隔离本地运行时 | PASS；RUN-9d44e5e1-55a7-465d-a23e-991c63f7badf RELEASED / SUCCESS，执行视图 |
+| evaluation-v3-fresh-live-blocked.png | GitHub v3 fresh-download 运行时 | 如实保留失败；RUN-305a06c7-642d-42ed-8109-1a93b320aa48 FAILED / REQUIRED_CALCULATION_UNAVAILABLE |
 
 Object：OBJ-NVDA。当前已发布 Run：RUN-ab806291-8cbf-4c9b-8852-b6a54f10768d。当前视图 RVV-0f7f4dfc-3dfa-538c-b59f-a8e22607007b。
 知识基线：RUN-57aed683-75d6-4b47-acc6-a73053ea492e，视图 RVV-05bec42f-ab9b-55c5-b502-c439b8abe948。
@@ -32,3 +33,4 @@ Object：OBJ-NVDA。当前已发布 Run：RUN-ab806291-8cbf-4c9b-8852-b6a54f1076
 - research-memory.png: 7ec6d52d7102e07dbe1b927405a8bdf187ebc6e2f2129b0476ba22192802c187
 - base-vs-current.png: c1c6fd057cdbcd3f62ddb650572ff597ac8e28c9b67b2c7f22afb04545106a89
 - closure9-live-accepted.png: 4fd44c12704216a69d4d65651248c3fea4b5069f4bde98a68ecc472567155d1d
+- evaluation-v3-fresh-live-blocked.png: 583bade13accd240e5c36cfd045ee8c8fae3e75118d795e7333bd095cdb55346

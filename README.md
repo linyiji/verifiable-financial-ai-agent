@@ -15,6 +15,8 @@ and enter the hidden passphrase. See [credential scope and delivery gates](crede
 This path does not require an Owner gateway. The exact-image Docker runtime and one
 fresh isolated NVDA Live were accepted locally on 2026-09-09; configuration alone is
 still not live certification. See the [External Evaluation Snapshot](EVALUATION_README.md).
+The subsequent GitHub fresh-download Run validated installation identity but ended
+`FAILED / REQUIRED_CALCULATION_UNAVAILABLE`; its exact truth is retained in that snapshot.
 
 Autonomous financial research that can execute, verify, recover, remember, and improve.
 

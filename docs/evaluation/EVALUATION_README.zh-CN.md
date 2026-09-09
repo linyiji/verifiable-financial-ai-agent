@@ -6,6 +6,14 @@
 
 这是 Controlled Alpha 评估快照，不是生产级可靠性认证、投资建议，也不宣称每个任务或上游 Provider 都会成功。
 
+## 最新 fresh-download 验证
+
+已从 GitHub 下载 `evaluation-candidate-2026-09-09-v3`，核验 ZIP SHA-256，在全新目录解压，将私有凭据放到 `credentials/active.vfacred`，执行内置 macOS 首次安装脚本和 `vfa doctor`。运行中 API 与 Broker 均匹配软件包 revision `fd5b3909ce1ff3fc27628ff1728de498c202a8a5` 及镜像 digest `sha256:8256d39ba01fecafb7ddc076d2908fd46a2e97f40996f137ab8cd34f26ea2274`。
+
+唯一授权的 fresh-download NVDA Run `RUN-305a06c7-642d-42ed-8109-1a93b320aa48` 在 sequence 237 到达 `FAILED / FAILURE`。Evidence、fundamental、peer、news、synthesis 完成；valuation 与 risk 失败。Synthesis 本身正确经过 Sol 超时 → Luna 检查超时 → Terra 检查超时 → 授权 MiMo `mimo-v2.5` 成功；随后 Run 在 `POST_SCHEDULER` 因 `REQUIRED_CALCULATION_UNAVAILABLE` 关闭。Review、Proof、Report、ReleasedResult、Memory 均为 `NOT_GENERATED` / `NOT_OBSERVED`。没有重试或第二个 Run。
+
+因此最新投资者等价状态为 `LIVE_BLOCKED_WITH_KNOWN_ISSUE`；下方较早的精确镜像本地成功基线仍是有效历史证据。
+
 ## 已执行 Live 的精确身份
 
 | 项目 | 实际观察值 |
@@ -70,5 +78,11 @@ bash scripts/install-evaluator.sh
 ![Closure-9 NVDA Live 验收](../product/screenshots/closure9-live-accepted.png)
 
 该 1440 × 900 未修饰截图来自上面的 Run。旧截图在[截图来源说明](../product/screenshots/PROVENANCE.zh-CN.md)中单独标识，不会混称为同一次执行。
+
+### 最新 fresh-download Live —— 已知问题阻塞
+
+![Fresh-download v3 Live 失败](../product/screenshots/evaluation-v3-fresh-live-blocked.png)
+
+该截图来自另一条 fresh-download Run，不会与成功基线混称为同一次执行。
 
 下一精确动作：`PHASE6A_POLICY_AND_RECOVERY_AUDIT` —— 本快照未启动。
