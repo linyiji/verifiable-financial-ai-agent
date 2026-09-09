@@ -10,6 +10,7 @@ from src.agentic.research_output_artifacts import ResearchAgentOutputArtifactSto
 from src.agentic.specialist import SpecialistExecutionContext
 from src.domain.agent_output import StandardResearchAgentStructuredOutput as Output
 from src.domain.enums import RunStatus, TaskStatus
+from src.domain.model_execution import TASK_CANDIDATES
 from src.domain.recovery import Action, Candidate, Capability, RecoveryBudget, RecoveryDecision
 from src.domain.task import PlannedTaskGraph, Task
 from src.infrastructure.database.recovery import MemoryRecoveryEvidenceStore
@@ -203,6 +204,159 @@ async def test_follow_up_total_deadline_stops_before_fallback(tmp_path):
     with pytest.raises(ResearchAgentInvocationError):
         await specialist.execute(context(child))
     assert sum(c.calls for c in clients.values()) == 1
+    assert store.values[-1].reason_code == "RECOVERY_BUDGET_EXHAUSTED"
+
+
+def synthesis_task():
+    return task().model_copy(
+        update={
+            "task_id": "RUN-local:synthesis",
+            "task_type": "report_synthesis",
+            "assigned_agent": "research_lead",
+            "skill_id": "report_synthesis_v1",
+        }
+    )
+
+
+def test_synthesis_authority_is_frozen_before_execution():
+    assert TASK_CANDIDATES["report_synthesis"] == (
+        "teamorouter-sol",
+        "teamorouter-luna",
+        "teamorouter-terra",
+        "mimo-direct",
+    )
+
+
+def synthesis_recovery(*, failures, denied=None, delays=None, budget=None):
+    specifications = [
+        ("teamorouter-sol", "teamorouter", "gpt-5.6-sol"),
+        ("teamorouter-luna", "teamorouter", "gpt-5.6-luna"),
+        ("teamorouter-terra", "teamorouter", "gpt-5.6-terra"),
+        ("mimo-direct", "mimo", "mimo-v2.5"),
+    ]
+    delays = delays or {}
+    clients = {
+        key: Client(provider, model, failures.get(key, ()), delays.get(key, 0))
+        for key, provider, model in specifications
+    }
+    routes = {
+        key: Candidate(
+            route=key,
+            provider=provider,
+            model=model,
+            authority_exists=key != denied,
+        )
+        for key, provider, model in specifications
+    }
+    store = MemoryRecoveryEvidenceStore()
+    return AdaptiveRecovery(routes, clients, store, budget=budget), clients, store
+
+
+def synthesis_agent(tmp_path, recovery, clients):
+    return LLMResearchAgent(
+        agent_id="research_lead",
+        supported_task_types=frozenset({"report_synthesis"}),
+        provider=clients["teamorouter-sol"],
+        artifacts=ResearchAgentOutputArtifactStore(tmp_path),
+        recovery=recovery,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failures,denied,expected_calls,success",
+    [
+        (
+            {
+                "teamorouter-sol": [Code.READ_TIMEOUT],
+                "teamorouter-luna": [Code.PROVIDER_UNAVAILABLE],
+            },
+            None,
+            [1, 1, 1, 0],
+            True,
+        ),
+        (
+            {
+                "teamorouter-sol": [Code.READ_TIMEOUT],
+                "teamorouter-luna": [Code.PROVIDER_UNAVAILABLE],
+                "teamorouter-terra": [Code.READ_TIMEOUT],
+            },
+            None,
+            [1, 1, 1, 1],
+            True,
+        ),
+        (
+            {
+                "teamorouter-sol": [Code.READ_TIMEOUT],
+                "teamorouter-luna": [Code.PROVIDER_UNAVAILABLE],
+                "teamorouter-terra": [Code.READ_TIMEOUT],
+                "mimo-direct": [Code.PROVIDER_UNAVAILABLE],
+            },
+            None,
+            [1, 1, 1, 1],
+            False,
+        ),
+        (
+            {
+                "teamorouter-sol": [Code.READ_TIMEOUT],
+                "teamorouter-luna": [Code.PROVIDER_UNAVAILABLE],
+            },
+            "teamorouter-terra",
+            [1, 1, 0, 1],
+            True,
+        ),
+    ],
+)
+async def test_synthesis_ordered_authorized_route_walk(
+    tmp_path, failures, denied, expected_calls, success
+):
+    recovery, clients, store = synthesis_recovery(failures=failures, denied=denied)
+    invocation = synthesis_agent(tmp_path, recovery, clients).execute(context(synthesis_task()))
+    if success:
+        result = await invocation
+        assert result.agent_output.status == "SUCCESS"
+    else:
+        with pytest.raises(ResearchAgentInvocationError):
+            await invocation
+        assert store.values[-2].decision.reason_code == "NO_ALLOWED_ROUTE"
+        assert store.values[-2].recovery_context.remaining_attempts == 3
+        assert store.values[-2].recovery_context.remaining_checks == 0
+        assert store.values[-1].reason_code == "POLICY_DENIED"
+    assert [client.calls for client in clients.values()] == expected_calls
+    attempts = [item for item in store.values if item.kind == "ATTEMPT_STARTED"]
+    assert [item.attempt_number for item in attempts] == list(range(1, len(attempts) + 1))
+    assert attempts[0].execution_policy["recovery_budget"] == {
+        "max_total_attempts_per_task": 4,
+        "max_same_route_attempts": 1,
+        "max_model_fallbacks": 2,
+        "max_cross_provider_switches": 1,
+        "max_capability_checks": 3,
+        "max_recovery_decisions": 5,
+        "max_runtime_replans": 0,
+        "max_total_recovery_time": 300.0,
+        "max_total_recovery_cost": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_synthesis_success_stops_without_duplicate_request(tmp_path):
+    recovery, clients, store = synthesis_recovery(failures={"teamorouter-sol": [Code.READ_TIMEOUT]})
+    result = await synthesis_agent(tmp_path, recovery, clients).execute(context(synthesis_task()))
+    assert result.agent_output.actual_model == "gpt-5.6-luna"
+    assert [client.calls for client in clients.values()] == [1, 1, 0, 0]
+    assert len([item for item in store.values if item.kind == "ATTEMPT_STARTED"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_synthesis_total_deadline_stops_before_another_candidate(tmp_path):
+    recovery, clients, store = synthesis_recovery(
+        failures={},
+        delays={"teamorouter-sol": 0.2},
+        budget=RecoveryBudget(max_total_recovery_time=0.02),
+    )
+    with pytest.raises(ResearchAgentInvocationError):
+        await synthesis_agent(tmp_path, recovery, clients).execute(context(synthesis_task()))
+    assert [client.calls for client in clients.values()] == [1, 0, 0, 0]
     assert store.values[-1].reason_code == "RECOVERY_BUDGET_EXHAUSTED"
 
 

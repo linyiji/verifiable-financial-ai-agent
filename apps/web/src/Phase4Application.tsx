@@ -16,6 +16,10 @@ import { parseResultsRoute, parseRunStage, resultsPath, runPath } from "./routin
 import { SSERuntimeTransport } from "./runtime/SSERuntimeTransport";
 import { recordRuntimeDiagnostic, runtimeDiagnosticReason } from "./runtime/diagnostics";
 import {
+  nextProjectionReadBackoff,
+  projectionReadFailureDisposition
+} from "./runtime/projectionRefreshPolicy";
+import {
   createRunRuntimeState,
   reconcileRunRuntimeState,
   reduceRuntimeEvent,
@@ -153,6 +157,7 @@ export function Phase4Application() {
   const retryLoad = useRef<(() => void) | null>(null);
   const currentProjection = useRef<RunProjection | null>(null);
   const runtimeState = useRef<RunRuntimeState | null>(null);
+  const projectionReadFailureAttempt = useRef(0);
 
   useEffect(() => { currentProjection.current = selectedRunProjection; }, [selectedRunProjection]);
 
@@ -273,6 +278,7 @@ export function Phase4Application() {
               canonicalRecordId: value.execution.canonicalRecordId
             });
         runtimeState.current = initializedRuntime;
+        projectionReadFailureAttempt.current = 0;
         diagnosticPhase = "select";
         setSelectedRunProjection(selectRunProjection(initializedRuntime));
         diagnosticPhase = "installed";
@@ -361,7 +367,35 @@ export function Phase4Application() {
       } catch (caught) {
         if (activeRun.current !== runId || requestEpoch !== epoch.current) return;
         recordRuntimeDiagnostic("load_failure", runId, { requestEpoch, phase: diagnosticPhase, reason: runtimeDiagnosticReason(caught) });
+        const retained = runtimeState.current;
+        if (
+          retained?.runId === runId
+          && projectionReadFailureDisposition(caught, true) === "RETAIN_STALE"
+        ) {
+          const envelope = safeEnvelope(caught, runId)!;
+          const backoff = nextProjectionReadBackoff(
+            projectionReadFailureAttempt.current,
+            Date.now()
+          );
+          projectionReadFailureAttempt.current = backoff.attempt;
+          setSelectedRunProjection(selectRunProjection(retained));
+          setSelectedRunError(envelope);
+          setConnection({
+            kind: "BACKOFF",
+            runId,
+            lastSequence: retained.committedSequence,
+            attempt: backoff.attempt,
+            retryAt: backoff.retryAt,
+            error: envelope
+          });
+          setLifecycle((prior) => prior ? { ...prior, settled: true } : prior);
+          window.setTimeout(() => {
+            if (activeRun.current === runId && requestEpoch === epoch.current) loadRun(runId);
+          }, backoff.delayMilliseconds);
+          return;
+        }
         runtimeState.current = null;
+        projectionReadFailureAttempt.current = 0;
         setSelectedRunProjection(null);
         setSelectedRunError(safeEnvelope(caught, runId));
         setHistoryState({ phase: "UNAVAILABLE", selectedRunId: runId, items: [] });

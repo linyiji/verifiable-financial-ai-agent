@@ -75,7 +75,12 @@ TASK_CANDIDATES = {
     "risk_follow_up": ("teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"),
     "peer_analysis": ("mimo-direct", "teamorouter-sol", "teamorouter-luna"),
     "research_news_analysis": ("mimo-direct", "teamorouter-sol", "teamorouter-luna"),
-    "report_synthesis": ("teamorouter-sol", "teamorouter-luna", "mimo-direct"),
+    "report_synthesis": (
+        "teamorouter-sol",
+        "teamorouter-luna",
+        "teamorouter-terra",
+        "mimo-direct",
+    ),
     "GENERATED_CAPABILITY:free_cash_flow_margin": (
         "teamorouter-sol",
         "teamorouter-luna",

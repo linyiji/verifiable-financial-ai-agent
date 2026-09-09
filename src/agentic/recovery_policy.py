@@ -146,7 +146,7 @@ class ResearchLeadRecoverySupervisor:
             # Keep the follow-up's prospective provider order even when a later
             # cross-provider route was certified by an earlier task.
             if (
-                context.scope.task_profile == "risk_follow_up"
+                context.scope.task_profile in {"risk_follow_up", "report_synthesis"}
                 and context.remaining_checks > 0
                 and candidate.next_allowed_action == Action.CAPABILITY_CHECK
             ):

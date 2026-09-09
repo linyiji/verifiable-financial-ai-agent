@@ -93,14 +93,14 @@ class AdaptiveRecovery:
     ):
         """Shared authority and ledger; generated operations use exact owned scope."""
         generated = scope.operation_id.startswith("generated-capability:")
-        follow_up = scope.task_profile == "risk_follow_up"
+        ordered_route_walk = scope.task_profile in {"risk_follow_up", "report_synthesis"}
         budget = (
             RecoveryBudget(
                 max_total_attempts_per_task=4,
                 max_model_fallbacks=2,
                 max_capability_checks=3,
             )
-            if follow_up and not self.explicit_budget
+            if ordered_route_walk and not self.explicit_budget
             else self.budget
         )
         if digest(context.model_dump(mode="json")) != scope.context_hash:
@@ -121,8 +121,8 @@ class AdaptiveRecovery:
         )
         if current is None or (not generated and not routes[current].authority_exists):
             raise ValueError("Initial provider is outside governed recovery authority")
-        history, health, attempted_models = [], dict(self.initial_health), []
-        checks = decisions = model_switches = provider_switches = 0
+        history, checked_routes, health, attempted_models = [], [], dict(self.initial_health), []
+        checks = decisions = model_switches = provider_switches = provider_calls = 0
         started = monotonic()
         capabilities = {
             key: self.certifications.get(
@@ -224,7 +224,7 @@ class AdaptiveRecovery:
         frozen_input = digest([message.model_dump() for message in kwargs["messages"]])
 
         async def invoke(route, check=False):
-            nonlocal last_failure, last_failure_route
+            nonlocal last_failure, last_failure_route, provider_calls
             candidate = routes[route]
             if (
                 digest(context.model_dump(mode="json")) != scope.context_hash
@@ -234,6 +234,7 @@ class AdaptiveRecovery:
             if remaining() <= 0:
                 await stop("RECOVERY_BUDGET_EXHAUSTED")
             attempt_id = "ATT-" + str(uuid4())
+            provider_calls += 1
             model_policy = resolve_model_execution(
                 scope,
                 route,
@@ -245,7 +246,9 @@ class AdaptiveRecovery:
             )
             common = dict(
                 attempt_id=attempt_id,
-                attempt_number=checks if check and not follow_up else len(history),
+                attempt_number=(
+                    provider_calls if ordered_route_walk else checks if check else len(history)
+                ),
                 route=route,
                 provider=candidate.provider,
                 model=candidate.model,
@@ -380,7 +383,10 @@ class AdaptiveRecovery:
             if not failure.recoverable:
                 await stop("NONRECOVERABLE")
             health[current] = Health.DEGRADED
-            candidates = detector.candidates(capabilities, history, budget, health, capability_refs)
+            discovery_history = history + checked_routes if ordered_route_walk else history
+            candidates = detector.candidates(
+                capabilities, discovery_history, budget, health, capability_refs
+            )
             # Never spend a capability check on a route that cannot be used under
             # the remaining switch budget. Independent policy still rechecks it.
             candidates = tuple(
@@ -413,7 +419,7 @@ class AdaptiveRecovery:
                 remaining_seconds=remaining(),
                 evidence_refs=tuple(refs[-12:]),
             )
-            if follow_up and not any(
+            if ordered_route_walk and not any(
                 candidate.eligible or candidate.next_allowed_action == Action.CAPABILITY_CHECK
                 for candidate in candidates
             ):
@@ -475,24 +481,24 @@ class AdaptiveRecovery:
             target = decision.target_route
             if decision.action == Action.CAPABILITY_CHECK:
                 checks += 1
-                if follow_up:
-                    # Exact-input checks are actual requests, with the same finite
-                    # route, transition and task-deadline budgets as execution.
+                if ordered_route_walk:
+                    # A check is a real provider request, but it has a separate finite
+                    # budget and does not consume an execution-attempt slot.
                     if routes[target].provider == routes[current].provider:
                         model_switches += int(target != current)
                     else:
                         provider_switches += 1
                     current = target
-                    history.append(target)
+                    checked_routes.append(target)
                     attempted_models.append(routes[target].model)
                 checked, check_failure = await invoke(target, check=True)
                 if checked is not None and (
-                    follow_up or checked.execution_outcome == "MODEL_EXECUTION_SUBSTITUTED"
+                    ordered_route_walk or checked.execution_outcome == "MODEL_EXECUTION_SUBSTITUTED"
                 ):
                     # A successful bounded check already executed and validated the exact
                     # task input. Consume that output, not a free duplicate HTTP attempt.
                     # It is observed success, not certification of the preferred route.
-                    if not follow_up:
+                    if not ordered_route_walk:
                         history.append(target)
                         attempted_models.append(routes[target].model)
                     response = checked
@@ -507,7 +513,7 @@ class AdaptiveRecovery:
                 capability_refs[target] = (refs[-1],)
                 if check_failure is not None and not check_failure.recoverable:
                     await stop("NONRECOVERABLE")
-                if follow_up and check_failure is not None:
+                if ordered_route_walk and check_failure is not None:
                     failure = check_failure
                 continue
             if decision.action == Action.SWITCH_MODEL:
