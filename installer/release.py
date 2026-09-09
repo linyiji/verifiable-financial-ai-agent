@@ -47,6 +47,8 @@ def resolve(version=None, read=read_url):
             raise ValueError()
         if not re.fullmatch(r"[a-f0-9]{64}", manifest["sha256"]):
             raise ValueError()
+        if not re.fullmatch(r"[a-f0-9]{40}", manifest.get("commit", "")):
+            raise ValueError()
         if manifest.get("schema") != 1:
             raise ValueError()
         return manifest

@@ -3,6 +3,7 @@ set -euo pipefail
 # This script can be a local source entry or a published bootstrap; URLs are not live yet.
 vfa_source=""
 vfa_version=""
+vfa_revision=""
 if [[ "${1:-}" == --version ]]; then vfa_version="${2:?release required}"; shift 2; fi
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
   vfa_source="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,15 +35,20 @@ if [[ ! -f "$vfa_source/installer/Dockerfile" || -n "$vfa_version" ]]; then
   curl -fsSL "${vfa_prefix}evaluator-manifest.json" -o "$vfa_download/manifest.json" || { printf '%s\n' 'PUBLICATION_REQUIRED: This release has no installer package.'; exit 1; }
   vfa_url="$(plutil -extract archive_url raw -o - "$vfa_download/manifest.json")"
   vfa_sha="$(plutil -extract sha256 raw -o - "$vfa_download/manifest.json")"
+  vfa_revision="$(plutil -extract commit raw -o - "$vfa_download/manifest.json")"
   [[ "$(plutil -extract schema raw -o - "$vfa_download/manifest.json")" == 1 ]] || exit 1
   [[ "$(plutil -extract version raw -o - "$vfa_download/manifest.json")" == "$vfa_version" ]] || exit 1
-  [[ "$vfa_url" == "$vfa_prefix"* && "$vfa_sha" =~ ^[a-f0-9]{64}$ ]] || exit 1
+  [[ "$vfa_url" == "$vfa_prefix"* && "$vfa_sha" =~ ^[a-f0-9]{64}$ && "$vfa_revision" =~ ^[a-f0-9]{40}$ ]] || exit 1
   curl -fsSL "$vfa_url" -o "$vfa_download/product.zip"
   vfa_actual="$(shasum -a 256 "$vfa_download/product.zip")"
   [[ "${vfa_actual%% *}" == "$vfa_sha" ]] || { printf '%s\n' 'INTEGRITY_FAILED: Do not run this package.'; exit 1; }
   if unzip -Z1 "$vfa_download/product.zip" | grep -Eq '(^/|(^|/)\.\.(/|$)|\\|:)'; then exit 1; fi
   unzip -q "$vfa_download/product.zip" -d "$vfa_download/app"
   vfa_source="$vfa_download/app"
+fi
+if [[ "$vfa_source_mode" == yes ]]; then
+  vfa_revision="$(git -C "$vfa_source" rev-parse HEAD 2>/dev/null)"
+  [[ "$vfa_revision" =~ ^[a-f0-9]{40}$ ]] || { printf '%s\n' 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED: Commit the reviewed source before installation.'; exit 1; }
 fi
 if ! command -v docker >/dev/null 2>&1; then
   printf '%s\n' 'Docker Desktop is required. Open its official installation guide? [y/N]'
@@ -58,12 +64,17 @@ if ! docker info >/dev/null 2>&1; then
 fi
 docker compose version >/dev/null
 printf '%s\n' 'Verifiable Financial Agent — Preparing product (first build can take several minutes).'
-if ! docker build --platform linux/amd64 -f "$vfa_source/installer/Dockerfile" -t vfa-evaluator:source "$vfa_source" >"$vfa_root/logs/build.log" 2>&1; then
+if ! docker build --platform linux/amd64 --label "org.opencontainers.image.revision=$vfa_revision" -f "$vfa_source/installer/Dockerfile" -t vfa-evaluator:source "$vfa_source" >"$vfa_root/logs/build.log" 2>&1; then
   printf '%s\n' 'INSTALLATION_FAILED: Product preparation failed. Run the same command again; build details are in the private installation logs.'; exit 1
 fi
+vfa_digest="$(docker image inspect vfa-evaluator:source --format '{{.Id}}')"
+[[ "$vfa_digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { printf '%s\n' 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED: Built image has no immutable digest.'; exit 1; }
 cp "$vfa_source/installer/vfa.sh" "$vfa_root/bin/vfa"
 chmod 700 "$vfa_root/bin/vfa"
 printf '%s' "$vfa_source" > "$vfa_root/product-root"
+printf '%s' "$vfa_digest" > "$vfa_root/image"
+printf '%s' "$vfa_digest" > "$vfa_root/image-digest"
+printf '%s' "$vfa_revision" > "$vfa_root/revision"
 # Per-user PATH only; no sudo or system-directory writes. Shell restart picks it up.
 vfa_path_line='export PATH="$HOME/Library/Application Support/Verifiable Financial Agent/bin:$PATH"'
 touch "$HOME/.zprofile"

@@ -17,12 +17,34 @@ from installer.services import DockerServices
 from installer.state import State
 from src.evaluator.contracts import EvaluationAuthorizationError
 
+TEST_REVISION = "a" * 40
+TEST_DIGEST = "sha256:" + "b" * 64
+
 
 class FakeServices:
-    image = "vfa-evaluator:source"
+    image = TEST_DIGEST
 
     def __init__(self, fail=None):
         self.calls, self.fail = [], fail
+
+    def verify_image_identity(self, revision, digest, *, running=False):
+        self.calls.append("verify_image_identity")
+        assert revision == TEST_REVISION and digest == TEST_DIGEST
+        result = {"expected_revision": revision, "expected_digest": digest}
+        if running:
+            result.update(
+                {
+                    "api_revision": revision,
+                    "api_digest": digest,
+                    "sandbox-broker_revision": revision,
+                    "sandbox-broker_digest": digest,
+                }
+            )
+        return result
+
+    def command(self, *args, **kwargs):
+        self.calls.append("command")
+        return TEST_DIGEST
 
     def __getattr__(self, name):
         def call(*args, **kwargs):
@@ -58,7 +80,12 @@ def setup(tmp_path, fail=None):
     service = FakeServices(fail)
     state = State(tmp_path)
     app = cli.Installer(
-        state, service, discover=lambda *a: Path("offline.vfaeval"), unlock=lambda p: session()
+        state,
+        service,
+        discover=lambda *a: Path("offline.vfaeval"),
+        unlock=lambda p: session(),
+        expected_revision=TEST_REVISION,
+        expected_digest=TEST_DIGEST,
     )
     return app, state, service
 
@@ -69,14 +96,18 @@ def test_fresh_install_autostarts_and_opens_after_health(tmp_path, capsys):
     assert services.calls == [
         "check",
         "ports",
+        "verify_image_identity",
         "storage",
         "runtime_dependencies",
         "database",
         "migrate",
         "start",
         "health",
+        "verify_image_identity",
     ]
     assert state.data["stage"] == "READY" and state.data["ready"]
+    assert state.data["revision"] == TEST_REVISION
+    assert state.data["image"] == state.data["image_digest"] == TEST_DIGEST
     assert (tmp_path / "open-browser").read_text() == "http://127.0.0.1:4173"
     assert "synthetic-private-token" not in state.path.read_text() + capsys.readouterr().out
 
@@ -205,6 +236,7 @@ def manifest(raw):
     return {
         "schema": 1,
         "version": "evaluator-1",
+        "commit": TEST_REVISION,
         "sha256": hashlib.sha256(raw).hexdigest(),
         "archive_url": f"https://github.com/{release.REPOSITORY}/releases/download/evaluator-1/package.zip",
     }
@@ -266,12 +298,13 @@ def test_latest_prerelease_or_no_assets_is_not_installable():
 
 def test_update_installs_selected_image_then_migrates(tmp_path):
     app, state, service = setup(tmp_path)
-    app.resolve = lambda version: {"version": "evaluator-2"}
+    app.resolve = lambda version: {"version": "evaluator-2", "commit": TEST_REVISION}
     app.unpack = lambda *a: tmp_path / "release"
     app.install(version="evaluator-2", no_open=True)
     assert state.data["version"] == "evaluator-2"
     assert (
         service.calls.index("install")
+        < service.calls.index("command")
         < service.calls.index("migrate")
         < service.calls.index("start")
     )
@@ -358,8 +391,93 @@ def test_errors_have_action_and_safe_unknown():
 def test_doctor_no_paid_calls(tmp_path, capsys):
     app, _, services = setup(tmp_path)
     app.doctor()
-    assert services.calls == ["check", "status", "runtime_dependencies", "health"]
+    assert services.calls == [
+        "check",
+        "status",
+        "verify_image_identity",
+        "runtime_dependencies",
+        "health",
+        "verify_image_identity",
+    ]
     assert "Paid upstream calls 0" in capsys.readouterr().out
+
+
+def test_stale_installer_state_cannot_override_current_candidate(tmp_path, monkeypatch, capsys):
+    State(tmp_path).save(
+        image="sha256:" + "c" * 64,
+        image_digest="sha256:" + "c" * 64,
+        revision="c" * 40,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "vfa",
+            "start",
+            "--root",
+            str(tmp_path),
+            "--image",
+            TEST_DIGEST,
+            "--expected-revision",
+            TEST_REVISION,
+            "--expected-image-digest",
+            TEST_DIGEST,
+        ],
+    )
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert "STALE_RUNTIME_IMAGE" in capsys.readouterr().out
+
+
+def _identity_service(tmp_path, *, selected=TEST_DIGEST, api=TEST_DIGEST, broker=TEST_DIGEST):
+    revisions = {TEST_DIGEST: TEST_REVISION, "sha256:" + "c" * 64: "c" * 40}
+
+    def run(args, **kwargs):
+        output = b""
+        if args[:4] == ["docker", "image", "inspect", selected]:
+            output = (
+                selected
+                if args[-1] == "{{.Id}}"
+                else revisions.get(selected, "")
+            ).encode()
+        elif args[:3] == ["docker", "compose", "-p"] and "ps" in args:
+            output = (b"api-container" if args[-1] == "api" else b"broker-container")
+        elif args[:3] == ["docker", "inspect", "api-container"]:
+            output = api.encode()
+        elif args[:3] == ["docker", "inspect", "broker-container"]:
+            output = broker.encode()
+        elif args[:4] == ["docker", "image", "inspect", api]:
+            output = revisions.get(api, "").encode()
+        elif args[:4] == ["docker", "image", "inspect", broker]:
+            output = revisions.get(broker, "").encode()
+        return subprocess.CompletedProcess(args, 0, stdout=output, stderr=b"")
+
+    return DockerServices(tmp_path, str(tmp_path), selected, run=run)
+
+
+@pytest.mark.parametrize("service_name", ["api", "broker"])
+def test_doctor_identity_rejects_running_digest_mismatch(tmp_path, service_name):
+    stale = "sha256:" + "c" * 64
+    service = _identity_service(
+        tmp_path,
+        api=stale if service_name == "api" else TEST_DIGEST,
+        broker=stale if service_name == "broker" else TEST_DIGEST,
+    )
+    with pytest.raises(InstallError, match="STALE_RUNTIME_IMAGE"):
+        service.verify_image_identity(TEST_REVISION, TEST_DIGEST, running=True)
+
+
+def test_exact_candidate_api_and_broker_identity_pass(tmp_path):
+    identities = _identity_service(tmp_path).verify_image_identity(
+        TEST_REVISION, TEST_DIGEST, running=True
+    )
+    assert identities["api_digest"] == identities["sandbox-broker_digest"] == TEST_DIGEST
+    assert identities["api_revision"] == identities["sandbox-broker_revision"] == TEST_REVISION
+
+
+def test_mutable_source_alias_cannot_satisfy_expected_digest(tmp_path):
+    service = _identity_service(tmp_path, selected="vfa-evaluator:source")
+    with pytest.raises(InstallError, match="STALE_RUNTIME_IMAGE"):
+        service.verify_image_identity(TEST_REVISION, TEST_DIGEST)
 
 
 def test_corrupt_state_has_owned_error_no_traceback(tmp_path, monkeypatch, capsys):

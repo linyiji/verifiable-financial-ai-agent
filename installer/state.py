@@ -48,6 +48,8 @@ class State:
             "stage",
             "version",
             "image",
+            "image_digest",
+            "revision",
             "project",
             "credential_name",
             "ready",

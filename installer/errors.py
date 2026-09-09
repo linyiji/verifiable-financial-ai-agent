@@ -32,6 +32,12 @@ MESSAGES = {
     "HEALTH_TIMEOUT": "Services did not become ready. Run vfa doctor.",
     "PROOF_RUNTIME_NOT_READY": "Packaged Proof Runtime is not ready.",
     "SANDBOX_RUNTIME_NOT_READY": "Governed Sandbox Runtime is not ready.",
+    "RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED": (
+        "The exact runtime image identity is unavailable. Reinstall the selected release."
+    ),
+    "STALE_RUNTIME_IMAGE": (
+        "The running runtime image does not match the selected release. Stop and reinstall."
+    ),
     "INSTALLATION_FAILED": "Installation paused; data retained. Retry or run vfa doctor.",
 }
 

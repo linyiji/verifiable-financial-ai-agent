@@ -20,7 +20,7 @@ from src.evaluator.direct_bundle import (
 )
 from src.evaluator.direct_registry import DirectCredentialRegistry, DirectRegistrySession
 from src.infrastructure.config.settings import Settings
-from tests.installer.test_installer import FakeServices
+from tests.installer.test_installer import TEST_DIGEST, TEST_REVISION, FakeServices
 
 PASSWORD = "synthetic-test-passphrase-only"
 
@@ -210,6 +210,8 @@ def test_direct_start_doctor_stop_no_gateway(tmp_path, monkeypatch, capsys):
         services,
         direct_path=fixed,
         unlock=lambda path: credential.unlock(path, prompt=lambda _: PASSWORD),
+        expected_revision=TEST_REVISION,
+        expected_digest=TEST_DIGEST,
     )
     app.start(no_open=True)
     assert state.data["ready"]

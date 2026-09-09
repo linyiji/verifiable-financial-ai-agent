@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $VfaSource = if ($PSScriptRoot) { Split-Path $PSScriptRoot -Parent } else { '' }
 $VfaRoot = Join-Path $env:LOCALAPPDATA 'Verifiable Financial Agent'
 $SourceMode = $true
+$Revision = ''
 if (!(Test-Path "$VfaSource/installer/Dockerfile") -or $Version) {
     $SourceMode = $false
     $Ref = 'latest'
@@ -19,6 +20,8 @@ if (!(Test-Path "$VfaSource/installer/Dockerfile") -or $Version) {
         $Manifest = Invoke-RestMethod "${Prefix}evaluator-manifest.json"
     } catch { throw 'PUBLICATION_REQUIRED: No accepted installer package is published.' }
     if ($Manifest.schema -ne 1 -or $Manifest.version -ne $Version -or !$Manifest.archive_url.StartsWith($Prefix) -or $Manifest.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'INTEGRITY_FAILED' }
+    $Revision = $Manifest.commit
+    if ($Revision -notmatch '^[a-f0-9]{40}$') { throw 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED' }
     $Download = Join-Path $VfaRoot "packages/$([guid]::NewGuid())"
     New-Item -ItemType Directory -Force $Download | Out-Null
     Invoke-WebRequest $Manifest.archive_url -OutFile "$Download/product.zip"
@@ -32,6 +35,10 @@ if (!(Test-Path "$VfaSource/installer/Dockerfile") -or $Version) {
     } finally { $Archive.Dispose() }
     Expand-Archive "$Download/product.zip" "$Download/app"
     $VfaSource = "$Download/app"
+}
+if ($SourceMode) {
+    $Revision = (git -C $VfaSource rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $Revision -notmatch '^[a-f0-9]{40}$') { throw 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED' }
 }
 if (!(Get-Command docker -ErrorAction SilentlyContinue)) {
     $Answer = Read-Host 'Install Docker Desktop using Windows Package Manager? [y/N]'
@@ -55,11 +62,16 @@ $Identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 icacls $VfaRoot /inheritance:r /grant:r "${Identity}:(OI)(CI)F" *> $null
 if ($LASTEXITCODE -ne 0) { throw 'INSTALLATION_FAILED: Could not protect the local data directory.' }
 Write-Host 'Verifiable Financial Agent — Preparing product (first build can take several minutes).'
-docker build --platform linux/amd64 -f "$VfaSource/installer/Dockerfile" -t vfa-evaluator:source $VfaSource *> "$VfaRoot/logs/build.log"
+docker build --platform linux/amd64 --label "org.opencontainers.image.revision=$Revision" -f "$VfaSource/installer/Dockerfile" -t vfa-evaluator:source $VfaSource *> "$VfaRoot/logs/build.log"
 if ($LASTEXITCODE -ne 0) { throw 'INSTALLATION_FAILED: Run this command again; private build logs are retained.' }
+$Digest = (docker image inspect vfa-evaluator:source --format '{{.Id}}').Trim()
+if ($LASTEXITCODE -ne 0 -or $Digest -notmatch '^sha256:[a-f0-9]{64}$') { throw 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED' }
 Copy-Item "$VfaSource/installer/vfa.ps1" "$VfaRoot/bin/vfa.ps1" -Force
 Copy-Item "$VfaSource/installer/vfa.cmd" "$VfaRoot/bin/vfa.cmd" -Force
 [System.IO.File]::WriteAllText("$VfaRoot/product-root", $VfaSource)
+[System.IO.File]::WriteAllText("$VfaRoot/image", $Digest)
+[System.IO.File]::WriteAllText("$VfaRoot/image-digest", $Digest)
+[System.IO.File]::WriteAllText("$VfaRoot/revision", $Revision)
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (($UserPath -split ';') -notcontains "$VfaRoot/bin") {
     [Environment]::SetEnvironmentVariable('Path', "$VfaRoot/bin;$UserPath", 'User')

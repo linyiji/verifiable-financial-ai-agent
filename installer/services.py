@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import secrets
 import subprocess
 import time
@@ -40,6 +41,60 @@ class DockerServices:
     def check(self):
         self.command(["docker", "info"], "DOCKER_NOT_RUNNING")
         self.command(["docker", "compose", "version"], "DOCKER_NOT_INSTALLED")
+
+    def verify_image_identity(self, expected_revision, expected_digest, *, running=False):
+        """Fail closed unless selected and running images have one exact identity."""
+        if not (
+            isinstance(expected_revision, str)
+            and re.fullmatch(r"[0-9a-f]{40}", expected_revision)
+            and isinstance(expected_digest, str)
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", expected_digest)
+        ):
+            raise InstallError("RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED")
+        image_id = self.command(
+            ["docker", "image", "inspect", self.image, "--format", "{{.Id}}"],
+            "RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED",
+        )
+        revision = self.command(
+            [
+                "docker",
+                "image",
+                "inspect",
+                self.image,
+                "--format",
+                '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+            ],
+            "RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED",
+        )
+        if image_id != expected_digest or revision != expected_revision:
+            raise InstallError("STALE_RUNTIME_IMAGE")
+        identities = {"expected_revision": revision, "expected_digest": image_id}
+        if not running:
+            return identities
+        for service in ("api", "sandbox-broker"):
+            container_id = self.dc("ps", "-q", service, code="STALE_RUNTIME_IMAGE")
+            if not container_id:
+                raise InstallError("STALE_RUNTIME_IMAGE")
+            running_digest = self.command(
+                ["docker", "inspect", container_id, "--format", "{{.Image}}"],
+                "STALE_RUNTIME_IMAGE",
+            )
+            running_revision = self.command(
+                [
+                    "docker",
+                    "image",
+                    "inspect",
+                    running_digest,
+                    "--format",
+                    '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+                ],
+                "STALE_RUNTIME_IMAGE",
+            )
+            if running_digest != expected_digest or running_revision != expected_revision:
+                raise InstallError("STALE_RUNTIME_IMAGE")
+            identities[f"{service}_digest"] = running_digest
+            identities[f"{service}_revision"] = running_revision
+        return identities
 
     def storage(self):
         password = self.root / "runtime/db.password"
@@ -290,13 +345,15 @@ class DockerServices:
             return "Not installed. Run the installer."
         return self.dc("ps", "--format", "{{.Service}}: {{.State}}")
 
-    def install(self, directory, version):
+    def install(self, directory, version, revision):
         self.command(
             [
                 "docker",
                 "build",
                 "--platform",
                 "linux/amd64",
+                "--label",
+                f"org.opencontainers.image.revision={revision}",
                 "-f",
                 str(Path(directory) / "installer/Dockerfile"),
                 "-t",
