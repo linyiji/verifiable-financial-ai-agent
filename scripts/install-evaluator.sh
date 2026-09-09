@@ -47,7 +47,16 @@ if [[ ! -f "$vfa_source/installer/Dockerfile" || -n "$vfa_version" ]]; then
   vfa_source="$vfa_download/app"
 fi
 if [[ "$vfa_source_mode" == yes ]]; then
-  vfa_revision="$(git -C "$vfa_source" rev-parse HEAD 2>/dev/null)"
+  if [[ -e "$vfa_source/.git" ]] && command -v git >/dev/null 2>&1; then
+    vfa_revision="$(git -C "$vfa_source" rev-parse HEAD 2>/dev/null)"
+  elif [[ -f "$vfa_source/evaluator-source.json" ]]; then
+    [[ "$(plutil -extract schema raw -o - "$vfa_source/evaluator-source.json")" == 1 ]] || exit 1
+    vfa_version="$(plutil -extract version raw -o - "$vfa_source/evaluator-source.json")"
+    vfa_revision="$(plutil -extract commit raw -o - "$vfa_source/evaluator-source.json")"
+    [[ "$vfa_version" =~ ^[a-zA-Z0-9._-]+$ ]] || exit 1
+  else
+    vfa_revision=""
+  fi
   [[ "$vfa_revision" =~ ^[a-f0-9]{40}$ ]] || { printf '%s\n' 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED: Commit the reviewed source before installation.'; exit 1; }
 fi
 if ! command -v docker >/dev/null 2>&1; then

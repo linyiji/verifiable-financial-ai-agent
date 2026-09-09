@@ -37,8 +37,18 @@ if (!(Test-Path "$VfaSource/installer/Dockerfile") -or $Version) {
     $VfaSource = "$Download/app"
 }
 if ($SourceMode) {
-    $Revision = (git -C $VfaSource rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or $Revision -notmatch '^[a-f0-9]{40}$') { throw 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED' }
+    if ((Test-Path "$VfaSource/.git") -and (Get-Command git -ErrorAction SilentlyContinue)) {
+        $Revision = (git -C $VfaSource rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0) { throw 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED' }
+    } elseif (Test-Path "$VfaSource/evaluator-source.json") {
+        $SourceIdentity = Get-Content "$VfaSource/evaluator-source.json" -Raw | ConvertFrom-Json
+        if ($SourceIdentity.schema -ne 1 -or $SourceIdentity.version -notmatch '^[a-zA-Z0-9._-]+$') { throw 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED' }
+        $Version = $SourceIdentity.version
+        $Revision = $SourceIdentity.commit
+    } else {
+        throw 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED'
+    }
+    if ($Revision -notmatch '^[a-f0-9]{40}$') { throw 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED' }
 }
 if (!(Get-Command docker -ErrorAction SilentlyContinue)) {
     $Answer = Read-Host 'Install Docker Desktop using Windows Package Manager? [y/N]'
