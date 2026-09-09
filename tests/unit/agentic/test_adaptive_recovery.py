@@ -117,6 +117,96 @@ def agent(tmp_path, recovery, clients):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "winner,denied",
+    [
+        (1, None),
+        (2, None),
+        (3, None),
+        (None, None),
+        (3, "teamorouter-terra"),
+        (None, "mimo-direct"),
+    ],
+)
+@pytest.mark.parametrize("certified_mimo", [False, True])
+async def test_follow_up_four_bounded_authorized_routes(tmp_path, winner, denied, certified_mimo):
+    models = [
+        ("teamorouter-sol", "teamorouter", "gpt-5.6-sol"),
+        ("teamorouter-luna", "teamorouter", "gpt-5.6-luna"),
+        ("teamorouter-terra", "teamorouter", "gpt-5.6-terra"),
+        ("mimo-direct", "mimo", "mimo-v2.5"),
+    ]
+    clients = {
+        key: Client(provider, model, [] if i == winner else [Code.READ_TIMEOUT])
+        for i, (key, provider, model) in enumerate(models)
+    }
+    routes = {
+        key: Candidate(route=key, provider=p, model=m, authority_exists=key != denied)
+        for key, p, m in models
+    }
+    store = MemoryRecoveryEvidenceStore()
+    # A pre-certified cross-provider must not bypass untried authorized TR routes.
+    certs = {
+        (
+            "risk_follow_up",
+            "mimo-direct",
+            "mimo-v2.5",
+            digest(Output.model_json_schema()),
+        ): Capability.VERIFIED
+    }
+    recovery = AdaptiveRecovery(
+        routes, clients, store, capabilities=certs if certified_mimo else {}
+    )
+    child = task().model_copy(
+        update={"task_type": "risk_follow_up", "assigned_agent": "risk_analyst"}
+    )
+    specialist = LLMResearchAgent(
+        agent_id="risk_analyst",
+        supported_task_types=frozenset({"risk_follow_up"}),
+        provider=clients["teamorouter-sol"],
+        artifacts=ResearchAgentOutputArtifactStore(tmp_path),
+        recovery=recovery,
+    )
+    if winner is None:
+        with pytest.raises(ResearchAgentInvocationError):
+            await specialist.execute(context(child))
+        assert store.values[-1].reason_code == "POLICY_DENIED"
+        assert store.values[-2].decision.reason_code == "NO_ALLOWED_ROUTE"
+    else:
+        await specialist.execute(context(child))
+    expected_calls = [
+        int(key != denied and (winner is None or i <= winner))
+        for i, (key, _, _) in enumerate(models)
+    ]
+    expected = sum(expected_calls)
+    assert [c.calls for c in clients.values()] == expected_calls
+    assert len([r for r in store.values if r.kind == "ATTEMPT_STARTED"]) == expected
+    assert [r.attempt_number for r in store.values if r.kind == "ATTEMPT_STARTED"] == list(
+        range(1, expected + 1)
+    )
+
+
+@pytest.mark.asyncio
+async def test_follow_up_total_deadline_stops_before_fallback(tmp_path):
+    recovery, clients, store = setup(budget=RecoveryBudget(max_total_recovery_time=0.02))
+    clients["teamorouter-sol"].delay = 0.2
+    child = task().model_copy(
+        update={"task_type": "risk_follow_up", "assigned_agent": "risk_analyst"}
+    )
+    specialist = LLMResearchAgent(
+        agent_id="risk_analyst",
+        supported_task_types=frozenset({"risk_follow_up"}),
+        provider=clients["teamorouter-sol"],
+        artifacts=ResearchAgentOutputArtifactStore(tmp_path),
+        recovery=recovery,
+    )
+    with pytest.raises(ResearchAgentInvocationError):
+        await specialist.execute(context(child))
+    assert sum(c.calls for c in clients.values()) == 1
+    assert store.values[-1].reason_code == "RECOVERY_BUDGET_EXHAUSTED"
+
+
+@pytest.mark.asyncio
 async def test_approved_risk_child_enters_governed_execution(tmp_path):
     recovery, clients, store = setup()
     clients["teamorouter-sol"].failures = []

@@ -98,7 +98,8 @@ def capability_provenance(records, scope, routes):
                 continue
             result[record.route] = (Capability.VERIFIED, record.record_id)
         elif record.outcome != "PASS" and (
-            record.capability_check or record.failure_class == "MODEL_IDENTITY_MISMATCH"
+            record.failure_class == "MODEL_IDENTITY_MISMATCH"
+            or (record.capability_check and record.failure_class == "OUTPUT_CONTRACT_FAILURE")
         ):
             result[record.route] = (Capability.QUARANTINED, record.record_id)
     return result

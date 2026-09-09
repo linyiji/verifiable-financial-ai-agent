@@ -13,6 +13,8 @@ class Frozen(BaseModel):
 class FailureClass(StrEnum):
     MODEL_IDENTITY_MISMATCH = "MODEL_IDENTITY_MISMATCH"
     READ_TIMEOUT = "READ_TIMEOUT"
+    PROVIDER_DEADLINE_EXCEEDED = "PROVIDER_DEADLINE_EXCEEDED"
+    TASK_DEADLINE_EXCEEDED = "TASK_DEADLINE_EXCEEDED"
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
     REMOTE_PROTOCOL_ERROR = "REMOTE_PROTOCOL_ERROR"
     RATE_LIMIT = "RATE_LIMIT"
@@ -91,11 +93,11 @@ class FailureAssessment(Frozen):
 
 
 class RecoveryBudget(Frozen):
-    max_total_attempts_per_task: int = Field(default=3, ge=1, le=3)
+    max_total_attempts_per_task: int = Field(default=3, ge=1, le=4)
     max_same_route_attempts: int = Field(default=1, ge=1, le=2)
-    max_model_fallbacks: int = Field(default=1, ge=0, le=1)
+    max_model_fallbacks: int = Field(default=1, ge=0, le=2)
     max_cross_provider_switches: int = Field(default=1, ge=0, le=1)
-    max_capability_checks: int = Field(default=1, ge=0, le=1)
+    max_capability_checks: int = Field(default=1, ge=0, le=3)
     max_recovery_decisions: int = Field(default=5, ge=0, le=5)
     max_runtime_replans: int = Field(default=0, ge=0, le=0)
     max_total_recovery_time: float = Field(default=300, gt=0, le=300)
@@ -148,9 +150,9 @@ class RecoveryContext(Frozen):
     failure: FailureAssessment
     current_route: RouteId
     candidates: tuple[Candidate, ...] = Field(max_length=4)
-    attempt_history: tuple[RouteId, ...] = Field(max_length=3)
-    remaining_attempts: int = Field(ge=0, le=3)
-    remaining_checks: int = Field(ge=0, le=1)
+    attempt_history: tuple[RouteId, ...] = Field(max_length=4)
+    remaining_attempts: int = Field(ge=0, le=4)
+    remaining_checks: int = Field(ge=0, le=3)
     remaining_decisions: int = Field(ge=0, le=5)
     remaining_seconds: float = Field(ge=0, le=300)
     dependency_state: Literal["CURRENT_TASK_RUNNING"] = "CURRENT_TASK_RUNNING"

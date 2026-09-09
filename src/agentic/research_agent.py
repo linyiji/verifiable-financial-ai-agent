@@ -152,6 +152,14 @@ def _messages(context: SpecialistExecutionContext) -> list[LLMMessage]:
         "return prompts, provider payloads, chain-of-thought, private reasoning, or an explanation "
         f"outside the schema. {follow_up_instruction}"
     )
+    inputs = context.inputs
+    evidence_identity = {"accepted_evidence_ids": context.accepted_evidence_ids}
+    if task.task_type == "risk_follow_up" and "risk_follow_up" in inputs:
+        # The typed child context already contains the evidence identity set.
+        # Keep complete input_refs on the durable AgentOutput, not duplicated
+        # a second time in the model request.
+        inputs = {key: value for key, value in inputs.items() if key != "input_refs"}
+        evidence_identity = {}
     user = json.dumps(
         {
             "run_id": task.run_id,
@@ -159,8 +167,8 @@ def _messages(context: SpecialistExecutionContext) -> list[LLMMessage]:
             "actor": task.assigned_agent,
             "task_type": task.task_type,
             "task_goal": task.goal,
-            "accepted_evidence_ids": context.accepted_evidence_ids,
-            "authoritative_inputs": context.inputs,
+            **evidence_identity,
+            "authoritative_inputs": inputs,
         },
         ensure_ascii=False,
         separators=(",", ":"),

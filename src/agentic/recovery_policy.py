@@ -33,6 +33,7 @@ def classify(exc, *, stage=None):
         )
     mapping = {
         Code.READ_TIMEOUT: Failure.READ_TIMEOUT,
+        Code.OVERALL_DEADLINE_EXCEEDED: Failure.PROVIDER_DEADLINE_EXCEEDED,
         Code.CONNECT_TIMEOUT: Failure.PROVIDER_UNAVAILABLE,
         Code.PROVIDER_UNAVAILABLE: Failure.PROVIDER_UNAVAILABLE,
         Code.REMOTE_PROTOCOL_ERROR: Failure.REMOTE_PROTOCOL_ERROR,
@@ -142,6 +143,14 @@ class ResearchLeadRecoverySupervisor:
             return decision(Action.FAIL_TASK, "BUDGET_EXHAUSTED")
         current = next(c for c in context.candidates if c.route == context.current_route)
         for candidate in context.candidates:
+            # Keep the follow-up's prospective provider order even when a later
+            # cross-provider route was certified by an earlier task.
+            if (
+                context.scope.task_profile == "risk_follow_up"
+                and context.remaining_checks > 0
+                and candidate.next_allowed_action == Action.CAPABILITY_CHECK
+            ):
+                return decision(Action.CAPABILITY_CHECK, "CAPABILITY_REQUIRED", candidate.route)
             if candidate.eligible:
                 action = (
                     Action.RETRY_SAME_ROUTE

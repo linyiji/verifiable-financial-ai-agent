@@ -69,6 +69,7 @@ class AdaptiveRecovery:
         self.certification_refs = dict(certification_refs or {})
         self.initial_health = dict(initial_health or {})
         self.budget = budget or RecoveryBudget()
+        self.explicit_budget = budget is not None
         self.supervisor = supervisor or ResearchLeadRecoverySupervisor()
         self.forbidden = tuple(value for value in forbidden_values if value)
         self.model_grants = model_grants
@@ -92,11 +93,21 @@ class AdaptiveRecovery:
     ):
         """Shared authority and ledger; generated operations use exact owned scope."""
         generated = scope.operation_id.startswith("generated-capability:")
+        follow_up = scope.task_profile == "risk_follow_up"
+        budget = (
+            RecoveryBudget(
+                max_total_attempts_per_task=4,
+                max_model_fallbacks=2,
+                max_capability_checks=3,
+            )
+            if follow_up and not self.explicit_budget
+            else self.budget
+        )
         if digest(context.model_dump(mode="json")) != scope.context_hash:
             raise ValueError("Recovery scope/context mismatch")
         allowed_routes = TASK_CANDIDATES.get(scope.task_profile, ())
         routes = {
-            key: value for key, value in self.detector.routes.items() if key in allowed_routes
+            key: self.detector.routes[key] for key in allowed_routes if key in self.detector.routes
         }
         detector = ProviderDetector(routes)
         current = next(
@@ -157,7 +168,7 @@ class AdaptiveRecovery:
         last_failure_route = current
 
         def remaining():
-            return max(0.0, self.budget.max_total_recovery_time - (monotonic() - started))
+            return max(0.0, budget.max_total_recovery_time - (monotonic() - started))
 
         async def record(kind, outcome, **fields):
             value = RecoveryEvidence(
@@ -183,6 +194,8 @@ class AdaptiveRecovery:
             codes = {
                 FailureClass.MODEL_IDENTITY_MISMATCH: Code.MODEL_IDENTITY_MISMATCH,
                 FailureClass.READ_TIMEOUT: Code.READ_TIMEOUT,
+                FailureClass.PROVIDER_DEADLINE_EXCEEDED: Code.OVERALL_DEADLINE_EXCEEDED,
+                FailureClass.TASK_DEADLINE_EXCEEDED: Code.OVERALL_DEADLINE_EXCEEDED,
                 FailureClass.PROVIDER_UNAVAILABLE: Code.PROVIDER_UNAVAILABLE,
                 FailureClass.REMOTE_PROTOCOL_ERROR: Code.REMOTE_PROTOCOL_ERROR,
                 FailureClass.RATE_LIMIT: Code.QUOTA_OR_RATE_LIMIT,
@@ -203,7 +216,7 @@ class AdaptiveRecovery:
             await stop("INTERRUPTED_EXECUTION")
         if not routes[current].authority_exists:
             await stop("POLICY_DENIED")
-        if self.budget.max_total_recovery_cost is not None:
+        if budget.max_total_recovery_cost is not None:
             await stop("POLICY_DENIED")  # No cost authority in this repository.
         if capabilities[current] in {Capability.QUARANTINED, Capability.UNSUPPORTED}:
             await stop("POLICY_DENIED")
@@ -226,13 +239,13 @@ class AdaptiveRecovery:
                 route,
                 routes,
                 capabilities,
-                self.budget,
+                budget,
                 check=check,
                 grants=self.model_grants,
             )
             common = dict(
                 attempt_id=attempt_id,
-                attempt_number=checks if check else len(history),
+                attempt_number=checks if check and not follow_up else len(history),
                 route=route,
                 provider=candidate.provider,
                 model=candidate.model,
@@ -244,8 +257,9 @@ class AdaptiveRecovery:
             clock = monotonic()
             actual_model = None
             execution_outcome = None
+            task_timeout = asyncio.timeout(remaining())
             try:
-                async with asyncio.timeout(remaining()):
+                async with task_timeout:
                     response = await self.clients[route].complete_structured(**kwargs)
                 if response.actual_model in {
                     "gpt-5.6-sol",
@@ -314,6 +328,18 @@ class AdaptiveRecovery:
                 await record("TERMINAL", "FAIL", route=route, reason_code="NONRECOVERABLE")
                 raise
             except Exception as exc:
+                if task_timeout.expired():
+                    last_failure = FailureClass.TASK_DEADLINE_EXCEEDED
+                    last_failure_route = route
+                    await record(
+                        "ATTEMPT_COMPLETED",
+                        "FAIL",
+                        **common,
+                        latency_ms=(monotonic() - clock) * 1000,
+                        failure_class=last_failure,
+                        reason_code="RECOVERY_BUDGET_EXHAUSTED",
+                    )
+                    await stop("RECOVERY_BUDGET_EXHAUSTED")
                 assessment = classify(exc)
                 if isinstance(exc, ValidationError):
                     assessment = assessment.model_copy(
@@ -354,9 +380,7 @@ class AdaptiveRecovery:
             if not failure.recoverable:
                 await stop("NONRECOVERABLE")
             health[current] = Health.DEGRADED
-            candidates = detector.candidates(
-                capabilities, history, self.budget, health, capability_refs
-            )
+            candidates = detector.candidates(capabilities, history, budget, health, capability_refs)
             # Never spend a capability check on a route that cannot be used under
             # the remaining switch budget. Independent policy still rechecks it.
             candidates = tuple(
@@ -367,11 +391,11 @@ class AdaptiveRecovery:
                 and (
                     (
                         candidate.provider == routes[current].provider
-                        and model_switches >= self.budget.max_model_fallbacks
+                        and model_switches >= budget.max_model_fallbacks
                     )
                     or (
                         candidate.provider != routes[current].provider
-                        and provider_switches >= self.budget.max_cross_provider_switches
+                        and provider_switches >= budget.max_cross_provider_switches
                     )
                 )
                 else candidate
@@ -383,12 +407,30 @@ class AdaptiveRecovery:
                 current_route=current,
                 candidates=candidates,
                 attempt_history=tuple(history),
-                remaining_attempts=self.budget.max_total_attempts_per_task - len(history),
-                remaining_checks=self.budget.max_capability_checks - checks,
-                remaining_decisions=self.budget.max_recovery_decisions - decisions,
+                remaining_attempts=budget.max_total_attempts_per_task - len(history),
+                remaining_checks=budget.max_capability_checks - checks,
+                remaining_decisions=budget.max_recovery_decisions - decisions,
                 remaining_seconds=remaining(),
                 evidence_refs=tuple(refs[-12:]),
             )
+            if follow_up and not any(
+                candidate.eligible or candidate.next_allowed_action == Action.CAPABILITY_CHECK
+                for candidate in candidates
+            ):
+                decision = RecoveryDecision(
+                    scope=scope,
+                    action=Action.FAIL_TASK,
+                    reason_code="NO_ALLOWED_ROUTE",
+                    evidence_refs=recovery_context.evidence_refs,
+                )
+                await record(
+                    "DECISION",
+                    "ALLOW",
+                    action=decision.action,
+                    decision=decision,
+                    recovery_context=recovery_context,
+                )
+                await stop("POLICY_DENIED")
             if (
                 recovery_context.remaining_decisions <= 0
                 or recovery_context.remaining_attempts <= 0
@@ -409,7 +451,7 @@ class AdaptiveRecovery:
             allowed = policy_allows(
                 decision,
                 recovery_context,
-                self.budget,
+                budget,
                 model_switches=model_switches,
                 provider_switches=provider_switches,
             )
@@ -433,24 +475,40 @@ class AdaptiveRecovery:
             target = decision.target_route
             if decision.action == Action.CAPABILITY_CHECK:
                 checks += 1
+                if follow_up:
+                    # Exact-input checks are actual requests, with the same finite
+                    # route, transition and task-deadline budgets as execution.
+                    if routes[target].provider == routes[current].provider:
+                        model_switches += int(target != current)
+                    else:
+                        provider_switches += 1
+                    current = target
+                    history.append(target)
+                    attempted_models.append(routes[target].model)
                 checked, check_failure = await invoke(target, check=True)
-                if (
-                    checked is not None
-                    and checked.execution_outcome == "MODEL_EXECUTION_SUBSTITUTED"
+                if checked is not None and (
+                    follow_up or checked.execution_outcome == "MODEL_EXECUTION_SUBSTITUTED"
                 ):
                     # A successful bounded check already executed and validated the exact
                     # task input. Consume that output, not a free duplicate HTTP attempt.
                     # It is observed success, not certification of the preferred route.
-                    history.append(target)
-                    attempted_models.append(routes[target].model)
+                    if not follow_up:
+                        history.append(target)
+                        attempted_models.append(routes[target].model)
                     response = checked
                     break
                 capabilities[target] = (
-                    Capability.VERIFIED if checked is not None else Capability.QUARANTINED
+                    Capability.VERIFIED
+                    if checked is not None
+                    else Capability.UNKNOWN
+                    if check_failure is not None and check_failure.failure_stage == "PROVIDER"
+                    else Capability.QUARANTINED
                 )
                 capability_refs[target] = (refs[-1],)
                 if check_failure is not None and not check_failure.recoverable:
                     await stop("NONRECOVERABLE")
+                if follow_up and check_failure is not None:
+                    failure = check_failure
                 continue
             if decision.action == Action.SWITCH_MODEL:
                 model_switches += 1

@@ -296,6 +296,13 @@ class EvidenceTaskRouter:
 
         categories = self._INPUT_CATEGORIES.get(task.task_type)
         selected = self._store.select_ids(categories=categories) if categories else ()
+        if task.task_type == "risk_follow_up" and task.parent_task_id:
+            # Only already accepted parent evidence; never acquire an unrelated corpus.
+            selected = tuple(
+                evidence_id
+                for evidence_id in self._store.task_inputs(task.parent_task_id)
+                if evidence_id in self._store.select_ids()
+            )
         if acquisition_result is not None:
             produced = set(acquisition_result.output_evidence_ids)
             selected = tuple(evidence_id for evidence_id in selected if evidence_id not in produced)

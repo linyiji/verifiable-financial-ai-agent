@@ -884,6 +884,14 @@ class IntegratedTaskExecutor:
                 "input_refs": input_refs,
             },
         )
+        if task.task_type == "risk_follow_up":
+            from src.application.risk_follow_up import build_risk_follow_up_context
+
+            context = SpecialistExecutionContext(
+                task=task,
+                accepted_evidence_ids=current_task.task_input_evidence_ids,
+                inputs=build_risk_follow_up_context(self._aggregate, task, normalized_evidence),
+            )
         try:
             result = await agent.execute(context)
         except ResearchAgentInvocationError as exc:
