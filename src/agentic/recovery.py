@@ -18,6 +18,7 @@ from src.agentic.recovery_policy import (
     policy_allows,
 )
 from src.domain.model_execution import TASK_CANDIDATES, resolve_model_execution
+from src.domain.owner_policy import TASK_POLICIES
 from src.domain.recovery import (
     Action,
     Capability,
@@ -68,11 +69,22 @@ class AdaptiveRecovery:
         self.certifications = dict(capabilities or {})
         self.certification_refs = dict(certification_refs or {})
         self.initial_health = dict(initial_health or {})
-        self.budget = budget or RecoveryBudget()
+        self._budget = budget or RecoveryBudget()
         self.explicit_budget = budget is not None
         self.supervisor = supervisor or ResearchLeadRecoverySupervisor()
         self.forbidden = tuple(value for value in forbidden_values if value)
         self.model_grants = model_grants
+
+    @property
+    def budget(self):
+        return self._budget
+
+    @budget.setter
+    def budget(self, value):
+        # Existing compositions may tighten this public budget after construction.
+        # A versioned profile default must never overwrite that explicit limit.
+        self._budget = RecoveryBudget.model_validate(value)
+        self.explicit_budget = True
 
     async def execute(self, context, initial_provider, **kwargs):
         task = context.task
@@ -93,14 +105,11 @@ class AdaptiveRecovery:
     ):
         """Shared authority and ledger; generated operations use exact owned scope."""
         generated = scope.operation_id.startswith("generated-capability:")
-        ordered_route_walk = scope.task_profile in {"risk_follow_up", "report_synthesis"}
+        owner_policy = TASK_POLICIES.get(scope.task_profile)
+        ordered_route_walk = bool(owner_policy and owner_policy.ordered_route_walk)
         budget = (
-            RecoveryBudget(
-                max_total_attempts_per_task=4,
-                max_model_fallbacks=2,
-                max_capability_checks=3,
-            )
-            if ordered_route_walk and not self.explicit_budget
+            owner_policy.effective_budget()
+            if owner_policy and owner_policy.recovery_budget and not self.explicit_budget
             else self.budget
         )
         if digest(context.model_dump(mode="json")) != scope.context_hash:

@@ -186,9 +186,10 @@ async def test_real_postgresql_version_and_alembic_head() -> None:
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
 
         assert row[0].startswith("PostgreSQL 16.15")
-        assert row[1] == "verifiable_financial_agent"
-        assert row[2] == "vfa"
-        assert revision == "20260909_0015"
+        expected_database = make_url(DATABASE_SETTINGS.url)
+        assert row[1] == expected_database.database
+        assert row[2] == expected_database.username
+        assert revision == "20260909_0016"
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ from src.application import closure_recovery as closure_recovery_models  # noqa:
 from src.application import persistence as application_persistence  # noqa: F401
 from src.data import persistence as data_persistence  # noqa: F401
 from src.infrastructure.database import draft_leases as draft_lease_models  # noqa: F401
+from src.infrastructure.database import execution_ledger as execution_ledger_models  # noqa: F401
 from src.infrastructure.database import models as durable_models  # noqa: F401
 from src.infrastructure.database import recovery as recovery_models  # noqa: F401
 from src.infrastructure.database import research_memory as research_memory_models  # noqa: F401

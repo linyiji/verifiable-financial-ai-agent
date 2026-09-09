@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from src.domain.owner_policy import DYNAMIC_GRANTS, TASK_CANDIDATES  # noqa: F401
 from src.domain.recovery import Capability, Frozen, ModelId, RecoveryBudget, RouteId
 
 
@@ -40,53 +41,6 @@ class ModelExecutionPolicy(Frozen):
                 else "MODEL_IDENTITY_OUT_OF_POLICY"
             )
         return "MODEL_EXECUTION_DIRECT"
-
-
-# Explicit grants, not ALL_SUPPORTED_MODELS. Other profiles remain exact-route.
-# MiMo v2.5 participates in the same resolver through its independent authority.
-DYNAMIC_GRANTS = {
-    ("fundamental_analysis", "teamorouter-luna"): ("teamorouter-terra",),
-    ("valuation_analysis", "teamorouter-luna"): ("teamorouter-terra",),
-    ("risk_analysis", "teamorouter-luna"): ("teamorouter-terra",),
-    ("risk_follow_up", "teamorouter-luna"): ("teamorouter-terra",),
-    ("GENERATED_CAPABILITY:free_cash_flow_margin", "teamorouter-luna"): ("teamorouter-terra",),
-}
-
-# Prospective task authorization, separate from registration and capability evidence.
-TASK_CANDIDATES = {
-    "GENERATED_CAPABILITY:gross_margin": (
-        "teamorouter-sol",
-        "teamorouter-luna",
-        "teamorouter-terra",
-    ),
-    "fundamental_analysis": (
-        "teamorouter-sol",
-        "teamorouter-luna",
-        "teamorouter-terra",
-        "mimo-direct",
-    ),
-    "valuation_analysis": (
-        "teamorouter-sol",
-        "teamorouter-luna",
-        "teamorouter-terra",
-        "mimo-direct",
-    ),
-    "risk_analysis": ("teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"),
-    "risk_follow_up": ("teamorouter-sol", "teamorouter-luna", "teamorouter-terra", "mimo-direct"),
-    "peer_analysis": ("mimo-direct", "teamorouter-sol", "teamorouter-luna"),
-    "research_news_analysis": ("mimo-direct", "teamorouter-sol", "teamorouter-luna"),
-    "report_synthesis": (
-        "teamorouter-sol",
-        "teamorouter-luna",
-        "teamorouter-terra",
-        "mimo-direct",
-    ),
-    "GENERATED_CAPABILITY:free_cash_flow_margin": (
-        "teamorouter-sol",
-        "teamorouter-luna",
-        "teamorouter-terra",
-    ),
-}
 
 
 def resolve_model_execution(

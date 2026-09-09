@@ -9,6 +9,7 @@ import subprocess
 import zipfile
 from pathlib import Path
 
+from installer.image_identity import BUILD_INPUTS, content_manifest
 from installer.state import private_write
 
 SOURCE_IDENTITY = "evaluator-source.json"
@@ -20,6 +21,9 @@ def bind_source_identity(raw: bytes, *, version: str, commit: str) -> bytes:
     with zipfile.ZipFile(source, "r") as archive:
         if SOURCE_IDENTITY in archive.namelist():
             raise ValueError("Source identity path already exists")
+        if len(set(archive.namelist())) != len(archive.namelist()):
+            raise ValueError("Duplicate archive input")
+        files = {i.filename: archive.read(i) for i in archive.infolist() if not i.is_dir()}
     metadata = json.dumps(
         {"schema": 1, "version": version, "commit": commit},
         sort_keys=True,
@@ -31,6 +35,11 @@ def bind_source_identity(raw: bytes, *, version: str, commit: str) -> bytes:
         info.compress_type = zipfile.ZIP_DEFLATED
         info.external_attr = 0o100644 << 16
         archive.writestr(info, metadata)
+        files[SOURCE_IDENTITY] = metadata
+        manifest_info = zipfile.ZipInfo(BUILD_INPUTS, date_time=(1980, 1, 1, 0, 0, 0))
+        manifest_info.compress_type = zipfile.ZIP_DEFLATED
+        manifest_info.external_attr = 0o100644 << 16
+        archive.writestr(manifest_info, content_manifest(files))
     return target.getvalue()
 
 

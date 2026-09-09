@@ -527,7 +527,7 @@ async def test_http_transport_exhausts_rate_limited_pool_without_retry_loop() ->
     assert transport.pool_exhausted is True
 
 
-@pytest.mark.parametrize("credential_status", [401, 403])
+@pytest.mark.parametrize("credential_status", [401])
 @pytest.mark.asyncio
 async def test_http_transport_skips_http_credential_failure(credential_status: int) -> None:
     invalid_calls: list[str] = []

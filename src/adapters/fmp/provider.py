@@ -78,6 +78,9 @@ class HttpxFMPTransport:
 
         return self._key_pool.safe_status()
 
+    def safe_health_status(self) -> dict:
+        return self._key_pool.safe_health_status()
+
     async def request(
         self,
         *,
@@ -157,22 +160,35 @@ class HttpxFMPTransport:
                 payload if status in {FMPAccessStatus.AVAILABLE, FMPAccessStatus.NO_DATA} else None
             ),
             error_code=error_code,
+            error_scope=classify_error_scope(status, payload),
         )
 
     def _exhausted_envelope(self, endpoint: FMPEndpoint) -> FMPResponseEnvelope:
+        restriction = self._key_pool.account_restriction
+        if restriction is not None:
+            return FMPResponseEnvelope(
+                endpoint=endpoint,
+                status=restriction.status,
+                http_status=restriction.http_status,
+                retrieved_at=restriction.retrieved_at,
+                payload=None,
+                error_code=restriction.error_code,
+                error_scope="ACCOUNT",
+            )
         all_rate_limited = self._key_pool.all_keys_rate_limited
         status = (
             FMPAccessStatus.RATE_LIMITED
             if all_rate_limited
-            else FMPAccessStatus.AUTHENTICATION_FAILED
+            else self._key_pool.last_status or FMPAccessStatus.PROVIDER_ERROR
         )
         return FMPResponseEnvelope(
             endpoint=endpoint,
             status=status,
-            http_status=429 if all_rate_limited else 401,
+            http_status=429 if status is FMPAccessStatus.RATE_LIMITED else 401,
             retrieved_at=datetime.now(UTC),
             payload=None,
             error_code="FMP_KEY_POOL_EXHAUSTED",
+            error_scope="CREDENTIAL",
         )
 
 
@@ -485,6 +501,23 @@ def endpoint_for(dataset: str) -> FMPEndpointSpec:
         return _SPECS[dataset]
     except KeyError as exc:
         raise ValueError(f"unsupported FMP dataset: {dataset}") from exc
+
+
+def classify_error_scope(status: FMPAccessStatus, payload: Any) -> str:
+    """Only structured account evidence escalates a limit beyond one credential."""
+    structured = payload if isinstance(payload, dict) else {}
+    error = structured.get("error")
+    scope = structured.get("scope") or (error.get("scope") if isinstance(error, dict) else None)
+    if scope == "account" and status in {
+        FMPAccessStatus.RATE_LIMITED,
+        FMPAccessStatus.ENTITLEMENT_DENIED,
+    }:
+        return "ACCOUNT"
+    if status is FMPAccessStatus.ENTITLEMENT_DENIED:
+        return "ENDPOINT"
+    if status in {FMPAccessStatus.AUTHENTICATION_FAILED, FMPAccessStatus.RATE_LIMITED}:
+        return "CREDENTIAL"
+    return "REQUEST"
 
 
 def classify_access(http_status: int, payload: Any) -> tuple[FMPAccessStatus, str | None]:

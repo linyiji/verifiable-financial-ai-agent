@@ -59,6 +59,8 @@ if [[ "$vfa_source_mode" == yes ]]; then
   fi
   [[ "$vfa_revision" =~ ^[a-f0-9]{40}$ ]] || { printf '%s\n' 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED: Commit the reviewed source before installation.'; exit 1; }
 fi
+[[ -f "$vfa_source/scripts/verify-build-inputs.sh" ]] || { printf '%s\n' 'BUILD_INPUT_MANIFEST_REQUIRED'; exit 1; }
+bash "$vfa_source/scripts/verify-build-inputs.sh" "$vfa_source"
 if ! command -v docker >/dev/null 2>&1; then
   printf '%s\n' 'Docker Desktop is required. Open its official installation guide? [y/N]'
   read -r vfa_answer </dev/tty

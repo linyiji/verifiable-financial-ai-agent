@@ -1,6 +1,6 @@
 """Additive durable research assets; never updates historical Run records."""
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import (
     JSON,
@@ -12,7 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
     select,
 )
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.application.persistence import ResearchObjectRow, ResearchRunAggregateRow
@@ -171,6 +171,7 @@ class ResearchMemoryRepository:
         *,
         checkpoint: Callable[[str], None] | None = None,
         expected_base=None,
+        transaction_guard: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ):
         # Validate closure even for direct repository callers. No update API exists.
         ResearchMemorySnapshot(
@@ -183,6 +184,8 @@ class ResearchMemoryRepository:
         )
         async with self.sessions() as session, session.begin():
             await session.connection(execution_options={"isolation_level": "READ COMMITTED"})
+            if transaction_guard:
+                await transaction_guard(session)
             locked = await session.scalar(
                 select(ResearchObjectRow)
                 .where(ResearchObjectRow.object_id == obj.research_object_id)
@@ -197,6 +200,8 @@ class ResearchMemoryRepository:
                 raise product_error("NOT_RELEASED", "memory requires a released Run")
             current = await self._read(session, obj.research_object_id)
             if current.latest_released_run_id == obj.source_run_id:
+                if transaction_guard:
+                    await transaction_guard(session)
                 return current
             if current.latest_released_run_id is not None:
                 if expected_base is None:
@@ -268,4 +273,6 @@ class ResearchMemoryRepository:
             await session.flush()
             if checkpoint:
                 checkpoint("pointer")
+            if transaction_guard:
+                await transaction_guard(session)
             return await self._read(session, obj.research_object_id)

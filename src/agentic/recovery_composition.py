@@ -22,6 +22,7 @@ from src.domain.agent_output import (
     RiskResearchAgentStructuredOutput,
     StandardResearchAgentStructuredOutput,
 )
+from src.domain.owner_policy import ADAPTIVE_TRANSPORT_POLICY
 from src.domain.recovery import Candidate, Capability, Health
 from src.infrastructure.database.recovery import RecoveryEvidenceStore
 from src.phase4_product.hashing import canonical_json_sha256 as digest
@@ -30,12 +31,7 @@ from src.phase4_product.hashing import canonical_json_sha256 as digest
 async def build_adaptive_recovery(settings, sessions, *, forbidden_values=()):
     # Isolated route attempts own no hidden fallback. Existing planner/code-builder
     # clients and the configured initial Specialist route are unchanged.
-    policy = ProviderExecutionPolicyV1(
-        max_attempts=1,
-        bounded_backoff_seconds=(),
-        read_timeout_seconds=60,
-        overall_workload_deadline_seconds=90,
-    )
+    policy = ProviderExecutionPolicyV1(**ADAPTIVE_TRANSPORT_POLICY)
     clients, routes = {}, {}
     if settings.vfa_credential_mode == "evaluator":
         from src.evaluator.client import EvaluatorGatewayLLM, active_session

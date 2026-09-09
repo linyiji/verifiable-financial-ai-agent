@@ -61,7 +61,8 @@ AgentOutput。报告与 Research Memory 同样保留这一语义区分。
 Provider 响应不能授予自己权限。Fundamental、Valuation、Risk 可使用已配置的
 Sol、Luna、Terra、MiMo 路由，但仍需通过现有资格检查。Risk 现纳入授权的
 Luna → Terra 替换。Peer/News 候选为 MiMo、Sol、Luna；Synthesis 为
-Sol、Luna、MiMo。生成式 FCF 仍仅允许 Sol/Luna/Terra。
+Sol、Luna、Terra、MiMo。生成式 FCF 仍仅允许 Sol/Luna/Terra。
+当前默认值及精确授权：[Owner 策略 V1](OWNER_POLICY_V1.zh-CN.md)。
 MiMo 使用独立授权和 `mimo-v2.5`，不是 TeamoRouter 的别名。
 延迟和 token 数量不授予资格，也不能覆盖正确性要求。
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from pydantic import SecretStr
 
-from src.adapters.fmp.models import FMPAccessStatus, FMPResponseEnvelope
+from src.adapters.fmp.models import FMPAccessStatus, FMPEndpoint, FMPResponseEnvelope
 
 
 @dataclass(slots=True)
@@ -21,6 +21,8 @@ class FMPKeyPool:
     _last_status: FMPAccessStatus | None = None
     _rotation_occurred: bool = False
     _last_rotation_reason: str | None = None
+    _endpoint_denials: dict[tuple[int, FMPEndpoint], FMPAccessStatus] = field(default_factory=dict)
+    _account_restriction: FMPResponseEnvelope | None = field(default=None, repr=False)
 
     @classmethod
     def from_credentials(cls, credentials: Sequence[SecretStr]) -> FMPKeyPool:
@@ -50,6 +52,8 @@ class FMPKeyPool:
         return self.rate_limited_key_count == self.key_count
 
     def select(self, attempted_slots: set[int]) -> tuple[int, SecretStr] | None:
+        if self._account_restriction is not None:
+            return None
         unavailable = self._rate_limited_slots | self._invalid_slots | attempted_slots
         for offset in range(self.key_count):
             slot_index = (self._active_slot + offset) % self.key_count
@@ -63,16 +67,50 @@ class FMPKeyPool:
         """Record one response and return whether the next slot must be tried."""
 
         self._last_status = envelope.status
-        if envelope.http_status == 429:
+        if envelope.error_scope == "ACCOUNT":
+            # Explicit account evidence is never bypassed by rotating credential slots.
+            self._account_restriction = envelope
+            return False
+        if envelope.status is FMPAccessStatus.RATE_LIMITED:
             self._rate_limited_slots.add(slot_index)
-            self._rotate_after(slot_index, reason="RATE_LIMIT_429")
+            self._rotate_after(
+                slot_index,
+                reason="RATE_LIMIT_429" if envelope.http_status == 429 else "RATE_LIMIT_PAYLOAD",
+            )
             return True
-        if envelope.http_status in {401, 403}:
+        if envelope.status is FMPAccessStatus.AUTHENTICATION_FAILED:
             self._invalid_slots.add(slot_index)
             self._rotate_after(slot_index, reason=f"CREDENTIAL_HTTP_{envelope.http_status}")
             return True
+        if envelope.status is FMPAccessStatus.ENTITLEMENT_DENIED:
+            # A transcript subscription refusal says nothing about quote authentication.
+            # Do not brute-force other keys for endpoint entitlement.
+            self._endpoint_denials[(slot_index, envelope.endpoint)] = envelope.status
         self._active_slot = slot_index
         return False
+
+    @property
+    def account_restriction(self) -> FMPResponseEnvelope | None:
+        return self._account_restriction
+
+    @property
+    def last_status(self) -> FMPAccessStatus | None:
+        return self._last_status
+
+    def safe_health_status(self) -> dict:
+        """Separate request, credential and endpoint facts; never claim provider outage."""
+        return {
+            "provider": "FMP",
+            "provider_health": "NOT_INFERRED",
+            "account_restricted": self._account_restriction is not None,
+            "credential_invalid_slots": sorted(self._invalid_slots),
+            "credential_rate_limited_slots": sorted(self._rate_limited_slots),
+            "endpoint_denials": [
+                {"slot": slot, "endpoint": endpoint.value, "status": status.value}
+                for (slot, endpoint), status in sorted(self._endpoint_denials.items())
+            ],
+            "last_request_status": self._last_status.value if self._last_status else None,
+        }
 
     def safe_status(self) -> dict[str, str | int | bool | None]:
         return {

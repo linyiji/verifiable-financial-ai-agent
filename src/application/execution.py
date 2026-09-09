@@ -1242,7 +1242,16 @@ def _peer_model_support(support: dict[str, object]) -> dict[str, object]:
 def _compact_json_value(value: Any, *, depth: int = 0) -> Any:
     """Normalize bounded provider inputs without carrying raw artifacts or payloads."""
 
-    if depth > 4:
+    # C-03: retain semantic fields and their paths, not the whole enclosing
+    # context. Unrelated narrative still follows the original clipping contract.
+    from src.application.semantic_context import (
+        check_semantic_bound,
+        contains_semantics,
+        normalize_semantics,
+        semantic_key,
+    )
+
+    if depth > 4 and not contains_semantics(value):
         return "[bounded]"
     if value is None or isinstance(value, (bool, int, float)):
         return value
@@ -1255,10 +1264,22 @@ def _compact_json_value(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, str):
         return value if len(value) <= 1000 else f"{value[:997]}..."
     if isinstance(value, dict):
-        return {
-            str(key): _compact_json_value(item, depth=depth + 1)
-            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))[:30]
+        result = {
+            str(key): normalize_semantics(item)
+            if semantic_key(key)
+            else _compact_json_value(item, depth=depth + 1)
+            for index, (key, item) in enumerate(
+                sorted(value.items(), key=lambda pair: str(pair[0]))
+            )
+            if index < 30 or semantic_key(key) or contains_semantics(item)
         }
+        if any(semantic_key(key) for key in value):
+            check_semantic_bound(result)
+        return result
     if isinstance(value, (list, tuple)):
-        return [_compact_json_value(item, depth=depth + 1) for item in value[:30]]
+        return [
+            _compact_json_value(item, depth=depth + 1)
+            for index, item in enumerate(value)
+            if index < 30 or contains_semantics(item)
+        ]
     return _compact_json_value(str(value), depth=depth + 1)

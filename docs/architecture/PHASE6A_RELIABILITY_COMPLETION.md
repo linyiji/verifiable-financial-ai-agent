@@ -71,7 +71,8 @@ recovery remain separate. Task candidate lists are prospective; responses cannot
 grant authority. Fundamental, Valuation and Risk admit the configured Sol, Luna,
 Terra and MiMo routes, subject to existing eligibility checks. Authorized Luna to
 Terra substitution now includes Risk. Peer/News admit MiMo, Sol and Luna; Synthesis
-admits Sol, Luna and MiMo. Generated FCF remains Sol/Luna/Terra only.
+admits Sol, Luna, Terra and MiMo. Generated FCF remains Sol/Luna/Terra only.
+Current defaults and exact grants: [Owner policy V1](OWNER_POLICY_V1.md).
 MiMo uses its independent authority and `mimo-v2.5`; it is not a TeamoRouter alias.
 Latency or token counts do not authorize candidates or override correctness.
 

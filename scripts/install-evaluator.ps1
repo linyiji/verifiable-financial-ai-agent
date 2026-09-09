@@ -50,6 +50,8 @@ if ($SourceMode) {
     }
     if ($Revision -notmatch '^[a-f0-9]{40}$') { throw 'RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED' }
 }
+if (!(Test-Path "$VfaSource/scripts/verify-build-inputs.ps1")) { throw 'BUILD_INPUT_MANIFEST_REQUIRED' }
+& "$VfaSource/scripts/verify-build-inputs.ps1" -SourceRoot $VfaSource
 if (!(Get-Command docker -ErrorAction SilentlyContinue)) {
     $Answer = Read-Host 'Install Docker Desktop using Windows Package Manager? [y/N]'
     if ($Answer -eq 'y' -and (Get-Command winget -ErrorAction SilentlyContinue)) {

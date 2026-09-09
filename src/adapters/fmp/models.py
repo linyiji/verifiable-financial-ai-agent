@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from src.data.provider import RawProviderSnapshot
 
@@ -44,6 +44,7 @@ class FMPResponseEnvelope:
     retrieved_at: datetime
     payload: Any
     error_code: str | None = None
+    error_scope: Literal["REQUEST", "ENDPOINT", "CREDENTIAL", "ACCOUNT", "PROVIDER"] = "REQUEST"
 
 
 @dataclass(frozen=True, slots=True)

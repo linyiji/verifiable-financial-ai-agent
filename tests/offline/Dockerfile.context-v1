@@ -1,0 +1,10 @@
+FROM python:3.11-slim
+COPY . /context
+RUN test -f /context/src/domain/execution_contract.py \
+    && test ! -e /context/credentials \
+    && test ! -e /context/.env \
+    && test ! -e /context/context-sentinel.vfacred \
+    && test ! -e /context/.git \
+    && test ! -e /context/apps/web/node_modules \
+    && test ! -e /context/apps/web/dist \
+    && test ! -e /context/artifacts

@@ -35,7 +35,7 @@ def test_existing_0005_upgrade_retains_forward_only_0006_step_in_current_chain()
         str(Path(__file__).resolve().parents[2] / "alembic"),
     )
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["20260909_0015"]
+    assert scripts.get_heads() == ["20260909_0016"]
     assert scripts.get_revision("20260904_0006").down_revision == "20260904_0005"
 
     sql = _render_upgrade("20260904_0005:20260904_0006")

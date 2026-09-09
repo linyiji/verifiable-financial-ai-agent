@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from collections.abc import Iterator
@@ -32,10 +33,17 @@ async def _read_exact_snapshot(backend, object_id: str, run_id: str):
         )
 
 
+async def _hold_admitted_run(_run_id: str) -> None:
+    # This fixture checks exact admission/reopen watermarks, not live execution.
+    # Freeze the asynchronous producer so separate reads compare one snapshot.
+    await asyncio.Event().wait()
+
+
 def test_root_composition_persists_reopens_and_resumes_exact_run() -> None:
     headers = {"X-Phase4-Contract-Version": "phase4-core/v1"}
     app = create_app()
     with TestClient(app) as client:
+        app.state.phase4_product_backend._execute_started_run = _hold_admitted_run
         created = client.post(
             "/api/objects",
             headers={**headers, "Idempotency-Key": "r1-object"},

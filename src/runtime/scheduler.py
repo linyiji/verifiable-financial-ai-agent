@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 from uuid import uuid4
@@ -54,6 +55,10 @@ class DependencyDeadlockError(RuntimeError):
     pass
 
 
+class RuntimeProcessInterrupted(BaseException):
+    """Opt-in process-loss signal; not cancellation or a business task failure."""
+
+
 class DependencyScheduler:
     """Executes dependency waves concurrently using real ``asyncio`` tasks."""
 
@@ -63,10 +68,12 @@ class DependencyScheduler:
         event_store: RuntimeEventStore,
         checkpoint_store: CheckpointStore,
         retry_policy: RetryPolicy | None = None,
+        attempt_resolver: Callable[[Task, int], Awaitable[int]] | None = None,
     ) -> None:
         self._event_store = event_store
         self._checkpoint_store = checkpoint_store
         self._retry_policy = retry_policy or RetryPolicy()
+        self._attempt_resolver = attempt_resolver
         self._reported_blocks: set[str] = set()
 
     async def execute(
@@ -159,6 +166,11 @@ class DependencyScheduler:
                     *(self._execute_task(state, task, executor) for task in ready),
                     return_exceptions=True,
                 )
+                interrupted = next(
+                    (item for item in results if isinstance(item, RuntimeProcessInterrupted)), None
+                )
+                if interrupted is not None:
+                    raise interrupted
                 if any(isinstance(result, asyncio.CancelledError) for result in results):
                     raise asyncio.CancelledError
                 await self._checkpoint(state)
@@ -257,11 +269,18 @@ class DependencyScheduler:
     ) -> None:
         task_id = task.task_id
         last_error: Exception | None = None
-        for attempt in range(1, self._retry_policy.max_attempts + 1):
+        for retry_number in range(1, self._retry_policy.max_attempts + 1):
             # A concurrent graph mutation atomically swaps the Actual Graph copy.
             # Resolve by identity on every state update so in-flight tasks never
             # complete against a detached pre-mutation Task instance.
             task = state.task(task_id)
+            attempt = (
+                await self._attempt_resolver(task.model_copy(deep=True), retry_number)
+                if self._attempt_resolver
+                else retry_number
+            )
+            if attempt < 1:
+                raise ValueError("attempt identity must be positive")
             if task.status is not TaskStatus.READY:
                 transition_task(task, TaskStatus.READY)
             transition_task(task, TaskStatus.RUNNING)
@@ -298,7 +317,9 @@ class DependencyScheduler:
                         },
                     )
                     raise
-                if attempt < self._retry_policy.max_attempts and getattr(error, "retryable", True):
+                if retry_number < self._retry_policy.max_attempts and getattr(
+                    error, "retryable", True
+                ):
                     transition_task(task, TaskStatus.READY)
                     await self._event_store.emit(
                         run_id=state.run_id,
