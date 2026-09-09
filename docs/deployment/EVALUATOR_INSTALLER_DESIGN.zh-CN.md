@@ -6,7 +6,7 @@
 真实 Owner 网关为 **NOT_DEPLOYED**。可移植测试或本地镜像构建都不意味着已经发布，
 也不意味着完成 Windows/macOS 全新环境验收。
 
-现阶段建议投资者和测试员使用[直连供应商 BYOK](LOCAL_DEPLOYMENT.zh-CN.md)，不必等待此仅支持网关的安装器。产品内置 API 集成，不内置 API 密钥。使用自己的密钥，或由 Owner 私下提供独立限定权限、可撤销的测试密钥。此安装器不是开箱即用的 BYOK，标准镜像未打包完整证明工具链。
+投资者和测试员可使用安装器的加密直连凭据包，或使用[原生 BYOK](LOCAL_DEPLOYMENT.zh-CN.md)。产品内置 API 集成；API 密钥只通过私下渠道提供，绝不内置于仓库或前端。可选 Owner 网关仍是独立模式。
 
 ## 公共模块与生命周期
 
@@ -50,13 +50,13 @@ API 激活前再次执行 readiness。令牌不进入命令参数、环境变量
 在此之前，请使用[引导安装页](INSTALL_EVALUATOR.zh-CN.md)的仓库相对命令。
 明确提供的源码包属于已审阅源码路径，并不宣称已经验证下载的 Release。
 
-## 标准评估与证明评估
+## Proof 与 Sandbox 运行时
 
-选择方案 B：标准容器支持浏览及有限工作流。
-它们未打包已接受的 RISC Zero 证明运行时，也不向 API 暴露 Docker socket 以验证生成能力。
-既有证明 / 能力发布门禁仍然强制执行。`--full-proof` 返回 FULL_PROOF_UNAVAILABLE 并停止，
-而不是假装支持完整、受发布门禁约束的执行。该环境请采用[高级安装](ADVANCED_INSTALLATION.zh-CN.md)。
-研究、准入、血缘、记忆、BYOK、供应商能力和自适应恢复契约均未改变。
+产品镜像打包已验证的 Linux/amd64 RISC Zero 3.0.6 host、r0vm 与绑定 Guest Method。
+启动前验证 Proof 运行时身份，Proof 执行不需要网络。生成能力通过窄化的私有 Unix socket
+协议进入 Broker。只有 Broker 挂载 Docker socket；API 与一次性子容器均不挂载。
+Broker 固定子镜像，并拒绝调用方指定特权、网络、PID、挂载及设备控制。
+既有证明 / 能力发布门禁，以及研究、血缘、记忆和授权契约均未改变。
 
 ## 验收边界
 

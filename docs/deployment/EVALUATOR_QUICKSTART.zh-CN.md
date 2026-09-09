@@ -8,6 +8,6 @@
 
 公开安装器 URL：**PUBLICATION_REQUIRED**。真实 Owner 网关：**NOT_DEPLOYED**。这些运维前提具备之前，可使用源码包验证安装器；不能据此认为网关模式的 Owner 付费研究已经可用。独立配置的 BYOK 是另一条路径。
 
-标准容器交付保留所有证明 / 发布门禁，仅支持有限工作流，未打包完整证明工具链。完整强制证明 / 生成能力执行须采用[高级安装](ADVANCED_INSTALLATION.zh-CN.md)。网关模式的评估者无需在本机配置上游供应商密钥；当前 BYOK 测试员则须在本地后端配置私有密钥，绝不能放入前端。
+引导容器已打包锁定的 RISC Zero 3.0.6 Proof 运行时及私有受治理生成能力 Sandbox Broker，同时保留全部证明 / 发布门禁。API 不获得原始 Docker socket，子沙箱也不获得 Provider 密钥。网关、加密直连凭据与原生 BYOK 是相互独立的支持模式。
 
 [Windows](WINDOWS_EVALUATION.zh-CN.md) · [macOS](MACOS_EVALUATION.zh-CN.md) · [凭据安全](../architecture/EVALUATOR_CREDENTIAL_SECURITY.zh-CN.md)。

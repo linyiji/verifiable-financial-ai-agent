@@ -202,7 +202,13 @@ class Recorder:
                 if isinstance(value, str) and value in {"teamorouter", "mimo", "fmp"}
                 else None
             )
-        if key in {"requested_model", "preferred_model", "requested_wire_model", "attempted_model", "actual_model"}:
+        if key in {
+            "requested_model",
+            "preferred_model",
+            "requested_wire_model",
+            "attempted_model",
+            "actual_model",
+        }:
             return value if isinstance(value, str) and _MODEL.fullmatch(value) else None
         if key in {"actual_model_reported", "result_present"}:
             return value if type(value) is bool else None

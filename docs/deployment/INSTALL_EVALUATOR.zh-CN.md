@@ -4,7 +4,7 @@
 
 ## 1. 三十秒概览
 
-本安装器支持 `.vfacred` 加密直连凭据，并保留独立的 `.vfaeval` 网关模式。直连模式无需逐个配置 Provider Key 或部署 Owner 网关。完整证明与生成能力 Docker 交付仍待通过，下方标准模式限制继续有效；当前完整研究可使用[原生 BYOK 安装](ADVANCED_INSTALLATION.zh-CN.md)。
+本安装器支持 `.vfacred` 加密直连凭据，并保留独立的 `.vfaeval` 网关模式。直连模式无需逐个配置 Provider Key 或部署 Owner 网关。Docker 运行时已包含锁定的 RISC Zero 3.0.6 证明 host 与受治理的生成能力沙箱 Broker；开发者仍可使用[原生 BYOK 安装](ADVANCED_INSTALLATION.zh-CN.md)。
 
 私下取得 `VFA-Investor-Access.vfacred`，将其复制为解压仓库的 `credentials/active.vfacred`，再运行以下平台安装命令。安装器准备本地数据库、迁移、后端与前端；直连 readiness 仅验证配置，不发出付费调用。
 
@@ -50,7 +50,7 @@ bash scripts/install-evaluator.sh
 
 Readiness 不进行任何付费供应商 / 数据调用，显示的是路由权限，不是供应商健康认证。受限 / 过期 / 已撤销凭据或耗尽的额度不会绕过授权。
 
-**标准模式限制：**容器运行真实产品，证明 / 发布策略不变。它未打包经过认证的 RISC Zero host，也不向研究 Agents 暴露 Docker 控制 socket。支持浏览及受支持的有限工作流；需要证明或生成能力验证的任务，不能通过此标准镜像获得合法发布。不会伪造既有证明，也不会关闭门禁。`vfa start --full-proof` 当前返回 `FULL_PROOF_UNAVAILABLE`；已接受的完整证明镜像交付前，受发布门禁约束的完整研究须使用[高级安装](ADVANCED_INSTALLATION.zh-CN.md)。全新安装不含 Owner 研究历史。
+**运行时保障：**产品镜像包含已验证的 Linux/amd64 RISC Zero host、锁定的 r0vm 3.0.6 及绑定 Guest Method；Proof 运行不需要网络。生成能力通过私有 Unix socket Broker 进入一次性、禁网、只读根文件系统且受资源限制的子容器。只有 Broker 持有 Docker daemon 权限，API 与子容器均不持有。Proof / Review / Release 门禁保持不变。全新安装不含 Owner 研究历史。
 
 ## 6. 后续启动
 
@@ -85,7 +85,7 @@ vfa status
 vfa doctor
 ```
 
-Status 报告本地服务状态。Doctor 检查 Docker、已安装版本、服务状态，并在解锁凭据包时执行对应模式的零费用 readiness（直连配置或网关权限）。它不测试 FMP/MiMo/TeamoRouter。正常错误显示系统定义的错误码与下一步操作；不打印堆栈或原始服务日志。
+Status 报告本地服务状态。Doctor 检查 Docker、已安装版本、数据库、后端、前端、打包 Proof Runtime、受治理 Sandbox Runtime，并执行零费用凭据 readiness。它不会发起 FMP/MiMo/TeamoRouter 付费调用。正常错误显示系统定义的错误码与下一步操作；不打印堆栈或原始服务日志。
 
 ## 10. 故障排查
 
@@ -101,7 +101,7 @@ Status 报告本地服务状态。Doctor 检查 Docker、已安装版本、服�
 | GATEWAY_NOT_DEPLOYED / GATEWAY_UNREACHABLE | 请 Owner 部署 / 检查网关；可用后运行 vfa start。 |
 | CREDENTIAL_EXPIRED / CREDENTIAL_REVOKED / QUOTA_EXHAUSTED | 请 Owner 解决授权问题；运行 vfa start。 |
 | HEALTH_TIMEOUT | 运行 vfa doctor。不要关闭财务 / 发布门禁。 |
-| FULL_PROOF_UNAVAILABLE | 使用高级完整技术部署。 |
+| PROOF_RUNTIME_NOT_READY / SANDBOX_RUNTIME_NOT_READY | 重新运行 `vfa start`；锁定运行时仍失败时停止并报告错误码。 |
 
 安装器元数据仅包含阶段、版本、镜像及安全凭据文件名。本地数据库密码存于独立受保护运行时文件。CLI 容器需要 Docker 控制权限来管理服务；它是可信安装软件。研究 API 容器不获得 Docker 控制 socket。评估令牌不写入磁盘，而是通过 stdin 和容器内 Unix socket 传递。拥有本地特权的用户可检查内存中的凭据。
 

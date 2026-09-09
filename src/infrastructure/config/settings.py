@@ -109,6 +109,9 @@ class Settings(BaseSettings):
     vfa_evaluator_gateway_url: str | None = None
     artifact_root: str = "artifacts"
     workspace_root: str = "workspaces"
+    sandbox_broker_socket: str | None = None
+    risc0_host_binary: str | None = None
+    risc0_expected_host_sha256: str | None = None
     fmp_api_key: SecretStr | None = None
     fmp_api_keys: tuple[SecretStr, ...] = ()
     bocha_api_key: SecretStr | None = None

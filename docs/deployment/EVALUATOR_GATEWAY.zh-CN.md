@@ -4,7 +4,7 @@
 
 状态：基础版已实现，仅通过离线验收。**REAL_GATEWAY_DEPLOYMENT = NOT_DEPLOYED.** 不提供自动托管、公开签发、商业计费或 SaaS 认证。向评估者提供实时凭据包前，须审慎完成部署。
 
-现阶段建议投资者和测试员使用[直连供应商 BYOK](LOCAL_DEPLOYMENT.zh-CN.md)：内置的是 API 集成，而不是 API 密钥。使用自己的密钥，或由 Owner 私下提供独立限定权限、可撤销的测试密钥。Docker 安装器仅支持网关模式，不是开箱即用的 BYOK，标准镜像未打包完整证明工具链。
+Owner 网关是可选模式。投资者可使用 Docker 引导安装器的加密直连 `.vfacred` 模式，或使用[原生 BYOK](LOCAL_DEPLOYMENT.zh-CN.md)，均不依赖网关。产品内置 API 集成；API 密钥只经私下渠道提供，绝不内置于仓库或前端。两种凭据模式下，引导镜像都包含打包 Proof 与受治理 Sandbox 运行时。
 
 ## 边界与配置
 

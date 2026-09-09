@@ -4,7 +4,7 @@
 
 Status: foundation implemented, offline acceptance only. **REAL_GATEWAY_DEPLOYMENT = NOT_DEPLOYED.** No automatic hosting, public issuance, commercial billing or SaaS authentication is supplied. Deploy deliberately before giving evaluators a live bundle.
 
-Current investors and testers should use [direct-provider BYOK](LOCAL_DEPLOYMENT.md): API integrations are built in, but API keys are not embedded. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner. The Docker installer supports gateway mode only, not turnkey BYOK, and its standard image does not package full proof tooling.
+The Owner gateway is optional. Investors may use the guided Docker installer's encrypted direct-provider `.vfacred` mode or [native BYOK](LOCAL_DEPLOYMENT.md) without this gateway. API integrations are built in, but API keys are supplied privately and never embedded in the repository or frontend. The guided image includes the packaged Proof and governed Sandbox runtimes in either credential mode.
 
 ## Boundary and configuration
 

@@ -183,6 +183,10 @@ class GeneratedCapabilityCandidate:
     compiler_runtime_policy: str | None = None
     execution_policy: dict | None = None
     execution_outcome: str | None = None
+    run_id: str | None = None
+    task_id: str | None = None
+    capability_id: str | None = None
+    generation_attempt: int = 1
 
 
 @dataclass(frozen=True, slots=True)

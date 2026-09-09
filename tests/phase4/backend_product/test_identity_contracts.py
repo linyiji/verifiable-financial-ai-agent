@@ -6,19 +6,19 @@ import pytest
 from pydantic import ValidationError
 
 from src.phase4_product.contracts import (
+    ArtifactSummaryV1,
     AtomicRunProjectionV1,
     AvailabilityStatus,
     AvailabilityV1,
+    ExecutionSummaryV1,
     GoalProjectionV1,
     GraphProjectionV1,
     ObjectIdentityV1,
-    ArtifactSummaryV1,
-    ExecutionSummaryV1,
     ProofSummaryV1,
-    ResultSummaryV1,
-    ReviewSummaryV1,
     ResearchRunDetailV1,
     ResearchRunDraftV1,
+    ResultSummaryV1,
+    ReviewSummaryV1,
     RunAdmissionV1,
     RunLifecycleV1,
     RunProgressV1,

@@ -283,6 +283,10 @@ class PlannerProviderCodeBuilder:
                         compiler_id=compiled.compiler_id,
                         compiler_version=compiled.compiler_version,
                         compiler_runtime_policy=compiled.runtime_policy,
+                        run_id=request.gap.run_id,
+                        task_id=request.gap.task_id,
+                        capability_id=output.capability_id,
+                        generation_attempt=request.attempt,
                     )
                 raise AssertionError("generated capability attempt loop exited unexpectedly")
             except asyncio.CancelledError:

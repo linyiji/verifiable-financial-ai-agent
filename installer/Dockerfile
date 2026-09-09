@@ -18,6 +18,16 @@ COPY contracts/ contracts/
 COPY installer/ installer/
 COPY alembic/ alembic/
 COPY zk/revenue_growth/ zk/revenue_growth/
+COPY runtime/proof/linux-amd64/ /opt/vfa-proof/
+RUN printf '%s  %s\n' \
+    '615d961bfb81d318db5071d7548389c850e324ac7f421c075176daf26082a60a' \
+    '/opt/vfa-proof/cargo-risczero-x86_64-unknown-linux-gnu.tgz' | sha256sum -c - \
+    && tar -xzf /opt/vfa-proof/cargo-risczero-x86_64-unknown-linux-gnu.tgz \
+      -C /opt/vfa-proof r0vm \
+    && rm /opt/vfa-proof/cargo-risczero-x86_64-unknown-linux-gnu.tgz \
+    && chmod 0555 /opt/vfa-proof/revenue-growth-proof-host /opt/vfa-proof/r0vm \
+    && chmod 0444 /opt/vfa-proof/revenue-growth-guest /opt/vfa-proof/PROOF_RUNTIME_MANIFEST.json
+ENV PATH="/opt/vfa-proof:${PATH}"
 RUN python -m pip install --no-cache-dir '.[postgres]'
 COPY --from=web /web/dist/ apps/web/dist/
 ENTRYPOINT []

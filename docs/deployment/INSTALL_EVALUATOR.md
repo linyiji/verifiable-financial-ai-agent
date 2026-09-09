@@ -4,7 +4,7 @@
 
 ## 1. Thirty-second overview
 
-This installer supports encrypted direct credentials (`.vfacred`) separately from `.vfaeval` gateway mode. Direct mode needs neither individual provider key entry nor an Owner gateway. Full-proof/generated-capability Docker delivery is still gated by the standard mode limits below; [native BYOK installation](ADVANCED_INSTALLATION.md) remains available for full research.
+This installer supports encrypted direct credentials (`.vfacred`) separately from `.vfaeval` gateway mode. Direct mode needs neither individual provider key entry nor an Owner gateway. The Docker runtime includes the locked RISC Zero 3.0.6 proof host and a governed generated-capability sandbox broker; [native BYOK installation](ADVANCED_INSTALLATION.md) remains available for developers.
 
 Privately receive `VFA-Investor-Access.vfacred`, copy it to `credentials/active.vfacred` within the unpacked repository, then run the platform command below. The installer prepares the local database, migrations, backend and frontend. Direct readiness validates configuration only, without paid calls.
 
@@ -50,7 +50,7 @@ Installation automatically prepares the database, applies migrations, checks per
 
 Readiness uses zero paid provider/data calls and shows route permission, not provider health certification. Restricted/expired/revoked credentials or exhausted quotas do not bypass authorization.
 
-**Standard mode limits:** the container uses the real product with unchanged proof/release policy. It does not package a certified RISC Zero host or expose Docker's control socket to research Agents. Browsing and supported limited workflows are available; tasks requiring proof or generated-capability validation cannot legitimately release through this standard image. No existing proof is fabricated and no gate is disabled. `vfa start --full-proof` currently returns `FULL_PROOF_UNAVAILABLE`; use [Advanced Installation](ADVANCED_INSTALLATION.md) for release-gated full research until an accepted full-proof image is delivered. A fresh installation contains no Owner research history.
+**Runtime assurance:** the product image contains the verified Linux/amd64 RISC Zero host, locked r0vm 3.0.6 and the bound guest method. Proof execution requires no runtime network. Generated capabilities run through a private Unix-socket broker into disposable, network-disabled, read-only, resource-bounded containers. Only the broker receives Docker daemon authority; the API and child containers do not. Proof/review/release gates remain unchanged. A fresh installation contains no Owner research history.
 
 ## 6. Subsequent startup
 
@@ -85,7 +85,7 @@ vfa status
 vfa doctor
 ```
 
-Status reports local service state. Doctor checks Docker, installed version, service state and (when you unlock a bundle) zero-cost mode-specific readiness (direct configuration or gateway permission). It does not test FMP/MiMo/TeamoRouter. Normal errors show an owned code and next action; no stack traces or raw service logs are printed.
+Status reports local service state. Doctor checks Docker, installed version, database, backend, frontend, packaged Proof Runtime, governed Sandbox Runtime and zero-cost credential readiness. It does not make paid FMP/MiMo/TeamoRouter calls. Normal errors show an owned code and next action; no stack traces or raw service logs are printed.
 
 ## 10. Troubleshooting
 
@@ -101,7 +101,7 @@ Status reports local service state. Doctor checks Docker, installed version, ser
 | GATEWAY_NOT_DEPLOYED / GATEWAY_UNREACHABLE | Ask the Owner to deploy/check the gateway; run vfa start once available. |
 | CREDENTIAL_EXPIRED / CREDENTIAL_REVOKED / QUOTA_EXHAUSTED | Ask the Owner to resolve authorization; run vfa start. |
 | HEALTH_TIMEOUT | Run vfa doctor. Do not disable financial/release gates. |
-| FULL_PROOF_UNAVAILABLE | Use advanced full technical deployment. |
+| PROOF_RUNTIME_NOT_READY / SANDBOX_RUNTIME_NOT_READY | Re-run `vfa start`; if the locked runtime still fails, stop and report the code. |
 
 Installer metadata contains only stage, version, image and safe credential filename. Local DB passwords live in a separate protected runtime file. The CLI container needs Docker control to manage services; it is trusted installation software. Research API containers receive no Docker control socket. No evaluator token is written to disk; it is transferred through stdin and a container-local Unix socket. Privileged local users can inspect in-memory credentials.
 

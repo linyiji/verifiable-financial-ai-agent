@@ -164,7 +164,9 @@ async def test_ai_invalid_reference_no_fallback():
     obj.object_id = goal.research_object_id = "OBJ-A"
     goal.as_of = date(2026, 9, 7)
     p = valid_scheme()
-    p["incremental_decisions"] = [dict(source_identity="FOREIGN", decision="UNKNOWN", reason="Unsupported")]
+    p["incremental_decisions"] = [
+        dict(source_identity="FOREIGN", decision="UNKNOWN", reason="Unsupported")
+    ]
     generator = TeamoRouterSchemeGenerator(FakeProvider([p]), max_validation_attempts=1)
     with pytest.raises(ValueError, match="DECISION_VALIDATION"):
         await generator.generate(research_object=obj, goal=goal, incremental_context=context())

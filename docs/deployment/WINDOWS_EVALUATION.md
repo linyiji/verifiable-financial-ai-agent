@@ -2,7 +2,7 @@
 
 [简体中文](WINDOWS_EVALUATION.zh-CN.md)
 
-The installer supports encrypted direct credentials (`.vfacred`) separately from `.vfaeval` gateway mode. Privately receive `VFA-Investor-Access.vfacred` and copy it to `<unpacked-repository>/credentials/active.vfacred` (backslashes on Windows) before installation. Direct mode does not require an Owner gateway. Full-proof image acceptance remains pending; use [native installation](ADVANCED_INSTALLATION.md) for full research meanwhile. See [credential instructions](../../credentials/README.md).
+The installer supports encrypted direct credentials (`.vfacred`) separately from `.vfaeval` gateway mode. Privately receive `VFA-Investor-Access.vfacred` and copy it to `<unpacked-repository>/credentials/active.vfacred` (backslashes on Windows) before installation. Direct mode does not require an Owner gateway. The installer builds the packaged Linux/amd64 Proof and governed Sandbox runtime under Docker Desktop; native Windows live-Proof parity is not claimed. See [credential instructions](../../credentials/README.md).
 
 From the supplied unpacked installer source package:
 
@@ -16,4 +16,4 @@ In a new terminal, relaunch with `vfa start`. [Full guided instructions and trou
 
 The source implementation and portable tests are available; public URL remains **PUBLICATION_REQUIRED**, Windows clean-machine execution is **NOT_OBSERVED**, and real Owner gateway deployment remains **NOT_DEPLOYED**.
 
-Native/WSL2 developer and full-proof deployment remain under [Advanced Installation](ADVANCED_INSTALLATION.md). The default installer does not claim native proof parity.
+Native/WSL2 developer deployment remains under [Advanced Installation](ADVANCED_INSTALLATION.md). The default installer does not claim native Windows proof parity.

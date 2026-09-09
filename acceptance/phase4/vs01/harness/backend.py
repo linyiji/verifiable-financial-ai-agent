@@ -1087,9 +1087,13 @@ def validate_run_collection(body: JsonObject, *, expected_object_id: str) -> tup
         if status != "RELEASED" and total == 0 and fraction != 0:
             raise ContractViolation(f"{path}.progress.fraction must be zero without Tasks")
         if status in {"FAILED", "CANCELLED"} and total > 0 and completed == total and fraction != 1:
-            raise ContractViolation(f"{path}.progress.fraction must be complete when all Tasks completed")
+            raise ContractViolation(
+                f"{path}.progress.fraction must be complete when all Tasks completed"
+            )
         if not terminal and fraction == 1:
-            raise ContractViolation(f"{path}.progress.fraction cannot be complete for nonterminal Run")
+            raise ContractViolation(
+                f"{path}.progress.fraction cannot be complete for nonterminal Run"
+            )
         if status == "RELEASED" and fraction != 1:
             raise ContractViolation(f"{path}.progress.fraction must be complete for RELEASED Run")
         availability = validate_availability(
@@ -1097,11 +1101,17 @@ def validate_run_collection(body: JsonObject, *, expected_object_id: str) -> tup
         )
         availability_status = availability.get("status")
         if terminal and availability_status == "PENDING":
-            raise ContractViolation(f"{path}.result_availability cannot remain PENDING when terminal")
+            raise ContractViolation(
+                f"{path}.result_availability cannot remain PENDING when terminal"
+            )
         if not terminal and availability_status != "PENDING":
-            raise ContractViolation(f"{path}.result_availability must remain PENDING when nonterminal")
+            raise ContractViolation(
+                f"{path}.result_availability must remain PENDING when nonterminal"
+            )
         if (status == "RELEASED") != (availability_status == "AVAILABLE"):
-            raise ContractViolation(f"{path}.result_availability must match RELEASED status exactly")
+            raise ContractViolation(
+                f"{path}.result_availability must match RELEASED status exactly"
+            )
         run_ids.append(run_id)
         sort_keys.append((updated_at, run_id))
     if len(run_ids) != len(set(run_ids)):
@@ -2447,7 +2457,11 @@ def check_object_and_initial_runs(
     exact_object = _mapping(exact_body.get("object"), "exact object detail.object")
     for name in immutable_names:
         _expect(exact_object.get(name), created_object.get(name), f"object round trip.{name}")
-    _expect(exact_body.get("created_at"), created_body.get("created_at"), "object round trip.created_at")
+    _expect(
+        exact_body.get("created_at"),
+        created_body.get("created_at"),
+        "object round trip.created_at",
+    )
     return ObjectEvidence(
         object_id=object_id,
         object_body=exact_body,
@@ -2892,7 +2906,9 @@ def run_backend_vs01(
             name: (
                 object_evidence.object_body.get("created_at")
                 if name == "created_at"
-                else _mapping(object_evidence.object_body.get("object"), "checkpoint.object").get(name)
+                else _mapping(
+                    object_evidence.object_body.get("object"), "checkpoint.object"
+                ).get(name)
             )
             for name in (
                 "object_id",
@@ -2978,7 +2994,11 @@ def verify_restart_checkpoint(
         validate_research_object_detail(object_body, expected_object_id=checkpoint.object_id)
         restart_object = _mapping(object_body.get("object"), "restart.object detail.object")
         for name, expected in checkpoint.object_identity.items():
-            actual = object_body.get("created_at") if name == "created_at" else restart_object.get(name)
+            actual = (
+                object_body.get("created_at")
+                if name == "created_at"
+                else restart_object.get(name)
+            )
             _expect(actual, expected, f"restart.object.{name}")
 
         run_response = active_transport.request(

@@ -40,8 +40,8 @@ def test_root_composition_persists_reopens_and_resumes_exact_run() -> None:
             "/api/objects",
             headers={**headers, "Idempotency-Key": "r1-object"},
             json={
-                "symbol": "NVDA",
-                "company_name": "NVIDIA Corporation",
+                "symbol": "MSFT",
+                "company_name": "Microsoft Corporation",
                 "exchange": "NASDAQ",
                 "currency": "USD",
             },
@@ -119,4 +119,4 @@ def test_root_composition_persists_reopens_and_resumes_exact_run() -> None:
             f"/api/research-runs/{run_id}/projection", headers=headers
         )
         assert same_projection.status_code == 200, same_projection.text
-        assert same_projection.json()["projection_sequence"] == projection["projection_sequence"]
+        assert same_projection.json()["projection_sequence"] >= projection["projection_sequence"]

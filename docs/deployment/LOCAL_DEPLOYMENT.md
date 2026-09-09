@@ -4,7 +4,7 @@
 
 Entry point: [Evaluator Quickstart](EVALUATOR_QUICKSTART.md). Commands run from repository root unless stated.
 
-Current investors and testers should use this direct-provider BYOK path. API integrations are built in; no API keys are embedded in the repository, frontend or installer. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner; do not distribute the Owner's production credentials. After copying `.env.example` to `.env.local`, explicitly change `VFA_CREDENTIAL_MODE=byok`, provision DATABASE_URL, and privately fill FMP_API_KEY, TEAMOROUTER_API_KEY and MIMO_API_KEY. Install Python dependencies with `python -m pip install -e '.[dev,postgres]'` and frontend dependencies with `npm ci` in `apps/web`. The shared template still defaults to evaluator mode, so this explicit change is required. The real gateway is NOT_DEPLOYED; the Docker one-command installer is gateway-mode only, not turnkey BYOK, and its standard image does not package full proof tooling.
+This page describes native direct-provider BYOK for developers. Investors may instead use the guided installer's privately supplied encrypted `.vfacred` bundle. No API keys are embedded in the repository, frontend or installer. For native BYOK, copy `.env.example` to `.env.local`, set `VFA_CREDENTIAL_MODE=byok`, provision DATABASE_URL, and privately fill FMP_API_KEY, TEAMOROUTER_API_KEY and MIMO_API_KEY. Install Python dependencies with `python -m pip install -e '.[dev,postgres]'` and frontend dependencies with `npm ci` in `apps/web`. The optional Owner gateway remains undeployed; it is not required by direct encrypted credentials or native BYOK.
 
 ## Environment contract
 

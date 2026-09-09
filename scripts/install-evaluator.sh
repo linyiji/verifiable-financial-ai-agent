@@ -58,7 +58,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 docker compose version >/dev/null
 printf '%s\n' 'Verifiable Financial Agent — Preparing product (first build can take several minutes).'
-if ! docker build -f "$vfa_source/installer/Dockerfile" -t vfa-evaluator:source "$vfa_source" >"$vfa_root/logs/build.log" 2>&1; then
+if ! docker build --platform linux/amd64 -f "$vfa_source/installer/Dockerfile" -t vfa-evaluator:source "$vfa_source" >"$vfa_root/logs/build.log" 2>&1; then
   printf '%s\n' 'INSTALLATION_FAILED: Product preparation failed. Run the same command again; build details are in the private installation logs.'; exit 1
 fi
 cp "$vfa_source/installer/vfa.sh" "$vfa_root/bin/vfa"

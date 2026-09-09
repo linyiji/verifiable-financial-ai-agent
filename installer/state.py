@@ -5,7 +5,8 @@ from pathlib import Path
 STAGES = (
     "SYSTEM_CHECK",
     "RUNTIME_CHECK",
-    "RUNTIME_INSTALL_OR_GUIDE",
+            "RUNTIME_INSTALL_OR_GUIDE",
+            "RUNTIME_DEPENDENCY_CHECK",
     "RELEASE_RESOLUTION",
     "DOWNLOAD",
     "INTEGRITY_VERIFY",

@@ -8,6 +8,7 @@ from pathlib import Path
 from installer.errors import InstallError
 from installer.state import private_write
 from src.evaluator.direct_registry import DirectRegistrySession
+from src.tooling.generated_sandbox import DEFAULT_SANDBOX_IMAGE
 
 
 class DockerServices:
@@ -52,6 +53,7 @@ class DockerServices:
             f"{self.host_root}/runtime/artifacts:/data/artifacts",
             f"{self.host_root}/runtime/workspaces:/data/workspaces",
         ]
+        sandbox_socket = "sandbox-control:/run/vfa-sandbox"
         config = {
             "services": {
                 "postgres": {
@@ -74,25 +76,121 @@ class DockerServices:
                 },
                 "api": {
                     "image": self.image,
+                    "platform": "linux/amd64",
                     "command": ["python", "-m", "installer.runtime", "api"],
-                    "volumes": mounts,
+                    "volumes": [*mounts, sandbox_socket],
                     "tmpfs": ["/run/vfa:mode=0700"],
                     "ports": ["127.0.0.1:8010:8010"],
-                    "depends_on": {"postgres": {"condition": "service_healthy"}},
+                    "depends_on": {
+                        "postgres": {"condition": "service_healthy"},
+                        "sandbox-broker": {"condition": "service_healthy"},
+                    },
+                },
+                "sandbox-broker": {
+                    "image": self.image,
+                    "platform": "linux/amd64",
+                    "command": ["python", "-m", "installer.sandbox_broker", "serve"],
+                    "network_mode": "none",
+                    "read_only": True,
+                    "cap_drop": ["ALL"],
+                    "security_opt": ["no-new-privileges:true"],
+                    "pids_limit": 64,
+                    "mem_limit": "192m",
+                    "cpus": 0.5,
+                    "tmpfs": ["/tmp:mode=0700,size=16m"],
+                    "volumes": [
+                        "/var/run/docker.sock:/var/run/docker.sock",
+                        sandbox_socket,
+                    ],
+                    "healthcheck": {
+                        "test": ["CMD", "python", "-m", "installer.sandbox_broker", "health"],
+                        "interval": "2s",
+                        "timeout": "3s",
+                        "retries": 40,
+                    },
                 },
                 "web": {
                     "image": self.image,
+                    "platform": "linux/amd64",
                     "command": ["python", "-m", "installer.web"],
                     "ports": ["127.0.0.1:4173:4173"],
                 },
             },
-            "volumes": {"research": {}},
+            "volumes": {"research": {}, "sandbox-control": {}},
         }
         private_write(self.compose, json.dumps(config))
 
     def database(self):
         self.dc(
             "up", "-d", "--wait", "--wait-timeout", "120", "postgres", code="DATABASE_START_FAILED"
+        )
+
+    def runtime_dependencies(self):
+        try:
+            result = self.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--network",
+                    "none",
+                    "--platform",
+                    "linux/amd64",
+                    "--pull",
+                    "never",
+                    DEFAULT_SANDBOX_IMAGE,
+                    "python",
+                    "-c",
+                    "import platform; print(platform.machine())",
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+            available = result.returncode == 0 and result.stdout.strip() in {b"x86_64", b"amd64"}
+        except (OSError, subprocess.TimeoutExpired):
+            available = False
+        if not available:
+            self.command(
+                ["docker", "pull", "--platform", "linux/amd64", DEFAULT_SANDBOX_IMAGE],
+                "SANDBOX_RUNTIME_NOT_READY",
+                timeout=900,
+            )
+            self.command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--network",
+                    "none",
+                    "--platform",
+                    "linux/amd64",
+                    "--pull",
+                    "never",
+                    DEFAULT_SANDBOX_IMAGE,
+                    "python",
+                    "-c",
+                    "import platform; print(platform.machine())",
+                ],
+                "SANDBOX_RUNTIME_NOT_READY",
+                timeout=30,
+            )
+        self.command(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--platform",
+                "linux/amd64",
+                self.image,
+                "python",
+                "-m",
+                "installer.runtime",
+                "proof-readiness",
+            ],
+            "PROOF_RUNTIME_NOT_READY",
+            timeout=60,
         )
 
     def migrate(self):
@@ -111,8 +209,8 @@ class DockerServices:
 
     def start(self, session):
         # Stop only this install's API/web; persistent database remains intact.
-        self.dc("stop", "api", "web")
-        self.dc("up", "-d", "--force-recreate", "api", "web")
+        self.dc("stop", "api", "web", "sandbox-broker")
+        self.dc("up", "-d", "--force-recreate", "sandbox-broker", "api", "web")
         payload = json.dumps(
             {"mode": "direct_registry", "registry": session.registry.secret_payload()}
             if isinstance(session, DirectRegistrySession)
@@ -128,6 +226,29 @@ class DockerServices:
         probe = "import urllib.request; urllib.request.urlopen('http://127.0.0.1:{port}{path}',timeout=2).read(128)"
         while time.monotonic() < deadline:
             try:
+                self.dc(
+                    "exec",
+                    "-T",
+                    "sandbox-broker",
+                    "python",
+                    "-m",
+                    "installer.sandbox_broker",
+                    "health",
+                    code="SANDBOX_RUNTIME_NOT_READY",
+                    timeout=5,
+                )
+                self.dc(
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "pg_isready",
+                    "-U",
+                    "vfa",
+                    "-d",
+                    "vfa",
+                    code="HEALTH_TIMEOUT",
+                    timeout=5,
+                )
                 for service, port, path in (("api", 8010, "/health"), ("web", 4173, "/")):
                     self.dc(
                         "exec",
@@ -174,6 +295,8 @@ class DockerServices:
             [
                 "docker",
                 "build",
+                "--platform",
+                "linux/amd64",
                 "-f",
                 str(Path(directory) / "installer/Dockerfile"),
                 "-t",

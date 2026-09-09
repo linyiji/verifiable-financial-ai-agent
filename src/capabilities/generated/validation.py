@@ -10,6 +10,7 @@ import math
 import platform
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol, runtime_checkable
 from uuid import uuid4
@@ -28,7 +29,6 @@ from src.domain.capability import (
 from src.domain.enums import CalculationStatus, CapabilityBackend, CapabilityLifecycle
 from src.tooling.generated_sandbox import (
     ALLOWED_IMPORTS,
-    DockerSandboxBackend,
     GeneratedCodeASTPreflight,
     SandboxBackend,
     SandboxRequest,
@@ -348,6 +348,10 @@ class GeneratedCapabilityValidator:
             source=candidate.output.source_code,
             test_source=candidate.output.unit_tests,
             fixture=fixture,
+            run_id=candidate.run_id or "RUN-legacy-validation",
+            task_id=candidate.task_id or "TASK-legacy-validation",
+            capability_id=candidate.capability_id or candidate.output.capability_id,
+            generation_attempt=candidate.generation_attempt,
         )
         return await asyncio.to_thread(self._sandbox.execute, request)
 
@@ -449,6 +453,10 @@ class SandboxValidatedGeneratedCapability:
                 source=self._source,
                 test_source=self._tests,
                 fixture=sandbox_inputs,
+                run_id=context.run_id,
+                task_id=context.task_id,
+                capability_id=self.definition.capability_id,
+                generation_attempt=self._candidate.generation_attempt,
             ),
         )
         require_sandbox_environment(result)
@@ -783,13 +791,14 @@ def _runtime_version(result: SandboxResult, sandbox: SandboxBackend) -> str:
     python = runtime.get("python") if isinstance(runtime, dict) else None
     if not isinstance(python, str):
         python = platform.python_version()
-    image = sandbox.image if isinstance(sandbox, DockerSandboxBackend) else type(sandbox).__name__
+    image = getattr(sandbox, "image", type(sandbox).__name__)
     return f"Python {python} ({image})"
 
 
 def _runtime_image_identity(sandbox: SandboxBackend) -> str:
-    if isinstance(sandbox, DockerSandboxBackend):
-        return sandbox.image
+    image = getattr(sandbox, "image", None)
+    if isinstance(image, str) and image:
+        return image
     return f"in-process:{type(sandbox).__module__}.{type(sandbox).__qualname__}"
 
 
@@ -805,10 +814,12 @@ def _sandbox_record(
     security_attestation = result.output.get("security_probe", {})
     if not isinstance(security_attestation, dict):
         security_attestation = {}
+    finished_at = datetime.now(UTC)
+    started_at = finished_at - timedelta(milliseconds=max(0, result.duration_ms))
     return SandboxExecutionRecord(
         execution_id=f"SBX-{uuid4()}",
         build_id=candidate.build_id,
-        backend="docker" if isinstance(backend, DockerSandboxBackend) else type(backend).__name__,
+        backend=getattr(backend, "backend_name", type(backend).__name__),
         implementation_hash=candidate.implementation_hash,
         runtime_version=runtime_version,
         runtime_image_identity=_runtime_image_identity(backend),
@@ -829,4 +840,10 @@ def _sandbox_record(
             "Static, sandbox, edge, invariant, deterministic, schema, unit, "
             "and financial validation passed."
         ),
+        run_id=candidate.run_id,
+        task_id=candidate.task_id,
+        capability_id=candidate.capability_id or candidate.output.capability_id,
+        generation_attempt=candidate.generation_attempt,
+        started_at=started_at,
+        finished_at=finished_at,
     )

@@ -7,8 +7,8 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-from src.application import persistence as application_persistence  # noqa: F401
 from src.application import closure_recovery as closure_recovery_models  # noqa: F401
+from src.application import persistence as application_persistence  # noqa: F401
 from src.data import persistence as data_persistence  # noqa: F401
 from src.infrastructure.database import draft_leases as draft_lease_models  # noqa: F401
 from src.infrastructure.database import models as durable_models  # noqa: F401

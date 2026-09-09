@@ -2,7 +2,7 @@
 
 [English](WINDOWS_EVALUATION.md)
 
-安装器支持加密直连凭据 `.vfacred`，并保留独立 `.vfaeval` 网关模式。私下取得 `VFA-Investor-Access.vfacred`，复制为 `<解压仓库>/credentials/active.vfacred`（Windows 使用反斜杠路径），再执行下述安装命令。直连模式不依赖 Owner 网关。标准镜像的完整证明工具链仍待验收；完整研究暂用[原生安装](ADVANCED_INSTALLATION.zh-CN.md)。详见[凭据说明](../../credentials/README.zh-CN.md)。
+安装器支持加密直连凭据 `.vfacred`，并保留独立 `.vfaeval` 网关模式。私下取得 `VFA-Investor-Access.vfacred`，复制为 `<解压仓库>/credentials/active.vfacred`（Windows 使用反斜杠路径），再执行下述安装命令。直连模式不依赖 Owner 网关。安装器会在 Docker Desktop 中构建已打包的 Linux/amd64 Proof 与受治理 Sandbox 运行时；不宣称 Windows 原生 Proof 实机等价。详见[凭据说明](../../credentials/README.zh-CN.md)。
 
 在解压后的安装器源码包中执行：
 

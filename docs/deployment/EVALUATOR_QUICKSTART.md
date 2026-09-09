@@ -8,6 +8,6 @@ The [Guided Installation](INSTALL_EVALUATOR.md) now supports an encrypted direct
 
 Public installer URL: **PUBLICATION_REQUIRED**. Real Owner gateway: **NOT_DEPLOYED**. Until those operational prerequisites exist, use the source package for installer validation; do not assume gateway-mode Owner-funded research is available. Independently configured BYOK remains separate.
 
-Standard container delivery retains every proof/release gate and has limited workflows; full proof tooling is not packaged. Full required-proof/generated-capability execution uses [Advanced Installation](ADVANCED_INSTALLATION.md). Gateway-mode evaluators need no upstream provider keys locally; current BYOK testers configure their private keys on the local backend, never in the frontend.
+The guided container packages the locked RISC Zero 3.0.6 proof runtime and a private governed generated-capability sandbox broker while retaining every proof/release gate. The API receives neither the raw Docker socket nor provider secrets in child sandboxes. Gateway-mode evaluators need no upstream provider keys locally; direct encrypted credentials and native BYOK remain separate supported modes.
 
 [Windows](WINDOWS_EVALUATION.md) · [macOS](MACOS_EVALUATION.md) · [Credential security](../architecture/EVALUATOR_CREDENTIAL_SECURITY.md).

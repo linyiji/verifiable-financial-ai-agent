@@ -6,7 +6,7 @@ Status: source/offline foundation; public installer assets are **PUBLICATION_REQ
 The real Owner gateway is **NOT_DEPLOYED**. Neither publication nor clean-machine
 Windows/macOS acceptance is implied by portable tests or a local image build.
 
-Current investors and testers should use [direct-provider BYOK](LOCAL_DEPLOYMENT.md), not wait for this gateway-only installer. API integrations are built in; API keys are not embedded. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner. This installer is not turnkey BYOK and its standard image does not package full proof tooling.
+Investors and testers may use the guided installer's encrypted direct-provider bundle or [native BYOK](LOCAL_DEPLOYMENT.md). API integrations are built in; API keys are supplied privately and are never embedded in the repository or frontend. The optional Owner gateway remains a separate mode.
 
 ## Common module and lifecycle
 
@@ -60,15 +60,15 @@ separate authorized work. Until then, use the repository-relative commands in th
 [guided installation page](INSTALL_EVALUATOR.md). An explicitly supplied source package
 is a reviewed-source path, not a claim of downloaded release verification.
 
-## Standard versus proof evaluation
+## Proof and sandbox runtime
 
-Option B is selected: standard containers support browsing and limited workflows.
-They do not package an accepted RISC Zero proof runtime or expose the Docker socket
-to the API for generated-capability validation. Existing proof/capability release gates
-remain enforced. `--full-proof` stops with FULL_PROOF_UNAVAILABLE rather than pretending
-to support complete release-gated execution. Use [advanced installation](ADVANCED_INSTALLATION.md)
-for that environment. Research, admission, lineage, memory, BYOK, provider capability
-and adaptive recovery contracts are unchanged.
+The product image packages the verified Linux/amd64 RISC Zero 3.0.6 host, r0vm and
+bound guest method. Proof runtime identity is checked before startup and proof execution
+requires no network. Generated capability execution crosses a narrow private Unix-socket
+contract to a broker. Only that broker mounts the Docker socket; the API and disposable
+child containers do not. The broker fixes the child image and rejects caller-supplied
+privilege, network, PID, mount and device controls. Existing proof/capability release
+gates and all research, lineage, memory and authorization contracts remain unchanged.
 
 ## Acceptance boundary
 

@@ -4,12 +4,12 @@ import subprocess
 import textwrap
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[3]
 PAGE = ROOT / "apps/web/src/pages/ResultsWorkspacePage.tsx"
 APP = ROOT / "apps/web/src/Phase4Application.tsx"
 ROUTE = ROOT / "apps/web/src/routing/resultsRoute.ts"
 HTTP_SOURCE = ROOT / "apps/web/src/data/HttpFrontendDataSource.ts"
+EXECUTION_SURFACE = ROOT / "apps/web/src/components/results/InteractiveExecutionRecord.tsx"
 
 
 def _page() -> str:
@@ -27,8 +27,12 @@ def test_01_exact_run_route_opens_results_workspace() -> None:
         import {{ readFile }} from "node:fs/promises";
         import {{ stripTypeScriptTypes }} from "node:module";
         const source = await readFile({str(ROUTE)!r}, "utf8");
-        const module = await import(`data:text/javascript,${{encodeURIComponent(stripTypeScriptTypes(source))}}`);
-        assert.deepEqual(module.parseResultsRoute("/runs/RUN-exact/results/report"), {{runId: "RUN-exact", surface: "report"}});
+        const stripped = stripTypeScriptTypes(source);
+        const module = await import(`data:text/javascript,${{encodeURIComponent(stripped)}}`);
+        assert.deepEqual(
+          module.parseResultsRoute("/runs/RUN-exact/results/report"),
+          {{runId: "RUN-exact", surface: "report"}}
+        );
         assert.equal(module.parseResultsRoute("/runs/RUN-exact/results/report/extra"), null);
         """
     )
@@ -113,13 +117,23 @@ def test_10_results_workspace_has_no_fixture_or_demo_fallback() -> None:
 
 def test_11_unsafe_review_and_execution_fields_are_not_rendered() -> None:
     page = _page()
-    for field in ("safeExplanation", "inputRefs", "outputRefs", "keyFindings", "risks", "limitations"):
+    forbidden = (
+        "safeExplanation",
+        "inputRefs",
+        "outputRefs",
+        "keyFindings",
+        "risks",
+        "limitations",
+    )
+    for field in forbidden:
         assert field not in page
 
 
 def test_12_hidden_cot_and_raw_events_are_not_rendered() -> None:
     page = _page()
+    execution_surface = EXECUTION_SURFACE.read_text(encoding="utf-8")
     assert "actorDetails" not in page
     assert "observableProcess" not in page
-    assert "execution.actors.reduce" in page
-    assert "原始事件流或内部推理内容" in page
+    assert "InteractiveExecutionRecord" in page
+    assert "execution.actors.reduce" in execution_surface
+    assert "模型内部推理或供应商原始响应" in execution_surface

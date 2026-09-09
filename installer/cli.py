@@ -59,15 +59,11 @@ class Installer:
         s = self.state
         if not checked:
             self.preflight()
-        if full_proof:
-            # No unverified proof image or developer proof flags can enable this mode.
-            raise InstallError("FULL_PROOF_UNAVAILABLE")
-        print(
-            "Standard evaluation: required proof and generated capability gates still apply. "
-            "Release-gated full technical research requires Advanced Installation."
-        )
+        del full_proof  # The packaged runtime always preserves the same strict Proof policy.
         s.stage("LOCAL_STORAGE_INIT")
         self.services.storage()
+        s.stage("RUNTIME_DEPENDENCY_CHECK")
+        self.services.runtime_dependencies()
         s.stage("DATABASE_INIT")
         self.services.database()
         s.stage("MIGRATION")
@@ -83,6 +79,11 @@ class Installer:
         del session
         s.stage("HEALTH_CHECK")
         self.services.health()
+        print("Database ............. READY")
+        print("Backend .............. READY")
+        print("Frontend ............. READY")
+        print("Proof Runtime ........ READY / RISC Zero 3.0.6")
+        print("Sandbox Runtime ...... READY / governed broker")
         if not no_open:
             s.stage("OPEN_BROWSER")
             self.open_browser()
@@ -123,14 +124,17 @@ class Installer:
         print("Docker PASS")
         print("Product version:", self.state.data.get("version", "not installed"))
         print(self.services.status())
-        try:
-            path = self.discover_credential(bundle)
-            session = self.unlock(path)
-            self.readiness(session, record_stage=False)
-        except InstallError as exc:
-            print(str(exc))
-            if exc.code == "NO_EVALUATOR_CREDENTIAL":
-                print("Gateway NOT_DEPLOYED / credential not supplied; ask Owner.")
+        self.services.runtime_dependencies()
+        self.services.health()
+        path = self.discover_credential(bundle)
+        session = self.unlock(path)
+        self.readiness(session, record_stage=False)
+        del session
+        print("Database ............. READY")
+        print("Backend .............. READY")
+        print("Frontend ............. READY")
+        print("Proof Runtime ........ READY / RISC Zero 3.0.6")
+        print("Sandbox Runtime ...... READY / governed broker")
         print("Paid upstream calls 0")
 
 

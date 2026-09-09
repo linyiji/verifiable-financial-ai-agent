@@ -1,0 +1,17 @@
+{
+  "schema": "vfas.risc0.packaged-runtime.v1",
+  "risc0_version": "3.0.6",
+  "r0vm_version": "3.0.6",
+  "target_arch": "linux/amd64",
+  "host_binary": "revenue-growth-proof-host",
+  "host_sha256": "sha256:2ae98846a8724307aac9e9f395e3c92eb386d05e9798c5db18e08f11a813572c",
+  "r0vm_binary": "r0vm",
+  "r0vm_sha256": "sha256:751b9b188d341e8bec5e02060086b7b1dc3f7289e90f726c38589bb6735dd6d7",
+  "guest_elf": "revenue-growth-guest",
+  "guest_elf_sha256": "sha256:454aa141740723afbb5beeeb9f8100947bf05b04853a4c39d4230a4b9d4e76cb",
+  "method_image_id": "491e8fb2335a465b112dda11b16b6dcec703e11b1bfa3d21ebaec177c3847e36",
+  "source_commit": "7f0c8bbccba41a76c1852088704e541fc6e1fd91",
+  "source_set_sha256": "sha256:f9298b08b95126e4ed225af59463f9368724d9dc2de938a80abb06982fe033cc",
+  "guest_builder_digest": "sha256:3e12f71bacd27527a61dea96fa0e53e468c99aa261d3a1019b593f6dbd943eb3",
+  "distribution_archive_sha256": "sha256:615d961bfb81d318db5071d7548389c850e324ac7f421c075176daf26082a60a"
+}

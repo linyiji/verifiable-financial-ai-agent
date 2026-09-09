@@ -14,6 +14,6 @@ Branch cleanup: inventory and compare remote branch reachability during the sepa
 
 Before publishing: review the redacted secret audit and license decision. Recognition is now Owner-confirmed: AIx Origin Summit Hong Kong · Flux Track · Bronze Award; do not describe it as unconfirmed. Do not publish private DB/artifacts, runtime authority files, keys or raw participant data. Provider base URLs/model IDs are configuration, not credentials.
 
-Current investor/tester guidance is [direct-provider BYOK](LOCAL_DEPLOYMENT.md): API integrations are built in, not API keys. Use privately supplied, separately scoped and revocable test keys or the tester's own keys. The real gateway remains NOT_DEPLOYED; the Docker installer is gateway-only, not turnkey BYOK, and full proof tooling is not packaged in its standard image.
+Investor/tester guidance supports the guided Docker installer with a privately supplied encrypted `.vfacred` bundle or [native BYOK](LOCAL_DEPLOYMENT.md). API integrations are built in, not API keys. The optional gateway remains NOT_DEPLOYED; direct encrypted credentials do not depend on it. The release image packages locked RISC Zero 3.0.6 Proof and a governed Sandbox broker.
 
 No push, release, remote tag, metadata edit, default-branch change or remote branch deletion was performed by this preparation task.

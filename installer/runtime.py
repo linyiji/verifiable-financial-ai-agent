@@ -9,6 +9,7 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
+from src.adapters.risc0.packaged_runtime import load_packaged_proof_runtime
 from src.evaluator.client import GatewaySession, activate
 from src.evaluator.direct_bundle import strict_json
 from src.evaluator.direct_registry import DirectCredentialRegistry
@@ -27,12 +28,16 @@ def direct_settings(authority, base):
 
 def settings():
     password = Path("/run/secrets/db_password").read_text().strip()
+    proof = load_packaged_proof_runtime()
     return Settings(
         _env_file=None,
         database_url=f"postgresql+asyncpg://vfa:{password}@postgres:5432/vfa",
         vfa_credential_mode="evaluator",
         artifact_root="/data/artifacts",
         workspace_root="/data/workspaces",
+        sandbox_broker_socket="/run/vfa-sandbox/broker.sock",
+        risc0_host_binary=str(proof.host_binary),
+        risc0_expected_host_sha256=proof.host_sha256,
     )
 
 
@@ -43,6 +48,13 @@ def main():
             from src.infrastructure.database.migrations import upgrade_postgresql_database
 
             upgrade_postgresql_database(settings().database)
+            return
+        if mode == "proof-readiness":
+            proof = load_packaged_proof_runtime()
+            print(
+                "Proof Runtime READY; "
+                f"RISC0 {proof.method_image_id[:8]} / r0vm 3.0.6 / {proof.host_sha256[:15]}"
+            )
             return
         if mode == "handoff":
             payload = sys.stdin.buffer.read(MAX_HANDOFF_BYTES + 1)

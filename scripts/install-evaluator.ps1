@@ -55,7 +55,7 @@ $Identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 icacls $VfaRoot /inheritance:r /grant:r "${Identity}:(OI)(CI)F" *> $null
 if ($LASTEXITCODE -ne 0) { throw 'INSTALLATION_FAILED: Could not protect the local data directory.' }
 Write-Host 'Verifiable Financial Agent — Preparing product (first build can take several minutes).'
-docker build -f "$VfaSource/installer/Dockerfile" -t vfa-evaluator:source $VfaSource *> "$VfaRoot/logs/build.log"
+docker build --platform linux/amd64 -f "$VfaSource/installer/Dockerfile" -t vfa-evaluator:source $VfaSource *> "$VfaRoot/logs/build.log"
 if ($LASTEXITCODE -ne 0) { throw 'INSTALLATION_FAILED: Run this command again; private build logs are retained.' }
 Copy-Item "$VfaSource/installer/vfa.ps1" "$VfaRoot/bin/vfa.ps1" -Force
 Copy-Item "$VfaSource/installer/vfa.cmd" "$VfaRoot/bin/vfa.cmd" -Force

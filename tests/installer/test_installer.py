@@ -66,7 +66,16 @@ def setup(tmp_path, fail=None):
 def test_fresh_install_autostarts_and_opens_after_health(tmp_path, capsys):
     app, state, services = setup(tmp_path)
     app.install(source=True)
-    assert services.calls == ["check", "ports", "storage", "database", "migrate", "start", "health"]
+    assert services.calls == [
+        "check",
+        "ports",
+        "storage",
+        "runtime_dependencies",
+        "database",
+        "migrate",
+        "start",
+        "health",
+    ]
     assert state.data["stage"] == "READY" and state.data["ready"]
     assert (tmp_path / "open-browser").read_text() == "http://127.0.0.1:4173"
     assert "synthetic-private-token" not in state.path.read_text() + capsys.readouterr().out
@@ -85,7 +94,9 @@ def test_existing_install_and_resume_revalidate_authority(tmp_path):
     assert service.calls.count("migrate") == 2
 
 
-@pytest.mark.parametrize("failure", ["check", "database", "migrate", "health"])
+@pytest.mark.parametrize(
+    "failure", ["check", "runtime_dependencies", "database", "migrate", "health"]
+)
 def test_failed_stage_never_opens_browser(tmp_path, failure):
     app, state, _ = setup(tmp_path, failure)
     with pytest.raises(InstallError):
@@ -116,11 +127,11 @@ def test_failed_credential_never_starts_services(tmp_path, code):
     assert "start" not in service.calls
 
 
-def test_full_proof_does_not_relax_policy_or_start(tmp_path):
+def test_full_proof_flag_uses_same_packaged_runtime_and_policy(tmp_path):
     app, _, service = setup(tmp_path)
-    with pytest.raises(InstallError, match="FULL_PROOF_UNAVAILABLE"):
-        app.start(full_proof=True)
-    assert "migrate" not in service.calls and "start" not in service.calls
+    app.start(full_proof=True, no_open=True)
+    assert "runtime_dependencies" in service.calls
+    assert "migrate" in service.calls and "start" in service.calls
 
 
 @pytest.mark.parametrize("count", [0, 1, 2])
@@ -277,6 +288,13 @@ def test_database_password_separate_and_persistent(tmp_path):
     compose = service.compose.read_text()
     assert password not in compose and "POSTGRES_PASSWORD_FILE" in compose
     assert "127.0.0.1:8010:8010" in compose and "research" in compose
+    config = json.loads(compose)
+    api_mounts = config["services"]["api"]["volumes"]
+    broker = config["services"]["sandbox-broker"]
+    assert not any("docker.sock" in mount for mount in api_mounts)
+    assert any("docker.sock" in mount for mount in broker["volumes"])
+    assert "ports" not in broker and broker["network_mode"] == "none"
+    assert not any("credentials" in mount for mount in broker["volumes"])
     assert (tmp_path / "runtime/db.password").stat().st_mode & 0o777 == 0o600
 
 
@@ -340,7 +358,7 @@ def test_errors_have_action_and_safe_unknown():
 def test_doctor_no_paid_calls(tmp_path, capsys):
     app, _, services = setup(tmp_path)
     app.doctor()
-    assert services.calls == ["check", "status"]
+    assert services.calls == ["check", "status", "runtime_dependencies", "health"]
     assert "Paid upstream calls 0" in capsys.readouterr().out
 
 

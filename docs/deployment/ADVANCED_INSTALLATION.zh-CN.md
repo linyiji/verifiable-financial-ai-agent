@@ -2,7 +2,7 @@
 
 [English](ADVANCED_INSTALLATION.md)
 
-现阶段建议投资者和测试员通过本页及 [BYOK 配置](LOCAL_DEPLOYMENT.zh-CN.md)使用直连供应商的 BYOK 模式。产品内置 API 集成，但不内置 API 密钥。请使用自己的密钥，或由 Owner 私下提供独立限定权限、可撤销的测试密钥。Docker [引导安装](INSTALL_EVALUATOR.zh-CN.md)仅支持网关模式，不是开箱即用的 BYOK 安装器；真实网关状态为 NOT_DEPLOYED，标准镜像也未打包完整证明工具链。
+本页说明供开发者使用的原生直连供应商 BYOK。产品内置 API 集成，但不内置 API 密钥。投资者也可使用 Docker [引导安装](INSTALL_EVALUATOR.zh-CN.md)及 Owner 私下提供的加密 `.vfacred` 包；其中打包的 Proof 与受治理 Sandbox 运行时不依赖当前未部署的可选 Owner 网关。
 
 使用 Python 3.11、Node.js 24 及兼容 PostgreSQL 16 的存储。需要完整强制证明的研究依赖 Rust/RISC Zero SDK 3.0.6；生成能力验证需要 Docker。请按照[证明工作区](../../zk/revenue_growth/README.zh-CN.md)说明构建已接受的 host，并保留现有证明门禁。不要设置开发 / 伪造证明标志。
 

@@ -120,9 +120,9 @@ Registered routes: `teamorouter-sol`, `teamorouter-luna`, `mimo-direct`. Only co
 
 ## Evaluate / Run Locally
 
-**Investors and testers should currently use BYOK direct-provider evaluation.** MiMo, TeamoRouter and FMP integrations are built in; usable API keys are not included in the public package. Use your own keys or test keys supplied privately by the Owner. Start with [BYOK setup](docs/deployment/ADVANCED_INSTALLATION.md).
+**Investors and testers should use the encrypted direct-provider evaluator bundle supplied privately by the Owner, or native BYOK.** MiMo, TeamoRouter, Bocha Web Search and the four-key FMP pool are supported; usable API keys are not stored in this repository or frontend.
 
-The separate gateway-based installer source foundation uses these commands from an unpacked source package. It requires a deployed Owner gateway and `.vfaeval` bundle; it is not a one-command BYOK launcher:
+The guided installer supports the encrypted `.vfacred` direct-provider mode independently of the optional Owner gateway. Copy the privately supplied bundle to `credentials/active.vfacred`, then run:
 
 Windows (PowerShell):
 ```powershell
@@ -134,7 +134,7 @@ macOS (Terminal):
 bash scripts/install-evaluator.sh
 ```
 
-For that installer, subsequent startup is `vfa start`. Public installer delivery remains **PUBLICATION_REQUIRED**, and the real Owner gateway is not deployed. This blocks gateway-based zero-config evaluation, not independently configured BYOK. Standard mode retains all proof/release gates; full-proof workflows require the advanced environment.
+Subsequent startup is `vfa start`. The Docker runtime packages the locked RISC Zero 3.0.6 proof host and a private governed sandbox broker; the API never receives the raw Docker socket. The optional gateway remains undeployed, but this does not block direct encrypted credentials or BYOK.
 
 [Guided installation / troubleshooting](docs/deployment/INSTALL_EVALUATOR.md) · [Advanced / BYOK](docs/deployment/ADVANCED_INSTALLATION.md) · [Evaluator Gateway](docs/deployment/EVALUATOR_GATEWAY.md)
 

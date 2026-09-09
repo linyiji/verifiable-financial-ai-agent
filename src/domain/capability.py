@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import Field, model_validator
@@ -158,6 +159,12 @@ class SandboxExecutionRecord(TimestampedModel):
     output_hash: str | None = None
     passed: bool = False
     detail: str | None = None
+    run_id: str | None = None
+    task_id: str | None = None
+    capability_id: str | None = None
+    generation_attempt: int | None = Field(default=None, ge=1)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 class CapabilityValidationRecord(TimestampedModel):

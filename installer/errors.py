@@ -30,7 +30,8 @@ MESSAGES = {
     "CREDENTIAL_REVOKED": "Ask the Owner to resolve authorization, then run vfa start.",
     "QUOTA_EXHAUSTED": "Ask the Owner to resolve evaluation limits, then run vfa start.",
     "HEALTH_TIMEOUT": "Services did not become ready. Run vfa doctor.",
-    "FULL_PROOF_UNAVAILABLE": "No accepted proof runtime packaged. Use Advanced Installation.",
+    "PROOF_RUNTIME_NOT_READY": "Packaged Proof Runtime is not ready.",
+    "SANDBOX_RUNTIME_NOT_READY": "Governed Sandbox Runtime is not ready.",
     "INSTALLATION_FAILED": "Installation paused; data retained. Retry or run vfa doctor.",
 }
 

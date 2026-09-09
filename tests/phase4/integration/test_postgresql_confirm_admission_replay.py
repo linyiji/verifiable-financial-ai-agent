@@ -118,6 +118,21 @@ def _confirm_body(draft: dict[str, object], object_id: str) -> dict[str, object]
     }
 
 
+def _validate_history_collection(body: dict[str, object], *, object_id: str) -> tuple[str, ...]:
+    assert body["schema_version"] == "phase4-run-history-collection/v1"
+    items = body["items"]
+    assert isinstance(items, list)
+    assert all(item["availability"] == "AVAILABLE" for item in items)
+    return validate_run_collection(
+        {
+            "schema_version": "phase4-run-collection/v1",
+            "items": [item["run"] for item in items],
+            "next_cursor": body["next_cursor"],
+        },
+        expected_object_id=object_id,
+    )
+
+
 def _create_object(client: TestClient, *, symbol: str, key: str) -> str:
     response = client.post(
         "/api/objects",
@@ -199,8 +214,8 @@ def test_confirm_admission_replay_and_immediate_run_collection_are_exactly_once(
             "/api/objects",
             headers={**headers, "Idempotency-Key": "be004-object"},
             json={
-                "symbol": "NVDA",
-                "company_name": "NVIDIA Corporation",
+                "symbol": "QCOM",
+                "company_name": "Qualcomm Incorporated",
                 "exchange": "NASDAQ",
                 "currency": "USD",
             },
@@ -228,7 +243,7 @@ def test_confirm_admission_replay_and_immediate_run_collection_are_exactly_once(
 
         immediate_runs = client.get(f"/api/objects/{object_id}/runs", headers=headers)
         assert immediate_runs.status_code == 200, immediate_runs.text
-        assert [item["run_id"] for item in immediate_runs.json()["items"]] == [run_id]
+        assert [item["run"]["run_id"] for item in immediate_runs.json()["items"]] == [run_id]
 
         replayed = client.post("/api/research-runs", headers=confirm_headers, json=body)
         assert replayed.status_code == 200, replayed.text
@@ -366,10 +381,10 @@ def test_terminal_scheduler_event_and_run_watermark_are_http_atomic_across_resta
         client.portal.call(_emit_scheduler_failure, backend, run_id)
         object_runs = client.get(f"/api/objects/{object_id}/runs", headers=headers)
         assert object_runs.status_code == 200, object_runs.text
-        assert validate_run_collection(object_runs.json(), expected_object_id=object_id) == (
+        assert _validate_history_collection(object_runs.json(), object_id=object_id) == (
             run_id,
         )
-        item = object_runs.json()["items"][0]
+        item = object_runs.json()["items"][0]["run"]
         assert (item["status"], item["stage"], item["terminal"]) == (
             "FAILED",
             "FAILED",
@@ -397,7 +412,7 @@ def test_terminal_scheduler_event_and_run_watermark_are_http_atomic_across_resta
         assert restart_replay.json()["admission"] == admission
         object_runs = client.get(f"/api/objects/{object_id}/runs", headers=headers)
         assert object_runs.status_code == 200, object_runs.text
-        assert validate_run_collection(object_runs.json(), expected_object_id=object_id) == (
+        assert _validate_history_collection(object_runs.json(), object_id=object_id) == (
             run_id,
         )
         projection = client.get(f"/api/research-runs/{run_id}/projection", headers=headers)
@@ -464,10 +479,10 @@ def test_production_execution_preserves_scheduler_start_during_event_publish(
 
         object_runs = client.get(f"/api/objects/{object_id}/runs", headers=headers)
         assert object_runs.status_code == 200, object_runs.text
-        assert validate_run_collection(object_runs.json(), expected_object_id=object_id) == (
+        assert _validate_history_collection(object_runs.json(), object_id=object_id) == (
             run_id,
         )
-        item = object_runs.json()["items"][0]
+        item = object_runs.json()["items"][0]["run"]
         assert item["activity"]["type"] == "run.started"
         assert item["started_at"] == item["activity"]["timestamp"]
         client.portal.call(allow_watermark.set)

@@ -21,7 +21,7 @@ from src.adapters.finrobot.professional_reporting import (
 from src.adapters.fmp import FinancialProviderMode, FMPProvider, select_financial_provider
 from src.adapters.llm.routes import configured_incremental_provider, configured_specialist_providers
 from src.adapters.llm.teamorouter import TeamoRouterClient
-from src.adapters.risc0 import RiscZeroProofAdapter
+from src.adapters.risc0 import EXPECTED_REVENUE_GROWTH_HOST_SHA256, RiscZeroProofAdapter
 from src.agentic.composition import build_research_agent_registry
 from src.agentic.llm_integration import (
     PlannerProviderResearchLeadPlanner,
@@ -54,7 +54,7 @@ from src.infrastructure.database.generated_workflow import PostgreSQLCapabilityW
 from src.observability.performance import configure_from_environment, flush
 from src.phase4_product.api import install_phase4_error_handlers
 from src.phase4_product.postgresql_backend import PostgreSQLPhase4ProductBackend
-from src.tooling.generated_sandbox import DockerSandboxBackend
+from src.tooling.generated_sandbox import BrokerSandboxBackend, DockerSandboxBackend
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -150,10 +150,15 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
             research_service.proof_workflow = RevenueGrowthRiscZeroProofWorkflow(
                 adapter=RiscZeroProofAdapter(
                     host_binary=(
-                        REPOSITORY_ROOT
+                        settings.risc0_host_binary
+                        or REPOSITORY_ROOT
                         / "zk/revenue_growth/target/release/revenue-growth-proof-host"
                     ),
                     artifact_dir=proof_root,
+                    expected_host_sha256=(
+                        settings.risc0_expected_host_sha256
+                        or EXPECTED_REVENUE_GROWTH_HOST_SHA256
+                    ),
                 ),
                 artifact_dir=proof_root,
                 event_store=research_service.event_store,
@@ -176,7 +181,11 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 research_lead=Phase3ResearchLeadCapabilityAuthority(),
                 code_builder=GovernedCodeBuilder(adaptive_recovery, research_service.repository),
                 validator=GeneratedCapabilityValidator(
-                    sandbox=DockerSandboxBackend(),
+                    sandbox=(
+                        BrokerSandboxBackend(socket_path=settings.sandbox_broker_socket)
+                        if settings.sandbox_broker_socket
+                        else DockerSandboxBackend()
+                    ),
                     plans=FreeCashFlowMarginValidationPlanProvider(),
                 ),
                 event_store=research_service.event_store,

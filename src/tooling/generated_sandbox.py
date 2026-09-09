@@ -11,7 +11,10 @@ from __future__ import annotations
 import ast
 import json
 import re
+import socket
+import struct
 import subprocess
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -29,6 +32,7 @@ def require_sandbox_environment(result):
     if isinstance(error, dict) and error.get("code") in {
         "DOCKER_NOT_FOUND",
         "DOCKER_START_UNAVAILABLE",
+        "SANDBOX_RUNTIME_NOT_READY",
     }:
         raise SandboxEnvironmentUnavailableError(error["code"])
 
@@ -273,6 +277,10 @@ class SandboxRequest:
     test_source: str
     fixture: JsonObject
     entrypoint: str = "execute"
+    run_id: str | None = None
+    task_id: str | None = None
+    capability_id: str | None = None
+    generation_attempt: int | None = None
 
     def __post_init__(self) -> None:
         if not self.source.strip():
@@ -301,8 +309,92 @@ class SandboxBackend(Protocol):
     def execute(self, request: SandboxRequest) -> SandboxResult: ...
 
 
+class BrokerSandboxBackend:
+    """Narrow client for the packaged sandbox broker; never owns Docker authority."""
+
+    backend_name = "docker-broker"
+
+    def __init__(
+        self,
+        *,
+        socket_path: str = "/run/vfa-sandbox/broker.sock",
+        image: str = DEFAULT_SANDBOX_IMAGE,
+        limits: SandboxLimits | None = None,
+    ) -> None:
+        self.socket_path = socket_path
+        self.image = image
+        self.limits = limits or SandboxLimits()
+
+    @property
+    def security_profile(self) -> JsonObject:
+        return DockerSandboxBackend(
+            image=self.image, limits=self.limits, platform="linux/amd64"
+        ).security_profile
+
+    def execute(self, request: SandboxRequest) -> SandboxResult:
+        identities = (request.run_id, request.task_id, request.capability_id)
+        if any(not isinstance(value, str) or not value.strip() for value in identities):
+            raise ValueError("broker sandbox requires run/task/capability identity")
+        if request.generation_attempt is None or request.generation_attempt < 1:
+            raise ValueError("broker sandbox requires a positive generation attempt")
+        request_id = f"SBR-{uuid.uuid4()}"
+        payload = json.dumps(
+            {
+                "schema": "vfas.sandbox-broker.request.v1",
+                "request_id": request_id,
+                "run_id": request.run_id,
+                "task_id": request.task_id,
+                "capability_id": request.capability_id,
+                "generation_attempt": request.generation_attempt,
+                "source": request.source,
+                "test_source": request.test_source,
+                "fixture": request.fixture,
+                "entrypoint": request.entrypoint,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+            allow_nan=False,
+        ).encode()
+        if len(payload) > self.limits.max_payload_bytes:
+            raise ValueError("sandbox broker request exceeds payload limit")
+        try:
+            with socket.socket(socket.AF_UNIX) as connection:
+                connection.settimeout(self.limits.wall_timeout_seconds + 10)
+                connection.connect(self.socket_path)
+                connection.sendall(struct.pack("!I", len(payload)) + payload)
+                raw = _receive_frame(connection, self.limits.max_output_bytes + 65536)
+            response = json.loads(raw)
+            if set(response) != {"schema", "request_id", "result"}:
+                raise ValueError()
+            if response["schema"] != "vfas.sandbox-broker.response.v1":
+                raise ValueError()
+            if response["request_id"] != request_id:
+                raise ValueError()
+            result = response["result"]
+            return SandboxResult(
+                passed=result["passed"],
+                exit_code=result["exit_code"],
+                output=result["output"],
+                duration_ms=result["duration_ms"],
+                timed_out=result["timed_out"],
+                stderr=result["stderr"],
+                security=result["security"],
+            )
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+            return SandboxResult(
+                passed=False,
+                exit_code=127,
+                output={"ok": False, "error": {"code": "SANDBOX_RUNTIME_NOT_READY"}},
+                duration_ms=0,
+                security=self.security_profile,
+            )
+
+
 class DockerSandboxBackend:
     """Run generated Python in a constrained, non-root Docker container."""
+
+    backend_name = "docker"
 
     def __init__(
         self,
@@ -311,6 +403,7 @@ class DockerSandboxBackend:
         docker_binary: str = "docker",
         limits: SandboxLimits | None = None,
         preflight: GeneratedCodeASTPreflight | None = None,
+        platform: str | None = None,
     ) -> None:
         if not _IMAGE_REFERENCE.fullmatch(image):
             raise ValueError("invalid Docker image reference")
@@ -318,17 +411,24 @@ class DockerSandboxBackend:
         self.docker_binary = docker_binary
         self.limits = limits or SandboxLimits()
         self.preflight = preflight or GeneratedCodeASTPreflight()
+        if platform not in (None, "linux/amd64"):
+            raise ValueError("unsupported sandbox platform")
+        self.platform = platform
 
     def build_command(self, container_name: str) -> tuple[str, ...]:
         """Return the auditable argv; payload is intentionally absent from it."""
         memory = self.limits.memory
-        return (
+        command = (
             self.docker_binary,
             "run",
             "--rm",
             "--interactive",
             "--pull",
             "never",
+        )
+        if self.platform:
+            command += ("--platform", self.platform)
+        return command + (
             "--name",
             container_name,
             "--network",
@@ -399,13 +499,11 @@ class DockerSandboxBackend:
         command = self.build_command(container_name)
         started = time.monotonic()
         try:
-            completed = subprocess.run(  # noqa: S603 - fixed argv, shell is never used
+            completed = _bounded_subprocess(
                 command,
-                input=payload,
-                capture_output=True,
-                text=True,
-                check=False,
+                payload.encode(),
                 timeout=self.limits.wall_timeout_seconds,
+                output_limit=self.limits.max_output_bytes,
             )
         except subprocess.TimeoutExpired:
             self._force_remove(container_name)
@@ -426,8 +524,17 @@ class DockerSandboxBackend:
                 security=self.security_profile,
             )
 
-        stdout = completed.stdout
-        stderr = completed.stderr
+        stdout = completed.stdout.decode("utf-8", errors="replace")
+        stderr = completed.stderr.decode("utf-8", errors="replace")
+        if completed.output_exceeded:
+            return SandboxResult(
+                passed=False,
+                exit_code=completed.returncode,
+                output={"ok": False, "error": {"code": "OUTPUT_LIMIT_EXCEEDED"}},
+                duration_ms=_elapsed_ms(started),
+                stderr=_bounded(stderr, self.limits.max_output_bytes),
+                security=self.security_profile,
+            )
         if completed.returncode == 125:
             return SandboxResult(
                 passed=False,
@@ -481,6 +588,7 @@ class DockerSandboxBackend:
             "wall_timeout_seconds": self.limits.wall_timeout_seconds,
             "host_mounts": [],
             "python_dont_write_bytecode": True,
+            "platform": self.platform or "daemon-native",
         }
 
     def _force_remove(self, container_name: str) -> None:
@@ -508,6 +616,85 @@ def _find_sensitive_fixture_paths(value: Any, path: str = "fixture") -> list[str
         for index, child in enumerate(value):
             findings.extend(_find_sensitive_fixture_paths(child, f"{path}[{index}]"))
     return findings
+
+
+@dataclass(frozen=True, slots=True)
+class _BoundedProcessResult:
+    returncode: int
+    stdout: bytes
+    stderr: bytes
+    output_exceeded: bool
+
+
+def _bounded_subprocess(command, payload: bytes, *, timeout: float, output_limit: int):
+    """Drain child pipes concurrently and kill as soon as either bound is crossed."""
+    process = subprocess.Popen(  # noqa: S603 - caller supplies fixed audited argv
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    streams: dict[str, bytearray] = {"stdout": bytearray(), "stderr": bytearray()}
+    exceeded = threading.Event()
+
+    def writer():
+        try:
+            process.stdin.write(payload)
+            process.stdin.close()
+        except (BrokenPipeError, OSError, AttributeError):
+            pass
+
+    def reader(name, stream):
+        while chunk := stream.read(65536):
+            target = streams[name]
+            remaining = output_limit + 1 - len(target)
+            if remaining > 0:
+                target.extend(chunk[:remaining])
+            if len(target) > output_limit:
+                exceeded.set()
+                process.kill()
+                break
+
+    threads = [
+        threading.Thread(target=writer, daemon=True),
+        threading.Thread(target=reader, args=("stdout", process.stdout), daemon=True),
+        threading.Thread(target=reader, args=("stderr", process.stderr), daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        raise
+    finally:
+        for thread in threads:
+            thread.join(timeout=2)
+    return _BoundedProcessResult(
+        returncode=process.returncode,
+        stdout=bytes(streams["stdout"][:output_limit]),
+        stderr=bytes(streams["stderr"][:output_limit]),
+        output_exceeded=exceeded.is_set(),
+    )
+
+
+def _receive_frame(connection: socket.socket, limit: int) -> bytes:
+    header = _receive_exact(connection, 4)
+    length = struct.unpack("!I", header)[0]
+    if length < 2 or length > limit:
+        raise ValueError("invalid broker frame size")
+    return _receive_exact(connection, length)
+
+
+def _receive_exact(connection: socket.socket, length: int) -> bytes:
+    chunks = bytearray()
+    while len(chunks) < length:
+        chunk = connection.recv(min(65536, length - len(chunks)))
+        if not chunk:
+            raise ValueError("truncated broker frame")
+        chunks.extend(chunk)
+    return bytes(chunks)
 
 
 def _elapsed_ms(started: float) -> int:

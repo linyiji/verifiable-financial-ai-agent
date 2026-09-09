@@ -7,6 +7,7 @@ No schema changes, fake responses, scheduler, outbound HTTP, or mutation endpoin
 """
 import os
 from collections import Counter
+
 import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse

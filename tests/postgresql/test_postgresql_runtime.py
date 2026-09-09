@@ -188,7 +188,7 @@ async def test_real_postgresql_version_and_alembic_head() -> None:
         assert row[0].startswith("PostgreSQL 16.15")
         assert row[1] == "verifiable_financial_agent"
         assert row[2] == "vfa"
-        assert revision == "20260904_0006"
+        assert revision == "20260909_0015"
 
 
 @pytest.mark.asyncio
@@ -200,12 +200,18 @@ async def test_real_postgresql_atomic_event_sequence_and_sse_replay() -> None:
             run_ids=run_ids,
         )
         initial = await persistence.event_store.replay(run_id)
+        task_id = next(event.task_id for event in initial if event.task_id is not None)
         emitted = await asyncio.gather(
             *(
                 persistence.event_store.emit(
                     run_id=run_id,
+                    task_id=task_id,
                     event_type=RuntimeEventType.TASK_PROGRESS,
-                    payload={"concurrency_probe": index},
+                    payload={
+                        "progress": index / 100,
+                        "progress_scale": "RATIO_0_1",
+                        "stage": f"concurrency-probe-{index}",
+                    },
                 )
                 for index in range(50)
             )

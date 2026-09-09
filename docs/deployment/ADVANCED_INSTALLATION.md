@@ -2,7 +2,7 @@
 
 [简体中文](ADVANCED_INSTALLATION.zh-CN.md)
 
-Current investors and testers should use direct-provider BYOK via this page and [BYOK configuration](LOCAL_DEPLOYMENT.md). API integrations are built in; API keys are not embedded. Bring your own keys or receive separately scoped, revocable test keys privately from the Owner. The Docker [Guided Installation](INSTALL_EVALUATOR.md) is gateway-mode only, not turnkey BYOK; the real gateway is NOT_DEPLOYED and its standard image does not package full proof tooling.
+This page describes native direct-provider BYOK for developers. API integrations are built in; API keys are not embedded. Investors may instead use the Docker [Guided Installation](INSTALL_EVALUATOR.md) with a privately supplied encrypted `.vfacred` bundle. Its packaged Proof and governed Sandbox runtimes do not depend on the optional, currently undeployed Owner gateway.
 
 Use Python 3.11, Node.js 24 and PostgreSQL 16-compatible storage. Full required-proof research needs Rust/RISC Zero SDK 3.0.6; generated-capability validation needs Docker. Follow the [proof workspace](../../zk/revenue_growth/README.md), build its accepted host and retain existing proof gates. Do not set development/fake-proof flags.
 

@@ -40,11 +40,13 @@ def test_docker_environment_start_failure_is_typed(monkeypatch, missing):
     )
 
     def run(*args, **kwargs):
+        from src.tooling.generated_sandbox import _BoundedProcessResult
+
         if missing:
             raise FileNotFoundError()
-        return subprocess.CompletedProcess(args[0], 125, stdout="", stderr="private daemon text")
+        return _BoundedProcessResult(125, b"", b"private daemon text", False)
 
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr("src.tooling.generated_sandbox._bounded_subprocess", run)
     result = DockerSandboxBackend().execute(
         SandboxRequest(
             source=SAFE_SOURCE, test_source=SAFE_TESTS, fixture={"revenue": "100", "cost": "40"}
@@ -146,17 +148,20 @@ def test_docker_command_has_required_security_controls_and_no_mounts() -> None:
 def test_backend_sends_only_json_payload_over_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     observed: dict[str, object] = {}
 
-    def fake_run(command: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(command, payload, **kwargs):
+        from src.tooling.generated_sandbox import _BoundedProcessResult
+
         observed["command"] = command
+        observed["input"] = payload
         observed.update(kwargs)
         output = {
             "ok": True,
             "result": {"gross_margin": "0.6"},
             "tests": {"passed": 2},
         }
-        return subprocess.CompletedProcess(command, 0, json.dumps(output), "")
+        return _BoundedProcessResult(0, json.dumps(output).encode(), b"", False)
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("src.tooling.generated_sandbox._bounded_subprocess", fake_run)
     backend = DockerSandboxBackend()
     request = SandboxRequest(
         source=SAFE_SOURCE,
@@ -167,11 +172,10 @@ def test_backend_sends_only_json_payload_over_stdin(monkeypatch: pytest.MonkeyPa
 
     assert isinstance(result, SandboxResult)
     assert result.passed
-    payload = json.loads(str(observed["input"]))
+    payload = json.loads(observed["input"])
     assert payload["source"] == SAFE_SOURCE
     assert payload["tests"] == SAFE_TESTS
     assert payload["fixture"] == {"cost": "40", "revenue": "100"}
-    assert observed["text"] is True
     assert "shell" not in observed
 
 

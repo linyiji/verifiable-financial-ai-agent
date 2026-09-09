@@ -14,6 +14,6 @@
 
 发布前：审查脱敏的密钥审计及许可证决策。获奖信息现已由 Owner 确认：AIx Origin Summit Hong Kong · Flux Track · Bronze Award；不应再描述为尚未确认。不要发布私有数据库 / 产物、运行时授权文件、密钥或参与者原始数据。供应商基础 URL / 模型 ID 是配置，不是凭据。
 
-现阶段建议投资者 / 测试员使用[直连供应商 BYOK](LOCAL_DEPLOYMENT.zh-CN.md)：产品内置 API 集成，而不是 API 密钥。使用私下提供、独立限定权限且可撤销的测试密钥，或测试员自己的密钥。真实网关仍为 NOT_DEPLOYED；Docker 安装器仅支持网关模式，不是开箱即用的 BYOK，标准镜像未打包完整证明工具链。
+投资者 / 测试员可使用 Docker 引导安装器及 Owner 私下提供的加密 `.vfacred` 包，或使用[原生 BYOK](LOCAL_DEPLOYMENT.zh-CN.md)。产品内置 API 集成，而不是 API 密钥。可选网关仍为 NOT_DEPLOYED；加密直连凭据不依赖它。Release 镜像打包锁定的 RISC Zero 3.0.6 Proof 与受治理 Sandbox Broker。
 
 本发布准备任务未执行推送、Release 发布、远端标签创建、元数据修改、默认分支变更或远端分支删除。

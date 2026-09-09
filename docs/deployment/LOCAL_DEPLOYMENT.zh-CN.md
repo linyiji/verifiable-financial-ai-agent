@@ -4,7 +4,7 @@
 
 入口：[评估快速入门](EVALUATOR_QUICKSTART.zh-CN.md)。除非另有说明，命令均在仓库根目录执行。
 
-现阶段建议投资者和测试员使用本页的直连供应商 BYOK 路径。产品内置 API 集成；仓库、前端及安装器均不内置 API 密钥。请使用自己的密钥，或由 Owner 私下提供独立限定权限、可撤销的测试密钥；不要分发 Owner 的生产凭据。将 `.env.example` 复制为 `.env.local` 后，明确改为 `VFA_CREDENTIAL_MODE=byok`，准备 DATABASE_URL，并私下填写 FMP_API_KEY、TEAMOROUTER_API_KEY 和 MIMO_API_KEY。使用 `python -m pip install -e '.[dev,postgres]'` 安装 Python 依赖，在 `apps/web` 中执行 `npm ci` 安装前端依赖。共享模板仍默认为 evaluator 模式，因此必须显式更改。真实网关为 NOT_DEPLOYED；Docker 一键安装器仅支持网关模式，不是开箱即用的 BYOK，标准镜像未打包完整证明工具链。
+本页说明供开发者使用的原生直连供应商 BYOK。投资者也可使用引导安装器及 Owner 私下提供的加密 `.vfacred` 包。仓库、前端与安装器均不内置 API 密钥。原生 BYOK 需把 `.env.example` 复制为 `.env.local`，设置 `VFA_CREDENTIAL_MODE=byok`、DATABASE_URL，并私下填写 FMP_API_KEY、TEAMOROUTER_API_KEY 和 MIMO_API_KEY。Python 依赖使用 `python -m pip install -e '.[dev,postgres]'`，前端在 `apps/web` 执行 `npm ci`。可选 Owner 网关仍未部署，但加密直连凭据与原生 BYOK 不依赖它。
 
 ## 环境契约
 
@@ -69,4 +69,4 @@ npm exec vite -- --host 127.0.0.1 --port 4173 --strictPort
 
 ## 验证边界
 
-当前源码 / 测试 / 构建及 BYOK 组装已在无实时调用情况下检查。本次文档任务未准备新数据库、安装证明工具或执行新的付费 Run。参见[本地部署验收](../validation/LOCAL_DEPLOYMENT_ACCEPTANCE.zh-CN.md)。未提供 Docker 一键 BYOK 部署；独立的安装器基础版仅支持网关模式。
+原生 BYOK 仍适用于开发者。面向投资者的 Docker 引导安装器使用单独的加密直连凭据包，并打包 Proof 与受治理 Sandbox 运行时；不会把密钥放进仓库、前端或子沙箱。参见[本地部署验收](../validation/LOCAL_DEPLOYMENT_ACCEPTANCE.zh-CN.md)。
