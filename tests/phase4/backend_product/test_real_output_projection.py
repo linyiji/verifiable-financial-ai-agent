@@ -203,10 +203,12 @@ async def test_real_source_producer_durable_projection_http(database, tmp_path):
         request_id=None,
     )
     aggregate = await repository.get_run(response.admission.run_id)
-    with pytest.raises(ValueError, match="material calculation set mismatch"):
-        await service.execute_run(aggregate.run.run_id)
+    await service.execute_run(aggregate.run.run_id)
     await fake_http.aclose()
     aggregate = await repository.get_run(aggregate.run.run_id)
+    assert aggregate.artifacts.closure_diagnostic["code"] == "REQUIRED_CALCULATION_UNAVAILABLE"
+    assert aggregate.artifacts.review is None
+    assert not aggregate.artifacts.proofs
     assert aggregate.artifacts.released_result is None
     assert aggregate.artifacts.partial_research
     assert {c.capability_id for c in aggregate.artifacts.calculations} >= {

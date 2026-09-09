@@ -194,7 +194,7 @@ async def test_integrated_partial_synthesis_persists_but_release_stays_strict(
     )
     aggregate = await service.confirm_run(draft_id=draft.draft_id, confirm_scheme=True)
     await service.execute_run(aggregate.run.run_id)
-    assert proof_calls == 1
+    assert proof_calls == (0 if synthesis_fails else 1)
     assert aggregate.run.status is (RunStatus.FAILED if synthesis_fails else RunStatus.RELEASED)
     if synthesis_fails:
         assert aggregate.artifacts.released_result is None
@@ -210,7 +210,7 @@ async def test_integrated_partial_synthesis_persists_but_release_stays_strict(
         "PARTIAL_NOT_RELEASED" if synthesis_fails else "PARTIAL_RELEASED"
     )
     assert len(aggregate.artifacts.partial_research["available_calculations"]) == 2
-    assert aggregate.artifacts.proofs  # real existing policy, no invented verification
+    assert bool(aggregate.artifacts.proofs) is (not synthesis_fails)
     for kind in ("valuation_analysis", "risk_analysis", "report_synthesis"):
         t = next(t for t in aggregate.runtime.actual_graph.tasks if t.task_type == kind)
         assert t.status is (

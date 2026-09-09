@@ -75,6 +75,43 @@ def test_closed_package_and_zero_comparison():
     assert all(r.field != "prompt" for r in rows)
 
 
+def test_failed_supporting_record_preserved_in_released_limited_package():
+    data = package()
+    data["publication"] = "RELEASED_WITH_LIMITATIONS"
+    data["limitations"] = ["Supporting narrative unavailable after bounded recovery"]
+    data["records"].append(
+        {
+            "ref": "TASK-SUPPORT",
+            "category": "Runtime & Recovery",
+            "label": "Supporting task",
+            "status": "FAILED",
+            "process": "Bounded recovery exhausted",
+            "output": "Unavailable",
+            "input_refs": [],
+            "report_claim_refs": [],
+        }
+    )
+    result = ResultsSemantics.model_validate(data)
+    assert result.run_id == "RUN-A" and result.review_id == "REVIEW-A"
+    assert result.records[-1].status == "FAILED"
+    assert result.limitations and result.blocks[0].claim_id == "CLAIM-A"
+
+
+def test_failed_required_package_cannot_expose_released_semantics():
+    from types import SimpleNamespace
+
+    from src.application.models import CompletedRunArtifacts
+    from src.domain.enums import RunStatus
+    from src.phase4_product.results_semantics import build_semantics
+
+    aggregate = SimpleNamespace(
+        run=SimpleNamespace(run_id="RUN-A", status=RunStatus.FAILED),
+        artifacts=CompletedRunArtifacts(),
+    )
+    with pytest.raises(Exception, match="Semantic Results require an exact released Run"):
+        build_semantics(aggregate, None, [], [], [], [])
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

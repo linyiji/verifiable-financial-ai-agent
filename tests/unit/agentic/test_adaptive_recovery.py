@@ -117,6 +117,31 @@ def agent(tmp_path, recovery, clients):
 
 
 @pytest.mark.asyncio
+async def test_approved_risk_child_enters_governed_execution(tmp_path):
+    recovery, clients, store = setup()
+    clients["teamorouter-sol"].failures = []
+    child = task().model_copy(
+        update={
+            "task_id": "RUN-local:risk-follow-up",
+            "task_type": "risk_follow_up",
+            "assigned_agent": "risk_analyst",
+            "skill_id": "risk_analysis_v1",
+        }
+    )
+    specialist = LLMResearchAgent(
+        agent_id="risk_analyst",
+        supported_task_types=frozenset({"risk_follow_up"}),
+        provider=clients["teamorouter-sol"],
+        artifacts=ResearchAgentOutputArtifactStore(tmp_path),
+        recovery=recovery,
+    )
+    await specialist.execute(context(child))
+    assert clients["teamorouter-sol"].calls == 1
+    assert all(c.calls == 0 for key, c in clients.items() if key != "teamorouter-sol")
+    assert store.values
+
+
+@pytest.mark.asyncio
 async def test_luna_terra_identity_rejected_and_persisted(tmp_path):
     recovery, clients, store = setup()
     clients["teamorouter-luna"].failures = []

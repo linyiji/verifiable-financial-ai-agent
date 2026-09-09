@@ -17,7 +17,11 @@ from src.agentic import (
     ResearchLeadPlanner,
     SchemeGenerator,
 )
-from src.application.closure_policy import closure_diagnostic, release_requirement_gaps
+from src.application.closure_policy import (
+    classify_execution_closure,
+    closure_diagnostic,
+    release_requirement_gaps,
+)
 from src.application.errors import ApplicationError, NotFoundError
 from src.application.evidence_collection import EvidenceCollector, FixtureEvidenceCollector
 from src.application.evidence_routing import (
@@ -314,6 +318,7 @@ class ResearchApplicationService:
             aggregate.run.started_at = datetime.now(UTC)
             if aggregate.run.updated_at < aggregate.run.started_at:
                 aggregate.run.updated_at = aggregate.run.started_at
+        execution_stage = "TASK_EXECUTION"
         try:
             async with self.instrumentation.run(run_id=run_id):
                 executor = IntegratedTaskExecutor(self, aggregate)
@@ -327,6 +332,8 @@ class ResearchApplicationService:
                     emit_run_started=emit_run_started,
                 )
                 aggregate.artifacts.parallel_task_peak = executor.parallel_peak
+                execution_stage = "POST_SCHEDULER"
+                completion = classify_execution_closure(aggregate)
                 limited = any(
                     task.status.value != "COMPLETED"
                     for task in aggregate.runtime.actual_graph.tasks
@@ -334,30 +341,24 @@ class ResearchApplicationService:
                     branch.status is not BranchStatus.COMPLETED
                     for branch in aggregate.artifacts.financial_branches
                 )
-                partial_proof_outcome = None
                 if limited:
                     aggregate.artifacts.partial_research = {
                         **availability_map(aggregate),
                         "task_outputs": aggregate.artifacts.task_outputs,
                         "status": "PARTIAL_NOT_RELEASED",
+                        "completion": completion.model_dump(mode="json"),
                     }
-                    # Apply the existing ProofPolicy only to real persisted records.
-                    # This artifact remains inspectable even if strict Review rejects release.
-                    if aggregate.artifacts.calculations:
-                        proof = await self._execute_proof_workflow(aggregate)
-                        partial_proof_outcome = proof
-                        aggregate.artifacts.proofs = list(proof.proofs.values())
-                        aggregate.runtime.proof_state = proof.runtime_state
-                await self._assure_and_release(aggregate, proof_outcome=partial_proof_outcome)
+                await self._assure_and_release(aggregate)
         except Exception as exc:
             policy_blocked = isinstance(exc, ApplicationError) and exc.code in {
                 "REVIEW_BLOCKED",
                 "RELEASE_GATE_BLOCKED",
                 "INCOMPLETE_RESEARCH_NOT_RELEASED",
                 "REQUIRED_RESEARCH_OUTPUT_MISSING",
+                "REQUIRED_CALCULATION_UNAVAILABLE",
             }
             aggregate.artifacts.closure_diagnostic = closure_diagnostic(
-                aggregate, exc, "POST_SCHEDULER"
+                aggregate, exc, execution_stage
             )
             durable_events = list(await self.event_store.replay(run_id))
             terminal_event = (
@@ -377,10 +378,20 @@ class ResearchApplicationService:
                     event_type=RuntimeEventType.RUN_FAILED,
                     payload={
                         "status": RunStatus.FAILED.value,
-                        "failure_stage": "FINANCIAL_REVIEW" if policy_blocked else "POST_SCHEDULER",
-                        "failure_code": "FINANCIAL_REVIEW_BLOCKED"
+                        "failure_stage": (
+                            "FINANCIAL_REVIEW"
+                            if policy_blocked and exc.code == "REVIEW_BLOCKED"
+                            else "RELEASE"
+                            if policy_blocked and exc.code == "RELEASE_GATE_BLOCKED"
+                            else execution_stage
+                        ),
+                        "failure_code": exc.code
                         if policy_blocked
-                        else "POST_SCHEDULER_FAILED",
+                        else (
+                            "TASK_EXECUTION_FAILED"
+                            if execution_stage == "TASK_EXECUTION"
+                            else "POST_SCHEDULER_FAILED"
+                        ),
                         "safe_message": "The Run could not complete its release checks.",
                     },
                     timestamp=terminal_at,
@@ -458,6 +469,13 @@ class ResearchApplicationService:
         retain_review: bool = False,
     ) -> None:
         run_id = aggregate.run.run_id
+        completion = classify_execution_closure(aggregate)
+        if not completion.reviewable:
+            raise ApplicationError(
+                completion.fatal_reason,
+                "Required research outputs remain unavailable.",
+                details=completion.model_dump(mode="json"),
+            )
         calculations_before_review = list(aggregate.artifacts.calculations)
         judgments = list(aggregate.artifacts.judgments)
         strict_financial_release = any(

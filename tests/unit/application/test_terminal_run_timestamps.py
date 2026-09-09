@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from src.application.service import ResearchApplicationService
-from src.domain.enums import RunStatus
+from src.domain.enums import RunStatus, TaskStatus
 from src.domain.runtime_event import RuntimeEventType
 from src.runtime.scheduler import DependencyScheduler
 
@@ -111,8 +111,10 @@ async def test_existing_failure_event_remains_authoritative_for_terminal_lifecyc
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("in_closure", [False, True])
 async def test_post_scheduler_failure_uses_one_timestamp_for_event_and_lifecycle(
     monkeypatch: pytest.MonkeyPatch,
+    in_closure: bool,
 ) -> None:
     service, run_id = await _confirmed_service()
 
@@ -123,10 +125,19 @@ async def test_post_scheduler_failure_uses_one_timestamp_for_event_and_lifecycle
         executor,
         emit_run_started: bool = True,
     ):
-        del scheduler, state, executor, emit_run_started
+        del scheduler, executor, emit_run_started
+        if in_closure:
+            for task in state.actual_graph.tasks:
+                task.status = TaskStatus.COMPLETED
+            return
         raise RuntimeError("controlled post-scheduler failure")
 
     monkeypatch.setattr(DependencyScheduler, "execute", fail_without_terminal_event)
+
+    async def fail_closure(*args, **kwargs):
+        raise RuntimeError("controlled post-scheduler failure")
+
+    monkeypatch.setattr(service, "_assure_and_release", fail_closure)
 
     with pytest.raises(RuntimeError, match="controlled post-scheduler failure"):
         await service.execute_run(run_id)
@@ -136,10 +147,13 @@ async def test_post_scheduler_failure_uses_one_timestamp_for_event_and_lifecycle
     assert terminal_event.type is RuntimeEventType.RUN_FAILED
     assert terminal_event.payload == {
         "status": "FAILED",
-        "failure_stage": "POST_SCHEDULER",
-        "failure_code": "POST_SCHEDULER_FAILED",
+        "failure_stage": "POST_SCHEDULER" if in_closure else "TASK_EXECUTION",
+        "failure_code": "POST_SCHEDULER_FAILED" if in_closure else "TASK_EXECUTION_FAILED",
         "safe_message": "The Run could not complete its release checks.",
     }
+    assert aggregate.artifacts.closure_diagnostic["code"] == (
+        "UNEXPECTED_CLOSURE_FAILURE" if in_closure else "UNEXPECTED_EXECUTION_FAILURE"
+    )
     assert aggregate.run.status is RunStatus.FAILED
     assert aggregate.run.completed_at == terminal_event.timestamp
     assert aggregate.run.started_at is not None
