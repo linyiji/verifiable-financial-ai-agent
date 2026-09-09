@@ -2,7 +2,7 @@
 
 [English](PROVENANCE.md)
 
-五张 PNG 均逐字节复制自 2026-09-08 最终本地截图中获准使用的图片。视口 1440 × 900，缩放 100%，deviceScaleFactor 为 1。使用正常 React 产品界面和橙色 logo；未使用原型，未裁剪、调整大小、修图或注入标签。
+原五张 PNG 均逐字节复制自 2026-09-08 最终本地截图中获准使用的图片。`closure9-live-accepted.png` 是 2026-09-09 对真实本地 React 运行时另行进行的 1440 × 900、未修饰 Chrome 截图。均使用正常产品界面和橙色 logo；未使用原型，未裁剪、调整大小、修图或注入标签。
 
 来源包（本地／已忽略）：artifacts/bp_product_screenshots_20260908_final/selected。公开仓库仅包含这些选定副本，不包含原始截图杂项或生产数据库。
 
@@ -13,6 +13,7 @@
 | adaptive-recovery.png | S15-adaptive-recovery.png | PASS；同一 Run 内 MiMo 超时、策略 ALLOW、Sol 成功 |
 | research-memory.png | S11-research-memory.png | PASS；Object V2 Memories |
 | base-vs-current.png | S12-base-vs-current.png | PASS；Object V2 Compare 的 Metrics 面板 |
+| closure9-live-accepted.png | 全新隔离本地运行时 | PASS；RUN-9d44e5e1-55a7-465d-a23e-991c63f7badf RELEASED / SUCCESS，执行视图 |
 
 Object：OBJ-NVDA。当前已发布 Run：RUN-ab806291-8cbf-4c9b-8852-b6a54f10768d。当前视图 RVV-0f7f4dfc-3dfa-538c-b59f-a8e22607007b。
 知识基线：RUN-57aed683-75d6-4b47-acc6-a73053ea492e，视图 RVV-05bec42f-ab9b-55c5-b502-c439b8abe948。
@@ -30,3 +31,4 @@ Object：OBJ-NVDA。当前已发布 Run：RUN-ab806291-8cbf-4c9b-8852-b6a54f1076
 - adaptive-recovery.png: d25821e5621e2df753b98de5451e3cc52f0b0e7db004501509c401f026c06a98
 - research-memory.png: 7ec6d52d7102e07dbe1b927405a8bdf187ebc6e2f2129b0476ba22192802c187
 - base-vs-current.png: c1c6fd057cdbcd3f62ddb650572ff597ac8e28c9b67b2c7f22afb04545106a89
+- closure9-live-accepted.png: 4fd44c12704216a69d4d65651248c3fea4b5069f4bde98a68ecc472567155d1d

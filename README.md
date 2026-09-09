@@ -12,8 +12,9 @@ Direct encrypted investor credentials: privately receive `VFA-Investor-Access.vf
 copy it to `<unpacked-repository>/credentials/active.vfacred`, complete the
 [platform installer](docs/deployment/INSTALL_EVALUATOR.md), then run `vfa start`
 and enter the hidden passphrase. See [credential scope and delivery gates](credentials/README.md).
-This path does not require an Owner gateway. Full-proof Docker delivery and
-fresh-download live acceptance remain pending; configuration is not live certification.
+This path does not require an Owner gateway. The exact-image Docker runtime and one
+fresh isolated NVDA Live were accepted locally on 2026-09-09; configuration alone is
+still not live certification. See the [External Evaluation Snapshot](EVALUATION_README.md).
 
 Autonomous financial research that can execute, verify, recover, remember, and improve.
 
@@ -76,6 +77,10 @@ For comparable repeated research, the optimization target is lower marginal inpu
 
 Current local React product, real persisted research, accepted orange logo. No prototype or generated mockups.
 
+### Closure-9 accepted NVDA Live
+
+![Closure-9 accepted NVDA Live](docs/product/screenshots/closure9-live-accepted.png)
+
 ### Autonomous research
 
 ![Autonomous research](docs/product/screenshots/autonomous-research.png)
@@ -116,7 +121,9 @@ Provider/model recovery supports bounded dynamic substitution within the policy-
 
 An owned failure classification produces a recovery proposal; an independent policy checks exact identity, route authority, capability evidence and remaining budgets before another invocation. Recovery does not regenerate the Scheme, change the knowledge base, or silently create another Run.
 
-Registered routes: `teamorouter-sol`, `teamorouter-luna`, `mimo-direct`. Only configured, permitted candidates can execute. [Architecture and limits](docs/architecture/ADAPTIVE_RUNTIME.md).
+Registered analytical routes include `teamorouter-sol`, `teamorouter-luna`,
+`teamorouter-terra` and `mimo-direct`. TaskProfile authority remains explicit; only
+configured, permitted candidates can execute. [Architecture and limits](docs/architecture/ADAPTIVE_RUNTIME.md).
 
 ## Evaluate / Run Locally
 

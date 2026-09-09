@@ -8,7 +8,7 @@ This installer supports encrypted direct credentials (`.vfacred`) separately fro
 
 Privately receive `VFA-Investor-Access.vfacred`, copy it to `credentials/active.vfacred` within the unpacked repository, then run the platform command below. The installer prepares the local database, migrations, backend and frontend. Direct readiness validates configuration only, without paid calls.
 
-**Delivery status:** installer source foundation; public installer URL **PUBLICATION_REQUIRED**. Publishing repository source is not the same as publishing accepted installer-specific assets and bootstrap URLs. Do not substitute a mutable develop URL into a download-and-execute command. Published installers will resolve an accepted GitHub release and verify its SHA-256 package before executing it.
+**Delivery status:** use an accepted GitHub release archive and its evaluator manifest. The installer verifies the package SHA-256 and binds services to the immutable image digest and exact source revision. It never follows a mutable `develop` image or silently falls back to a cached `vfa-evaluator:source` image.
 
 **Gateway status:** the real Owner gateway is **NOT_DEPLOYED**. Software installation can be prepared; gateway-mode Owner-funded live research remains **BLOCKED_BY_GATEWAY_DEPLOYMENT**. This does not block separately configured BYOK test keys. A valid bundle must reference a separately deployed gateway.
 
@@ -85,7 +85,7 @@ vfa status
 vfa doctor
 ```
 
-Status reports local service state. Doctor checks Docker, installed version, database, backend, frontend, packaged Proof Runtime, governed Sandbox Runtime and zero-cost credential readiness. It does not make paid FMP/MiMo/TeamoRouter calls. Normal errors show an owned code and next action; no stack traces or raw service logs are printed.
+Status reports local service state. Doctor checks Docker, installed version, exact expected/running API and Broker revision/digest, database, backend, frontend, packaged Proof Runtime, governed Sandbox Runtime and zero-cost credential readiness. Identity mismatch fails closed with `STALE_RUNTIME_IMAGE`; unresolved identity fails with `RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED`. It does not make paid FMP/MiMo/TeamoRouter calls. Normal errors show an owned code and next action; no stack traces or raw service logs are printed.
 
 ## 10. Troubleshooting
 
@@ -93,7 +93,8 @@ Status reports local service state. Doctor checks Docker, installed version, dat
 | --- | --- |
 | DOCKER_NOT_INSTALLED / DOCKER_NOT_RUNNING | Install/start Docker Desktop and rerun the same command. |
 | REBOOT_REQUIRED | Restart Windows once and rerun the original installer. |
-| PUBLICATION_REQUIRED | Ask the Owner for the reviewed source package or published installer release. |
+| PUBLICATION_REQUIRED | Ask the Owner for an accepted release containing the evaluator manifest and package. |
+| STALE_RUNTIME_IMAGE / RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED | Reinstall from one accepted release; do not admit research on a mutable or mismatched image. |
 | DOWNLOAD_FAILED / INTEGRITY_FAILED | Check GitHub connectivity; for checksum failure contact the Owner and do not execute the package. |
 | PORT_4173_IN_USE / PORT_8010_IN_USE | Close the competing application yourself, then run vfa start. |
 | DATABASE_START_FAILED / MIGRATION_FAILED | Run vfa doctor; check Docker storage. Data is retained. |
@@ -109,7 +110,7 @@ Installer metadata contains only stage, version, image and safe credential filen
 
 [Advanced / BYOK](ADVANCED_INSTALLATION.md) · [Owner Gateway](EVALUATOR_GATEWAY.md) · [Installer design](EVALUATOR_INSTALLER_DESIGN.md).
 
-Platform source/portable tests do not certify Windows or macOS clean-machine E2E. Actual host validation and installer asset publication remain separate gates.
+The 2026-09-09 snapshot includes accepted macOS/Docker local install, doctor and one isolated NVDA Live. Windows clean-machine E2E remains a separate unverified gate.
 
 ## Independent financial branches and default object
 

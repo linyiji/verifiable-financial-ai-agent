@@ -10,7 +10,7 @@
 加密投资者凭据：私下取得 `VFA-Investor-Access.vfacred`，复制为
 `<解压仓库>/credentials/active.vfacred`，完成[平台安装](docs/deployment/INSTALL_EVALUATOR.zh-CN.md)
 后运行 `vfa start`，在隐藏提示中输入口令。详见[凭据范围与交付门禁](credentials/README.zh-CN.md)。
-此路径不依赖 Owner 网关。Docker 运行时包含锁定的 RISC Zero 3.0.6 Proof 与受治理 Sandbox Broker；配置成功仍不等于 Provider 实时认证。
+此路径不依赖 Owner 网关。2026-09-09 已在精确镜像绑定的 Docker 运行时完成一次全新、隔离的 NVDA Live 本地验收；配置成功本身仍不等于 Provider 实时认证。详见[外部评估快照](EVALUATION_README.md)。
 
 向风行 AI：能够自主执行、验证、恢复、记忆并持续积累的金融研究 Agent。
 
@@ -72,6 +72,10 @@ Provider / Model Failure → Recovery Decision → Policy Gate → Same-Run Reco
 ## Real Product Screenshots · 真实产品截图
 
 当前本地 React 产品、真实持久化研究与已验收的橙色 Logo；不是原型或生成的效果图。
+
+### Closure-9 NVDA Live 验收
+
+![Closure-9 NVDA Live 验收](docs/product/screenshots/closure9-live-accepted.png)
 
 ### 自主研究
 

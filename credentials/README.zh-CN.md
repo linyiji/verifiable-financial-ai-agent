@@ -28,10 +28,9 @@
 于进程内存和本地私有 socket 交接，不落地为 Provider `.env` / JSON / 临时文件，
 也不进入 Docker 参数或环境配置。本机特权用户可以检查进程内存，不能宣称不可提取。
 
-当前发布门槛：直连包仍在离线验收。标准 Docker 镜像尚缺已验证的 Linux Proof
-可执行文件，以及 API 生成能力沙箱所需的 daemon 连接。在补齐并验收前，不得
-宣称投资者可完成完整 live 研究或发布。Proof 规则与 `FULL_PROOF_UNAVAILABLE`
-保持有效。
+2026-09-09 本地验收已验证直连包启动、精确镜像身份、打包 Linux RISC Zero
+运行时、受治理 Sandbox Broker，以及一次隔离 NVDA Live。这是有限的本地 Alpha
+证据，不保证上游 Provider 可用性、Windows 全新机器验收或生产级安全。
 
 Owner 在仓库已配置的 Python 环境内签发：
 `python -m src.evaluator.direct_bundle --registry /private/path/provider-registry.local.json --output credentials/active.vfacred`

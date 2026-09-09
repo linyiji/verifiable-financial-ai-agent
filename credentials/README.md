@@ -33,11 +33,10 @@ secrets exist only in process memory and the local private socket handoff, not
 provider `.env`/JSON/temp files or Docker arguments/environment. A privileged local
 user can inspect running process memory; this is not an unextractability guarantee.
 
-Current prepublication gate: direct bundle support is under offline acceptance.
-The standard Docker image still lacks a verified Linux Proof executable and the
-API's generated-capability sandbox daemon connection. Do not claim full investor
-live research readiness or publish until those gates pass. Existing Proof rules
-and `FULL_PROOF_UNAVAILABLE` remain intact.
+The 2026-09-09 local acceptance verified direct-bundle startup, exact image identity,
+the packaged Linux RISC Zero runtime, governed Sandbox Broker and one isolated NVDA
+Live. This is bounded local Alpha evidence, not a guarantee of upstream availability,
+Windows clean-machine acceptance or production security.
 
 Owner issuance (from the repository's configured Python environment):
 `python -m src.evaluator.direct_bundle --registry /private/path/provider-registry.local.json --output credentials/active.vfacred`

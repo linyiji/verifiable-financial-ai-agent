@@ -8,7 +8,7 @@
 
 私下取得 `VFA-Investor-Access.vfacred`，将其复制为解压仓库的 `credentials/active.vfacred`，再运行以下平台安装命令。安装器准备本地数据库、迁移、后端与前端；直连 readiness 仅验证配置，不发出付费调用。
 
-**交付状态：**安装器源码基础版；公开安装器 URL 为 **PUBLICATION_REQUIRED**。发布仓库源码不等于发布已验收的安装器专用资产和引导 URL。不要把可变的 develop URL 替换进下载后执行的命令。公开安装器将解析已接受的 GitHub Release，并在执行前验证其 SHA-256 软件包。
+**交付状态：**使用已接受 GitHub Release 的归档和 evaluator manifest。安装器验证软件包 SHA-256，并把服务绑定到不可变镜像摘要及精确源码 revision；绝不跟随可变 `develop` 镜像，也不会静默回退到缓存的 `vfa-evaluator:source`。
 
 **网关状态：**真实 Owner 网关为 **NOT_DEPLOYED**。可以准备软件安装；网关模式的 Owner 付费实时研究仍为 **BLOCKED_BY_GATEWAY_DEPLOYMENT**。这不阻止独立配置 BYOK 测试 Key。有效凭据包必须指向另行部署的网关。
 
@@ -85,7 +85,7 @@ vfa status
 vfa doctor
 ```
 
-Status 报告本地服务状态。Doctor 检查 Docker、已安装版本、数据库、后端、前端、打包 Proof Runtime、受治理 Sandbox Runtime，并执行零费用凭据 readiness。它不会发起 FMP/MiMo/TeamoRouter 付费调用。正常错误显示系统定义的错误码与下一步操作；不打印堆栈或原始服务日志。
+Status 报告本地服务状态。Doctor 检查 Docker、已安装版本、预期与运行中 API/Broker 的精确 revision/digest、数据库、后端、前端、打包 Proof Runtime、受治理 Sandbox Runtime，并执行零费用凭据 readiness。身份不一致以 `STALE_RUNTIME_IMAGE` 关闭；无法解析身份以 `RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED` 关闭。它不会发起 FMP/MiMo/TeamoRouter 付费调用。
 
 ## 10. 故障排查
 
@@ -94,6 +94,7 @@ Status 报告本地服务状态。Doctor 检查 Docker、已安装版本、数�
 | DOCKER_NOT_INSTALLED / DOCKER_NOT_RUNNING | 安装 / 启动 Docker Desktop 后重试相同命令。 |
 | REBOOT_REQUIRED | Windows 重启一次后重新执行原安装器。 |
 | PUBLICATION_REQUIRED | 向 Owner 索取已审阅源码包或已发布的安装器 Release。 |
+| STALE_RUNTIME_IMAGE / RUNTIME_IMAGE_IDENTITY_NOT_RESOLVED | 从同一个已接受 Release 重新安装；不得在可变或身份不匹配的镜像上创建研究。 |
 | DOWNLOAD_FAILED / INTEGRITY_FAILED | 检查 GitHub 连通性；校验和失败时联系 Owner，不要执行软件包。 |
 | PORT_4173_IN_USE / PORT_8010_IN_USE | 自行关闭占用端口的应用后运行 vfa start。 |
 | DATABASE_START_FAILED / MIGRATION_FAILED | 运行 vfa doctor；检查 Docker 存储。数据会保留。 |
@@ -109,7 +110,7 @@ Status 报告本地服务状态。Doctor 检查 Docker、已安装版本、数�
 
 [高级 / BYOK](ADVANCED_INSTALLATION.zh-CN.md) · [Owner 网关](EVALUATOR_GATEWAY.zh-CN.md) · [安装器设计](EVALUATOR_INSTALLER_DESIGN.zh-CN.md)。
 
-平台源码 / 可移植测试不认证 Windows 或 macOS 全新环境 E2E。真实宿主机验证和安装器产物发布仍是独立门禁。
+2026-09-09 快照已包含 macOS/Docker 本地安装、doctor 和一次隔离 NVDA Live 验收；Windows 全新机器 E2E 仍是未验证的独立门禁。
 
 ## 独立金融分支与默认对象
 
