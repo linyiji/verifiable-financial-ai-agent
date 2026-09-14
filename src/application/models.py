@@ -29,7 +29,13 @@ class ResearchRunDraft(DomainModel):
     status: str = "awaiting_confirmation"
 
 
+from src.domain.financial_validation import MethodObservation
+
+
 class CompletedRunArtifacts(DomainModel):
+    wp04_method_observations: dict[str, MethodObservation] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     closure_diagnostic: JsonObject | None = None
     partial_research: JsonObject | None = None
     financial_branches: list[FinancialBranchResult] = Field(default_factory=list)

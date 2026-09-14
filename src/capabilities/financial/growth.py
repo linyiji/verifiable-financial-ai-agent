@@ -26,12 +26,94 @@ from src.domain.financial_validation import (
 )
 
 
+
+# Ephemeral observation only. A ContextVar handle carries no process-wide result.
+import asyncio
+from contextlib import contextmanager
+from contextvars import ContextVar
+
+from src.domain.financial_validation import (
+    MethodDenied, WP04_FLAGS_SCHEMA, validate_decimal_observation, wp04_flags,
+)
+
+
+class _GrowthObservation:
+    def __init__(self, identity):
+        self.owner = asyncio.current_task()
+        if self.owner is None:
+            raise MethodDenied('DECIMAL_FLAGS_OBSERVATION_ERROR', 'SUPPORTED', 'FAILED')
+        self.identity = tuple(identity)
+        self.closed = False
+        self.armed = False
+        self.invalid = False
+        self.count = 0
+        self.flags = None
+
+    def check(self):
+        # Inherited child contexts must not mutate their parent's collector.
+        if asyncio.current_task() is not self.owner or self.closed:
+            raise MethodDenied('DECIMAL_FLAGS_OBSERVATION_ERROR', 'SUPPORTED', 'FAILED')
+
+    def arm(self, context, inputs):
+        self.check()
+        prior, current = inputs['prior'], inputs['current']
+        observed = (context.run_id, context.task_id, str(inputs['calculation_id']),
+                    prior.evidence_id, current.evidence_id,
+                    str(prior.normalized_value), str(current.normalized_value))
+        if self.armed or observed != self.identity[:7]:
+            self.invalid = True
+            raise MethodDenied('DECIMAL_FLAGS_OBSERVATION_ERROR', 'SUPPORTED', 'FAILED')
+        self.armed = True
+
+    def capture(self, prior, current, context):
+        self.check()
+        if (not self.armed or (str(prior), str(current)) != self.identity[5:7]):
+            self.invalid = True
+            raise MethodDenied('DECIMAL_FLAGS_OBSERVATION_ERROR', 'SUPPORTED', 'FAILED')
+        self.count += 1
+        if self.count == 1:
+            self.flags = wp04_flags(context)
+
+    def seal(self):
+        self.check()
+        self.closed = True
+        if self.invalid:
+            raise MethodDenied('DECIMAL_FLAGS_OBSERVATION_ERROR', 'SUPPORTED', 'FAILED')
+        receipt = {'schema_version': WP04_FLAGS_SCHEMA, 'capture_count': self.count,
+                   'flags': dict(self.flags) if self.flags is not None else None}
+        validate_decimal_observation(receipt)
+        return receipt
+
+
+_growth_observer = ContextVar('wp04_growth_observer', default=None)
+
+
+@contextmanager
+def capture_revenue_growth_decimal_observation(identity):
+    previous = _growth_observer.get()
+    if previous is not None:
+        previous.check()
+        previous.invalid = True
+        raise MethodDenied('DECIMAL_FLAGS_OBSERVATION_ERROR', 'SUPPORTED', 'FAILED')
+    collector = _GrowthObservation(identity)
+    token = _growth_observer.set(collector)
+    try:
+        yield collector
+    finally:
+        collector.closed = True
+        _growth_observer.reset(token)
+
+
 def calculate_revenue_growth(prior_revenue: Decimal, current_revenue: Decimal) -> Decimal:
     if prior_revenue <= 0:
         raise NonPositivePriorRevenueError(REVENUE_GROWTH_VALIDATION_REASON)
     with localcontext() as context:
         context.prec = 28
-        return (current_revenue - prior_revenue) / prior_revenue
+        result = (current_revenue - prior_revenue) / prior_revenue
+        observer = _growth_observer.get()
+        if observer is not None:
+            observer.capture(prior_revenue, current_revenue, context)
+        return result
 
 
 class RevenueGrowthCapability:
@@ -75,9 +157,17 @@ class RevenueGrowthCapability:
             raise ValueError("revenue_growth requires CURRENCY evidence")
         if not prior.currency or prior.currency != current.currency:
             raise ValueError("revenue_growth requires one explicit, consistent currency")
-        value = calculate_revenue_growth(
-            decimal_value(prior.normalized_value), decimal_value(current.normalized_value)
-        )
+        observer = _growth_observer.get()
+        if observer is not None:
+            observer.arm(context, inputs)
+        try:
+            value = calculate_revenue_growth(
+                decimal_value(prior.normalized_value), decimal_value(current.normalized_value)
+            )
+        finally:
+            if observer is not None:
+                observer.check()
+                observer.armed = False
         provenance = calculation_source_provenance(
             __file__, source_ref=self.definition.implementation_ref
         )

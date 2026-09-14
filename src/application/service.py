@@ -118,12 +118,20 @@ class ResearchApplicationService:
         agent_registry: AgentRegistry | None = None,
         report_publisher: ProfessionalReportPublisher | None = None,
         recovery_evidence_store=None,
+        wp04_method_binding_enabled: bool = False,
+        wp04_manifest_sha256: str | None = None,
+        wp04_diagnostic_store=None,
         valuation_context_enabled: bool = False,
         research_memory_reader=None,
     ) -> None:
+        self.wp04_method_binding_enabled = wp04_method_binding_enabled
+        self.wp04_manifest_sha256 = wp04_manifest_sha256
+        self.wp04_diagnostic_store = wp04_diagnostic_store
         self.valuation_context_enabled = valuation_context_enabled
         self.research_memory_reader = research_memory_reader
         self.repository = repository or InMemoryApplicationRepository()
+        if wp04_diagnostic_store is not None:
+            self.repository.wp04_diagnostic_store = wp04_diagnostic_store
         self.event_store = event_store or InMemoryRuntimeEventStore()
         self.checkpoint_store = checkpoint_store or InMemoryCheckpointStore()
         self.evidence_repository = evidence_repository or InMemoryEvidenceRepository()
@@ -159,6 +167,21 @@ class ResearchApplicationService:
             registry,
             {CapabilityBackend.NATIVE: NativeToolBackend(registry)},
         )
+
+        self._wp04_load_expectation = None
+        if wp04_method_binding_enabled:
+            from src.capabilities.provenance import capture_wp04_load_expectation
+            self._wp04_load_expectation = capture_wp04_load_expectation(
+                registry, self.tool_runtime, wp04_manifest_sha256)
+            self.tool_runtime._wp04_load_expectation = self._wp04_load_expectation
+            self.repository.wp04_verify_load = self._verify_wp04_load
+
+    def _verify_wp04_load(self, descriptor):
+        from src.capabilities.provenance import verify_wp04_method
+        if self._wp04_load_expectation is None:
+            raise BindingDenied('METHOD_LOAD_EXPECTATION_MISSING')
+        return verify_wp04_method(self.capability_registry, self.tool_runtime, descriptor,
+                                  self.wp04_manifest_sha256, expectation=self._wp04_load_expectation)
 
     def add_calculation_extension(self, extension: TaskCalculationExtension) -> None:
         if not isinstance(extension, TaskCalculationExtension):
@@ -264,6 +287,34 @@ class ResearchApplicationService:
         async with self.instrumentation.planning(run_id=run_id):
             planned = self.planner.plan(run_id=run_id, goal=draft.goal, scheme=scheme)
             plan = await planned if inspect.isawaitable(planned) else planned
+        if any(t.wp04_method_requirement is not None for t in plan.tasks):
+            raise BindingDenied('METHOD_REQUIREMENT_AUTHORITY_INVALID', 'planner-owned requirement')
+        if self.wp04_method_binding_enabled:
+            from src.capabilities.provenance import wp04_descriptor
+            from src.domain.financial_validation import MethodRequirement
+            from src.domain.node_binding import digest
+            if self.calculation_extensions or self.wp04_diagnostic_store is None:
+                raise BindingDenied('METHOD_SCOPE_UNSUPPORTED', 'explicit native composition/store required')
+            descriptor = wp04_descriptor(self.wp04_manifest_sha256)
+            self._verify_wp04_load(descriptor)
+            if 'revenue_growth' not in scheme.calculation_requirements:
+                raise BindingDenied('METHOD_REQUIREMENT_NOT_REQUESTED', 'confirmed Scheme')
+            selected = [t for t in plan.tasks if (t.task_type, t.assigned_agent, t.skill_id) ==
+                        ('fundamental_analysis', 'fundamental_analyst', 'fundamental_analysis_v1')]
+            if len(selected) != 1:
+                raise BindingDenied('METHOD_SCOPE_UNSUPPORTED', 'one fixed selected Task required')
+            task = selected[0]
+            req = MethodRequirement(scheme_id=scheme.scheme_id, scheme_hash=digest(scheme),
+                task_id=task.task_id, run_id=run_id, object_id=draft.goal.research_object_id,
+                descriptor=descriptor)
+            identity = digest(req.model_dump(exclude={'requirement_id', 'requirement_digest'}), req.schema_version)
+            task.wp04_method_requirement = req.model_copy(update={
+                'requirement_id': identity, 'requirement_digest': identity})
+            try:
+                self.wp04_diagnostic_store.retain_method_diagnostic(run_id=run_id, task_id=task.task_id,
+                    requirement_id=identity, diagnostic_code='RETENTION_PROBE')
+            except Exception as exc:
+                raise BindingDenied('PERSISTENCE_UNAVAILABLE', 'method diagnostic retention') from exc
         runtime = RuntimeState.create(run_id=run_id, planned_graph=plan)
         run = ResearchRun(
             run_id=run_id,
@@ -473,6 +524,34 @@ class ResearchApplicationService:
                 # A current Run token alone does not authorize this invocation to close it.
                 raise
             current = await self.repository.validate_execution(owner)
+            if stage == 'TASK_EXECUTION':
+                from src.domain.financial_validation import MethodObservation, MethodDenied
+                from src.domain.node_binding import task_fingerprint
+                for task in current.runtime.actual_graph.tasks:
+                    req = task.wp04_method_requirement
+                    if req is None or task.task_id in current.node_binding.attempts or any(
+                            o.task_id == task.task_id for o in (current.artifacts.wp04_method_observations or {}).values()):
+                        continue
+                    observation = MethodObservation(run_id=run_id, object_id=req.object_id,
+                        task_id=task.task_id, owner_id=owner.owner_id, owner_generation=owner.owner_generation,
+                        task_fingerprint=task_fingerprint(task), requirement_id=req.requirement_id,
+                        requirement_digest=req.requirement_digest, requirement_state=req.requirement_state,
+                        descriptor=req.descriptor, descriptor_digest=req.descriptor.descriptor_digest,
+                        phase='DENIED_BEFORE_A', support_status=getattr(exc, 'support', 'UNKNOWN'),
+                        diagnostic_code=getattr(exc, 'code', 'METHOD_PREFLIGHT_FAILED'), numeric_outcome='NONE',
+                        observed_at=datetime.now(UTC)).identified()
+                    try:
+                        await self.repository.record_method_observation(owner, task.task_id, observation)
+                    except Exception as persistence_error:
+                        try:
+                            self.wp04_diagnostic_store.retain_method_diagnostic(run_id=run_id, task_id=task.task_id,
+                                requirement_id=req.requirement_id, diagnostic_code=observation.diagnostic_code,
+                                secondary_diagnostic_code='PERSISTENCE_UNAVAILABLE',
+                                observation_id=observation.observation_id)
+                        except Exception:
+                            pass
+                        raise exc from persistence_error
+                current = await self.repository.validate_execution(owner)
             if stage == "POST_SCHEDULER":
                 # No concurrent tasks remain; preserve assurance facts from this exact revision.
                 validate_root(aggregate, owner)
@@ -694,6 +773,36 @@ class ResearchApplicationService:
             research_news_result,
         )
 
+    def _wp04_context(self, aggregate):
+        from src.domain.node_binding import canonical_value, task_semantics, digest
+        selected = [t for t in aggregate.runtime.actual_graph.tasks if t.wp04_method_requirement is not None]
+        if not selected:
+            return None
+        root = aggregate.node_binding
+        entries = []
+        for task in selected:
+            attempt = root.attempts.get(task.task_id)
+            admission = attempt.admission if attempt else None
+            current = root.current_results.get(task.task_id)
+            result = root.results.get(current)
+            entries.append({'task': task_semantics(task), 'A': canonical_value(admission),
+                'B': [canonical_value(b) for b in root.resolved_inputs.values()
+                      if admission and b.admission_binding_id == admission.admission_binding_id],
+                'R': canonical_value(result), 'current_result_id': current,
+                'invalidated': current in root.invalidation_refs if current else True,
+                'observations': [canonical_value(o) for o in (aggregate.artifacts.wp04_method_observations or {}).values()
+                                 if o.task_id == task.task_id]})
+        return {'schema_version': 'wp04-review-context/v1', 'run_id': aggregate.run.run_id,
+                'object_id': aggregate.run.research_object_id, 'scheme_hash': digest(aggregate.scheme),
+                'graph': canonical_value(root.frozen_graph), 'entries': entries,
+                'expected_manifest_file_sha256': self.wp04_manifest_sha256}
+
+    def _review_requirement_context(self, aggregate, strict):
+        original = requirement_context(aggregate.scheme, aggregate.artifacts.financial_branches) if (
+            strict and aggregate.artifacts.financial_branches) else None
+        wp04 = self._wp04_context(aggregate)
+        return {'financial_requirements': original, 'wp04_method_context': wp04} if wp04 is not None else original
+
     async def _review_for_release(
         self,
         aggregate,
@@ -713,7 +822,7 @@ class ResearchApplicationService:
                 run_id=run_id,
                 event_type=RuntimeEventType.REVIEW_STARTED,
             )
-            if strict_financial_release:
+            if strict_financial_release or self._wp04_context(aggregate) is not None:
                 review = IndependentFinancialReviewer().review(
                     review_id=f"REVIEW-{run_id}",
                     run_id=run_id,
@@ -725,11 +834,7 @@ class ResearchApplicationService:
                     judgments=judgments,
                     proof_requirements=proof_requirements,
                     branch_results=aggregate.artifacts.financial_branches,
-                    requirement_context=requirement_context(
-                        aggregate.scheme, aggregate.artifacts.financial_branches
-                    )
-                    if aggregate.artifacts.financial_branches
-                    else None,
+                    requirement_context=self._review_requirement_context(aggregate, strict_financial_release),
                 )
             else:
                 review = DeterministicReviewer().review(
@@ -761,21 +866,23 @@ class ResearchApplicationService:
         research_news_result,
     ):
         run_id = aggregate.run.run_id
+        wp04_context = self._wp04_context(aggregate)
+        if wp04_context is not None:
+            fresh = await self.repository.get_run_fresh(run_id)
+            if fresh is None or self._wp04_context(fresh) != wp04_context:
+                raise BindingDenied('STALE_INPUT', 'WP04 Review/Release context')
+        strict_snapshot = strict_financial_release or wp04_context is not None
         release_decision = ReleaseGate().evaluate(
-            requirement_context=requirement_context(
-                aggregate.scheme, aggregate.artifacts.financial_branches
-            )
-            if strict_financial_release and aggregate.artifacts.financial_branches
-            else None,
+            requirement_context=self._review_requirement_context(aggregate, strict_financial_release),
             review=review,
             proof_requirements=proof_outcome.requirements,
             proofs=proof_outcome.proofs,
             calculations={item.calculation_id: item for item in calculations_before_review},
-            evidence=(aggregate.artifacts.evidence if strict_financial_release else None),
-            metrics=(released_metrics if strict_financial_release else None),
-            claims=(material_claims if strict_financial_release else None),
-            judgments=(judgments if strict_financial_release else None),
-            run_as_of=(aggregate.run.as_of if strict_financial_release else None),
+            evidence=(aggregate.artifacts.evidence if strict_snapshot else None),
+            metrics=(released_metrics if strict_snapshot else None),
+            claims=(material_claims if strict_snapshot else None),
+            judgments=(judgments if strict_snapshot else None),
+            run_as_of=(aggregate.run.as_of if strict_snapshot else None),
             input_commitments=(
                 proof_outcome.input_commitments
                 if strict_financial_release

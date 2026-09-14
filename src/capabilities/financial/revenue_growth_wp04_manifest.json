@@ -1,0 +1,25 @@
+{
+  "schema_version": "wp04-source-manifest/v1",
+  "entries": [
+    {
+      "path": "src/capabilities/financial/common.py",
+      "sha256": "sha256:1b52eaaa0c2eff6cc5087f316a7f2795803327bcb077b100984699bc1cb07a2e"
+    },
+    {
+      "path": "src/capabilities/financial/growth.py",
+      "sha256": "sha256:0b4991397a1600636f3a9f1cf7b28d0d908ac8c1093e75aca6ed81d04c97d9b9"
+    },
+    {
+      "path": "src/capabilities/provenance.py",
+      "sha256": "sha256:a0756e6afda0024c39d2a29ae530ec94596222872e15e01b37e9d616510bb347"
+    },
+    {
+      "path": "src/domain/financial_semantics.py",
+      "sha256": "sha256:f9ce5e7f5dfd97a2bcbfe16c479988f452d7f946d0cdb531974e22c721514f67"
+    },
+    {
+      "path": "src/domain/financial_validation.py",
+      "sha256": "sha256:ff968d32a2fd57c54a6cb786caa5185fa74004f245d121d06815808945a0fbc9"
+    }
+  ]
+}

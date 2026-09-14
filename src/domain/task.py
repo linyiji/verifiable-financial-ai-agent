@@ -12,7 +12,13 @@ from src.domain.enums import (
 from src.domain.output_dependency import OutputOutcome, OutputRequirements
 
 
+from src.domain.financial_validation import MethodRequirement
+
+
 class Task(TimestampedModel):
+    wp04_method_requirement: MethodRequirement | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     task_id: str
     run_id: str
     parent_task_id: str | None = None

@@ -69,6 +69,7 @@ class IntegratedTaskExecutor:
         ):
             raise BindingDenied("STATE_REFRESH_REQUIRED", "initial normalization drift")
         self._bound_steps = []
+        self._wp04 = {}
         self._has_specialized_collection_tasks = (
             sum(
                 task.task_type == "evidence_collection"
@@ -123,6 +124,14 @@ class IntegratedTaskExecutor:
                     ):
                         result = await invocation._execute_instrumented_task(task)
                         return await invocation._commit_bound_result(task, result)
+        except BaseException as exc:
+            if task.wp04_method_requirement is not None and not invocation._wp04.get('terminal_observed'):
+                await invocation._observe_wp04(task,
+                    'EXECUTION_FINISHED' if invocation._wp04.get('dispatch_count') else 'DENIED',
+                    'SUPPORTED' if invocation._wp04.get('input_binding') else 'UNKNOWN',
+                    getattr(exc, 'code', type(exc).__name__),
+                    'RESULT_UNKNOWN' if invocation._wp04.get('dispatch_count') else 'NONE')
+            raise
         finally:
             self._active -= 1
             node_invocation.reset(token)
@@ -130,6 +139,8 @@ class IntegratedTaskExecutor:
     async def _execute_instrumented_task(self, task: Task) -> TaskExecutionResult:
         self._require_bound_invocation(task)
         self.admission_requirements(task) if self._aggregate.node_binding is not None else None
+        if task.wp04_method_requirement is not None:
+            self._wp04['selected_pair'] = await self._prepare_wp04(task)
         await self._service.event_store.emit(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -243,7 +254,12 @@ class IntegratedTaskExecutor:
             for record in self._aggregate.artifacts.evidence
             if record.evidence_id in input_ids
         ]
-        prior, current, mismatch, ebitda = _select_financial_inputs(evidence)
+        if task.wp04_method_requirement is not None:
+            prior, current = self._wp04['selected_pair']
+            # Only companion selection retains the existing legacy behavior.
+            _, _, mismatch, ebitda = _select_financial_inputs(evidence)
+        else:
+            prior, current, mismatch, ebitda = _select_financial_inputs(evidence)
         context = CapabilityContext(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -423,6 +439,152 @@ class IntegratedTaskExecutor:
             output_refs=calculation_refs,
         )
 
+    async def _observe_wp04(self, task, phase, support, diagnostic, numeric, calculation=None):
+        from src.domain.financial_validation import MethodObservation, MethodDenied
+        from src.domain.node_binding import task_fingerprint
+        admission = node_invocation.get()
+        req = task.wp04_method_requirement
+        state = getattr(self, '_wp04', {})
+        binding = state.get('input_binding')
+        b = state.get('B')
+        observation = MethodObservation(
+            run_id=task.run_id, object_id=req.object_id, task_id=task.task_id,
+            owner_id=admission.owner.owner_id, owner_generation=admission.owner.owner_generation,
+            task_fingerprint=task_fingerprint(task), requirement_id=req.requirement_id,
+            requirement_digest=req.requirement_digest, requirement_state=req.requirement_state,
+            descriptor=req.descriptor, descriptor_digest=req.descriptor.descriptor_digest,
+            input_binding=binding, input_identity_digest=binding['input_identity_digest'] if binding else None,
+            observed_input_refs=[v['evidence_id'] for v in admission.authorized_input_requirements.get('wp04_candidates', [])],
+            verification_state='VERIFIED' if binding else 'UNVERIFIED',
+            admission_binding_id=admission.admission_binding_id,
+            reservation_id=admission.attempt_reservation_id,
+            B_ref=b.resolved_input_binding_id if b else None,
+            phase=phase, support_status=support, diagnostic_code=diagnostic,
+            numeric_outcome=numeric, calculation_ref=calculation.calculation_id if calculation else None,
+            source_manifest_digest=req.descriptor.source_manifest_digest,
+            semantic_policy_digest=req.descriptor.semantic_policy_digest,
+            decimal_policy_digest=req.descriptor.decimal_policy_digest,
+            dispatch_count=state.get('dispatch_count', 0), previous_observation_id=state.get('previous'),
+            observed_at=datetime.now(UTC),
+        ).identified()
+        try:
+            await self._service.repository.record_method_observation(admission.owner, task.task_id,
+                                                                     observation, admission=admission, calculation=calculation)
+        except BaseException as exc:
+            self._wp04['terminal_observed'] = True
+            primary = diagnostic if diagnostic != 'NONE' else getattr(exc, 'code', 'PERSISTENCE_UNAVAILABLE')
+            try:
+                self._service.wp04_diagnostic_store.retain_method_diagnostic(
+                    run_id=task.run_id, task_id=task.task_id, requirement_id=req.requirement_id,
+                    diagnostic_code=primary, secondary_diagnostic_code='PERSISTENCE_UNAVAILABLE',
+                    observation_id=observation.observation_id)
+            except Exception:
+                pass
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise MethodDenied(primary, support, 'RESULT_UNKNOWN') from exc
+        self._wp04['previous'] = observation.observation_id
+        if phase in ('DENIED', 'EXECUTION_FINISHED'):
+            self._wp04['terminal_observed'] = True
+        return observation
+
+    async def _prepare_wp04(self, task):
+        from src.domain.financial_validation import MethodDenied
+        self._wp04 = {'dispatch_count': 0}
+        req = task.wp04_method_requirement
+        try:
+            req.verify()
+            if req.requirement_state != 'REQUIRED':
+                raise MethodDenied('METHOD_SCOPE_UNSUPPORTED', 'UNSUPPORTED')
+            capability, receipt = self._service._verify_wp04_load(req.descriptor)
+            admission = node_invocation.get()
+            prior, current, binding = wp04_bind_inputs(req,
+                admission.authorized_input_requirements['wp04_candidates'], self._aggregate.run.as_of)
+            self._wp04.update(capability=capability, load_receipt=receipt, input_binding=binding)
+            prepared = await self._observe_wp04(task, 'PREPARED', 'SUPPORTED', 'NONE', 'NONE')
+            self._wp04['prepared_ref'] = prepared.observation_id
+            return prior, current
+        except BaseException as exc:
+            if getattr(exc, 'code', None) != 'PERSISTENCE_UNAVAILABLE':
+                await self._observe_wp04(task, 'DENIED', getattr(exc, 'support', 'UNKNOWN'),
+                    getattr(exc, 'code', 'METHOD_PREPARATION_FAILED'), 'NONE')
+            raise
+
+    async def _execute_wp04(self, task, inputs, context):
+        from decimal import localcontext
+        from src.capabilities.financial.growth import capture_revenue_growth_decimal_observation
+        from src.domain.financial_validation import (
+            MethodDenied, WP04_FLAGS_SCHEMA, WP04_DECIMAL_POLICY,
+            wp04_decimal_context, validate_decimal_observation,
+        )
+        state = self._wp04
+        req = task.wp04_method_requirement
+        admission = node_invocation.get()
+        try:
+            capability, receipt = self._service._verify_wp04_load(req.descriptor)
+            if capability is not state['capability'] or receipt != state['load_receipt']:
+                raise MethodDenied('METHOD_LOAD_IDENTITY_MISMATCH')
+            payload = {
+                'inputs': canonical_value(inputs), 'context': canonical_value(context),
+                'capability': canonical_value(capability.definition), 'formula_id': req.descriptor.formula_id,
+                'implementation_hash': next(e['sha256'] for e in req.descriptor.source_manifest
+                                            if e['path'] == 'src/capabilities/financial/growth.py'),
+                'wp04': {'descriptor': canonical_value(req.descriptor), 'requirement': canonical_value(req),
+                    'input_binding': state['input_binding'], 'load_receipt': receipt,
+                    'prepared_observation_ref': state['prepared_ref'],
+                    'decimal_policy': WP04_DECIMAL_POLICY,
+                    'expected_decimal_observation_schema': WP04_FLAGS_SCHEMA, 'expected_capture_count': 1},
+            }
+            await self._bind_step(task, 'calculation:' + inputs['calculation_id'], payload)
+            b = self._bound_steps[-1]
+            state['B'] = b
+            await self._service.repository.check_invocation(admission)
+            if state['dispatch_count']:
+                raise MethodDenied('METHOD_REDISPATCH_FORBIDDEN')
+            state['dispatch_count'] = 1
+            identity = (task.run_id, task.task_id, inputs['calculation_id'],
+                        inputs['prior'].evidence_id, inputs['current'].evidence_id,
+                        str(inputs['prior'].normalized_value), str(inputs['current'].normalized_value),
+                        b.resolved_input_binding_id, admission.attempt_reservation_id)
+            with localcontext(wp04_decimal_context()):
+                with capture_revenue_growth_decimal_observation(identity) as collector:
+                    calculation = await self._service.tool_runtime.execute('revenue_growth', inputs,
+                        context, version='1.1.0', wp04_expected=(req.descriptor,
+                            self._service.wp04_manifest_sha256, receipt, self._service._wp04_load_expectation))
+                    # Original owner/source/result errors precede observation errors.
+                    await self._service.repository.check_invocation(admission)
+                    self._service._verify_wp04_load(req.descriptor)
+                    if (calculation.run_id != task.run_id or calculation.task_id != task.task_id
+                            or calculation.calculation_id != inputs['calculation_id']
+                            or calculation.input_evidence_ids != state['input_binding']['input_evidence_ids']
+                            or calculation.capability_id != 'revenue_growth'
+                            or calculation.capability_version != '1.1.0'
+                            or calculation.formula_id != 'revenue_growth_v1'
+                            or calculation.implementation_hash != payload['implementation_hash']
+                            or calculation.code_hash != payload['implementation_hash']
+                            or calculation.status.value != 'PASS'
+                            or not isinstance(calculation.output_value, Decimal)
+                            or not calculation.output_value.is_finite()):
+                        raise MethodDenied('METHOD_RESULT_IDENTITY_MISMATCH', 'SUPPORTED', 'FAILED')
+                    from src.assurance.independent_financial_review import _snapshot_matches
+                    if not _snapshot_matches(calculation, [inputs['prior'], inputs['current']]):
+                        raise MethodDenied('METHOD_RESULT_INPUT_MISMATCH', 'SUPPORTED', 'FAILED')
+                    actual = collector.seal()
+            flags = validate_decimal_observation(actual)
+            metadata = {**payload['wp04'], 'A_ref': admission.admission_binding_id,
+                        'B_ref': b.resolved_input_binding_id, 'formula_version': '1.0.0',
+                        'resulting_decimal_flags': flags, 'decimal_flags_observation': actual,
+                        'support_status': 'SUPPORTED', 'dispatch_count': 1}
+            return calculation.model_copy(update={'parameters': {**calculation.parameters,
+                                                                 'wp04_method_binding': metadata}})
+        except BaseException as exc:
+            numeric = ('CANCELLED' if isinstance(exc, asyncio.CancelledError) else
+                       'TIMED_OUT' if isinstance(exc, TimeoutError) else
+                       'FAILED' if state['dispatch_count'] else 'NONE')
+            await self._observe_wp04(task, 'EXECUTION_FINISHED' if state['dispatch_count'] else 'DENIED',
+                getattr(exc, 'support', 'SUPPORTED'), getattr(exc, 'code', type(exc).__name__), numeric)
+            raise
+
     async def _execute_calculation(
         self,
         *,
@@ -433,6 +595,8 @@ class IntegratedTaskExecutor:
     ):
         self._require_bound_invocation(task)
         calculation_id = str(inputs.get("calculation_id", ""))
+        if capability_id == 'revenue_growth' and task.wp04_method_requirement is not None:
+            return await self._execute_wp04(task, inputs, context)
         version = None
         if self._aggregate.node_binding is not None:
             capability = self._service.capability_registry.get(capability_id)
@@ -516,8 +680,25 @@ class IntegratedTaskExecutor:
                 expected["implementation_hash"],
             ):
                 raise BindingDenied("IDENTITY_MISMATCH", "calculation implementation")
-        await self._service.repository.save_calculation(calculation)
+        if task.wp04_method_requirement is not None and calculation.capability_id == 'revenue_growth':
+            from src.domain.financial_validation import validate_decimal_observation, MethodDenied
+            metadata = calculation.parameters.get('wp04_method_binding', {})
+            validate_decimal_observation(metadata.get('decimal_flags_observation'))
+            self._service._verify_wp04_load(task.wp04_method_requirement.descriptor)
+        try:
+            await self._service.repository.save_calculation(calculation)
+        except BaseException as exc:
+            if task.wp04_method_requirement is not None and calculation.capability_id == 'revenue_growth':
+                await self._observe_wp04(task, 'EXECUTION_FINISHED', 'SUPPORTED',
+                                         getattr(exc, 'code', 'PERSISTENCE_UNAVAILABLE'), 'RESULT_UNKNOWN')
+                if isinstance(exc, BindingDenied):
+                    raise
+                raise MethodDenied('PERSISTENCE_UNAVAILABLE', 'SUPPORTED', 'RESULT_UNKNOWN') from exc
+            raise
         self._aggregate.artifacts.calculations.append(calculation)
+        if task.wp04_method_requirement is not None and calculation.capability_id == 'revenue_growth':
+            await self._observe_wp04(task, 'EXECUTION_FINISHED', 'SUPPORTED', 'NONE',
+                                     'SUCCEEDED', calculation=calculation)
         # Technical MACD has multiple records; branch-level publication owns that
         # compound output. Single native anchors are published only after durable save.
         if calculation.capability_id in {"revenue_growth", "ebitda_margin"}:
@@ -1228,6 +1409,8 @@ class IntegratedTaskExecutor:
 
         scope = EvidenceTaskRouter._acquisition_scope(EvidenceTaskRouter, task)
         return {
+            **({'wp04_candidates': wp04_candidate_snapshot(self._aggregate, task)}
+               if task.wp04_method_requirement is not None else {}),
             "task": task_semantics(task),
             "scheme": canonical_value(self._aggregate.scheme),
             "resolved_handler": handler,
@@ -1335,6 +1518,8 @@ class IntegratedTaskExecutor:
         return binding
 
     async def _commit_bound_result(self, task, result):
+        if task.wp04_method_requirement is not None:
+            self._service._verify_wp04_load(task.wp04_method_requirement.descriptor)
         interaction = getattr(self, "_wp03_interaction", None)
         if interaction is not None:
             await interaction.final_checkpoint()
@@ -1628,3 +1813,134 @@ def _compact_json_value(value: Any, *, depth: int = 0) -> Any:
             if index < 30 or contains_semantics(item)
         ]
     return _compact_json_value(str(value), depth=depth + 1)
+
+
+def wp04_candidate_snapshot(aggregate, task):
+    """A's exact authorized preexisting/dependency candidates, never latest lookup."""
+    allowed = set(task.task_input_evidence_ids)
+    pending = list(task.dependencies)
+    seen = set()
+    while pending:
+        key = pending.pop()
+        if key in seen:
+            continue
+        seen.add(key)
+        pending.extend(aggregate.runtime.task(key).dependencies)
+        result = aggregate.node_binding.results.get(aggregate.node_binding.current_results.get(key))
+        if result is not None:
+            allowed.update(r.record_id for r in result.output_records if r.kind == 'EVIDENCE')
+    candidates = [record for record in aggregate.artifacts.evidence
+                  if record.evidence_id in allowed and record.normalized_field == 'revenue']
+    return [{'evidence_id': r.evidence_id, 'content_digest': digest(r, 'evidence-record/v1'),
+             'snapshot': canonical_value(r)} for r in sorted(candidates, key=lambda r: r.evidence_id)]
+
+
+def wp04_bind_inputs(requirement, candidates, run_as_of):
+    """C2 exact role selection and retained raw scale witness, without arithmetic rounding."""
+    import json
+    import re
+    from src.domain.evidence import EvidenceRecord
+    from src.domain.financial_validation import MethodDenied, wp04_decimal
+    records = []
+    for item in candidates:
+        snapshot = item['snapshot']
+        if (digest(snapshot, 'evidence-record/v1') != item['content_digest']
+                or snapshot.get('evidence_id') != item['evidence_id']):
+            raise MethodDenied('INPUT_IDENTITY_MISMATCH')
+        # Do not let EvidenceRecord's legacy post-init fill missing WP04 semantics.
+        if not snapshot.get('period_basis'):
+            raise MethodDenied('SEMANTIC_INPUT_MISMATCH', 'UNSUPPORTED')
+        if snapshot['period_basis'] == 'FY':
+            required = ('statement_series', 'currency', 'unit', 'period', 'as_of',
+                        'normalized_field', 'object_id', 'run_id', 'raw_artifact_ref', 'snapshot_hash')
+            if (snapshot.get('actuality') not in ('ACTUAL', 'ESTIMATE')
+                    or any(not isinstance(snapshot.get(k), str) or not snapshot[k].strip()
+                           for k in required)):
+                raise MethodDenied('SEMANTIC_INPUT_MISMATCH', 'UNSUPPORTED')
+            wp04_decimal(snapshot.get('normalized_value'))
+        try:
+            record = EvidenceRecord.model_validate(snapshot)
+        except ValueError as exc:
+            raise MethodDenied('SEMANTIC_INPUT_MISMATCH', 'UNSUPPORTED') from exc
+        if (canonical_value(record) != snapshot
+                or digest(record, 'evidence-record/v1') != item['content_digest']):
+            raise MethodDenied('SEMANTIC_INPUT_MISMATCH', 'UNSUPPORTED')
+        records.append(record)
+    annual = [r for r in records if r.period_basis and r.period_basis.value == 'FY']
+    # No latest-like tie breaker: even two viable adjacent pairs are ambiguous.
+    pairs = [(p, c) for p in annual for c in annual
+             if re.fullmatch(r'FY[0-9]{4}', p.period) and re.fullmatch(r'FY[0-9]{4}', c.period)
+             and int(c.period[2:]) - int(p.period[2:]) == 1]
+    if len(annual) < 2:
+        raise MethodDenied('MISSING_REQUIRED_INPUT', 'MISSING_INPUT')
+    if len(pairs) != 1:
+        raise MethodDenied('SEMANTIC_INPUT_MISMATCH', 'UNSUPPORTED')
+    prior, current = pairs[0]
+    witnesses = []
+    for record in (prior, current):
+        value = wp04_decimal(record.normalized_value)
+        if (record.run_id != requirement.run_id or record.object_id != requirement.object_id
+                or record.status.value != 'ACCEPTED' or record.unit != 'CURRENCY'
+                or record.actuality.value not in ('ACTUAL', 'ESTIMATE')
+                or not record.statement_series or not record.statement_series.strip()
+                or not record.currency or not re.fullmatch('[A-Z]{3}', record.currency)
+                or record.as_of > run_as_of):
+            raise MethodDenied('SEMANTIC_INPUT_MISMATCH', 'UNSUPPORTED')
+        try:
+            path = Path(record.raw_artifact_ref)
+            if not path.is_absolute():
+                raise ValueError('retained raw path must be absolute')
+            raw = path.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != record.snapshot_hash.removeprefix('sha256:'):
+                raise ValueError('raw hash differs')
+            payload = json.loads(raw, parse_float=Decimal, parse_int=Decimal)
+            rows = payload['records']
+            if not isinstance(rows, list):
+                raise ValueError('unknown raw shape')
+            matches = []
+            for index, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    raise ValueError('unknown raw record')
+                currency = row.get('currency', payload.get('object', {}).get('currency'))
+                if (row.get('field'), row.get('period'), row.get('as_of'), currency) != (
+                        record.normalized_field, record.period, record.as_of.isoformat(), record.currency):
+                    continue
+                unit = row.get('unit')
+                scales = {currency: 0, currency + '_THOUSAND': 3,
+                          currency + '_MILLION': 6, currency + '_BILLION': 9}
+                if unit not in scales:
+                    raise ValueError('unknown scale')
+                raw_value = wp04_decimal(row.get('value'))
+                t = raw_value.as_tuple()
+                normalized = Decimal((t.sign, t.digits, t.exponent + scales[unit]))
+                if normalized == value:
+                    matches.append({'raw_sha256': record.snapshot_hash,
+                                    'raw_artifact_ref': str(path), 'pointer': '/records/' + str(index),
+                                    'raw_value': str(raw_value), 'raw_unit': unit,
+                                    'original_scale': 10 ** scales[unit], 'normalized_scale': 1})
+            if len(matches) != 1:
+                raise ValueError('nonunique retained witness')
+            witnesses.append(matches[0])
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise MethodDenied('SEMANTIC_INPUT_MISMATCH', 'UNSUPPORTED') from exc
+    if (prior.evidence_id == current.evidence_id or prior.currency != current.currency
+            or prior.actuality != current.actuality or prior.statement_series != current.statement_series
+            or witnesses[0]['original_scale'] != witnesses[1]['original_scale']):
+        raise MethodDenied('SEMANTIC_INPUT_MISMATCH', 'UNSUPPORTED')
+    if wp04_decimal(prior.normalized_value) <= 0:
+        raise MethodDenied('NOT_APPLICABLE_PRECONDITION', 'NOT_APPLICABLE')
+    binding = {'schema_version': 'wp04-input-binding/v1',
+               'object_id': requirement.object_id, 'run_id': requirement.run_id,
+               'task_id': requirement.task_id, 'requirement_digest': requirement.requirement_digest,
+               'input_evidence_ids': [prior.evidence_id, current.evidence_id],
+               'evidence_digests': [next(v['content_digest'] for v in candidates
+                                         if v['evidence_id'] == r.evidence_id) for r in (prior, current)],
+               'raw_witnesses': witnesses, 'semantics': [{
+                   'period': r.period, 'period_basis': r.period_basis.value,
+                   'actuality': r.actuality.value, 'statement_series': r.statement_series,
+                   'statement_cohort': r.statement_cohort, 'as_of': r.as_of.isoformat(),
+                   'currency': r.currency, 'unit': r.unit, 'normalized_value': str(r.normalized_value),
+               } for r in (prior, current)],
+               'semantic_policy_digest': requirement.descriptor.semantic_policy_digest}
+    binding['input_identity_digest'] = digest(binding, binding['schema_version'])
+    return prior, current, binding

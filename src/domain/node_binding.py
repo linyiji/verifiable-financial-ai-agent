@@ -89,7 +89,10 @@ CALCULATION_FIELDS = (
 
 
 def task_semantics(task) -> dict:
-    return canonical_value({key: getattr(task, key) for key in TASK_FIELDS})
+    values = {key: getattr(task, key) for key in TASK_FIELDS}
+    if getattr(task, "wp04_method_requirement", None) is not None:
+        values["wp04_method_requirement"] = task.wp04_method_requirement
+    return canonical_value(values)
 
 
 def task_fingerprint(task) -> str:

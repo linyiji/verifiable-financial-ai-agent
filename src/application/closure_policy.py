@@ -51,6 +51,21 @@ def classify_execution_closure(aggregate):
             result.required_outputs.missing.append(requirement)
         else:
             result.required_outputs.satisfied.append(requirement)
+    for task in aggregate.runtime.actual_graph.tasks:
+        req = task.wp04_method_requirement
+        if req is None or req.requirement_state == 'NOT_REQUESTED':
+            continue
+        observations = [o for o in (aggregate.artifacts.wp04_method_observations or {}).values()
+                        if o.task_id == task.task_id and o.requirement_digest == req.requirement_digest]
+        satisfied = any(o.numeric_outcome == 'SUCCEEDED' for o in observations)
+        refs = [o.observation_id for o in observations] or [req.requirement_id]
+        bucket = result.required_outputs if req.requirement_state == 'REQUIRED' else result.supporting_outputs
+        (bucket.satisfied if satisfied else bucket.missing).extend(refs)
+        if not satisfied:
+            if req.requirement_state == 'REQUIRED':
+                gaps.append('REQUIRED_CALCULATION_UNAVAILABLE')
+            else:
+                result.limitations.extend(refs)
     for branch in aggregate.artifacts.financial_branches:
         bucket = (
             result.required_outputs

@@ -107,6 +107,21 @@ class IndependentFinancialReviewer:
         requirement_context: JsonObject | None = None,
     ) -> ReviewRecord:
         checks: list[ReviewCheck] = []
+        full_requirement_context = requirement_context
+        wp04_context = None
+        wp04_expected_values = {}
+        if requirement_context is not None and 'wp04_method_context' in requirement_context:
+            wp04_context = requirement_context['wp04_method_context']
+            requirement_context = requirement_context['financial_requirements']
+        if wp04_context is not None or any('wp04_method_binding' in c.parameters for c in calculations):
+            try:
+                wp04_expected_values = review_wp04_bindings(context=wp04_context, calculations=calculations,
+                                     evidence=evidence, run_as_of=run_as_of)
+                wp04_valid = True
+            except (ValueError, KeyError, TypeError, StopIteration, OSError, DecimalException):
+                wp04_valid = False
+            _check(checks, 'FIN_WP04_EXACT_METHOD_LINEAGE', wp04_valid,
+                   expected={'valid': True}, actual={'valid': wp04_valid})
         evidence_by_id = _unique(evidence, "evidence_id", "evidence")
         calculation_by_id = _unique(calculations, "calculation_id", "calculation")
         metric_by_calculation = _unique(metrics, "calculation_id", "metric calculation")
@@ -230,7 +245,9 @@ class IndependentFinancialReviewer:
                 continue
             try:
                 _validate_formula_semantics(calculation.formula_id, inputs)
-                expected_value = _recompute(calculation.formula_id, inputs)
+                expected_value = (wp04_expected_values[calculation.calculation_id]
+                                  if calculation.calculation_id in wp04_expected_values
+                                  else _recompute(calculation.formula_id, inputs))
                 actual_value = _decimal(calculation.output_value)
                 recompute_ok = expected_value == actual_value
                 recompute_detail = None
@@ -471,7 +488,7 @@ class IndependentFinancialReviewer:
             claims=claims,
             judgments=judgments,
             proof_requirements=proof_requirements,
-            requirement_context=requirement_context,
+            requirement_context=full_requirement_context,
         )
         status = (
             ReviewStatus.PASS
@@ -495,7 +512,7 @@ class IndependentFinancialReviewer:
             required_proof_calculation_refs=required,
             checks=checks,
             input_snapshot_hash=snapshot_hash,
-            requirement_context=requirement_context,
+            requirement_context=full_requirement_context,
             reviewer=self.reviewer_id,
         )
 
@@ -1228,3 +1245,159 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def review_wp04_bindings(*, context, calculations, evidence, run_as_of):
+    """Independent oracle. Actual receipt is mandatory and is never synthesized."""
+    from src.capabilities.provenance import wp04_descriptor
+    from src.domain.financial_validation import (
+        MethodRequirement, MethodObservation, validate_decimal_observation,
+        WP04_DECIMAL_POLICY, WP04_SEMANTIC_POLICY,
+    )
+    from src.domain.node_binding import (
+        AdmissionBinding, ResolvedInputBinding, ResultBinding, calculation_core,
+        canonical_value, check_value_identity, digest,
+    )
+    from decimal import (Context, ROUND_HALF_EVEN, Clamped, DivisionByZero, FloatOperation,
+                         Inexact, InvalidOperation, Overflow, Rounded, Subnormal, Underflow)
+    import re
+    from pathlib import Path
+
+    selected = [c for c in calculations if 'wp04_method_binding' in c.parameters]
+    if context is None:
+        if selected:
+            raise ValueError('WP04_CONTEXT_MISSING')
+        return {}
+    descriptor = wp04_descriptor(context['expected_manifest_file_sha256'])
+    if not context['entries']:
+        raise ValueError('WP04_REQUIREMENT_MISSING')
+    evidence_by_id = {e.evidence_id: e for e in evidence}
+    checked = set()
+    expected_values = {}
+    for entry in context['entries']:
+        req = MethodRequirement.model_validate(entry['task']['wp04_method_requirement'])
+        req.verify()
+        if (req.descriptor != descriptor or req.run_id != context['run_id']
+                or req.object_id != context['object_id'] or req.scheme_hash != context['scheme_hash']
+                or req.requirement_state != 'REQUIRED'):
+            raise ValueError('WP04_EXPECTED_IDENTITY_MISMATCH')
+        admission = AdmissionBinding.model_validate(entry['A'])
+        result = ResultBinding.model_validate(entry['R'])
+        check_value_identity(admission, 'admission_binding_id')
+        check_value_identity(result, 'result_id', 'result_digest')
+        if (entry['invalidated'] or entry['current_result_id'] != result.result_id
+                or result.result_id != result.result_digest or result.admission_binding_id != admission.admission_binding_id
+                or result.reservation_id != admission.attempt_reservation_id
+                or result.producer_task_id != req.task_id or result.graph.model_dump(mode='json') != context['graph']
+                or admission.graph != result.graph
+                or admission.authorized_input_requirements['task'] != entry['task']
+                or admission.task_fingerprint != digest(entry['task'], 'wp02-node-binding/v1/task')
+                or result.task_fingerprint != admission.task_fingerprint):
+            raise ValueError('WP04_LINEAGE_MISMATCH')
+        records = [c for c in calculations if c.task_id == req.task_id and c.capability_id == 'revenue_growth']
+        if len(records) != 1:
+            raise ValueError('WP04_CALCULATION_MISSING')
+        calc = records[0]
+        checked.add(calc.calculation_id)
+        metadata = calc.parameters.get('wp04_method_binding')
+        if not isinstance(metadata, dict):
+            raise ValueError('WP04_METADATA_MISSING')
+        if (metadata['descriptor'] != canonical_value(descriptor) or metadata['requirement'] != canonical_value(req)
+                or metadata['A_ref'] != admission.admission_binding_id
+                or metadata['formula_version'] != '1.0.0' or metadata['support_status'] != 'SUPPORTED'
+                or type(metadata['dispatch_count']) is not int or metadata['dispatch_count'] != 1
+                or metadata['decimal_policy'] != WP04_DECIMAL_POLICY):
+            raise ValueError('WP04_METADATA_IDENTITY_MISMATCH')
+        b = next(ResolvedInputBinding.model_validate(v) for v in entry['B']
+                 if v['resolved_input_binding_id'] == metadata['B_ref'])
+        check_value_identity(b, 'resolved_input_binding_id')
+        if (b.resolved_input_binding_id not in result.resolved_input_binding_ids
+                or b.admission_binding_id != admission.admission_binding_id
+                or b.input_digest != digest(b.payload_snapshot, 'wp02-input-payload/v1')
+                or any(metadata[k] != v for k, v in b.payload_snapshot['wp04'].items())):
+            raise ValueError('WP04_B_MISMATCH')
+        cores = [r for r in result.output_records if r.kind == 'CALCULATION_CORE' and r.record_id == calc.calculation_id]
+        if len(cores) != 1 or cores[0].payload_snapshot != calculation_core(calc) or cores[0].content_digest != digest(cores[0].payload_snapshot, cores[0].record_schema):
+            raise ValueError('WP04_R_MISMATCH')
+        observations = [MethodObservation.model_validate(o) for o in entry['observations']]
+        if any(o != o.identified() for o in observations):
+            raise ValueError('WP04_OBSERVATION_DIGEST_MISMATCH')
+        prepared = [o for o in observations if o.observation_id == metadata['prepared_observation_ref'] and o.phase == 'PREPARED']
+        finish = [o for o in observations if o.numeric_outcome == 'SUCCEEDED' and o.B_ref == metadata['B_ref'] and o.calculation_ref == calc.calculation_id]
+        if len(prepared) != 1 or len(finish) != 1 or finish[0].previous_observation_id != prepared[0].observation_id:
+            raise ValueError('WP04_FINISH_MISSING')
+        binding = metadata['input_binding']
+        if binding['input_identity_digest'] != digest({k: v for k, v in binding.items() if k != 'input_identity_digest'}, 'wp04-input-binding/v1'):
+            raise ValueError('WP04_INPUT_DIGEST_MISMATCH')
+        if (binding['input_evidence_ids'] != calc.input_evidence_ids or binding['requirement_digest'] != req.requirement_digest
+                or binding['semantic_policy_digest'] != digest(WP04_SEMANTIC_POLICY, 'wp04-input-semantics/v1')):
+            raise ValueError('WP04_INPUT_IDENTITY_MISMATCH')
+        prior, current = [evidence_by_id[key] for key in binding['input_evidence_ids']]
+        candidates = admission.authorized_input_requirements['wp04_candidates']
+        annual = [v['snapshot'] for v in candidates if v['snapshot']['period_basis'] == 'FY']
+        pairs = [(p['evidence_id'], c['evidence_id']) for p in annual for c in annual
+                 if re.fullmatch('FY[0-9]{4}', p['period']) and re.fullmatch('FY[0-9]{4}', c['period'])
+                 and int(c['period'][2:]) - int(p['period'][2:]) == 1]
+        if pairs != [(prior.evidence_id, current.evidence_id)]:
+            raise ValueError('WP04_AMBIGUOUS_INPUTS')
+        values = []
+        for index, record in enumerate((prior, current)):
+            if (record.run_id != req.run_id or record.object_id != req.object_id or record.status.value != 'ACCEPTED'
+                    or record.as_of > run_as_of or record.unit != 'CURRENCY'
+                    or record.actuality.value not in ('ACTUAL', 'ESTIMATE') or not record.statement_series
+                    or not re.fullmatch('[A-Z]{3}', record.currency or '')
+                    or not isinstance(record.normalized_value, (Decimal, str))):
+                raise ValueError('WP04_INPUT_SEMANTICS')
+            value = Decimal(record.normalized_value)
+            if not value.is_finite() or binding['evidence_digests'][index] != digest(record, 'evidence-record/v1'):
+                raise ValueError('WP04_INPUT_VALUE')
+            candidate = next(c for c in candidates if c['evidence_id'] == record.evidence_id)
+            if candidate['content_digest'] != digest(record, 'evidence-record/v1'):
+                raise ValueError('WP04_A_INPUT_MISMATCH')
+            witness = binding['raw_witnesses'][index]
+            path = Path(record.raw_artifact_ref)
+            raw = path.read_bytes() if path.is_absolute() else b''
+            if not raw or hashlib.sha256(raw).hexdigest() != record.snapshot_hash.removeprefix('sha256:') or witness['raw_sha256'] != record.snapshot_hash:
+                raise ValueError('WP04_RAW_IDENTITY')
+            raw_payload = json.loads(raw, parse_float=Decimal, parse_int=Decimal)
+            matching = []
+            for n, row in enumerate(raw_payload['records']):
+                currency = row.get('currency', raw_payload.get('object', {}).get('currency'))
+                if (row.get('field'), row.get('period'), row.get('as_of'), currency) == ('revenue', record.period, record.as_of.isoformat(), record.currency):
+                    powers = {currency: 0, currency + '_THOUSAND': 3, currency + '_MILLION': 6, currency + '_BILLION': 9}
+                    exponent = powers[row['unit']]
+                    raw_value = Decimal(row['value'])
+                    t = raw_value.as_tuple()
+                    if Decimal((t.sign, t.digits, t.exponent + exponent)) == value:
+                        matching.append((n, exponent, raw_value, row['unit']))
+            if len(matching) != 1:
+                raise ValueError('WP04_RAW_WITNESS_AMBIGUOUS')
+            n, exponent, raw_value, unit = matching[0]
+            if witness != {'raw_sha256': record.snapshot_hash, 'raw_artifact_ref': str(path),
+                           'pointer': '/records/' + str(n), 'raw_value': str(raw_value),
+                           'raw_unit': unit, 'original_scale': 10 ** exponent, 'normalized_scale': 1}:
+                raise ValueError('WP04_SCALE_WITNESS_MISMATCH')
+            values.append(value)
+        if (prior.evidence_id == current.evidence_id or prior.period_basis.value != 'FY'
+                or current.period_basis.value != 'FY' or prior.actuality != current.actuality
+                or prior.statement_series != current.statement_series or prior.currency != current.currency
+                or binding['raw_witnesses'][0]['original_scale'] != binding['raw_witnesses'][1]['original_scale']
+                or values[0] <= 0 or not _snapshot_matches(calc, [prior, current])):
+            raise ValueError('WP04_COMPARABILITY_MISMATCH')
+        actual = validate_decimal_observation(metadata['decimal_flags_observation'])
+        if metadata['resulting_decimal_flags'] != actual:
+            raise ValueError('WP04_ACTUAL_FLAGS_MISMATCH')
+        oracle = Context(prec=28, rounding=ROUND_HALF_EVEN, Emin=-999999, Emax=999999,
+                         capitals=1, clamp=0, flags=[],
+                         traps=[DivisionByZero, FloatOperation, InvalidOperation, Overflow])
+        with localcontext(oracle) as inner:
+            expected = (values[1] - values[0]) / values[0]
+            expected_flags = {signal.__name__: bool(inner.flags[signal]) for signal in (
+                Clamped, DivisionByZero, FloatOperation, Inexact, InvalidOperation,
+                Overflow, Rounded, Subnormal, Underflow)}
+        if not expected.is_finite() or Decimal(str(calc.output_value)) != expected or actual != expected_flags:
+            raise ValueError('WP04_INDEPENDENT_NUMERIC_OR_FLAGS_MISMATCH')
+        expected_values[calc.calculation_id] = expected
+    if {c.calculation_id for c in selected} != checked:
+        raise ValueError('WP04_UNOWNED_METADATA')
+    return expected_values

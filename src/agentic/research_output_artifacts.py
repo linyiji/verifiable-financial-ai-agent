@@ -60,6 +60,28 @@ class ResearchAgentOutputArtifactStore:
             if value
         )
 
+    def retain_method_diagnostic(self, *, run_id, task_id, requirement_id,
+                                 diagnostic_code, observation_id=None, secondary_diagnostic_code=None):
+        # No provider fields, prompts, values, raw exceptions, or financial outputs.
+        payload = {'schema_version': 'wp04-uncommitted-method-diagnostic/v1',
+                   'authority_status': 'UNCOMMITTED', 'run_id': run_id, 'task_id': task_id,
+                   'requirement_id': requirement_id, 'diagnostic_code': diagnostic_code,
+                   'observation_id': observation_id}
+        if secondary_diagnostic_code is not None:
+            payload['secondary_diagnostic_code'] = secondary_diagnostic_code
+        if any(value is not None and (not isinstance(value, str) or len(value) > 256)
+               for value in payload.values()):
+            raise ResearchAgentOutputArtifactError('invalid safe method diagnostic')
+        content = canonical_json(payload)
+        if any(secret in content for secret in self._forbidden_values):
+            raise ResearchAgentOutputArtifactError('method diagnostic contains forbidden bytes')
+        sha = hashlib.sha256(content).hexdigest()
+        target = self._blob_root / sha
+        self._assert_safe_path(target)
+        self._put_immutable(target, content)
+        return {'authority_status': 'UNCOMMITTED', 'artifact_sha256': 'sha256:' + sha,
+                'artifact_ref': str(target), 'size_bytes': len(content)}
+
     def retain_success(
         self,
         *,
