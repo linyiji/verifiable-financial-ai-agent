@@ -8,6 +8,7 @@ from pydantic import Field
 
 from src.domain.base import JsonObject, TimestampedModel
 from src.domain.enums import RunStatus, TaskStatus
+from src.domain.node_binding import BindingReference
 from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph
 from src.runtime.state import RuntimeState, RuntimeStateError
 
@@ -31,6 +32,7 @@ class RuntimeCheckpoint(TimestampedModel):
     review_state: JsonObject = Field(default_factory=dict)
     proof_state: JsonObject = Field(default_factory=dict)
     cost: float = Field(default=0.0, ge=0.0)
+    binding_ref: BindingReference | None = None
 
     @classmethod
     def capture(cls, *, checkpoint_id: str, state: RuntimeState) -> RuntimeCheckpoint:
@@ -52,6 +54,7 @@ class RuntimeCheckpoint(TimestampedModel):
             review_state=dict(state.review_state),
             proof_state=dict(state.proof_state),
             cost=state.cost,
+            binding_ref=state.binding_ref,
         )
 
     def restore(self, *, planned_graph: PlannedTaskGraph) -> RuntimeState:
@@ -86,6 +89,7 @@ class RuntimeCheckpoint(TimestampedModel):
             review_state=dict(self.review_state),
             proof_state=dict(self.proof_state),
             cost=self.cost,
+            binding_ref=self.binding_ref,
         )
 
     def validate_payload_identity(self) -> ActualRuntimeGraph:

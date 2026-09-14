@@ -137,6 +137,7 @@ class RunSchedulerAdmissionV1(FrozenRecordModel):
 
     admission_id: str
     run_id: str
+    node_binding_schema: Literal["wp02-node-binding/v1"] | None = None
     idempotency_outcome_id: str
     state: SchedulerAdmissionState = SchedulerAdmissionState.PENDING
     delivery_attempt_count: int = Field(default=0, ge=0)

@@ -29,7 +29,9 @@ async def scenario(tmp_path):
     engine = create_async_engine("sqlite+aiosqlite:///" + str(tmp_path / "resume.sqlite"))
     async with engine.begin() as connection:
         await connection.run_sync(ExecutionIntentRow.__table__.create)
-    store = SQLExecutionLedger(async_sessionmaker(engine, expire_on_commit=False))
+    store = SQLExecutionLedger(
+        async_sessionmaker(engine, expire_on_commit=False), composition="ISOLATED_OFFLINE"
+    )
     task = Task(
         task_id="RUN-offline:one",
         run_id="RUN-offline",

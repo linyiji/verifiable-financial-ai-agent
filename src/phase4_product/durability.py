@@ -272,6 +272,7 @@ class AtomicConfirmCommit:
     tasks: tuple[Task, ...]
     initial_events: tuple[RuntimeEvent, ...]
     projection_revision: Literal[1] = 1
+    node_binding_schema: Literal["wp02-node-binding/v1"] = "wp02-node-binding/v1"
 
     def __post_init__(self, idempotency_key: str) -> None:
         public_admission = self.idempotency_outcome.admission

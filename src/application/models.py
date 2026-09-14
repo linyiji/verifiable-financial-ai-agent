@@ -7,6 +7,7 @@ from src.domain.canonical_execution_record import CanonicalExecutionRecord
 from src.domain.correction import CorrectionRecord
 from src.domain.evidence import EvidenceRecord
 from src.domain.financial_branch import FinancialBranchResult
+from src.domain.node_binding import NodeBindingState
 from src.domain.proof import ProofRecord, ProofResult
 from src.domain.released_research_result import ReleasedResearchResult
 from src.domain.report import ReportArtifactRecord
@@ -61,9 +62,11 @@ class RunAggregate:
         goal: ResearchGoal,
         scheme: ResearchSchemeSnapshot,
         runtime: RuntimeState,
+        node_binding: NodeBindingState | None = None,
     ) -> None:
         self.run = run
         self.goal = goal
         self.scheme = scheme
         self.runtime = runtime
+        self.node_binding = node_binding
         self.artifacts = CompletedRunArtifacts()

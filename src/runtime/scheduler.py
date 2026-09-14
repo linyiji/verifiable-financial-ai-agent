@@ -7,6 +7,7 @@ from typing import Protocol, runtime_checkable
 from uuid import uuid4
 
 from src.domain.enums import RunStatus, TaskStatus
+from src.domain.node_binding import AdmissionBinding, BindingDenied
 from src.domain.output_dependency import LocalOutputFailure
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import Task
@@ -34,12 +35,14 @@ class RetryPolicy:
 class TaskExecutionContext:
     run_id: str
     attempt: int
+    admission: AdmissionBinding | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class TaskExecutionResult:
     result_ref: str | None = None
     output_refs: tuple[str, ...] = field(default_factory=tuple)
+    result_binding_id: str | None = None
 
 
 @runtime_checkable
@@ -69,12 +72,17 @@ class DependencyScheduler:
         checkpoint_store: CheckpointStore,
         retry_policy: RetryPolicy | None = None,
         attempt_resolver: Callable[[Task, int], Awaitable[int]] | None = None,
+        admission_repository=None,
+        execution_owner=None,
     ) -> None:
         self._event_store = event_store
         self._checkpoint_store = checkpoint_store
         self._retry_policy = retry_policy or RetryPolicy()
         self._attempt_resolver = attempt_resolver
         self._reported_blocks: set[str] = set()
+        self._admission_repository = admission_repository
+        self._execution_owner = execution_owner
+        self._bound_results = None
 
     async def execute(
         self,
@@ -82,7 +90,18 @@ class DependencyScheduler:
         state: RuntimeState,
         executor: TaskExecutor,
         emit_run_started: bool = True,
+        on_execution_admitted: Callable[[], None] | None = None,
     ) -> RuntimeState:
+        if state.binding_ref is not None:
+            if self._admission_repository is None or self._execution_owner is None:
+                raise BindingDenied("STATE_REFRESH_REQUIRED", "Scheduler admission port")
+            if self._execution_owner.run_id != state.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "Scheduler Run versus owner")
+            await self._admission_repository.begin_scheduler(self._execution_owner)
+            # Notify only this invocation, after the existing durable admission commits.
+            # This signal cannot skip admission or grant a second Run owner.
+            if on_execution_admitted is not None:
+                on_execution_admitted()
         self._admit_created_tasks(state)
         state.run_status = RunStatus.RUNNING
         if emit_run_started:
@@ -94,6 +113,14 @@ class DependencyScheduler:
 
         try:
             while True:
+                if state.binding_ref is not None:
+                    fresh = await self._admission_repository.validate_execution(
+                        self._execution_owner
+                    )
+                    state.actual_graph = fresh.runtime.actual_graph.model_copy(deep=True)
+                    state.completed_output_refs = dict(fresh.runtime.completed_output_refs)
+                    state.binding_ref = fresh.node_binding.reference()
+                    self._bound_results = dict(fresh.node_binding.current_results)
                 # Approved graph mutations may add CREATED tasks while a wave is running.
                 self._admit_created_tasks(state)
                 if all(task.status is TaskStatus.COMPLETED for task in state.actual_graph.tasks):
@@ -144,19 +171,20 @@ class DependencyScheduler:
                         await self._checkpoint(state)
                         return state
                     state.run_status = RunStatus.FAILED
-                    await self._event_store.emit(
-                        run_id=state.run_id,
-                        event_type=RuntimeEventType.RUN_FAILED,
-                        payload={
-                            "status": RunStatus.FAILED.value,
-                            "failure_stage": "TASK_EXECUTION",
-                            "failure_code": "TASK_EXECUTION_FAILED",
-                            "safe_message": (
-                                "No runnable tasks remain because a dependency failed "
-                                "or the graph could not progress."
-                            ),
-                        },
-                    )
+                    if state.binding_ref is None:
+                        await self._event_store.emit(
+                            run_id=state.run_id,
+                            event_type=RuntimeEventType.RUN_FAILED,
+                            payload={
+                                "status": RunStatus.FAILED.value,
+                                "failure_stage": "TASK_EXECUTION",
+                                "failure_code": "TASK_EXECUTION_FAILED",
+                                "safe_message": (
+                                    "No runnable tasks remain because a dependency failed "
+                                    "or the graph could not progress."
+                                ),
+                            },
+                        )
                     await self._checkpoint(state)
                     raise DependencyDeadlockError(
                         "no runnable tasks remain; graph is cyclic or a dependency failed"
@@ -193,23 +221,24 @@ class DependencyScheduler:
                         task.status is TaskStatus.CAPABILITY_BUILD_FAILED
                         for task in state.actual_graph.tasks
                     )
-                    await self._event_store.emit(
-                        run_id=state.run_id,
-                        event_type=RuntimeEventType.RUN_FAILED,
-                        payload={
-                            "status": RunStatus.FAILED.value,
-                            "failure_stage": (
-                                "GENERATED_CAPABILITY"
-                                if generated_capability_failed
-                                else "TASK_EXECUTION"
-                            ),
-                            "failure_code": (
-                                "GENERATED_CAPABILITY_FAILED"
-                                if generated_capability_failed
-                                else "TASK_EXECUTION_FAILED"
-                            ),
-                        },
-                    )
+                    if state.binding_ref is None:
+                        await self._event_store.emit(
+                            run_id=state.run_id,
+                            event_type=RuntimeEventType.RUN_FAILED,
+                            payload={
+                                "status": RunStatus.FAILED.value,
+                                "failure_stage": (
+                                    "GENERATED_CAPABILITY"
+                                    if generated_capability_failed
+                                    else "TASK_EXECUTION"
+                                ),
+                                "failure_code": (
+                                    "GENERATED_CAPABILITY_FAILED"
+                                    if generated_capability_failed
+                                    else "TASK_EXECUTION_FAILED"
+                                ),
+                            },
+                        )
                     await self._checkpoint(state)
                     raise ExceptionGroup("one or more runtime tasks failed", errors)
         except asyncio.CancelledError:
@@ -222,15 +251,16 @@ class DependencyScheduler:
                     TaskStatus.CANCELLED,
                 }:
                     task.status = TaskStatus.CANCELLED
-            await self._event_store.emit(
-                run_id=state.run_id,
-                event_type=RuntimeEventType.RUN_FAILED,
-                payload={
-                    "status": RunStatus.CANCELLED.value,
-                    "failure_stage": "CANCELLATION",
-                    "failure_code": "RUN_CANCELLED",
-                },
-            )
+            if state.binding_ref is None:
+                await self._event_store.emit(
+                    run_id=state.run_id,
+                    event_type=RuntimeEventType.RUN_FAILED,
+                    payload={
+                        "status": RunStatus.CANCELLED.value,
+                        "failure_stage": "CANCELLATION",
+                        "failure_code": "RUN_CANCELLED",
+                    },
+                )
             await self._checkpoint(state)
             raise
 
@@ -244,7 +274,10 @@ class DependencyScheduler:
         for task in state.actual_graph.tasks:
             if (
                 task.status in {TaskStatus.WAITING, TaskStatus.BLOCKED}
-                and resolve_outputs(state, task)[0] == "READY"
+                and resolve_outputs(
+                    state, task, committed_results=self._bound_results, require_current=True
+                )[0]
+                == "READY"
             ):
                 transition_task(task, TaskStatus.READY)
                 ready.append(task)
@@ -255,7 +288,9 @@ class DependencyScheduler:
         while changed:
             changed = False
             for task in state.actual_graph.tasks:
-                decision, missing = resolve_outputs(state, task)
+                decision, missing = resolve_outputs(
+                    state, task, committed_results=self._bound_results, require_current=True
+                )
                 if task.status is TaskStatus.WAITING and decision == "BLOCKED":
                     transition_task(task, TaskStatus.BLOCKED)
                     task.missing_output_dependencies = missing
@@ -269,7 +304,8 @@ class DependencyScheduler:
     ) -> None:
         task_id = task.task_id
         last_error: Exception | None = None
-        for retry_number in range(1, self._retry_policy.max_attempts + 1):
+        bound = state.binding_ref is not None
+        for retry_number in range(1, (1 if bound else self._retry_policy.max_attempts) + 1):
             # A concurrent graph mutation atomically swaps the Actual Graph copy.
             # Resolve by identity on every state update so in-flight tasks never
             # complete against a detached pre-mutation Task instance.
@@ -281,6 +317,15 @@ class DependencyScheduler:
             )
             if attempt < 1:
                 raise ValueError("attempt identity must be positive")
+            admission = None
+            if bound:
+                if self._admission_repository is None or self._execution_owner is None:
+                    raise BindingDenied("STATE_REFRESH_REQUIRED", "Scheduler admission port")
+                requirements = executor.admission_requirements(task)
+                admission = await self._admission_repository.reserve_node(
+                    self._execution_owner, task, requirements
+                )
+                await self._admission_repository.dispatch_node(admission)
             if task.status is not TaskStatus.READY:
                 transition_task(task, TaskStatus.READY)
             transition_task(task, TaskStatus.RUNNING)
@@ -294,7 +339,7 @@ class DependencyScheduler:
             try:
                 result = await executor.execute(
                     task.model_copy(deep=True),
-                    TaskExecutionContext(run_id=state.run_id, attempt=attempt),
+                    TaskExecutionContext(run_id=state.run_id, attempt=attempt, admission=admission),
                 )
             except asyncio.CancelledError:
                 state.task(task_id).status = TaskStatus.CANCELLED
@@ -317,8 +362,10 @@ class DependencyScheduler:
                         },
                     )
                     raise
-                if retry_number < self._retry_policy.max_attempts and getattr(
-                    error, "retryable", True
+                if (
+                    not bound
+                    and retry_number < self._retry_policy.max_attempts
+                    and getattr(error, "retryable", True)
                 ):
                     transition_task(task, TaskStatus.READY)
                     await self._event_store.emit(
@@ -351,11 +398,26 @@ class DependencyScheduler:
                 )
                 raise
             else:
+                if bound:
+                    current = await self._admission_repository.validate_execution(
+                        self._execution_owner
+                    )
+                    committed = current.node_binding.current_results.get(task_id)
+                    if result.result_binding_id is None or committed != result.result_binding_id:
+                        raise BindingDenied("STATE_REFRESH_REQUIRED", "uncommitted result")
+                    state.binding_ref = current.node_binding.reference()
+                    state.actual_graph.tasks = [
+                        current.runtime.task(task_id).model_copy(deep=True)
+                        if item.task_id == task_id
+                        else item
+                        for item in state.actual_graph.tasks
+                    ]
                 task = state.task(task_id)
                 task.result_ref = result.result_ref
                 task.progress = 1.0
                 state.completed_output_refs[task.task_id] = list(result.output_refs)
-                transition_task(task, TaskStatus.COMPLETED)
+                if task.status is not TaskStatus.COMPLETED:
+                    transition_task(task, TaskStatus.COMPLETED)
                 await self._event_store.emit(
                     run_id=state.run_id,
                     task_id=task.task_id,

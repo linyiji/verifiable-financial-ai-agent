@@ -51,7 +51,7 @@ async def memory_case():
         await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine = create_async_engine(raw, connect_args={"server_settings": {"search_path": schema}})
     sessions = async_sessionmaker(engine, expire_on_commit=False)
-    store = SQLExecutionLedger(sessions)
+    store = SQLExecutionLedger(sessions, composition="ISOLATED_OFFLINE")
     repo = ResearchMemoryRepository(sessions)
     rows = (
         ResearchObjectRow,

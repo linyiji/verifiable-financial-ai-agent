@@ -764,6 +764,9 @@ class PostgreSQLPhase4ProductBackend:
 
                 planned = bind_incremental_plan(planned, scheme.incremental_context)
             runtime = RuntimeState.create(run_id=run_id, planned_graph=planned)
+            from src.application.research_outputs import configure_output_contracts
+
+            configure_output_contracts(runtime)
             admitted_at = datetime.now(UTC)
             run = ResearchRun(
                 run_id=run_id,
@@ -1714,7 +1717,7 @@ class PostgreSQLPhase4ProductBackend:
     @observe("event.projection_publication", event="event")
     async def _publish_runtime_event(self, event: RuntimeEvent) -> None:
         async with measured_lock(self._projection_lock, "event.projection_lock_wait"):
-            aggregate = await self.service.repository.get_run(event.run_id)
+            aggregate = await self.service.repository.get_run_fresh(event.run_id)
             if aggregate is None:
                 return
             if event.type is RuntimeEventType.RUN_FAILED:
@@ -1734,6 +1737,9 @@ class PostgreSQLPhase4ProductBackend:
             await repository.save_run_with_projection_watermark(
                 aggregate,
                 projection_sequence=event.sequence,
+                expected_binding_ref=aggregate.node_binding.reference()
+                if aggregate.node_binding
+                else None,
             )
 
     async def _published_projection_sequence(self, run_id: str) -> int:
@@ -1746,6 +1752,8 @@ class PostgreSQLPhase4ProductBackend:
         return int(sequence or 0)
 
     async def _scheduler_loop(self) -> None:
+        from src.domain.node_binding import BindingDenied
+
         while True:
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=0.25)
@@ -1757,7 +1765,7 @@ class PostgreSQLPhase4ProductBackend:
             for admission_id in due:
                 try:
                     await self._start_admitted_run(admission_id)
-                except ProductError:
+                except (ProductError, BindingDenied):
                     continue
 
     async def _start_admitted_run(self, admission_id: str) -> None:
@@ -1776,9 +1784,18 @@ class PostgreSQLPhase4ProductBackend:
                 leased, expected_lease_generation=current.lease_generation
             ):
                 return
-            row = await uow.session.get(ResearchRunAggregateRow, leased.run_id)
+            row = await uow.session.get(
+                ResearchRunAggregateRow, leased.run_id, with_for_update=True
+            )
             if row is None:
                 raise self._not_found("research_run", leased.run_id)
+            from src.domain.node_binding import SCHEMA, BindingDenied
+
+            if leased.node_binding_schema != SCHEMA:
+                raise BindingDenied("STATE_REFRESH_REQUIRED", "admission binding marker")
+            owner = await SQLAlchemyApplicationRepository.claim_execution_in_session(
+                uow.session, row
+            )
             run = ResearchRun.model_validate(row.payload["run"]).model_copy(
                 update={
                     "status": RunStatus.RUNNING,
@@ -1794,6 +1811,9 @@ class PostgreSQLPhase4ProductBackend:
                 sequence=row.projection_sequence + 1,
                 payload={"actual_graph_version": row.payload["runtime"]["actual_graph"]["version"]},
             )
+            row.payload = {**row.payload, "run": run.model_dump(mode="json")}
+            row.status = run.status.value
+            row.updated_at = run.updated_at
             await uow.projection.publish(
                 ProjectionWriteSet(
                     fence=ProjectionCommitFence(
@@ -1816,24 +1836,35 @@ class PostgreSQLPhase4ProductBackend:
             ):
                 raise product_error("CONFLICT", "scheduler fence was lost")
             await uow.commit()
-        execution = asyncio.create_task(self._execute_started_run(leased.run_id))
+        execution = asyncio.create_task(
+            self._execute_started_run(leased.run_id, execution_owner=owner)
+        )
         self._executions.add(execution)
         execution.add_done_callback(self._executions.discard)
 
     @observe("scheduler.execution_delivery", run="run_id")
-    async def _execute_started_run(self, run_id: str) -> None:
+    async def _execute_started_run(self, run_id: str, *, execution_owner=None) -> None:
         try:
-            await self.service.execute_run(run_id, emit_run_started=False)
+            current = await self.service.execute_run(
+                run_id, emit_run_started=False, execution_owner=execution_owner
+            )
         except asyncio.CancelledError:
             raise
         except Exception:
-            # The application service has already persisted the FAILED aggregate and
-            # terminal event. The Product worker still has to publish that snapshot.
-            pass
-        await self._publish_latest_projection_watermark(run_id)
+            # A rejected caller must not refresh itself into a current writer.
+            # Service-owned failed-event projection already follows its committed fact.
+            return
+        await self._publish_latest_projection_watermark(
+            run_id,
+            expected_binding_ref=current.node_binding.reference()
+            if current and current.node_binding
+            else None,
+        )
 
     @observe("event.terminal_publication", run="run_id")
-    async def _publish_latest_projection_watermark(self, run_id: str) -> None:
+    async def _publish_latest_projection_watermark(
+        self, run_id: str, *, expected_binding_ref=None
+    ) -> None:
         """Publish the completed aggregate and its durable event tail as one snapshot fence."""
 
         async with self.sessions() as session, session.begin():
@@ -1844,6 +1875,19 @@ class PostgreSQLPhase4ProductBackend:
             )
             if row is None:
                 raise self._not_found("research_run", run_id)
+            if row.payload.get("node_binding") is not None or row.payload.get(
+                "node_binding_required"
+            ):
+                from src.domain.node_binding import BindingDenied
+
+                current = SQLAlchemyApplicationRepository._to_aggregate(row.payload)
+                if (
+                    expected_binding_ref is None
+                    or expected_binding_ref != current.node_binding.reference()
+                ):
+                    raise BindingDenied(
+                        "STALE_WRITE_REJECTED", "terminal watermark generation/revision"
+                    )
             latest_sequence = await session.scalar(
                 select(func.max(RuntimeEventRow.sequence)).where(RuntimeEventRow.run_id == run_id)
             )

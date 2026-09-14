@@ -172,6 +172,9 @@ class SQLAlchemyRunRecordRepository:
         entity: BaseModel,
     ) -> None:
         async with self._sessions() as session:
+            from src.application.persistence import reject_bound_write
+
+            await reject_bound_write(session, run_id)
             row = await session.get(row_type, entity_id)
             payload = entity.model_dump(mode="json")
             if row is None:

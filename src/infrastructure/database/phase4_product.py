@@ -10,7 +10,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.application.models import CompletedRunArtifacts
 from src.application.persistence import (
     CalculationRecordRow,
     CanonicalExecutionRecordRow,
@@ -27,6 +26,7 @@ from src.application.persistence import (
 from src.domain.calculation import CalculationRecord
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
 from src.domain.enums import RunStatus
+from src.domain.node_binding import BindingDenied
 from src.domain.released_research_result import ReleasedResearchResult
 from src.domain.research_goal import ResearchGoal
 from src.domain.research_object import ResearchObject
@@ -132,6 +132,10 @@ class Phase4ActualGraphRow(Base):
 
 def _scheduler_row(value: RunSchedulerAdmissionV1) -> dict[str, Any]:
     payload = value.model_dump(mode="json")
+    if value.state.value == "PENDING" and value.delivery_attempt_count == 0:
+        # A newly serialized admission requires the new initial root. Existing
+        # stored admissions are read without adding execution authority.
+        payload["node_binding_schema"] = "wp02-node-binding/v1"
     return {
         "admission_id": value.admission_id,
         "run_id": value.run_id,
@@ -226,28 +230,27 @@ def _decode_outcome(row: Phase4IdempotencyOutcomeRow) -> DurableMutationOutcomeV
 
 
 def _aggregate_payload(commit: AtomicConfirmCommit) -> dict[str, Any]:
-    actual_graph = commit.actual_graph or ActualRuntimeGraph(
-        graph_id=f"ACTUAL-{commit.run.run_id}",
-        run_id=commit.run.run_id,
-        tasks=list(commit.tasks),
+    from src.application.models import RunAggregate
+    from src.application.persistence import SQLAlchemyApplicationRepository
+    from src.application.repository import initialize_binding
+    from src.runtime.state import RuntimeState
+
+    actual = commit.actual_graph or ActualRuntimeGraph(
+        graph_id=f"ACTUAL-{commit.run.run_id}", run_id=commit.run.run_id, tasks=list(commit.tasks)
     )
-    return {
-        "run": commit.run.model_dump(mode="json"),
-        "goal": commit.goal.model_dump(mode="json"),
-        "scheme": commit.scheme.model_dump(mode="json"),
-        "runtime": {
-            "planned_graph": commit.planned_graph.model_dump(mode="json"),
-            "actual_graph": actual_graph.model_dump(mode="json"),
-            "run_status": commit.run.status.value,
-            "completed_output_refs": {},
-            "evidence_refs": [],
-            "workspace_refs": [],
-            "review_state": {},
-            "proof_state": {},
-            "cost": 0.0,
-        },
-        "artifacts": CompletedRunArtifacts().model_dump(mode="json"),
-    }
+    aggregate = RunAggregate(
+        run=commit.run,
+        goal=commit.goal,
+        scheme=commit.scheme,
+        runtime=RuntimeState(
+            run_id=commit.run.run_id,
+            planned_graph=commit.planned_graph,
+            actual_graph=actual,
+            run_status=commit.run.status,
+        ),
+    )
+    initialize_binding(aggregate)
+    return SQLAlchemyApplicationRepository._payload(aggregate)
 
 
 class SQLAlchemyPhase4AdmissionRepository:
@@ -371,6 +374,15 @@ class SQLAlchemyPhase4AdmissionRepository:
                 consumed_run_id=draft.consumed_run_id,
             )
         )
+        scheme_row = await self.session.get(
+            ResearchSchemeSnapshotRow, commit.scheme.scheme_id, with_for_update=True
+        )
+        if (
+            scheme_row is not None
+            and scheme_row.confirmed
+            and scheme_row.payload != commit.scheme.model_dump(mode="json")
+        ):
+            raise BindingDenied("IDENTITY_MISMATCH", "confirmed Scheme is immutable")
         await self.session.execute(
             update(ResearchSchemeSnapshotRow)
             .where(ResearchSchemeSnapshotRow.scheme_id == commit.scheme.scheme_id)
@@ -483,6 +495,20 @@ class SQLAlchemyPhase4ProjectionRepository:
         )
         if root is None:
             raise product_error("NOT_FOUND", "research run was not found")
+        if root.payload.get("node_binding") is not None or root.payload.get(
+            "node_binding_required"
+        ):
+            from src.application.persistence import SQLAlchemyApplicationRepository
+            from src.application.repository import validate_root
+
+            validate_root(SQLAlchemyApplicationRepository._to_aggregate(root.payload))
+            if write_set.tasks:
+                raise BindingDenied("STALE_WRITE_REJECTED", "bound task projection excluded")
+            if (
+                write_set.run is not None
+                and write_set.run.model_dump(mode="json") != root.payload["run"]
+            ):
+                raise BindingDenied("STALE_WRITE_REJECTED", "bound lifecycle must commit at owner")
         if root.projection_revision != write_set.fence.expected_revision:
             raise product_error(
                 "CONFLICT",
@@ -515,6 +541,9 @@ class SQLAlchemyPhase4ProjectionRepository:
             root.updated_at = write_set.run.updated_at
             root.payload = {**root.payload, "run": write_set.run.model_dump(mode="json")}
         for task in write_set.tasks:
+            existing = await self.session.get(TaskRow, task.task_id)
+            if existing is not None and existing.run_id != write_set.fence.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "projection foreign task")
             await self.session.execute(
                 pg_insert(TaskRow)
                 .values(
@@ -649,9 +678,7 @@ class PostgreSQLProductUnitOfWork:
 
     async def __aenter__(self) -> Self:
         self.session = self._sessions()
-        await self.session.connection(
-            execution_options={"isolation_level": self._isolation_level}
-        )
+        await self.session.connection(execution_options={"isolation_level": self._isolation_level})
         if self.session.get_bind().dialect.name != "postgresql":
             await self.session.rollback()
             await self.session.close()

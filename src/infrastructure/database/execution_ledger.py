@@ -4,6 +4,7 @@ Separate table, no mutation or automatic adoption of historical application rows
 The UPDATE lock works for PostgreSQL and serialized SQLite isolated tests.
 """
 
+from contextvars import ContextVar
 from copy import deepcopy
 from math import isfinite
 
@@ -21,6 +22,8 @@ from src.domain.execution_contract import (
 )
 from src.infrastructure.database.base import Base
 
+_guarded_mutation = ContextVar("vefin_ledger_guarded_mutation", default=None)
+
 
 class ExecutionIntentRow(Base):
     __tablename__ = "execution_intents_v1"
@@ -30,8 +33,64 @@ class ExecutionIntentRow(Base):
 
 
 class SQLExecutionLedger:
-    def __init__(self, sessions):
+    def __init__(self, sessions, *, composition="APPLICATION"):
+        if composition not in {"APPLICATION", "ISOLATED_OFFLINE"}:
+            raise ContractDenied("EXECUTION_COMPOSITION_UNKNOWN")
+        if composition == "ISOLATED_OFFLINE":
+            import tempfile
+            from pathlib import Path
+
+            engine = sessions.kw.get("bind")
+            url = getattr(engine, "url", None)
+            sqlite_test = (
+                url is not None
+                and url.get_backend_name() == "sqlite"
+                and (
+                    url.database in (None, "", ":memory:")
+                    or Path(url.database)
+                    .resolve()
+                    .is_relative_to(Path(tempfile.gettempdir()).resolve())
+                )
+            )
+            postgres_test = url is not None and (url.host, url.database, url.username) == (
+                "postgres",
+                "recovery_v1_isolated",
+                "recovery_test",
+            )
+            if not (sqlite_test or postgres_test):
+                raise ContractDenied("ISOLATED_OFFLINE_DATABASE_REQUIRED")
         self.sessions = sessions
+        self.composition = composition
+
+    async def _guard_run(self, session, run_id):
+        if run_id is None:
+            return
+        from sqlalchemy import inspect
+
+        from src.application.persistence import ResearchRunAggregateRow
+
+        if self.composition == "ISOLATED_OFFLINE":
+            connection = await session.connection()
+            exists = await connection.run_sync(
+                lambda conn: inspect(conn).has_table("research_runs")
+            )
+            if not exists:
+                return
+        row = await session.scalar(
+            select(ResearchRunAggregateRow)
+            .where(ResearchRunAggregateRow.run_id == run_id)
+            .with_for_update()
+        )
+        if row is None:
+            if self.composition == "ISOLATED_OFFLINE":
+                return
+            raise ContractDenied("STATE_REFRESH_REQUIRED")
+        if row.payload.get("node_binding") is not None or row.payload.get("node_binding_required"):
+            raise ContractDenied("V1_BOUND_PATH_DISABLED")
+
+    async def guard_run_entry(self, run_id):
+        async with self.sessions() as session, session.begin():
+            await self._guard_run(session, run_id)
 
     async def create_intent(self, intent_id, budget: ExecutionBudget, deadline):
         if deadline <= 0 or not isfinite(deadline):
@@ -68,8 +127,16 @@ class SQLExecutionLedger:
                 raise ContractDenied("LEGACY_NOT_RESUMABLE")
             return deepcopy(row.payload)
 
-    async def _mutate(self, intent_id, function):
+    async def _mutate(self, intent_id, function, *, proposed_run_id=None):
         async with self.sessions() as session, session.begin():
+            candidate = await session.get(ExecutionIntentRow, intent_id)
+            if candidate is None:
+                raise ContractDenied("LEGACY_NOT_RESUMABLE")
+            expected_run = candidate.payload.get("run_id")
+            for run_id in sorted(
+                {item for item in (expected_run, proposed_run_id) if item is not None}
+            ):
+                await self._guard_run(session, run_id)
             locked = await session.execute(
                 update(ExecutionIntentRow)
                 .where(ExecutionIntentRow.intent_id == intent_id)
@@ -83,9 +150,17 @@ class SQLExecutionLedger:
                 .execution_options(populate_existing=True)
             )
             value = deepcopy(row.payload)
-            result = function(value)
-            row.payload = value
-            return deepcopy(result)
+            if value.get("run_id") != expected_run:
+                raise ContractDenied("RUN_BINDING_CONFLICT")
+            scope = _guarded_mutation.set((id(self), id(value), expected_run))
+            try:
+                result = function(value)
+                if value.get("run_id") not in (expected_run, proposed_run_id):
+                    raise ContractDenied("RUN_BINDING_CONFLICT")
+                row.payload = value
+                return deepcopy(result)
+            finally:
+                _guarded_mutation.reset(scope)
 
     async def admit_run(self, intent_id, run_id):
         def change(doc):
@@ -93,7 +168,7 @@ class SQLExecutionLedger:
                 raise ContractDenied("RUN_BINDING_CONFLICT")
             doc["run_id"] = run_id
 
-        await self._mutate(intent_id, change)
+        await self._mutate(intent_id, change, proposed_run_id=run_id)
 
     async def freeze(self, contract: ExecutionContract):
         # Revalidate nested mutable values; store a detached JSON copy.
@@ -143,7 +218,7 @@ class SQLExecutionLedger:
             doc["operations"][contract.operation_id] = op
             return op
 
-        return await self._mutate(contract.intent_id, change)
+        return await self._mutate(contract.intent_id, change, proposed_run_id=contract.run_id)
 
     @staticmethod
     def _op(doc, operation_id):
@@ -155,6 +230,12 @@ class SQLExecutionLedger:
         return op
 
     def _fence(self, doc, token, now):
+        if self.composition != "ISOLATED_OFFLINE" and _guarded_mutation.get() != (
+            id(self),
+            id(doc),
+            doc.get("run_id"),
+        ):
+            raise ContractDenied("STATE_REFRESH_REQUIRED")
         if not isfinite(now):
             raise ContractDenied("INVALID_CLOCK")
         op = self._op(doc, token.operation_id)

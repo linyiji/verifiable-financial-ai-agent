@@ -62,7 +62,9 @@ async def fixture():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(ExecutionIntentRow.__table__.create)
-    store = SQLExecutionLedger(async_sessionmaker(engine, expire_on_commit=False))
+    store = SQLExecutionLedger(
+        async_sessionmaker(engine, expire_on_commit=False), composition="ISOLATED_OFFLINE"
+    )
     c = contract()
     await store.create_intent("I", c.budget, 500)
     await store.admit_run("I", "R")

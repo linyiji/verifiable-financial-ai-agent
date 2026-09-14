@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import inspect
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from src.agentic.decisions import ResearchLeadReplanDecider
 from src.agentic.registry import RegistrationNotFoundError
 from src.agentic.research_agent import ResearchAgentInvocationError
 from src.agentic.specialist import SpecialistExecutionContext, SpecialistResult
+from src.application.repository import node_invocation
 from src.application.research_outputs import (
     availability_map,
     configure_output_contracts,
@@ -28,6 +33,15 @@ from src.domain.enums import (
     TaskOrigin,
 )
 from src.domain.financial_branch import BranchRequirement
+from src.domain.node_binding import (
+    BindingDenied,
+    GraphIdentity,
+    OutputRecord,
+    calculation_core,
+    canonical_value,
+    digest,
+    task_semantics,
+)
 from src.domain.output_dependency import LocalOutputFailure, OutputStatus
 from src.domain.runtime_event import RuntimeEventType
 from src.domain.task import ReplanRequest, Task
@@ -47,7 +61,14 @@ class IntegratedTaskExecutor:
     def __init__(self, service: object, aggregate: object) -> None:
         self._service = service
         self._aggregate = aggregate
+        before = GraphIdentity.of(aggregate.runtime.actual_graph)
         configure_output_contracts(aggregate.runtime)
+        if aggregate.node_binding is not None and (
+            before != GraphIdentity.of(aggregate.runtime.actual_graph)
+            or before != aggregate.node_binding.frozen_graph
+        ):
+            raise BindingDenied("STATE_REFRESH_REQUIRED", "initial normalization drift")
+        self._bound_steps = []
         self._has_specialized_collection_tasks = (
             sum(
                 task.task_type == "evidence_collection"
@@ -65,12 +86,26 @@ class IntegratedTaskExecutor:
         task: Task,
         context: TaskExecutionContext,
     ) -> TaskExecutionResult:
-        del context
+        if self._aggregate.node_binding is None:
+            raise BindingDenied("STATE_REFRESH_REQUIRED", "legacy Executor is read only")
+        if (
+            context.admission is None
+            or context.run_id != task.run_id
+            or context.admission.task_id != task.task_id
+        ):
+            raise BindingDenied("STATE_REFRESH_REQUIRED", "missing admission context")
+        fresh = await self._service.repository.enter_node_execution(context.admission)
+        invocation = IntegratedTaskExecutor(self._service, fresh)
+        if (
+            invocation.admission_requirements(task)
+            != context.admission.authorized_input_requirements
+        ):
+            raise BindingDenied("IDENTITY_MISMATCH", "authorized work changed")
+        token = node_invocation.set(context.admission)
         self._active += 1
         self.parallel_peak = max(self.parallel_peak, self._active)
         try:
-            # Yield once so independent READY tasks demonstrably overlap in the runtime.
-            await asyncio.sleep(0)
+            # Preserve the existing instrumentation owners around the scoped invocation.
             async with self._service.instrumentation.task(
                 run_id=task.run_id,
                 task_id=task.task_id,
@@ -86,11 +121,15 @@ class IntegratedTaskExecutor:
                         task_id=task.task_id,
                         attributes={"skill": task.skill_id},
                     ):
-                        return await self._execute_instrumented_task(task)
+                        result = await invocation._execute_instrumented_task(task)
+                        return await invocation._commit_bound_result(task, result)
         finally:
             self._active -= 1
+            node_invocation.reset(token)
 
     async def _execute_instrumented_task(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
+        self.admission_requirements(task) if self._aggregate.node_binding is not None else None
         await self._service.event_store.emit(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -173,10 +212,21 @@ class IntegratedTaskExecutor:
                 event_type=intent.type,
                 payload=intent.payload,
             )
+        if self._aggregate.node_binding is not None:
+            # Acquired originals exist now; no future evidence was invented in Stage A.
+            await self._bind_step(
+                task,
+                "acquisition",
+                {
+                    "task": canonical_value(self._aggregate.runtime.task(task.task_id)),
+                    "availability": availability_map(self._aggregate, task),
+                },
+            )
         handler = self._handler_for(task)
         return await handler(task)
 
     async def _execute_evidence_collection(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
         routed = self._aggregate.runtime.task(task.task_id)
         acquisition = routed.evidence_acquisition_status
         status = acquisition.value.lower() if acquisition is not None else "not_requested"
@@ -186,6 +236,7 @@ class IntegratedTaskExecutor:
         )
 
     async def _execute_fundamental_analysis(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
         input_ids = set(self._aggregate.runtime.task(task.task_id).task_input_evidence_ids)
         evidence = [
             record
@@ -380,7 +431,31 @@ class IntegratedTaskExecutor:
         inputs: dict[str, object],
         context: CapabilityContext,
     ):
+        self._require_bound_invocation(task)
         calculation_id = str(inputs.get("calculation_id", ""))
+        version = None
+        if self._aggregate.node_binding is not None:
+            capability = self._service.capability_registry.get(capability_id)
+            version = capability.definition.version
+            source = inspect.getsourcefile(type(capability))
+            if not source:
+                raise BindingDenied("CAPABILITY_UNAVAILABLE", capability_id)
+            from src.domain.financial_validation import REVENUE_GROWTH_FORMULA_ID
+
+            await self._bind_step(
+                task,
+                "calculation:" + calculation_id,
+                {
+                    "inputs": canonical_value(inputs),
+                    "context": canonical_value(context),
+                    "capability": canonical_value(capability.definition),
+                    "formula_id": REVENUE_GROWTH_FORMULA_ID
+                    if capability_id == "revenue_growth"
+                    else "ebitda_margin_v1",
+                    "implementation_hash": "sha256:"
+                    + hashlib.sha256(await asyncio.to_thread(Path(source).read_bytes)).hexdigest(),
+                },
+            )
         async with self._service.instrumentation.calculation(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -398,9 +473,11 @@ class IntegratedTaskExecutor:
                     capability_id,
                     inputs,
                     context,
+                    version=version,
                 )
 
     async def _commit_calculation(self, task, calculation):
+        self._require_bound_invocation(task)
         if calculation.run_id != task.run_id or calculation.task_id != task.task_id:
             raise ValueError("calculation commit returned cross-task lineage")
         existing = next(
@@ -415,6 +492,30 @@ class IntegratedTaskExecutor:
             if existing != calculation:
                 raise ValueError("calculation identity is immutable")
             return
+        if self._aggregate.node_binding is not None:
+            bound = next(
+                (
+                    item
+                    for item in self._bound_steps
+                    if item.step_id == "calculation:" + calculation.calculation_id
+                ),
+                None,
+            )
+            if bound is None:
+                raise BindingDenied("MISSING_INPUT", "calculation step binding")
+            expected = bound.payload_snapshot
+            if (
+                calculation.capability_id,
+                calculation.capability_version,
+                calculation.formula_id,
+                calculation.implementation_hash or calculation.code_hash,
+            ) != (
+                expected["capability"]["capability_id"],
+                expected["capability"]["version"],
+                expected["formula_id"],
+                expected["implementation_hash"],
+            ):
+                raise BindingDenied("IDENTITY_MISMATCH", "calculation implementation")
         await self._service.repository.save_calculation(calculation)
         self._aggregate.artifacts.calculations.append(calculation)
         # Technical MACD has multiple records; branch-level publication owns that
@@ -437,6 +538,7 @@ class IntegratedTaskExecutor:
         )
 
     async def _execute_risk_analysis(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
         agent_result = await self._invoke_research_agent(
             task,
             supporting_output={"status": "agent_assessment_required"},
@@ -448,12 +550,19 @@ class IntegratedTaskExecutor:
                 supporting_output={},
             )
             if agent_result.replan_request is not None:
+                if self._aggregate.node_binding is not None:
+                    raise BindingDenied("UNSUPPORTED_NEW_BOUND_HANDLER", "dynamic follow-up")
                 await self._apply_risk_replan(task, agent_result.replan_request)
             return execution
 
         return await self._execute_deterministic_risk_analysis(task)
 
     async def _execute_deterministic_risk_analysis(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
+        if self._aggregate.node_binding is not None:
+            raise BindingDenied(
+                "UNSUPPORTED_NEW_BOUND_HANDLER", "deterministic risk requires dynamic follow-up"
+            )
         synthesis = next(
             candidate
             for candidate in self._aggregate.runtime.actual_graph.tasks
@@ -555,7 +664,9 @@ class IntegratedTaskExecutor:
                     "decided_by": approved.decided_by,
                 },
             )
-            await GraphMutationService(self._service.event_store).insert_node_between(
+            await GraphMutationService(
+                self._service.event_store, repository=self._service.repository
+            ).insert_node_between(
                 state=self._aggregate.runtime,
                 request=approved,
                 task=child,
@@ -565,6 +676,7 @@ class IntegratedTaskExecutor:
             )
 
     async def _execute_peer_analysis(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
         routed_task = self._aggregate.runtime.task(task.task_id)
         input_ids = set(routed_task.task_input_evidence_ids) | set(
             routed_task.task_output_evidence_ids
@@ -622,6 +734,7 @@ class IntegratedTaskExecutor:
         return TaskExecutionResult(result_ref=f"peer-selection://{task.task_id}")
 
     async def _execute_risk_follow_up(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
         supporting_output = {
             "finding": (
                 "No additional quantified risk can be supported by the available accepted evidence."
@@ -642,6 +755,7 @@ class IntegratedTaskExecutor:
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
     async def _execute_research_news_analysis(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
         """Represent unavailable licensed news as a limitation, never as a success claim."""
 
         accepted = [
@@ -734,6 +848,7 @@ class IntegratedTaskExecutor:
         )
 
     async def _execute_valuation_analysis(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
         supporting_output = {
             "status": "not_quantified_in_current_scope",
             "quantified_valuation_available": False,
@@ -752,6 +867,7 @@ class IntegratedTaskExecutor:
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
     async def _execute_report_synthesis(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
         supporting_output = {
             "status": "best_effort_not_released",
             **availability_map(self._aggregate, task),
@@ -892,8 +1008,24 @@ class IntegratedTaskExecutor:
                 accepted_evidence_ids=current_task.task_input_evidence_ids,
                 inputs=build_risk_follow_up_context(self._aggregate, task, normalized_evidence),
             )
+        if self._aggregate.node_binding is not None:
+            source = inspect.getsourcefile(type(agent))
+            if not source:
+                raise BindingDenied("IDENTITY_MISMATCH", "Agent transform source")
+            await self._bind_step(
+                task,
+                "agent-context",
+                {
+                    "context": canonical_value(context),
+                    "transform_source_hash": "sha256:"
+                    + hashlib.sha256(await asyncio.to_thread(Path(source).read_bytes)).hexdigest(),
+                },
+            )
+            context_digest = digest(context)
         try:
             result = await agent.execute(context)
+            if self._aggregate.node_binding is not None and digest(context) != context_digest:
+                raise BindingDenied("IDENTITY_MISMATCH", "Agent changed input material")
         except ResearchAgentInvocationError as exc:
             self._append_agent_output(exc.record, task)
             publish_output(
@@ -1030,12 +1162,192 @@ class IntegratedTaskExecutor:
         ]
 
     async def _execute_generic(self, task: Task) -> TaskExecutionResult:
+        self._require_bound_invocation(task)
         input_ids = list(self._aggregate.runtime.task(task.task_id).task_input_evidence_ids)
         self._aggregate.artifacts.task_outputs[task.task_id] = {
             "status": "completed",
             "accepted_evidence_ids": input_ids,
         }
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
+
+    def _require_bound_invocation(self, task):
+        if self._aggregate.node_binding is None:
+            raise BindingDenied("STATE_REFRESH_REQUIRED", "legacy Executor is read only")
+        if self._aggregate.node_binding is not None:
+            admission = node_invocation.get()
+            if (
+                admission is None
+                or admission.run_id != task.run_id
+                or admission.task_id != task.task_id
+            ):
+                raise BindingDenied("STATE_REFRESH_REQUIRED", "Executor invocation")
+
+    def admission_requirements(self, task):
+        handler = self._handler_for(task).__name__
+        supported = {
+            "_execute_evidence_collection",
+            "_execute_fundamental_analysis",
+            "_execute_peer_analysis",
+            "_execute_risk_analysis",
+            "_execute_risk_follow_up",
+            "_execute_research_news_analysis",
+            "_execute_valuation_analysis",
+            "_execute_report_synthesis",
+        }
+        if handler not in supported or (
+            handler == "_execute_fundamental_analysis" and self._service.calculation_extensions
+        ):
+            raise BindingDenied("UNSUPPORTED_NEW_BOUND_HANDLER", handler)
+        if task.task_type == "risk_follow_up" and (
+            not task.parent_task_id or task.parent_task_id not in self._upstream_task_ids(task)
+        ):
+            raise BindingDenied("IDENTITY_MISMATCH", "initial follow-up parent")
+        from src.application.evidence_routing import EvidenceTaskRouter
+
+        scope = EvidenceTaskRouter._acquisition_scope(EvidenceTaskRouter, task)
+        return {
+            "task": task_semantics(task),
+            "scheme": canonical_value(self._aggregate.scheme),
+            "resolved_handler": handler,
+            "acquisition_scope": scope.value if scope else None,
+            "acquire": self._should_acquire_evidence(task),
+        }
+
+    def _bound_materials(self, task):
+        current = self._aggregate.runtime.task(task.task_id)
+        ids = set(current.task_input_evidence_ids) | set(current.task_output_evidence_ids)
+        records = []
+        admission = node_invocation.get()
+        allowed = {
+            record.record_id
+            for dep in admission.dependency_result_bindings
+            for record in self._aggregate.node_binding.results[dep.result_id].output_records
+        }
+        allowed.update(record.record_id for record in admission.preexisting_inputs)
+        for evidence in self._aggregate.artifacts.evidence:
+            if evidence.evidence_id not in ids:
+                continue
+            if (
+                evidence.run_id != task.run_id
+                or evidence.object_id != self._aggregate.run.research_object_id
+            ):
+                raise BindingDenied("IDENTITY_MISMATCH", evidence.evidence_id)
+            if evidence.producer_task_id != task.task_id and evidence.evidence_id not in allowed:
+                raise BindingDenied("STALE_INPUT", evidence.evidence_id)
+            path = Path(evidence.raw_artifact_ref)
+            if not path.is_absolute() or not path.is_file():
+                raise BindingDenied("MISSING_INPUT", "raw evidence bytes")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != evidence.snapshot_hash.removeprefix(
+                "sha256:"
+            ):
+                raise BindingDenied("IDENTITY_MISMATCH", evidence.evidence_id)
+            payload = canonical_value(evidence)
+            records.append(
+                OutputRecord(
+                    kind="EVIDENCE",
+                    record_id=evidence.evidence_id,
+                    content_digest=digest(payload, "evidence-record/v1"),
+                    location=evidence.raw_artifact_ref,
+                    record_schema="evidence-record/v1",
+                    payload_snapshot=payload,
+                )
+            )
+        if ids != {record.record_id for record in records}:
+            raise BindingDenied("MISSING_INPUT", "exact evidence set")
+        for calc in self._aggregate.artifacts.calculations:
+            if calc.task_id == task.task_id or calc.calculation_id in allowed:
+                payload = calculation_core(calc)
+                records.append(
+                    OutputRecord(
+                        kind="CALCULATION_CORE",
+                        record_id=calc.calculation_id,
+                        content_digest=digest(payload, "calculation-core/v1"),
+                        location="calculation_records/" + calc.calculation_id,
+                        record_schema="calculation-core/v1",
+                        payload_snapshot=payload,
+                    )
+                )
+        for output in self._aggregate.artifacts.agent_outputs:
+            if output.task_id == task.task_id or output.output_id in allowed:
+                agent = self._service.agent_registry.get(output.actor)
+                store = getattr(agent, "_artifacts", None)
+                if store is None:
+                    raise BindingDenied("MISSING_INPUT", "Agent artifact resolver")
+                store.read_verified(output)
+                payload = canonical_value(output)
+                records.append(
+                    OutputRecord(
+                        kind="AGENT_OUTPUT",
+                        record_id=output.output_id,
+                        content_digest=digest(payload, "agent-output-record/v1"),
+                        location=str(
+                            store.root
+                            / "blobs"
+                            / "sha256"
+                            / output.artifact_sha256.removeprefix("sha256:")
+                        ),
+                        record_schema="agent-output-record/v1",
+                        payload_snapshot=payload,
+                    )
+                )
+        return tuple(records)
+
+    async def _bind_step(self, task, step, payload):
+        self._require_bound_invocation(task)
+        material = self._bound_materials(task)
+        for record in material:
+            if record.kind == "EVIDENCE":
+                persisted = await self._service.evidence_repository.get(record.record_id)
+                if persisted is None or canonical_value(persisted) != record.payload_snapshot:
+                    raise BindingDenied("MISSING_INPUT", "evidence original not committed")
+        binding = await self._service.repository.bind_resolved_inputs(
+            node_invocation.get(), step_id=step, materials=material, payload=payload
+        )
+        self._bound_steps.append(binding)
+
+    async def _commit_bound_result(self, task, result):
+        admission = node_invocation.get()
+        materials = self._bound_materials(task)
+        by_id = {item.record_id: item for item in materials}
+        for step in self._bound_steps:
+            for material in step.material_refs:
+                if material.record_id not in by_id or by_id[material.record_id] != material:
+                    raise BindingDenied("IDENTITY_MISMATCH", "resolved material changed")
+        current = self._aggregate.runtime.task(task.task_id)
+        payload = {
+            "task_output": canonical_value(
+                self._aggregate.artifacts.task_outputs.get(task.task_id, {})
+            ),
+            "output_outcomes": canonical_value(current.output_outcomes),
+            "coverage": canonical_value(current.evidence_source_coverage),
+            "admission_binding_id": admission.admission_binding_id,
+            "resolved_inputs": [item.resolved_input_binding_id for item in self._bound_steps],
+        }
+        snapshot_digest = digest(payload, "task-output-snapshot/v1")
+        snapshot = OutputRecord(
+            kind="TASK_OUTPUT_SNAPSHOT",
+            record_id=snapshot_digest,
+            content_digest=snapshot_digest,
+            location="node_binding.results",
+            record_schema="task-output-snapshot/v1",
+            payload_snapshot=payload,
+        )
+        current.result_ref = result.result_ref
+        committed = await self._service.repository.commit_node_result(
+            admission,
+            task=current,
+            artifacts=self._aggregate.artifacts,
+            output_records=(*materials, snapshot),
+            resolved_ids=[item.resolved_input_binding_id for item in self._bound_steps],
+            observed={
+                "agent_outputs": [
+                    canonical_value(item)
+                    for item in self._aggregate.artifacts.agent_outputs
+                    if item.task_id == task.task_id
+                ]
+            },
+        )
+        return replace(result, result_binding_id=committed.result_id)
 
     def _handler_for(self, task: Task):
         by_skill = {

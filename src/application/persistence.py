@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from contextlib import asynccontextmanager
+from copy import deepcopy
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     JSON,
@@ -17,12 +19,25 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.application.models import CompletedRunArtifacts, ResearchRunDraft, RunAggregate
-from src.application.repository import InMemoryApplicationRepository
+from src.application.repository import (
+    InMemoryApplicationRepository,
+    compare_whole,
+    initialize_binding,
+    node_invocation,
+    validate_root,
+)
 from src.data.persistence import SQLAlchemyEvidenceRepository
 from src.data.repository import EvidenceRepository
 from src.domain.calculation import CalculationRecord
 from src.domain.enums import RunStatus
 from src.domain.evidence import EvidenceRecord
+from src.domain.node_binding import (
+    SCHEMA,
+    BindingDenied,
+    BindingReference,
+    NodeBindingState,
+    calculation_core,
+)
 from src.domain.research_goal import ResearchGoal
 from src.domain.research_object import ResearchObject
 from src.domain.research_run import ResearchRun
@@ -153,13 +168,15 @@ class SessionFactoryEvidenceRepository(EvidenceRepository):
 
     async def add(self, entity: EvidenceRecord) -> EvidenceRecord:
         async with self._sessions() as session:
+            await guard_record_write(session, entity.run_id, entity.producer_task_id)
             added = await SQLAlchemyEvidenceRepository(session).add(entity)
             await session.commit()
             return added
 
     async def get(self, evidence_id: str) -> EvidenceRecord | None:
         async with self._sessions() as session:
-            return await SQLAlchemyEvidenceRepository(session).get(evidence_id)
+            entity = await SQLAlchemyEvidenceRepository(session).get(evidence_id)
+            return _sqlite_evidence_read(session, entity)
 
     async def list(self) -> list[EvidenceRecord]:
         async with self._sessions() as session:
@@ -254,25 +271,119 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         return draft
 
     async def add_run(self, aggregate: RunAggregate) -> None:
-        await super().add_run(aggregate)
+        initialize_binding(aggregate)
         async with self._sessions() as session:
             session.add(self._row(aggregate))
+            session.info["wp02_root_write"] = (
+                aggregate.run.run_id,
+                aggregate.node_binding.binding_revision,
+            )
             await self._persist_children(session, aggregate)
             await session.commit()
 
+    @asynccontextmanager
+    async def _binding_transaction(self, run_id):
+        async with self._sessions() as session, session.begin():
+            row = await session.scalar(
+                select(ResearchRunAggregateRow)
+                .where(ResearchRunAggregateRow.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BindingDenied("STATE_REFRESH_REQUIRED", run_id)
+            aggregate = self._to_aggregate(row.payload)
+            validate_root(aggregate)
+            for result in aggregate.node_binding.results.values():
+                await self.verify_materials(result.output_records, run_id=run_id, session=session)
+            yield aggregate
+            aggregate.node_binding.binding_revision += 1
+            aggregate.runtime.binding_ref = aggregate.node_binding.reference()
+            row.payload = self._payload(aggregate)
+            row.status = aggregate.run.status.value
+            session.info["wp02_root_write"] = (run_id, aggregate.node_binding.binding_revision)
+            await self._persist_children(session, aggregate)
+        self._runs.pop(run_id, None)
+
+    async def verify_materials(self, materials, *, run_id, session=None):
+        await super().verify_materials(materials, run_id=run_id)
+        if session is None:
+            async with self._sessions() as reader:
+                return await self.verify_materials(materials, run_id=run_id, session=reader)
+        from src.data.persistence import EvidenceRecordRow, _to_domain
+        from src.domain.node_binding import canonical_value
+
+        for material in materials:
+            if material.kind == "EVIDENCE":
+                row = await session.get(EvidenceRecordRow, material.record_id)
+                if (
+                    row is None
+                    or canonical_value(_sqlite_evidence_read(session, _to_domain(row)))
+                    != material.payload_snapshot
+                ):
+                    raise BindingDenied("IDENTITY_MISMATCH", material.record_id)
+            elif material.kind == "CALCULATION_CORE":
+                row = await session.get(CalculationRecordRow, material.record_id)
+                if (
+                    row is None
+                    or calculation_core(CalculationRecord.model_validate(row.payload))
+                    != material.payload_snapshot
+                ):
+                    raise BindingDenied("IDENTITY_MISMATCH", material.record_id)
+
+    @classmethod
+    async def claim_execution_in_session(cls, session, row):
+        from uuid import uuid4
+
+        from src.domain.node_binding import OwnerToken
+
+        row = await session.scalar(
+            select(ResearchRunAggregateRow)
+            .where(ResearchRunAggregateRow.run_id == row.run_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if row is None:
+            raise BindingDenied("STATE_REFRESH_REQUIRED", "claim root missing")
+        aggregate = cls._to_aggregate(row.payload)
+        root = validate_root(aggregate)
+        if root.lifecycle != "UNCLAIMED" or root.owner_generation != 0 or root.owner_id:
+            raise BindingDenied("OWNER_ALREADY_CLAIMED", aggregate.run.run_id)
+        root.lifecycle, root.owner_generation, root.owner_id = "ACTIVE", 1, str(uuid4())
+        root.binding_revision += 1
+        aggregate.runtime.binding_ref = root.reference()
+        row.payload = cls._payload(aggregate)
+        return OwnerToken(run_id=aggregate.run.run_id, owner_generation=1, owner_id=root.owner_id)
+
+    async def get_run_fresh(self, run_id):
+        async with self._sessions() as session:
+            row = await session.get(ResearchRunAggregateRow, run_id)
+            return self._to_aggregate(row.payload) if row is not None else None
+
     @observe("persistence.run_save", aggregate="aggregate")
     async def save_run(self, aggregate: RunAggregate) -> None:
-        await super().save_run(aggregate)
-        async with self._sessions() as session:
-            row = await session.get(ResearchRunAggregateRow, aggregate.run.run_id)
+        async with self._sessions() as session, session.begin():
+            row = await session.scalar(
+                select(ResearchRunAggregateRow)
+                .where(ResearchRunAggregateRow.run_id == aggregate.run.run_id)
+                .with_for_update()
+            )
             if row is None:
-                session.add(self._row(aggregate))
-            else:
-                row.status = aggregate.run.status.value
-                row.payload = self._payload(aggregate)
-                row.updated_at = aggregate.run.completed_at or aggregate.run.created_at
+                raise BindingDenied("STATE_REFRESH_REQUIRED", aggregate.run.run_id)
+            current = self._to_aggregate(row.payload)
+            if current.node_binding is not None or aggregate.node_binding is not None:
+                compare_whole(current, aggregate)
+                aggregate = deepcopy(aggregate)
+                aggregate.node_binding.binding_revision += 1
+                aggregate.runtime.binding_ref = aggregate.node_binding.reference()
+                session.info["wp02_root_write"] = (
+                    aggregate.run.run_id,
+                    aggregate.node_binding.binding_revision,
+                )
+            row.status = aggregate.run.status.value
+            row.payload = self._payload(aggregate)
+            row.updated_at = aggregate.run.completed_at or aggregate.run.created_at
             await self._persist_children(session, aggregate)
-            await session.commit()
+        self._runs.pop(aggregate.run.run_id, None)
 
     @observe("persistence.watermark_transaction", aggregate="aggregate")
     async def save_run_with_projection_watermark(
@@ -280,12 +391,12 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         aggregate: RunAggregate,
         *,
         projection_sequence: int,
+        expected_binding_ref=None,
     ) -> None:
         """Persist one aggregate and its public event watermark atomically."""
 
         if projection_sequence < 1:
             raise ValueError("projection_sequence must be positive")
-        await super().save_run(aggregate)
         async with self._sessions() as session, session.begin():
             row = await session.scalar(
                 select(ResearchRunAggregateRow)
@@ -296,6 +407,19 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 raise KeyError(aggregate.run.run_id)
             if projection_sequence <= row.projection_sequence:
                 return
+            if row.payload.get("node_binding") is not None or row.payload.get(
+                "node_binding_required"
+            ):
+                # Events can advance a watermark, never replace committed business facts.
+                authoritative = self._to_aggregate(row.payload)
+                if (
+                    expected_binding_ref is None
+                    or authoritative.node_binding.reference() != expected_binding_ref
+                ):
+                    raise BindingDenied("STALE_WRITE_REJECTED", "watermark binding reference")
+                row.projection_sequence = projection_sequence
+                row.projection_revision += 1
+                return
             row.status = aggregate.run.status.value
             row.payload = self._payload(aggregate)
             row.updated_at = aggregate.run.completed_at or aggregate.run.created_at
@@ -305,14 +429,20 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
 
     async def save_calculation(self, calculation: CalculationRecord) -> None:
         async with self._sessions() as session:
+            await guard_record_write(session, calculation.run_id, calculation.task_id)
             payload = calculation.model_dump(mode="json")
             row = await session.get(CalculationRecordRow, calculation.calculation_id)
             if row is not None:
                 if row.payload != payload:
                     raise ValueError("calculation identity is immutable")
                 return
-            session.add(CalculationRecordRow(calculation_id=calculation.calculation_id,
-                run_id=calculation.run_id, payload=payload))
+            session.add(
+                CalculationRecordRow(
+                    calculation_id=calculation.calculation_id,
+                    run_id=calculation.run_id,
+                    payload=payload,
+                )
+            )
             await session.commit()
 
     async def save_runtime_events(self, events: list[RuntimeEvent]) -> None:
@@ -362,6 +492,10 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
     @observe("persistence.aggregate_serialization", aggregate="aggregate")
     def _payload(cls, aggregate: RunAggregate) -> dict:
         return {
+            "node_binding_required": SCHEMA if aggregate.node_binding else None,
+            "node_binding": aggregate.node_binding.model_dump(mode="json")
+            if aggregate.node_binding
+            else None,
             "run": aggregate.run.model_dump(mode="json"),
             "goal": aggregate.goal.model_dump(mode="json"),
             "scheme": aggregate.scheme.model_dump(mode="json"),
@@ -375,12 +509,17 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 "review_state": aggregate.runtime.review_state,
                 "proof_state": aggregate.runtime.proof_state,
                 "cost": aggregate.runtime.cost,
+                "binding_ref": aggregate.runtime.binding_ref.model_dump(mode="json")
+                if aggregate.runtime.binding_ref
+                else None,
             },
             "artifacts": aggregate.artifacts.model_dump(mode="json"),
         }
 
     @classmethod
     def _row(cls, aggregate: RunAggregate) -> ResearchRunAggregateRow:
+        # Initial insertion only. Historical deserialization never calls this helper.
+        initialize_binding(aggregate)
         return ResearchRunAggregateRow(
             run_id=aggregate.run.run_id,
             object_id=aggregate.run.research_object_id,
@@ -392,6 +531,82 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
     @staticmethod
     @observe("persistence.children", aggregate="aggregate")
     async def _persist_children(session: AsyncSession, aggregate: RunAggregate) -> None:
+        incoming = [
+            *aggregate.runtime.actual_graph.tasks,
+            *aggregate.artifacts.calculations,
+            *aggregate.artifacts.corrections,
+            *aggregate.artifacts.replans,
+            *aggregate.artifacts.report_artifacts,
+        ]
+        incoming.extend(
+            item
+            for item in (
+                aggregate.artifacts.review,
+                aggregate.artifacts.canonical_record,
+                aggregate.artifacts.released_result,
+            )
+            if item is not None
+        )
+        if any(item.run_id != aggregate.run.run_id for item in incoming):
+            raise BindingDenied("IDENTITY_MISMATCH", "foreign child entity")
+        if aggregate.node_binding is not None:
+            expected = (aggregate.run.run_id, aggregate.node_binding.binding_revision)
+            if session.info.get("wp02_root_write") != expected:
+                raise BindingDenied("STALE_WRITE_REJECTED", "unguarded child writer")
+            validate_root(aggregate)
+        else:
+            root_row = await session.get(ResearchRunAggregateRow, aggregate.run.run_id)
+            if root_row is not None and (
+                root_row.payload.get("node_binding")
+                or root_row.payload.get("node_binding_required")
+            ):
+                raise BindingDenied("STALE_WRITE_REJECTED", "legacy child writer")
+        if aggregate.node_binding is not None:
+            locks = [
+                (ResearchSchemeSnapshotRow, aggregate.scheme.scheme_id),
+                (TaskDependencyRow, aggregate.run.run_id),
+            ]
+            locks.extend((TaskRow, task.task_id) for task in aggregate.runtime.actual_graph.tasks)
+            for model, records, identity in (
+                (CalculationRecordRow, aggregate.artifacts.calculations, "calculation_id"),
+                (CorrectionRecordRow, aggregate.artifacts.corrections, "correction_id"),
+                (ReplanRecordRow, aggregate.artifacts.replans, "replan_id"),
+                (
+                    ReviewRecordRow,
+                    [aggregate.artifacts.review] if aggregate.artifacts.review else [],
+                    "review_id",
+                ),
+                (
+                    CanonicalExecutionRecordRow,
+                    [aggregate.artifacts.canonical_record]
+                    if aggregate.artifacts.canonical_record
+                    else [],
+                    "record_id",
+                ),
+                (
+                    ReleasedResearchResultRow,
+                    [aggregate.artifacts.released_result]
+                    if aggregate.artifacts.released_result
+                    else [],
+                    "result_id",
+                ),
+                (ReportArtifactRecordRow, aggregate.artifacts.report_artifacts, "artifact_id"),
+            ):
+                locks.extend((model, getattr(record, identity)) for record in records)
+            for model, identity in sorted(locks, key=lambda pair: (pair[0].__tablename__, pair[1])):
+                if model is TaskDependencyRow:
+                    await session.scalars(
+                        select(TaskDependencyRow)
+                        .where(TaskDependencyRow.run_id == identity)
+                        .order_by(
+                            TaskDependencyRow.graph_kind,
+                            TaskDependencyRow.task_id,
+                            TaskDependencyRow.position,
+                        )
+                        .with_for_update()
+                    )
+                else:
+                    await session.get(model, identity, with_for_update=True)
         scheme = await session.get(ResearchSchemeSnapshotRow, aggregate.scheme.scheme_id)
         if scheme is None:
             session.add(
@@ -403,18 +618,26 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 )
             )
         else:
-            if aggregate.run.reexecution_of_run_id:
-                if (
-                    not scheme.confirmed
-                    or scheme.payload != aggregate.scheme.model_dump(mode="json")
+            if (
+                scheme.confirmed
+                or aggregate.run.reexecution_of_run_id
+                or (
+                    aggregate.node_binding is not None
+                    and aggregate.node_binding.binding_revision != 0
+                )
+            ):
+                if not scheme.confirmed or scheme.payload != aggregate.scheme.model_dump(
+                    mode="json"
                 ):
                     raise ValueError("re-execution cannot rewrite confirmed Scheme")
             else:
                 scheme.confirmed = aggregate.scheme.confirmed_at is not None
                 scheme.payload = aggregate.scheme.model_dump(mode="json")
 
-        for task in aggregate.runtime.actual_graph.tasks:
+        for task in sorted(aggregate.runtime.actual_graph.tasks, key=lambda item: item.task_id):
             row = await session.get(TaskRow, task.task_id)
+            if row is not None and row.run_id != aggregate.run.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "existing foreign child")
             if row is None:
                 session.add(
                     TaskRow(
@@ -448,6 +671,8 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
 
         for calculation in aggregate.artifacts.calculations:
             row = await session.get(CalculationRecordRow, calculation.calculation_id)
+            if row is not None and row.run_id != aggregate.run.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "existing foreign child")
             if row is None:
                 session.add(
                     CalculationRecordRow(
@@ -457,10 +682,16 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                     )
                 )
             else:
+                if aggregate.node_binding is not None and calculation_core(
+                    CalculationRecord.model_validate(row.payload)
+                ) != calculation_core(calculation):
+                    raise BindingDenied("IDENTITY_MISMATCH", calculation.calculation_id)
                 row.payload = calculation.model_dump(mode="json")
 
         for correction in aggregate.artifacts.corrections:
             row = await session.get(CorrectionRecordRow, correction.correction_id)
+            if row is not None and row.run_id != aggregate.run.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "existing foreign child")
             if row is None:
                 session.add(
                     CorrectionRecordRow(
@@ -474,6 +705,8 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
 
         for replan in aggregate.artifacts.replans:
             row = await session.get(ReplanRecordRow, replan.replan_id)
+            if row is not None and row.run_id != aggregate.run.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "existing foreign child")
             if row is None:
                 session.add(
                     ReplanRecordRow(
@@ -488,6 +721,8 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         review = aggregate.artifacts.review
         if review is not None:
             row = await session.get(ReviewRecordRow, review.review_id)
+            if row is not None and row.run_id != aggregate.run.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "existing foreign child")
             if row is None:
                 session.add(
                     ReviewRecordRow(
@@ -502,6 +737,8 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         canonical = aggregate.artifacts.canonical_record
         if canonical is not None:
             row = await session.get(CanonicalExecutionRecordRow, canonical.record_id)
+            if row is not None and row.run_id != aggregate.run.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "existing foreign child")
             if row is None:
                 session.add(
                     CanonicalExecutionRecordRow(
@@ -516,6 +753,8 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         result = aggregate.artifacts.released_result
         if result is not None:
             row = await session.get(ReleasedResearchResultRow, result.result_id)
+            if row is not None and row.run_id != aggregate.run.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "existing foreign child")
             if row is None:
                 session.add(
                     ReleasedResearchResultRow(
@@ -529,6 +768,8 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
 
         for artifact in aggregate.artifacts.report_artifacts:
             row = await session.get(ReportArtifactRecordRow, artifact.artifact_id)
+            if row is not None and row.run_id != aggregate.run.run_id:
+                raise BindingDenied("IDENTITY_MISMATCH", "existing foreign child")
             payload = artifact.model_dump(mode="json")
             if row is None:
                 session.add(
@@ -544,6 +785,19 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
     @staticmethod
     def _to_aggregate(payload: dict) -> RunAggregate:
         runtime_payload = payload["runtime"]
+        binding = payload.get("node_binding")
+        if binding is not None and payload.get("node_binding_required") != SCHEMA:
+            raise BindingDenied("STATE_REFRESH_REQUIRED", "binding marker mismatch")
+        if payload.get("node_binding_required") and (
+            payload["node_binding_required"] != SCHEMA or binding is None
+        ):
+            raise BindingDenied("STATE_REFRESH_REQUIRED", "missing/unknown required binding")
+        if binding is not None and binding.get("schema_version") != SCHEMA:
+            raise BindingDenied("STATE_REFRESH_REQUIRED", "missing binding schema")
+        try:
+            binding = NodeBindingState.model_validate(binding) if binding is not None else None
+        except ValueError as exc:
+            raise BindingDenied("STATE_REFRESH_REQUIRED", "invalid node binding schema") from exc
         runtime = RuntimeState(
             run_id=payload["run"]["run_id"],
             planned_graph=PlannedTaskGraph.model_validate(runtime_payload["planned_graph"]),
@@ -555,12 +809,16 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             review_state=runtime_payload["review_state"],
             proof_state=runtime_payload["proof_state"],
             cost=runtime_payload["cost"],
+            binding_ref=BindingReference.model_validate(runtime_payload["binding_ref"])
+            if runtime_payload.get("binding_ref")
+            else None,
         )
         aggregate = RunAggregate(
             run=ResearchRun.model_validate(payload["run"]),
             goal=ResearchGoal.model_validate(payload["goal"]),
             scheme=ResearchSchemeSnapshot.model_validate(payload["scheme"]),
             runtime=runtime,
+            node_binding=binding,
         )
         aggregate.artifacts = CompletedRunArtifacts.model_validate(payload["artifacts"])
         task_by_id = {task.task_id: task for task in aggregate.runtime.actual_graph.tasks}
@@ -598,3 +856,45 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             ):
                 raise ValueError("persisted report artifact crossed its released Run identity")
         return aggregate
+
+
+async def guard_record_write(session, run_id, task_id):
+    """Root before record, in the caller's transaction. No provider await here."""
+    row = await session.scalar(
+        select(ResearchRunAggregateRow)
+        .where(ResearchRunAggregateRow.run_id == run_id)
+        .with_for_update()
+    )
+    if row is None:
+        raise BindingDenied("STATE_REFRESH_REQUIRED", run_id)
+    if row.payload.get("node_binding") is None and not row.payload.get("node_binding_required"):
+        return
+    aggregate = SQLAlchemyApplicationRepository._to_aggregate(row.payload)
+    admission = node_invocation.get()
+    if admission is None or admission.run_id != run_id or admission.task_id != task_id:
+        raise BindingDenied("STALE_WRITE_REJECTED", "missing invocation")
+    # Validation methods are stateless and share the same authoritative snapshot.
+    InMemoryApplicationRepository._validate_admission(aggregate, admission, require_started=True)
+
+
+async def reject_bound_write(session, run_id):
+    row = await session.scalar(
+        select(ResearchRunAggregateRow)
+        .where(ResearchRunAggregateRow.run_id == run_id)
+        .with_for_update()
+    )
+    if row is not None and (
+        row.payload.get("node_binding") is not None or row.payload.get("node_binding_required")
+    ):
+        raise BindingDenied("POLICY_DENIED", "new-bound writer excluded")
+
+
+def _sqlite_evidence_read(session, entity):
+    # SQLite drops timezone offsets. New-bound fixture writers use UTC; PostgreSQL
+    # retains timestamptz. This adapter does not claim SQLite row-lock equivalence.
+    if entity is not None and session.bind.dialect.name == "sqlite":
+        for key in ("created_at", "retrieved_at", "observed_at", "provider_timestamp"):
+            value = getattr(entity, key)
+            if value is not None and value.tzinfo is None:
+                setattr(entity, key, value.replace(tzinfo=UTC))
+    return entity

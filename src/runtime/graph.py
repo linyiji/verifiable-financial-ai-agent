@@ -53,8 +53,9 @@ class GraphMutationService:
         }
     )
 
-    def __init__(self, event_store: RuntimeEventStore) -> None:
+    def __init__(self, event_store: RuntimeEventStore, *, repository=None) -> None:
         self._event_store = event_store
+        self._repository = repository
 
     async def add_tasks(
         self,
@@ -233,6 +234,16 @@ class GraphMutationService:
         actor: GraphMutationActor,
         operations: list[_Operation],
     ) -> ActualRuntimeGraph:
+        if self._repository is not None:
+            current = await self._repository.get_run_fresh(state.run_id)
+            if current is None or current.node_binding is not None:
+                from src.domain.node_binding import BindingDenied
+
+                raise BindingDenied("POLICY_DENIED", "fixed initial graph mutation excluded")
+        if state.binding_ref is not None:
+            from src.domain.node_binding import BindingDenied
+
+            raise BindingDenied("POLICY_DENIED", "fixed initial graph mutation excluded")
         self._validate_authority(state=state, request=request, actor=actor)
         original = state.actual_graph
         staged = original.model_copy(deep=True)

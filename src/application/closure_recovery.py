@@ -139,6 +139,12 @@ async def recover_closure(
             .where(ResearchRunAggregateRow.run_id == run_id)
             .with_for_update()
         )
+        if row is not None and (
+            row.payload.get("node_binding") is not None or row.payload.get("node_binding_required")
+        ):
+            from src.domain.node_binding import BindingDenied
+
+            raise BindingDenied("POLICY_DENIED", "new-bound closure recovery excluded")
         if (
             row is None
             or row.status != "FAILED"
@@ -218,6 +224,13 @@ async def recover_closure(
                 .where(ResearchRunAggregateRow.run_id == run_id)
                 .with_for_update()
             )
+            if row is not None and (
+                row.payload.get("node_binding") is not None
+                or row.payload.get("node_binding_required")
+            ):
+                from src.domain.node_binding import BindingDenied
+
+                raise BindingDenied("POLICY_DENIED", "new-bound closure recovery excluded")
             existing_events = list(
                 await session.scalars(
                     select(RuntimeEventRow)

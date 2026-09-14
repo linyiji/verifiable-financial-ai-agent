@@ -331,6 +331,7 @@ class RecoverableDependencyRunner:
         owner,
         executor,
     ):
+        await self.store.guard_run_entry(coordinator.run_id)
         coordinator = ExecutionContract.model_validate(coordinator.model_dump())
         tasks = {
             key: ExecutionContract.model_validate(value.model_dump())

@@ -82,7 +82,9 @@ async def ledger(tmp_path, request):
             lambda conn: ExecutionIntentRow.__table__.create(conn, checkfirst=True)
         )
         await connection.execute(delete(ExecutionIntentRow))
-    store = SQLExecutionLedger(async_sessionmaker(engine, expire_on_commit=False))
+    store = SQLExecutionLedger(
+        async_sessionmaker(engine, expire_on_commit=False), composition="ISOLATED_OFFLINE"
+    )
     yield store
     await engine.dispose()
 

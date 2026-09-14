@@ -22,7 +22,19 @@ class ExecutionContinuationGate:
         )
 
 
-def resolve_outputs(state, task):
+def resolve_outputs(state, task, *, committed_results=None, require_current=False):
+    # With a binding marker, local outputs are navigation hints only. The caller
+    # must supply the freshly resolved root pointers (admission revalidates bytes).
+    if (
+        require_current
+        and state.binding_ref is not None
+        and task.dependencies
+        and (
+            committed_results is None
+            or any(key not in committed_results for key in task.dependencies)
+        )
+    ):
+        return "WAITING", list(task.dependencies)
     predecessors = [state.task(key) for key in task.dependencies]
     if task.output_requirements is None:
         missing = [item.task_id for item in predecessors if item.status is not TaskStatus.COMPLETED]

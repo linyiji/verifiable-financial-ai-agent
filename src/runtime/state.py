@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.domain.enums import RunStatus, TaskStatus
+from src.domain.node_binding import BindingReference
 from src.domain.task import ActualRuntimeGraph, PlannedTaskGraph, Task
 
 
@@ -29,6 +30,7 @@ class RuntimeState:
     review_state: dict[str, Any] = field(default_factory=dict)
     proof_state: dict[str, Any] = field(default_factory=dict)
     cost: float = 0.0
+    binding_ref: BindingReference | None = None
 
     @classmethod
     def create(

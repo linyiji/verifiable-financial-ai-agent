@@ -36,7 +36,12 @@ from src.application.extensions import (
     TaskCalculationExtension,
 )
 from src.application.models import ResearchRunDraft, RunAggregate
-from src.application.repository import ApplicationRepository, InMemoryApplicationRepository
+from src.application.repository import (
+    ApplicationRepository,
+    InMemoryApplicationRepository,
+    initialize_binding,
+    validate_root,
+)
 from src.application.research_outputs import availability_map
 from src.assurance import DeterministicReviewer, IndependentFinancialReviewer, ReleaseGate
 from src.assurance.proof_policy import ProofPolicy
@@ -49,6 +54,7 @@ from src.data.ingestion import EvidenceIngestionResult
 from src.data.repository import EvidenceRepository, InMemoryEvidenceRepository
 from src.domain.enums import CapabilityBackend, ProofRequirement, ProofStatus, RunStatus
 from src.domain.financial_branch import BRANCH_FORMULAS, BranchStatus
+from src.domain.node_binding import BindingDenied
 from src.domain.proof import ProofRecord, ProofRequest
 from src.domain.report import ReportSourceContribution
 from src.domain.research_goal import ResearchGoal
@@ -266,6 +272,7 @@ class ResearchApplicationService:
             actual_graph_id=runtime.actual_graph.graph_id,
         )
         aggregate = RunAggregate(run=run, goal=draft.goal, scheme=scheme, runtime=runtime)
+        initialize_binding(aggregate)
         await self.repository.add_run(aggregate)
         await self.event_store.emit(
             run_id=run_id,
@@ -309,7 +316,19 @@ class ResearchApplicationService:
         run_id: str,
         *,
         emit_run_started: bool = True,
+        execution_owner=None,
     ) -> RunAggregate:
+        aggregate = await self.repository.get_run_fresh(run_id)
+        if aggregate is None:
+            raise BindingDenied("STATE_REFRESH_REQUIRED", run_id)
+        if aggregate.node_binding is not None:
+            return await self._execute_bound_run(
+                run_id, emit_run_started=emit_run_started, owner=execution_owner
+            )
+        if aggregate.run.status is not RunStatus.RELEASED:
+            raise BindingDenied(
+                "STATE_REFRESH_REQUIRED", "historical Run has no new execution authority"
+            )
         aggregate = await self._aggregate(run_id)
         if aggregate.run.status is RunStatus.RELEASED:
             return aggregate
@@ -410,6 +429,99 @@ class ResearchApplicationService:
         await self.repository.save_run(aggregate)
         await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
         return aggregate
+
+    async def _execute_bound_run(self, run_id, *, emit_run_started, owner):
+        if owner is not None and owner.run_id != run_id:
+            raise BindingDenied("IDENTITY_MISMATCH", "requested Run versus execution owner")
+        owner = owner or await self.repository.claim_execution(run_id)
+        aggregate = await self.repository.validate_execution(owner)
+        stage = "TASK_EXECUTION"
+        invocation_admitted = False
+        try:
+            executor = IntegratedTaskExecutor(self, aggregate)
+
+            def on_execution_admitted():
+                nonlocal invocation_admitted
+                invocation_admitted = True
+                # Preflight failures belong to this admitted invocation, not a duplicate.
+                for task in aggregate.runtime.actual_graph.tasks:
+                    executor.admission_requirements(task)
+
+            scheduler = DependencyScheduler(
+                event_store=self.event_store,
+                checkpoint_store=self.checkpoint_store,
+                admission_repository=self.repository,
+                execution_owner=owner,
+            )
+            await scheduler.execute(
+                state=aggregate.runtime,
+                executor=executor,
+                emit_run_started=emit_run_started,
+                on_execution_admitted=on_execution_admitted,
+            )
+            # Financial owners receive a fresh committed aggregate, never the worker copy.
+            aggregate = await self.repository.validate_execution(owner)
+            stage = "POST_SCHEDULER"
+            await self._assure_and_release(aggregate)
+            await self.repository.save_run(aggregate)
+        except BaseException as exc:
+            if not invocation_admitted:
+                # A current Run token alone does not authorize this invocation to close it.
+                raise
+            current = await self.repository.validate_execution(owner)
+            if stage == "POST_SCHEDULER":
+                # No concurrent tasks remain; preserve assurance facts from this exact revision.
+                validate_root(aggregate, owner)
+                if aggregate.node_binding.binding_revision != current.node_binding.binding_revision:
+                    raise BindingDenied("STALE_WRITE_REJECTED", "terminal revision") from exc
+                current = aggregate
+            leaves = [exc]
+            binding_failures = []
+            while leaves:
+                item = leaves.pop()
+                if isinstance(item, BaseExceptionGroup):
+                    leaves.extend(reversed(item.exceptions))
+                elif isinstance(item, BindingDenied):
+                    binding_failures.append({"code": item.code, "subject": item.subject})
+            policy_blocked = isinstance(exc, ApplicationError) and exc.code in {
+                "REVIEW_BLOCKED",
+                "RELEASE_GATE_BLOCKED",
+                "INCOMPLETE_RESEARCH_NOT_RELEASED",
+                "REQUIRED_RESEARCH_OUTPUT_MISSING",
+                "REQUIRED_CALCULATION_UNAVAILABLE",
+            }
+            self._apply_terminal_lifecycle(
+                current, status=RunStatus.FAILED, terminal_at=datetime.now(UTC)
+            )
+            if isinstance(exc, Exception):
+                current.artifacts.closure_diagnostic = closure_diagnostic(current, exc, stage)
+                if binding_failures:
+                    current.artifacts.closure_diagnostic.update(
+                        code=binding_failures[0]["code"], binding_failures=binding_failures
+                    )
+            await self.repository.save_run(current)
+            await self.repository.close_execution(owner, unknown=not policy_blocked)
+            await self.event_store.emit(
+                run_id=run_id,
+                event_type=RuntimeEventType.RUN_FAILED,
+                payload={
+                    "status": "FAILED",
+                    "failure_stage": stage,
+                    "failure_code": binding_failures[0]["code"]
+                    if binding_failures
+                    else getattr(exc, "code", "RESULT_UNKNOWN"),
+                    "binding_failures": binding_failures,
+                },
+            )
+            await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
+            if policy_blocked:
+                return await self.repository.get_run_fresh(run_id)
+            raise
+        committed = await self.repository.close_execution(owner)
+        if committed.run.status is RunStatus.RELEASED:
+            await self._emit_release_completion(committed)
+        await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
+        return committed
 
     async def get_object(self, object_id: str) -> ResearchObject:
         return await self._object(object_id)
@@ -955,26 +1067,28 @@ class ResearchApplicationService:
                 aggregate.artifacts.partial_research.update(
                     status="PARTIAL_RELEASED", release_status="RELEASED"
                 )
-            await self.event_store.emit(
-                run_id=run_id,
-                event_type=RuntimeEventType.RELEASE_COMPLETED,
-                payload={
-                    "canonical_record_id": record.record_id,
-                    "result_id": result.result_id,
-                },
-            )
             terminal_at = datetime.now(UTC)
             self._apply_terminal_lifecycle(
-                aggregate,
-                status=RunStatus.RELEASED,
-                terminal_at=terminal_at,
+                aggregate, status=RunStatus.RELEASED, terminal_at=terminal_at
             )
-            await self.event_store.emit(
-                run_id=run_id,
-                event_type=RuntimeEventType.RUN_COMPLETED,
-                payload={"status": RunStatus.RELEASED.value},
-                timestamp=terminal_at,
-            )
+            if aggregate.node_binding is None:
+                await self._emit_release_completion(aggregate)
+
+    async def _emit_release_completion(self, aggregate):
+        await self.event_store.emit(
+            run_id=aggregate.run.run_id,
+            event_type=RuntimeEventType.RELEASE_COMPLETED,
+            payload={
+                "canonical_record_id": aggregate.artifacts.canonical_record.record_id,
+                "result_id": aggregate.artifacts.released_result.result_id,
+            },
+        )
+        await self.event_store.emit(
+            run_id=aggregate.run.run_id,
+            event_type=RuntimeEventType.RUN_COMPLETED,
+            payload={"status": RunStatus.RELEASED.value},
+            timestamp=aggregate.run.completed_at,
+        )
 
     async def _revenue_growth_source_contribution(
         self,
