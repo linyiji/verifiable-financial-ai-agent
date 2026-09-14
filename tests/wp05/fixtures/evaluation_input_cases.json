@@ -1,0 +1,111 @@
+{
+  "schema": "wp05-prospective-fixture-spec/v1",
+  "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+  "F_READY_ONE": {
+    "mode": "final",
+    "usage": [
+      [
+        100,
+        20
+      ]
+    ],
+    "review": "SYNTHETIC_CONTEXT"
+  },
+  "F_READY_TWO": {
+    "mode": "retrieve",
+    "usage": [
+      [
+        100,
+        20
+      ],
+      [
+        80,
+        10
+      ]
+    ],
+    "review": "SYNTHETIC_CONTEXT"
+  },
+  "retained_directory": "/Users/mac/codex-observability-setup/vefin-wp03-implementation/artifacts/final-interactions",
+  "retained": {
+    "final-c46cb6c51d0c.json": "3f8f1757b949ecc01cb7ba4d79c7513a9b358ed7fb7cd4a4797d57c1418b770b",
+    "retrieve-28e2bac8c368.json": "e2c59b8e20519ebf46d2ed412398953f89684c582e39214931b17aad9b9606d3"
+  },
+  "remediation_cases": [
+    "B01_cross_run_review_missing_hash",
+    "B01_cross_run_review_missing_other_required_field",
+    "B01_plain_missing_review_control",
+    "B02_nested_reviewer_payload_leak",
+    "B02_nested_subject_refs_leak",
+    "B02_nested_release_shape_violation",
+    "B02_nested_method_shape_violation",
+    "B02_nested_dispatch_shape_violation",
+    "B02_nested_source_ref_shape_violation",
+    "B03_wrong_receipt_schema",
+    "B03_unproven_receipt_zero",
+    "B03_wrong_outcome_digest",
+    "B03_successful_R_unknown_call",
+    "B03_forbidden_fallback",
+    "B03_post_counter_conflict",
+    "B03_forbidden_retry",
+    "B03_turn_conflict",
+    "B03_pre_B_conflict",
+    "B03_post_receipt_ref_conflict",
+    "B03_post_count_conflict",
+    "B03_two_calls_without_retrieval",
+    "B03_fundamental_profile",
+    "B03_non_opt_in",
+    "B03_route_mismatch",
+    "B03_multiroute",
+    "B04_application_goal_id_conflict",
+    "B04_application_scheme_id_conflict",
+    "B04_application_research_object_id_conflict",
+    "B04_valid_control",
+    "B05_cross_run_method_observation",
+    "B05_cross_task_method_observation",
+    "B05_wrong_requirement_observation",
+    "B05_wrong_B_method_observation",
+    "B05_wrong_A_method_observation",
+    "B05_wrong_owner_observation",
+    "B05_wrong_source_manifest_observation",
+    "B05_wrong_input_identity_observation",
+    "B05_wrong_selected_source",
+    "B05_valid_method_plus_legacy_companion_control"
+  ],
+  "canonical_vector": {
+    "schema": "vefin-evaluation-input/v1",
+    "value": {
+      "ordered_B": [
+        "B2",
+        "B1"
+      ],
+      "dispatches": [
+        {
+          "call_id": "C2",
+          "tokens": 0
+        },
+        {
+          "call_id": "C1",
+          "tokens": null
+        }
+      ],
+      "label": "估值",
+      "ready": false
+    },
+    "digest": "sha256:358644351285abc553cb074af46db84d2f1ada42a492ee43a128af1cb6ffb38e"
+  },
+  "original_counterexamples": [
+    "B01_cross_run_review_missing_hash",
+    "B02_nested_reviewer_payload_leak",
+    "B02_nested_subject_refs_leak",
+    "B03_wrong_receipt_schema",
+    "B03_unproven_receipt_zero",
+    "B03_wrong_outcome_digest",
+    "B03_successful_R_unknown_call",
+    "B03_forbidden_fallback",
+    "B03_post_counter_conflict",
+    "B04_application_goal_id_conflict",
+    "B04_application_scheme_id_conflict",
+    "B04_application_research_object_id_conflict",
+    "B05_cross_run_method_observation"
+  ]
+}
