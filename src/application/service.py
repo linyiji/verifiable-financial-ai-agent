@@ -118,7 +118,11 @@ class ResearchApplicationService:
         agent_registry: AgentRegistry | None = None,
         report_publisher: ProfessionalReportPublisher | None = None,
         recovery_evidence_store=None,
+        valuation_context_enabled: bool = False,
+        research_memory_reader=None,
     ) -> None:
+        self.valuation_context_enabled = valuation_context_enabled
+        self.research_memory_reader = research_memory_reader
         self.repository = repository or InMemoryApplicationRepository()
         self.event_store = event_store or InMemoryRuntimeEventStore()
         self.checkpoint_store = checkpoint_store or InMemoryCheckpointStore()

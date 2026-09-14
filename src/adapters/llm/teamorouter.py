@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextvars import ContextVar
 from time import perf_counter
 from typing import Any, TypeVar
 
@@ -20,6 +21,8 @@ from src.adapters.llm.provider import (
 from src.infrastructure.config.settings import LLMSettings
 from src.observability.model_transport import TransportObservation
 from src.observability.performance import annotate, observe, span
+
+context_call_observer = ContextVar("context_call_observer", default=None)
 
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
@@ -274,6 +277,9 @@ class OpenAICompatiblePlannerClient:
         started: float,
     ) -> LLMStructuredResponse[StructuredModel]:
         payload = {"model": model, **request_template}
+        observer = context_call_observer.get()
+        if observer is not None:
+            await observer.prepare(self, payload)
         headers = {
             "Authorization": f"Bearer {self._settings.api_key.get_secret_value()}",
             "Content-Type": "application/json",
@@ -295,6 +301,8 @@ class OpenAICompatiblePlannerClient:
                             timeout=self._execution_policy.httpx_timeout
                         ) as client:
                             observation.bind(client, self._completion_url)
+                            if observer is not None:
+                                observer.dispatch(self, payload)
                             response = await client.post(
                                 self._completion_url,
                                 json=payload,
@@ -303,6 +311,8 @@ class OpenAICompatiblePlannerClient:
                             )
                     else:
                         observation.bind(self._client, self._completion_url)
+                        if observer is not None:
+                            observer.dispatch(self, payload)
                         response = await self._client.post(
                             self._completion_url,
                             json=payload,
@@ -310,6 +320,8 @@ class OpenAICompatiblePlannerClient:
                             timeout=self._execution_policy.httpx_timeout,
                             extensions=observation.extensions,
                         )
+                    if observer is not None:
+                        await observer.response(response)
                     observation.complete(response)
                 except BaseException as exc:
                     transport_error = exc

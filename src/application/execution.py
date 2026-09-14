@@ -853,10 +853,32 @@ class IntegratedTaskExecutor:
             "status": "not_quantified_in_current_scope",
             "quantified_valuation_available": False,
         }
-        agent_result = await self._invoke_research_agent(
-            task,
-            supporting_output=supporting_output,
-        )
+        if self._service.valuation_context_enabled:
+            from src.agentic.valuation_context import ValuationInteraction, validate_composition
+            from src.application.research_context import ContextProjection
+
+            agent = self._service.agent_registry.get(task.assigned_agent)
+            route = validate_composition(agent, task)
+            projection = ContextProjection(
+                self, task, node_invocation.get(), agent._provider.model_name, route
+            )
+            self._wp03_interaction = ValuationInteraction(agent, projection)
+            context = SpecialistExecutionContext(
+                task=task,
+                accepted_evidence_ids=[
+                    m.record_id
+                    for m in projection.materials
+                    if m.kind == "EVIDENCE" and m.payload_snapshot.get("status") == "ACCEPTED"
+                ],
+                inputs={"input_refs": [m.record_id for m in projection.materials]},
+            )
+            agent_result = await self._wp03_interaction.run(context)
+            self._append_agent_output(agent_result.agent_output, task)
+        else:
+            agent_result = await self._invoke_research_agent(
+                task, supporting_output=supporting_output
+            )
+
         if agent_result is not None:
             return self._accept_research_agent_output(
                 task,
@@ -1224,6 +1246,12 @@ class IntegratedTaskExecutor:
             for record in self._aggregate.node_binding.results[dep.result_id].output_records
         }
         allowed.update(record.record_id for record in admission.preexisting_inputs)
+        if self._service.valuation_context_enabled and task.task_type == "valuation_analysis":
+            ids.update(
+                e.evidence_id
+                for e in self._aggregate.artifacts.evidence
+                if e.evidence_id in allowed
+            )
         for evidence in self._aggregate.artifacts.evidence:
             if evidence.evidence_id not in ids:
                 continue
@@ -1304,8 +1332,12 @@ class IntegratedTaskExecutor:
             node_invocation.get(), step_id=step, materials=material, payload=payload
         )
         self._bound_steps.append(binding)
+        return binding
 
     async def _commit_bound_result(self, task, result):
+        interaction = getattr(self, "_wp03_interaction", None)
+        if interaction is not None:
+            await interaction.final_checkpoint()
         admission = node_invocation.get()
         materials = self._bound_materials(task)
         by_id = {item.record_id: item for item in materials}
@@ -1340,11 +1372,12 @@ class IntegratedTaskExecutor:
             output_records=(*materials, snapshot),
             resolved_ids=[item.resolved_input_binding_id for item in self._bound_steps],
             observed={
+                **({"wp03_context": interaction.summary()} if interaction else {}),
                 "agent_outputs": [
                     canonical_value(item)
                     for item in self._aggregate.artifacts.agent_outputs
                     if item.task_id == task.task_id
-                ]
+                ],
             },
         )
         return replace(result, result_binding_id=committed.result_id)

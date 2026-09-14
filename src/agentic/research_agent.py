@@ -47,6 +47,97 @@ class LLMResearchAgent:
         self._artifacts = artifacts
         self._recovery = recovery
 
+    async def execute_valuation_turn(self, package, response_model):
+        from src.adapters.llm.teamorouter import context_call_observer
+        from src.agentic.valuation_context import ValuationInteraction
+        from src.application.research_context import encoded
+        from src.domain.node_binding import BindingDenied
+
+        interaction = context_call_observer.get()
+        if (
+            type(interaction) is not ValuationInteraction
+            or interaction.agent is not self
+            or interaction.projector.package is not package
+        ):
+            raise BindingDenied("WP03_CONTEXT_PROTOCOL_REQUIRED", "valuation turn envelope")
+
+        return await self._provider.complete_structured(
+            messages=[
+                LLMMessage(
+                    role="system",
+                    content=(
+                        "Act only as valuation_analyst. Use exact source refs. "
+                        "Do not calculate or estimate financial values. Historical Memory "
+                        "is not current approval. Valuation is not quantified. State limitations. "
+                        "Turn 1: FINAL or one RETRIEVE. Turn 2: final standard output. "
+                        "No private reasoning. Leave retrieval request_id empty; code "
+                        "derives its identity. Choose only exact inventory subject IDs."
+                    ),
+                ),
+                LLMMessage(role="user", content=encoded(package).decode()),
+            ],
+            response_model=response_model,
+            schema_name="valuation_context_turn_v1",
+            workload_type="RESEARCH_AGENT_EXECUTION",
+        )
+
+    def retain_uncommitted_valuation_failure(self, task, receipt):
+        # Retain a FAILED artifact only. Never append it to a Run or regain admission.
+        error = LLMProviderError(
+            "WP03 execution evidence could not be committed",
+            requested_model=receipt.requested_model,
+            provider=receipt.observed_provider,
+            attempted_models=(receipt.resolved_model,)
+            if receipt.client_physical_dispatch_count
+            else (),
+        )
+        error.failure_classification = "WP03_UNCOMMITTED_DIAGNOSTIC"
+        error.actual_model = None if receipt.observed_model == "UNKNOWN" else receipt.observed_model
+        return self._artifacts.retain_failure(
+            task=task,
+            provider_name=receipt.observed_provider,
+            requested_model=receipt.requested_model,
+            error=error,
+            duration_ms=receipt.elapsed_ms,
+            input_refs=[
+                ref
+                for ref in (
+                    "UNCOMMITTED",
+                    receipt.interaction_id,
+                    receipt.call_id,
+                    receipt.context_id,
+                    receipt.pre_call_B_ref,
+                )
+                if ref
+            ],
+        )
+
+    def retain_valuation_final(self, context, response, duration_ms, context_id):
+        if not isinstance(response.output, StandardResearchAgentStructuredOutput):
+            raise ValueError("valuation final output schema")
+        record = self._artifacts.retain_success(
+            task=context.task,
+            response=response,
+            duration_ms=duration_ms,
+            input_refs=[*_input_refs(context), context_id],
+        )
+        decision = StructuredAgentDecision(
+            decision_id=f"DEC-{uuid5(NAMESPACE_URL, context.task.task_id + record.output_id)}",
+            run_id=context.task.run_id,
+            task_id=context.task.task_id,
+            decision_type="RESEARCH_OUTPUT_ACCEPTED",
+            reason_code="STRICT_STRUCTURED_OUTPUT_VALIDATED",
+            summary="Validated and retained the assigned research Agent output.",
+            evidence_ids=list(context.accepted_evidence_ids),
+            selected_skill=context.task.skill_id,
+            requires_review=True,
+        )
+        return SpecialistResult(
+            output={**response.output.model_dump(mode="json"), "agent_output_id": record.output_id},
+            decision=decision,
+            agent_output=record,
+        )
+
     async def execute(self, context: SpecialistExecutionContext) -> SpecialistResult:
         task = context.task
         if task.assigned_agent != self.agent_id:
