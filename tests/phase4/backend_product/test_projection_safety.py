@@ -202,3 +202,182 @@ def test_none_child_allowlist_never_opens_an_unreviewed_object() -> None:
             {"metadata": {"surprise": "value"}},
             allowed_keys={"metadata": None},
         )
+
+
+# Explicit library invocation is the admitted delivery seam for WP07.
+from src.phase4_product.admission import (
+    build_prepare_draft,
+    classify_request_shape_v1,
+    clarity_from_prepare_rejection_v1,
+    draft_hash_is_valid,
+)
+from src.phase4_product.contracts import ResearchBriefViewV1, ResearchTaskContractViewV1, TaskProjectionV1
+from src.phase4_product.projections import (
+    ProjectionIntegrityError,
+    derive_research_brief_v1,
+    derive_research_task_contract_v1,
+    project_goal,
+)
+from tests.phase4.backend_product.test_admission import _draft, _prepare_values, NOW
+from tests.phase4.backend_product.test_api_contract import _admission as _api_admission, _projection
+
+
+@pytest.mark.parametrize("preferences", [{"unknown": True}, {"currency": {"debug": "hidden"}}])
+def test_wp07_policy_rejection_stays_at_existing_boundary(preferences):
+    request, goal, _ = _prepare_values()
+    raw = request.model_dump(mode="json")
+    raw["preferences"] = preferences
+    assert classify_request_shape_v1(raw).state == "REQUEST_SHAPE_VALID"
+    with pytest.raises(ProjectionIntegrityError):
+        project_goal(goal.model_copy(update={"preferences": preferences}), expected_object_id="OBJ-A")
+    result = clarity_from_prepare_rejection_v1()
+    assert (result.state, result.validation_phase, result.reason_code) == (
+        "REJECTED", "EXISTING_PREPARE_POLICY", "EXISTING_POLICY_REJECTION")
+
+
+def test_wp07_brief_exact_source_fields():
+    draft = _draft()
+    view = derive_research_brief_v1(draft)
+    source = draft.model_dump(mode="json")
+    expected = {name: source[name] for name in (
+        "draft_id", "draft_version", "draft_hash", "prepare_request_hash", "object_id",
+        "scheme_snapshot", "created_at", "expires_at", "planned_graph_availability")}
+    expected.update(view_schema_version="phase4-research-brief-view/v1",
+                    goal_id=source["goal"]["goal_id"], research_goal=source["goal"]["goal_text"],
+                    as_of=source["goal"]["as_of"], preferences=source["goal"]["preferences"],
+                    clarity={"view_schema_version": "phase4-request-clarity/v1", "state": "PREPARED",
+                             "validation_phase": "PREPARE_RESULT", "reason_code": "EXISTING_DRAFT_PREPARED",
+                             "semantic_assessment": "NOT_ASSESSED"})
+    assert view.model_dump(mode="json") == expected
+    assert "incremental_context" not in expected["scheme_snapshot"]
+    assert ResearchBriefViewV1.model_validate_json(view.model_dump_json()) == view
+    assert view.model_dump_json() == derive_research_brief_v1(draft).model_dump_json()
+
+
+@pytest.mark.parametrize("updates", [
+    {"object_id": "OBJ-B"}, {"draft_hash": "sha256:" + "0" * 64},
+    {"draft_version": 2}, {"expires_at": NOW},
+])
+def test_wp07_brief_rejects_tamper_without_repair(updates):
+    draft = _draft().model_copy(update=updates)
+    before = draft.model_dump_json()
+    with pytest.raises(ProjectionIntegrityError):
+        derive_research_brief_v1(draft)
+    assert draft.model_dump_json() == before
+
+
+def test_wp07_brief_has_no_identity_or_write_effect():
+    request, goal, scheme = _prepare_values()
+    preferences = {"currency": {"currency": ["USD"]}}
+    request = request.model_copy(update={"preferences": preferences})
+    goal = goal.model_copy(update={"preferences": preferences})
+    draft = build_prepare_draft(request, draft_id="DRAFT-A", goal=goal, scheme_snapshot=scheme, created_at=NOW)
+    before = (request.model_dump_json(), draft.model_dump_json())
+    view = derive_research_brief_v1(draft)
+    assert "brief_id" not in type(view).model_fields
+    view.preferences["currency"]["currency"].append("EUR")
+    view.scheme_snapshot.assurance_requirements["test"] = ["detached"]
+    assert (request.model_dump_json(), draft.model_dump_json()) == before
+    assert draft_hash_is_valid(draft)
+
+
+def _wp07_projection_with_tasks():
+    projection = _projection()
+    tasks = tuple(TaskProjectionV1(task_id=identity, run_id="RUN-A", task_type="research",
+                                  goal="Source goal", assigned_agent="existing-agent", skill_id="existing-skill",
+                                  origin="INITIAL", status="CREATED", progress=0, attempt_count=0, created_at=NOW)
+                  for identity in ("TASK-B", "TASK-A"))
+    return projection.model_copy(update={"planned_graph": projection.planned_graph.model_copy(update={"tasks": tasks})})
+
+
+def test_wp07_task_contract_exact_admission_and_graph():
+    admission, projection = _api_admission(), _wp07_projection_with_tasks()
+    before = (admission.model_dump_json(), projection.model_dump_json())
+    view = derive_research_task_contract_v1(admission, projection)
+    assert view.model_dump(mode="json") == {
+        "view_schema_version": "phase4-research-task-contract-view/v1",
+        "admission": admission.model_dump(mode="json"), "projection_revision": 4,
+        "projection_sequence": 7, "planned_graph_version": 1,
+        "task_ids": ["TASK-B", "TASK-A"], "task_refs_status": "AVAILABLE",
+        "node_binding_refs": None, "node_binding_refs_status": "NOT_EXPOSED_BY_SOURCE"}
+    assert ResearchTaskContractViewV1.model_validate_json(view.model_dump_json()) == view
+    assert view.model_dump_json() == derive_research_task_contract_v1(admission, projection).model_dump_json()
+    assert (admission.model_dump_json(), projection.model_dump_json()) == before
+
+
+@pytest.mark.parametrize("case", ["object", "run", "goal", "scheme", "graph", "graph_run", "run_graph",
+                                  "task_run", "duplicate", "revision", "sequence", "unconfirmed"])
+def test_wp07_task_contract_rejects_foreign_projection(case):
+    admission, projection = _api_admission(), _wp07_projection_with_tasks()
+    paths = {"object": ("object", "object_id", "OBJ-B"), "run": ("run", "run_id", "RUN-B"),
+             "goal": ("goal", "goal_id", "GOAL-B"), "scheme": ("confirmed_scheme", "scheme_id", "SCHEME-B"),
+             "graph": ("planned_graph", "graph_id", "GRAPH-B"), "graph_run": ("planned_graph", "run_id", "RUN-B"),
+             "run_graph": ("run", "planned_graph_id", "GRAPH-B"),
+             "unconfirmed": ("confirmed_scheme", "confirmed_at", None)}
+    if case in paths:
+        field, child, value = paths[case]
+        projection = projection.model_copy(update={field: getattr(projection, field).model_copy(update={child: value})})
+    elif case in ("revision", "sequence"):
+        projection = projection.model_copy(update={"projection_" + case: 99})
+    else:
+        tasks = projection.planned_graph.tasks
+        tasks = (tasks[0], tasks[0]) if case == "duplicate" else (tasks[0].model_copy(update={"run_id": "RUN-B"}),)
+        projection = projection.model_copy(update={"planned_graph": projection.planned_graph.model_copy(update={"tasks": tasks})})
+    before = (admission.model_dump_json(), projection.model_dump_json())
+    with pytest.raises(ProjectionIntegrityError):
+        derive_research_task_contract_v1(admission, projection)
+    assert (admission.model_dump_json(), projection.model_dump_json()) == before
+
+
+def test_wp07_task_contract_is_detached_read_only_view():
+    admission = _api_admission()
+    before = admission.model_dump_json()
+    missing = derive_research_task_contract_v1(admission)
+    empty = derive_research_task_contract_v1(admission, _projection())
+    assert missing.task_ids is None and missing.task_refs_status == "NOT_PROVIDED"
+    assert missing.projection_revision is missing.projection_sequence is missing.planned_graph_version is None
+    assert empty.model_dump(mode="json")["task_ids"] == []
+    assert empty.task_refs_status == "AVAILABLE"
+    assert missing.node_binding_refs is empty.node_binding_refs is None
+    assert missing.node_binding_refs_status == "NOT_EXPOSED_BY_SOURCE"
+    assert missing.admission is not admission
+    assert missing.admission.auto_start is not admission.auto_start
+    assert not ({"contract_id", "store", "draft_hash"} & type(missing).model_fields.keys())
+    assert admission.model_dump_json() == before
+
+
+@pytest.mark.parametrize("preferences", [
+    {}, {"currency": "USD"}, {"depth": "deep"}, {"include_peers": True}, {"include_peers": False},
+    {"currency": ["USD", None, 7]}, {"depth": {"depth": ["deep", False]}},
+])
+def test_wp07_legacy_preferences_unchanged(preferences):
+    request, goal, scheme = _prepare_values()
+    raw = request.model_dump(mode="json")
+    raw["preferences"] = preferences
+    from src.phase4_product.contracts import PrepareResearchRunRequestV1
+    request = PrepareResearchRunRequestV1.model_validate(raw)
+    goal = project_goal(goal.model_copy(update={"preferences": preferences}), expected_object_id="OBJ-A")
+    assert goal.preferences == preferences
+    draft = build_prepare_draft(request, draft_id="DRAFT-A", goal=goal, scheme_snapshot=scheme, created_at=NOW)
+    assert derive_research_brief_v1(draft).preferences == preferences
+    raw.pop("preferences")
+    assert PrepareResearchRunRequestV1.model_validate(raw).preferences == {}
+
+
+@pytest.mark.parametrize("key", ["research_constraints", "requested_scope", "exclusions", "requested_outputs", "debug"])
+def test_wp07_nested_namespace_remains_rejected(key):
+    goal = _prepare_values()[1]
+    with pytest.raises(ProjectionIntegrityError):
+        project_goal(goal.model_copy(update={"preferences": {"currency": {key: []}}}), expected_object_id="OBJ-A")
+
+
+def test_wp07_observation_and_views_do_not_invoke_authorities(monkeypatch):
+    import src.phase4_product.admission as module
+    draft, admission, projection = _draft(), _api_admission(), _wp07_projection_with_tasks()
+    def forbidden(*args, **kwargs):
+        pytest.fail("view invoked an authoritative operation")
+    for name in ("build_prepare_draft", "build_run_admission", "validate_confirm_request", "mark_draft_consumed", "build_scheduler_admission"):
+        monkeypatch.setattr(module, name, forbidden)
+    for _ in range(2):
+        assert derive_research_brief_v1(draft).draft_hash == draft.draft_hash
+        assert derive_research_task_contract_v1(admission, projection).task_ids == ("TASK-B", "TASK-A")

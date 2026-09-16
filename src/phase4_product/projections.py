@@ -21,7 +21,9 @@ from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+
+from src.phase4_product.admission import clarity_from_prepared_draft_v1
 
 from src.assurance.independent_financial_review import (
     financial_review_input_snapshot_hash,
@@ -68,6 +70,10 @@ from src.phase4_product.contracts import (
     ReleasedObjectCoreV1,
     ReleasedResultProjectionV1,
     ReportArtifactGroupV1,
+    ResearchBriefViewV1,
+    ResearchRunDraftV1,
+    ResearchTaskContractViewV1,
+    RunAdmissionV1,
     ResearchRunCollectionV1,
     ResearchRunDetailV1,
     ResearchRunHistoryCollectionV1,
@@ -429,6 +435,72 @@ _EVENT_PAYLOAD_KEYS: dict[str, frozenset[str]] = {
 
 class ProjectionIntegrityError(ValueError):
     """Raised when exact durable Run/Object closure cannot be proven."""
+
+
+def derive_research_brief_v1(draft: ResearchRunDraftV1) -> ResearchBriefViewV1:
+    """Derive from successful prepare/replay; never renew or consume the draft."""
+
+    try:
+        clarity = clarity_from_prepared_draft_v1(draft)
+    except ValueError as exc:
+        raise ProjectionIntegrityError("invalid prepared draft") from exc
+    source = draft.model_copy(deep=True)
+    return ResearchBriefViewV1(
+        draft_id=source.draft_id, draft_version=source.draft_version,
+        draft_hash=source.draft_hash, prepare_request_hash=source.prepare_request_hash,
+        object_id=source.object_id, goal_id=source.goal.goal_id,
+        research_goal=source.goal.goal_text, as_of=source.goal.as_of,
+        preferences=source.goal.preferences, scheme_snapshot=source.scheme_snapshot,
+        created_at=source.created_at, expires_at=source.expires_at,
+        planned_graph_availability=source.planned_graph_availability, clarity=clarity,
+    )
+
+
+def derive_research_task_contract_v1(
+    admission: RunAdmissionV1, projection: AtomicRunProjectionV1 | None = None,
+) -> ResearchTaskContractViewV1:
+    """Caller supplies a successful confirm/replay admission, outside its transaction.
+
+    A DTO cannot prove commit. Optional enrichment describes the supplied later
+    snapshot only; no repository, scheduler or node owner is consulted.
+    """
+
+    try:
+        detached_admission = RunAdmissionV1.model_validate(admission.model_dump(mode="python"))
+        if projection is not None:
+            # The wire serializer deliberately omits embedded run revision fields;
+            # use field values to revalidate without losing those source facts.
+            snapshot = projection.model_copy(deep=True)
+            AtomicRunProjectionV1.model_validate({
+                name: getattr(snapshot, name) for name in type(snapshot).model_fields
+            })
+            if (
+                snapshot.object.object_id, snapshot.run.run_id, snapshot.goal.goal_id,
+                snapshot.confirmed_scheme.scheme_id, snapshot.planned_graph.graph_id,
+                snapshot.run.planned_graph_id,
+            ) != (
+                admission.object_id, admission.run_id, admission.goal_id,
+                admission.scheme_id, admission.planned_graph_id, admission.planned_graph_id,
+            ):
+                raise ProjectionIntegrityError("projection does not match admission")
+            task_ids = tuple(task.task_id for task in snapshot.planned_graph.tasks)
+            if any(task.run_id != admission.run_id for task in snapshot.planned_graph.tasks):
+                raise ProjectionIntegrityError("planned task belongs to another run")
+            if len(set(task_ids)) != len(task_ids):
+                raise ProjectionIntegrityError("duplicate planned task identities")
+        else:
+            snapshot = None
+            task_ids = None
+    except ValidationError as exc:
+        raise ProjectionIntegrityError("invalid admission or projection") from exc
+    return ResearchTaskContractViewV1(
+        admission=detached_admission,
+        projection_revision=snapshot.projection_revision if snapshot is not None else None,
+        projection_sequence=snapshot.projection_sequence if snapshot is not None else None,
+        planned_graph_version=snapshot.planned_graph.version if snapshot is not None else None,
+        task_ids=task_ids,
+        task_refs_status="AVAILABLE" if snapshot is not None else "NOT_PROVIDED",
+    )
 
 
 @dataclass(frozen=True, slots=True)

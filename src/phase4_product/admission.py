@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from src.phase4_product.contracts import (
     AvailabilityStatus,
@@ -22,6 +22,7 @@ from src.phase4_product.contracts import (
     CreateResearchObjectRequestV1,
     GoalProjectionV1,
     PrepareResearchRunRequestV1,
+    RequestClarityV1,
     ResearchRunDraftV1,
     ResponseMetaV1,
     RunAdmissionV1,
@@ -360,6 +361,59 @@ def draft_hash_is_valid(draft: ResearchRunDraftV1) -> bool:
     payload = draft.model_dump(mode="json")
     expected = draft_payload_hash(payload)
     return hmac.compare_digest(draft.draft_hash, expected)
+
+
+def classify_request_shape_v1(raw_request: object) -> RequestClarityV1:
+    """Observe the existing DTO only; do not certify later policy or meaning."""
+
+    try:
+        PrepareResearchRunRequestV1.model_validate(raw_request)
+    except ValidationError:
+        # Revalidate the remaining body with a local goal probe so model-level
+        # errors (including unpaired base references) retain rejection priority.
+        goal_required = False
+        if isinstance(raw_request, dict):
+            goal = raw_request.get("research_goal")
+            if goal is None or (isinstance(goal, str) and not goal.strip()):
+                try:
+                    PrepareResearchRunRequestV1.model_validate(
+                        {**raw_request, "research_goal": "shape validation probe"}
+                    )
+                except ValidationError:
+                    pass
+                else:
+                    goal_required = True
+        return RequestClarityV1(
+            state="NEEDS_CLARIFICATION" if goal_required else "REJECTED",
+            validation_phase="REQUEST_SCHEMA",
+            reason_code="RESEARCH_GOAL_REQUIRED" if goal_required else "INVALID_REQUEST",
+        )
+    return RequestClarityV1(
+        state="REQUEST_SHAPE_VALID", validation_phase="REQUEST_SCHEMA",
+        reason_code="REQUEST_SCHEMA_ACCEPTED",
+    )
+
+
+def clarity_from_prepare_rejection_v1() -> RequestClarityV1:
+    """Call only after an observed product-policy rejection, possibly after I/O."""
+
+    return RequestClarityV1(
+        state="REJECTED", validation_phase="EXISTING_PREPARE_POLICY",
+        reason_code="EXISTING_POLICY_REJECTION",
+    )
+
+
+def clarity_from_prepared_draft_v1(draft: ResearchRunDraftV1) -> RequestClarityV1:
+    """Observe an exact prepared snapshot, without judging current confirmability."""
+
+    # Dump/revalidate also rejects model_copy/model_construct identity bypasses.
+    checked = ResearchRunDraftV1.model_validate(draft.model_dump(mode="python"))
+    if not draft_hash_is_valid(checked):
+        raise ValueError("prepared draft hash integrity failure")
+    return RequestClarityV1(
+        state="PREPARED", validation_phase="PREPARE_RESULT",
+        reason_code="EXISTING_DRAFT_PREPARED",
+    )
 
 
 def validate_confirm_request(

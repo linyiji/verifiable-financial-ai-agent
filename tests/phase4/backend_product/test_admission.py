@@ -519,3 +519,138 @@ def test_scheduler_record_is_one_pending_durable_effect_per_run() -> None:
     assert scheduler.delivery_attempt_count == 0
     assert scheduler.next_attempt_at == admission.admitted_at
     assert scheduler.policy_version == "phase4-run-admission-delivery/v1"
+
+
+# WP07 library-only delivery: these calls are deliberately outside prepare/confirm.
+from src.phase4_product.admission import (
+    classify_request_shape_v1,
+    clarity_from_prepare_rejection_v1,
+    clarity_from_prepared_draft_v1,
+)
+from src.phase4_product.projections import (
+    derive_research_brief_v1,
+    derive_research_task_contract_v1,
+)
+
+
+def test_wp07_valid_request_preserves_prepare():
+    request, goal, scheme = _prepare_values()
+    request = request.model_copy(update={"preferences": {}})
+    goal = goal.model_copy(update={"preferences": {}})
+    before = request.model_dump_json()
+    observation = classify_request_shape_v1(request.model_dump(mode="json"))
+    assert observation.state == "REQUEST_SHAPE_VALID"
+    assert observation.reason_code == "REQUEST_SCHEMA_ACCEPTED"
+    assert observation.semantic_assessment == "NOT_ASSESSED"
+    draft = build_prepare_draft(request, draft_id="DRAFT-A", goal=goal,
+                                scheme_snapshot=scheme, created_at=NOW)
+    saved = draft.model_dump_json()
+    assert clarity_from_prepared_draft_v1(draft).state == "PREPARED"
+    assert draft.model_dump_json() == saved
+    assert request.model_dump_json() == before
+    assert draft_hash_is_valid(draft)
+    assert draft.preview_kind == "SCHEME_ONLY"
+    assert draft.status == "AWAITING_CONFIRMATION"
+    assert draft.expires_at == NOW + DRAFT_EXPIRY
+
+
+@pytest.mark.parametrize("goal,state", [
+    (None, "NEEDS_CLARIFICATION"), ("", "NEEDS_CLARIFICATION"),
+    (" \t\n", "NEEDS_CLARIFICATION"), ([], "REJECTED"), (42, "REJECTED"),
+    ("Research this", "REQUEST_SHAPE_VALID"),
+    ("  Research this  ", "REQUEST_SHAPE_VALID"),
+])
+def test_wp07_goal_clarity_is_shape_only(goal, state):
+    raw = _prepare_values()[0].model_dump(mode="json")
+    raw["research_goal"] = goal
+    result = classify_request_shape_v1(raw)
+    assert result.state == state
+    assert result.validation_phase == "REQUEST_SCHEMA"
+    assert result.semantic_assessment == "NOT_ASSESSED"
+    if state == "REQUEST_SHAPE_VALID":
+        assert PrepareResearchRunRequestV1.model_validate(raw).research_goal == goal
+    raw.pop("research_goal")
+    assert classify_request_shape_v1(raw).state == "NEEDS_CLARIFICATION"
+    for updates in ({"as_of": "bad"}, {"base_run_id": "RUN-A"}, {"extra": True}):
+        assert classify_request_shape_v1({**raw, **updates}).state == "REJECTED"
+
+
+@pytest.mark.parametrize("key", ["research_constraints", "requested_scope", "exclusions", "requested_outputs"])
+def test_wp07_no_new_request_namespace(key):
+    raw = _prepare_values()[0].model_dump(mode="json")
+    raw[key] = {}
+    with pytest.raises(ValidationError):
+        PrepareResearchRunRequestV1.model_validate(raw)
+    assert classify_request_shape_v1(raw).reason_code == "INVALID_REQUEST"
+
+
+def test_wp07_confirm_view_preserves_identity():
+    # Existing successful API adapter fixture provides result provenance. It is
+    # a stubbed boundary, not a claim of production PostgreSQL commit coverage.
+    from tests.phase4.backend_product.test_api_contract import _client, _draft as api_draft
+    client, backend = _client()
+    response = client.post("/api/research-runs", json=_confirm_request(api_draft()).model_dump(mode="json"),
+                           headers={"Idempotency-Key": "wp07-confirm"})
+    assert response.status_code == 201
+    from src.phase4_product.contracts import ConfirmRunResponseV1
+    result = ConfirmRunResponseV1.model_validate(response.json())
+    calls = list(backend.calls)
+    before = result.model_dump_json()
+    view = derive_research_task_contract_v1(result.admission)
+    assert view.admission == result.admission
+    assert view.admission.run_id == "RUN-A"
+    assert view.admission.planned_graph_id == "GRAPH-A"
+    assert view.task_ids is None
+    assert backend.calls == calls
+    assert result.model_dump_json() == before
+
+
+def test_wp07_view_replay_is_business_stable():
+    from tests.phase4.backend_product.test_api_contract import _client, _draft as api_draft
+    from src.phase4_product.contracts import ConfirmRunResponseV1, ResearchRunDraftV1
+    client, backend = _client()
+    raw = _prepare_values()[0].model_dump(mode="json")
+    first = client.post("/api/research-runs/prepare", json=raw,
+                        headers={"Idempotency-Key": "wp07-prepare"})
+    replay = client.post("/api/research-runs/prepare", json=raw,
+                         headers={"Idempotency-Key": "wp07-prepare"})
+    assert first.status_code == replay.status_code == 201
+    assert derive_research_brief_v1(ResearchRunDraftV1.model_validate(first.json())).model_dump_json() == derive_research_brief_v1(ResearchRunDraftV1.model_validate(replay.json())).model_dump_json()
+    raw = _confirm_request(api_draft()).model_dump(mode="json")
+    first = client.post("/api/research-runs", json=raw, headers={"Idempotency-Key": "wp07-confirm"})
+    backend.replayed = True
+    replay = client.post("/api/research-runs", json=raw, headers={"Idempotency-Key": "wp07-confirm"})
+    assert first.status_code == 201 and replay.status_code == 200
+    a, b = (ConfirmRunResponseV1.model_validate(r.json()) for r in (first, replay))
+    assert a.response_meta != b.response_meta
+    assert derive_research_task_contract_v1(a.admission).model_dump_json() == derive_research_task_contract_v1(b.admission).model_dump_json()
+
+
+def test_wp07_existing_wire_bytes_unchanged():
+    from tests.phase4.backend_product.test_api_contract import _projection
+    request, _, _ = _prepare_values()
+    draft, admission, projection = _draft(), _admission(), _projection()
+    response = build_confirm_response(admission, request_id="REQ-A", idempotency_replayed=False)
+    sources = (request, draft, admission, response, projection)
+    before = [s.model_dump_json() for s in sources]
+    hashes = (prepare_request_hash(request), draft.draft_hash, confirmation_request_hash(_confirm_request(draft)))
+    classify_request_shape_v1(request)
+    derive_research_brief_v1(draft)
+    derive_research_task_contract_v1(admission, projection)
+    assert [s.model_dump_json() for s in sources] == before
+    assert hashes == (prepare_request_hash(request), draft.draft_hash, confirmation_request_hash(_confirm_request(draft)))
+    assert draft_hash_is_valid(draft)
+
+
+def test_wp07_observation_and_views_do_not_invoke_authorities(monkeypatch):
+    import src.phase4_product.admission as module
+    draft = _draft()
+    raw = _prepare_values()[0].model_dump(mode="json")
+    def forbidden(*args, **kwargs):
+        pytest.fail("observation invoked an authoritative operation")
+    for name in ("build_prepare_draft", "build_run_admission", "validate_confirm_request", "mark_draft_consumed", "build_scheduler_admission"):
+        monkeypatch.setattr(module, name, forbidden)
+    for _ in range(2):
+        assert classify_request_shape_v1(raw).state == "REQUEST_SHAPE_VALID"
+        assert clarity_from_prepared_draft_v1(draft).state == "PREPARED"
+        assert clarity_from_prepare_rejection_v1().reason_code == "EXISTING_POLICY_REJECTION"

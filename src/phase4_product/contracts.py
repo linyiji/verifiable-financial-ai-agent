@@ -322,6 +322,39 @@ class ResearchRunDraftV1(FrozenWireModel):
         return self
 
 
+class RequestClarityV1(FrozenWireModel):
+    """Library-only observation; never a semantic admission decision."""
+
+    view_schema_version: Literal["phase4-request-clarity/v1"] = "phase4-request-clarity/v1"
+    state: Literal["REQUEST_SHAPE_VALID", "NEEDS_CLARIFICATION", "REJECTED", "PREPARED"]
+    validation_phase: Literal["REQUEST_SCHEMA", "EXISTING_PREPARE_POLICY", "PREPARE_RESULT"]
+    reason_code: Literal[
+        "REQUEST_SCHEMA_ACCEPTED", "RESEARCH_GOAL_REQUIRED", "INVALID_REQUEST",
+        "EXISTING_POLICY_REJECTION", "EXISTING_DRAFT_PREPARED",
+    ]
+    semantic_assessment: Literal["NOT_ASSESSED"] = "NOT_ASSESSED"
+
+
+class ResearchBriefViewV1(FrozenWireModel):
+    """Detached view of a prepared draft, without an independent identity."""
+
+    view_schema_version: Literal["phase4-research-brief-view/v1"] = "phase4-research-brief-view/v1"
+    draft_id: NonBlank
+    draft_version: int = Field(ge=1)
+    draft_hash: Sha256
+    prepare_request_hash: Sha256
+    object_id: NonBlank
+    goal_id: NonBlank
+    research_goal: NonBlank
+    as_of: date
+    preferences: SafeJsonObject
+    scheme_snapshot: SchemeProjectionV1
+    created_at: datetime
+    expires_at: datetime
+    planned_graph_availability: AvailabilityV1
+    clarity: RequestClarityV1
+
+
 class AutoStartV1(FrozenWireModel):
     required: Literal[True] = True
     admitted: Literal[True] = True
@@ -352,6 +385,20 @@ class RunAdmissionV1(FrozenWireModel):
         if self.events_ref != f"/api/research-runs/{self.run_id}/events":
             raise ValueError("events_ref must name the admitted run")
         return self
+
+
+class ResearchTaskContractViewV1(FrozenWireModel):
+    """Library-only references from an admission and optional later snapshot."""
+
+    view_schema_version: Literal["phase4-research-task-contract-view/v1"] = "phase4-research-task-contract-view/v1"
+    admission: RunAdmissionV1
+    projection_revision: int | None
+    projection_sequence: int | None
+    planned_graph_version: int | None
+    task_ids: tuple[str, ...] | None
+    task_refs_status: Literal["AVAILABLE", "NOT_PROVIDED"]
+    node_binding_refs: None = None
+    node_binding_refs_status: Literal["NOT_EXPOSED_BY_SOURCE"] = "NOT_EXPOSED_BY_SOURCE"
 
 
 class ResponseMetaV1(FrozenWireModel):
