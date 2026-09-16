@@ -259,6 +259,53 @@ def _wait_until_started(client: TestClient, run_id: str) -> None:
     raise AssertionError("scheduler did not start the admitted Run")
 
 
+@pytest.mark.parametrize("symbol", ["AMD", "MSFT"])
+def test_default_composition_preserves_bound_fundamentals(monkeypatch, symbol) -> None:
+    original_start = PostgreSQLPhase4ProductBackend.start
+
+    async def checked_start(self):
+        assert self.service.calculation_extensions == []
+        await original_start(self)
+
+    async def hold_scheduler(self):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(PostgreSQLPhase4ProductBackend, "start", checked_start)
+    monkeypatch.setattr(PostgreSQLPhase4ProductBackend, "_scheduler_loop", hold_scheduler)
+    with TestClient(create_app()) as client:
+        object_id = _create_object(client, symbol=symbol, key="composition-object")
+        draft = _prepare(client, object_id=object_id, key="composition-prepare", goal="financial")
+        response = client.post(
+            "/api/research-runs",
+            headers={
+                "X-Phase4-Contract-Version": "phase4-core/v1",
+                "Idempotency-Key": "composition-confirm",
+            },
+            json=_confirm_body(draft, object_id),
+        )
+        assert response.status_code == 201, response.text
+        run_id = response.json()["admission"]["run_id"]
+        service = client.app.state.research_service
+        aggregate = client.portal.call(service.repository.get_run_fresh, run_id)
+        before = copy.deepcopy(aggregate.__dict__)
+        executor = IntegratedTaskExecutor(service, aggregate)
+        task = next(
+            task for task in aggregate.runtime.actual_graph.tasks
+            if task.task_type == "fundamental_analysis"
+        )
+        assert aggregate.run.research_object_id == object_id
+        assert task.run_id == run_id
+        assert executor._handler_for(task).__name__ == "_execute_fundamental_analysis"
+        assert executor.admission_requirements(task)["resolved_handler"] == (
+            "_execute_fundamental_analysis"
+        )
+        assert aggregate.__dict__ == before
+        service.calculation_extensions.append(object())
+        with pytest.raises(BindingDenied, match="UNSUPPORTED_NEW_BOUND_HANDLER"):
+            executor.admission_requirements(task)
+        assert aggregate.__dict__ == before
+
+
 def _concurrent_confirm(
     client: TestClient,
     *,

@@ -35,26 +35,14 @@ from src.application.persistence import (
     SessionFactoryEvidenceRepository,
     SQLAlchemyApplicationRepository,
 )
-from src.application.phase3_financial import (
-    FreeCashFlowMarginValidationPlanProvider,
-    Phase3FinancialCapabilityExtension,
-    Phase3ResearchLeadCapabilityAuthority,
-)
 from src.application.phase3_proof import RevenueGrowthRiscZeroProofWorkflow
 from src.application.service import ResearchApplicationService
-from src.capabilities.generated.artifacts import GeneratedCapabilityArtifactStore
-from src.capabilities.generated.governed_builder import GovernedCodeBuilder
-from src.capabilities.generated.orchestration import GeneratedCapabilityOrchestrator
-from src.capabilities.generated.scoped_registry import ScopedCapabilityRegistry
-from src.capabilities.generated.validation import GeneratedCapabilityValidator
 from src.infrastructure.config.settings import get_settings
 from src.infrastructure.database.base import Base
 from src.infrastructure.database.composition import create_postgresql_persistence
-from src.infrastructure.database.generated_workflow import PostgreSQLCapabilityWorkflowRecorder
 from src.observability.performance import configure_from_environment, flush
 from src.phase4_product.api import install_phase4_error_handlers
 from src.phase4_product.postgresql_backend import PostgreSQLPhase4ProductBackend
-from src.tooling.generated_sandbox import BrokerSandboxBackend, DockerSandboxBackend
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -175,34 +163,6 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                     fail_closed=True,
                     agent_registry=research_agents,
                 ),
-            )
-            generated = GeneratedCapabilityOrchestrator(
-                registry=ScopedCapabilityRegistry(research_service.capability_registry),
-                research_lead=Phase3ResearchLeadCapabilityAuthority(),
-                code_builder=GovernedCodeBuilder(adaptive_recovery, research_service.repository),
-                validator=GeneratedCapabilityValidator(
-                    sandbox=(
-                        BrokerSandboxBackend(socket_path=settings.sandbox_broker_socket)
-                        if settings.sandbox_broker_socket
-                        else DockerSandboxBackend()
-                    ),
-                    plans=FreeCashFlowMarginValidationPlanProvider(),
-                ),
-                event_store=research_service.event_store,
-                recorder=PostgreSQLCapabilityWorkflowRecorder(
-                    persistence.phase3_record_repository,
-                    artifact_store=GeneratedCapabilityArtifactStore(
-                        Path(settings.artifact_root) / "phase4-generated",
-                        forbidden_values=forbidden_values,
-                    ),
-                ),
-                max_attempts=2,
-            )
-            research_service.add_calculation_extension(
-                Phase3FinancialCapabilityExtension(
-                    generated=generated,
-                    event_store=research_service.event_store,
-                )
             )
             await app.state.phase4_product_backend.start()
             try:
