@@ -213,6 +213,57 @@ def test_atomic_confirm_commit_binds_request_scope_key_and_write_set() -> None:
     assert not hasattr(commit, "idempotency_key")
 
 
+def test_canonical_output_contracts_agree_before_confirm_snapshots() -> None:
+    from src.agentic.planner import ResearchLeadPlanner
+    from src.application.research_outputs import canonical_output_contract_tasks
+    from src.phase4_product.postgresql_backend import PostgreSQLPhase4ProductBackend
+    from src.runtime.state import RuntimeState
+
+    commit = _confirm_commit()
+    source = ResearchLeadPlanner().plan(
+        run_id=commit.run.run_id, goal=commit.goal, scheme=commit.scheme
+    )
+    planned = source.model_copy(
+        update={
+            "graph_id": commit.planned_graph.graph_id,
+            "tasks": canonical_output_contract_tasks(source.tasks),
+        }
+    )
+    runtime = RuntimeState.create(run_id=commit.run.run_id, planned_graph=planned)
+    run = commit.run.model_copy(update={"actual_graph_id": runtime.actual_graph.graph_id})
+    enriched = replace(
+        commit,
+        run=run,
+        planned_graph=planned,
+        actual_graph=runtime.actual_graph,
+        tasks=tuple(runtime.actual_graph.tasks),
+        initial_events=PostgreSQLPhase4ProductBackend._initial_events(
+            run=run, scheme=commit.scheme, planned=planned, timestamp=ADMITTED_AT
+        ),
+        idempotency_key=IDEMPOTENCY_KEY,
+    )
+    expected = [task.model_dump(mode="json") for task in planned.tasks]
+    assert len(expected) == 7
+    assert [task.model_dump(mode="json") for task in enriched.tasks] == expected
+    assert [task.model_dump(mode="json") for task in runtime.planned_graph.tasks] == expected
+    assert all(task.output_requirements is None for task in source.tasks)
+    for suffix in ("valuation", "risk", "synthesis"):
+        assert runtime.task(f"RUN-A:{suffix}").output_requirements.hard_required == [
+            "RUN-A:fundamentals/revenue_growth", "RUN-A:fundamentals/ebitda_margin"
+        ]
+
+    tampered = runtime.actual_graph.model_copy(deep=True)
+    valuation = next(task for task in tampered.tasks if task.task_type == "valuation_analysis")
+    valuation.output_requirements = None
+    with pytest.raises(ProductError, match="Task rows disagree"):
+        replace(
+            enriched,
+            actual_graph=tampered,
+            tasks=tuple(tampered.tasks),
+            idempotency_key=IDEMPOTENCY_KEY,
+        )
+
+
 def test_atomic_confirm_rejects_internally_consistent_unbound_request_hash() -> None:
     commit = _confirm_commit()
     unrelated_hash = "sha256:" + "f" * 64

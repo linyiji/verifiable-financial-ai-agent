@@ -1,15 +1,29 @@
 """Versioned input contracts for the current qualitative research task profiles."""
 
 from src.domain.output_dependency import OutputOutcome, OutputRequirements, OutputStatus
+from src.domain.task import Task
 
 
 def configure_output_contracts(state):
+    for task, canonical in zip(
+        state.actual_graph.tasks,
+        canonical_output_contract_tasks(state.actual_graph.tasks),
+        strict=True,
+    ):
+        if task.output_requirements is None:
+            task.output_requirements = canonical.output_requirements
+
+
+def canonical_output_contract_tasks(tasks: list[Task]) -> list[Task]:
+    """Return enriched Task copies without changing the source graph or runtime."""
+    tasks = [task.model_copy(deep=True) for task in tasks]
+    by_id = {task.task_id: task for task in tasks}
     actors = {
         "valuation_analysis": "valuation_analyst",
         "risk_analysis": "risk_analyst",
         "report_synthesis": "research_lead",
     }
-    for task in state.actual_graph.tasks:
+    for task in tasks:
         if task.output_requirements is not None:
             continue
         if (
@@ -23,12 +37,12 @@ def configure_output_contracts(state):
         ancestors = set(task.dependencies)
         pending = list(ancestors)
         while pending:
-            for key in state.task(pending.pop()).dependencies:
+            for key in by_id[pending.pop()].dependencies:
                 if key not in ancestors:
                     ancestors.add(key)
                     pending.append(key)
         fundamental = [
-            key for key in ancestors if state.task(key).task_type == "fundamental_analysis"
+            key for key in ancestors if by_id[key].task_type == "fundamental_analysis"
         ]
         if len(fundamental) != 1:
             continue
@@ -43,6 +57,7 @@ def configure_output_contracts(state):
                 hard_required=financial,
                 supporting=optional,
             )
+    return tasks
 
 
 def publish_output(task, output_id, status, *, refs=(), reason=None):

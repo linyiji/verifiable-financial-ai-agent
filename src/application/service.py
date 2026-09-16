@@ -171,17 +171,25 @@ class ResearchApplicationService:
         self._wp04_load_expectation = None
         if wp04_method_binding_enabled:
             from src.capabilities.provenance import capture_wp04_load_expectation
+
             self._wp04_load_expectation = capture_wp04_load_expectation(
-                registry, self.tool_runtime, wp04_manifest_sha256)
+                registry, self.tool_runtime, wp04_manifest_sha256
+            )
             self.tool_runtime._wp04_load_expectation = self._wp04_load_expectation
             self.repository.wp04_verify_load = self._verify_wp04_load
 
     def _verify_wp04_load(self, descriptor):
         from src.capabilities.provenance import verify_wp04_method
+
         if self._wp04_load_expectation is None:
-            raise BindingDenied('METHOD_LOAD_EXPECTATION_MISSING')
-        return verify_wp04_method(self.capability_registry, self.tool_runtime, descriptor,
-                                  self.wp04_manifest_sha256, expectation=self._wp04_load_expectation)
+            raise BindingDenied("METHOD_LOAD_EXPECTATION_MISSING")
+        return verify_wp04_method(
+            self.capability_registry,
+            self.tool_runtime,
+            descriptor,
+            self.wp04_manifest_sha256,
+            expectation=self._wp04_load_expectation,
+        )
 
     def add_calculation_extension(self, extension: TaskCalculationExtension) -> None:
         if not isinstance(extension, TaskCalculationExtension):
@@ -288,33 +296,54 @@ class ResearchApplicationService:
             planned = self.planner.plan(run_id=run_id, goal=draft.goal, scheme=scheme)
             plan = await planned if inspect.isawaitable(planned) else planned
         if any(t.wp04_method_requirement is not None for t in plan.tasks):
-            raise BindingDenied('METHOD_REQUIREMENT_AUTHORITY_INVALID', 'planner-owned requirement')
+            raise BindingDenied("METHOD_REQUIREMENT_AUTHORITY_INVALID", "planner-owned requirement")
         if self.wp04_method_binding_enabled:
             from src.capabilities.provenance import wp04_descriptor
             from src.domain.financial_validation import MethodRequirement
             from src.domain.node_binding import digest
+
             if self.calculation_extensions or self.wp04_diagnostic_store is None:
-                raise BindingDenied('METHOD_SCOPE_UNSUPPORTED', 'explicit native composition/store required')
+                raise BindingDenied(
+                    "METHOD_SCOPE_UNSUPPORTED", "explicit native composition/store required"
+                )
             descriptor = wp04_descriptor(self.wp04_manifest_sha256)
             self._verify_wp04_load(descriptor)
-            if 'revenue_growth' not in scheme.calculation_requirements:
-                raise BindingDenied('METHOD_REQUIREMENT_NOT_REQUESTED', 'confirmed Scheme')
-            selected = [t for t in plan.tasks if (t.task_type, t.assigned_agent, t.skill_id) ==
-                        ('fundamental_analysis', 'fundamental_analyst', 'fundamental_analysis_v1')]
+            if "revenue_growth" not in scheme.calculation_requirements:
+                raise BindingDenied("METHOD_REQUIREMENT_NOT_REQUESTED", "confirmed Scheme")
+            selected = [
+                t
+                for t in plan.tasks
+                if (t.task_type, t.assigned_agent, t.skill_id)
+                == ("fundamental_analysis", "fundamental_analyst", "fundamental_analysis_v1")
+            ]
             if len(selected) != 1:
-                raise BindingDenied('METHOD_SCOPE_UNSUPPORTED', 'one fixed selected Task required')
+                raise BindingDenied("METHOD_SCOPE_UNSUPPORTED", "one fixed selected Task required")
             task = selected[0]
-            req = MethodRequirement(scheme_id=scheme.scheme_id, scheme_hash=digest(scheme),
-                task_id=task.task_id, run_id=run_id, object_id=draft.goal.research_object_id,
-                descriptor=descriptor)
-            identity = digest(req.model_dump(exclude={'requirement_id', 'requirement_digest'}), req.schema_version)
-            task.wp04_method_requirement = req.model_copy(update={
-                'requirement_id': identity, 'requirement_digest': identity})
+            req = MethodRequirement(
+                scheme_id=scheme.scheme_id,
+                scheme_hash=digest(scheme),
+                task_id=task.task_id,
+                run_id=run_id,
+                object_id=draft.goal.research_object_id,
+                descriptor=descriptor,
+            )
+            identity = digest(
+                req.model_dump(exclude={"requirement_id", "requirement_digest"}), req.schema_version
+            )
+            task.wp04_method_requirement = req.model_copy(
+                update={"requirement_id": identity, "requirement_digest": identity}
+            )
             try:
-                self.wp04_diagnostic_store.retain_method_diagnostic(run_id=run_id, task_id=task.task_id,
-                    requirement_id=identity, diagnostic_code='RETENTION_PROBE')
+                self.wp04_diagnostic_store.retain_method_diagnostic(
+                    run_id=run_id,
+                    task_id=task.task_id,
+                    requirement_id=identity,
+                    diagnostic_code="RETENTION_PROBE",
+                )
             except Exception as exc:
-                raise BindingDenied('PERSISTENCE_UNAVAILABLE', 'method diagnostic retention') from exc
+                raise BindingDenied(
+                    "PERSISTENCE_UNAVAILABLE", "method diagnostic retention"
+                ) from exc
         runtime = RuntimeState.create(run_id=run_id, planned_graph=plan)
         run = ResearchRun(
             run_id=run_id,
@@ -524,30 +553,53 @@ class ResearchApplicationService:
                 # A current Run token alone does not authorize this invocation to close it.
                 raise
             current = await self.repository.validate_execution(owner)
-            if stage == 'TASK_EXECUTION':
-                from src.domain.financial_validation import MethodObservation, MethodDenied
+            if stage == "TASK_EXECUTION":
+                from src.domain.financial_validation import MethodObservation
                 from src.domain.node_binding import task_fingerprint
+
                 for task in current.runtime.actual_graph.tasks:
                     req = task.wp04_method_requirement
-                    if req is None or task.task_id in current.node_binding.attempts or any(
-                            o.task_id == task.task_id for o in (current.artifacts.wp04_method_observations or {}).values()):
+                    if (
+                        req is None
+                        or task.task_id in current.node_binding.attempts
+                        or any(
+                            o.task_id == task.task_id
+                            for o in (current.artifacts.wp04_method_observations or {}).values()
+                        )
+                    ):
                         continue
-                    observation = MethodObservation(run_id=run_id, object_id=req.object_id,
-                        task_id=task.task_id, owner_id=owner.owner_id, owner_generation=owner.owner_generation,
-                        task_fingerprint=task_fingerprint(task), requirement_id=req.requirement_id,
-                        requirement_digest=req.requirement_digest, requirement_state=req.requirement_state,
-                        descriptor=req.descriptor, descriptor_digest=req.descriptor.descriptor_digest,
-                        phase='DENIED_BEFORE_A', support_status=getattr(exc, 'support', 'UNKNOWN'),
-                        diagnostic_code=getattr(exc, 'code', 'METHOD_PREFLIGHT_FAILED'), numeric_outcome='NONE',
-                        observed_at=datetime.now(UTC)).identified()
+                    observation = MethodObservation(
+                        run_id=run_id,
+                        object_id=req.object_id,
+                        task_id=task.task_id,
+                        owner_id=owner.owner_id,
+                        owner_generation=owner.owner_generation,
+                        task_fingerprint=task_fingerprint(task),
+                        requirement_id=req.requirement_id,
+                        requirement_digest=req.requirement_digest,
+                        requirement_state=req.requirement_state,
+                        descriptor=req.descriptor,
+                        descriptor_digest=req.descriptor.descriptor_digest,
+                        phase="DENIED_BEFORE_A",
+                        support_status=getattr(exc, "support", "UNKNOWN"),
+                        diagnostic_code=getattr(exc, "code", "METHOD_PREFLIGHT_FAILED"),
+                        numeric_outcome="NONE",
+                        observed_at=datetime.now(UTC),
+                    ).identified()
                     try:
-                        await self.repository.record_method_observation(owner, task.task_id, observation)
+                        await self.repository.record_method_observation(
+                            owner, task.task_id, observation
+                        )
                     except Exception as persistence_error:
                         try:
-                            self.wp04_diagnostic_store.retain_method_diagnostic(run_id=run_id, task_id=task.task_id,
-                                requirement_id=req.requirement_id, diagnostic_code=observation.diagnostic_code,
-                                secondary_diagnostic_code='PERSISTENCE_UNAVAILABLE',
-                                observation_id=observation.observation_id)
+                            self.wp04_diagnostic_store.retain_method_diagnostic(
+                                run_id=run_id,
+                                task_id=task.task_id,
+                                requirement_id=req.requirement_id,
+                                diagnostic_code=observation.diagnostic_code,
+                                secondary_diagnostic_code="PERSISTENCE_UNAVAILABLE",
+                                observation_id=observation.observation_id,
+                            )
                         except Exception:
                             pass
                         raise exc from persistence_error
@@ -573,8 +625,9 @@ class ResearchApplicationService:
                 "REQUIRED_RESEARCH_OUTPUT_MISSING",
                 "REQUIRED_CALCULATION_UNAVAILABLE",
             }
+            terminal_at = datetime.now(UTC)
             self._apply_terminal_lifecycle(
-                current, status=RunStatus.FAILED, terminal_at=datetime.now(UTC)
+                current, status=RunStatus.FAILED, terminal_at=terminal_at
             )
             if isinstance(exc, Exception):
                 current.artifacts.closure_diagnostic = closure_diagnostic(current, exc, stage)
@@ -595,6 +648,7 @@ class ResearchApplicationService:
                     else getattr(exc, "code", "RESULT_UNKNOWN"),
                     "binding_failures": binding_failures,
                 },
+                timestamp=terminal_at,
             )
             await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
             if policy_blocked:
@@ -774,8 +828,11 @@ class ResearchApplicationService:
         )
 
     def _wp04_context(self, aggregate):
-        from src.domain.node_binding import canonical_value, task_semantics, digest
-        selected = [t for t in aggregate.runtime.actual_graph.tasks if t.wp04_method_requirement is not None]
+        from src.domain.node_binding import canonical_value, digest, task_semantics
+
+        selected = [
+            t for t in aggregate.runtime.actual_graph.tasks if t.wp04_method_requirement is not None
+        ]
         if not selected:
             return None
         root = aggregate.node_binding
@@ -785,23 +842,47 @@ class ResearchApplicationService:
             admission = attempt.admission if attempt else None
             current = root.current_results.get(task.task_id)
             result = root.results.get(current)
-            entries.append({'task': task_semantics(task), 'A': canonical_value(admission),
-                'B': [canonical_value(b) for b in root.resolved_inputs.values()
-                      if admission and b.admission_binding_id == admission.admission_binding_id],
-                'R': canonical_value(result), 'current_result_id': current,
-                'invalidated': current in root.invalidation_refs if current else True,
-                'observations': [canonical_value(o) for o in (aggregate.artifacts.wp04_method_observations or {}).values()
-                                 if o.task_id == task.task_id]})
-        return {'schema_version': 'wp04-review-context/v1', 'run_id': aggregate.run.run_id,
-                'object_id': aggregate.run.research_object_id, 'scheme_hash': digest(aggregate.scheme),
-                'graph': canonical_value(root.frozen_graph), 'entries': entries,
-                'expected_manifest_file_sha256': self.wp04_manifest_sha256}
+            entries.append(
+                {
+                    "task": task_semantics(task),
+                    "A": canonical_value(admission),
+                    "B": [
+                        canonical_value(b)
+                        for b in root.resolved_inputs.values()
+                        if admission and b.admission_binding_id == admission.admission_binding_id
+                    ],
+                    "R": canonical_value(result),
+                    "current_result_id": current,
+                    "invalidated": current in root.invalidation_refs if current else True,
+                    "observations": [
+                        canonical_value(o)
+                        for o in (aggregate.artifacts.wp04_method_observations or {}).values()
+                        if o.task_id == task.task_id
+                    ],
+                }
+            )
+        return {
+            "schema_version": "wp04-review-context/v1",
+            "run_id": aggregate.run.run_id,
+            "object_id": aggregate.run.research_object_id,
+            "scheme_hash": digest(aggregate.scheme),
+            "graph": canonical_value(root.frozen_graph),
+            "entries": entries,
+            "expected_manifest_file_sha256": self.wp04_manifest_sha256,
+        }
 
     def _review_requirement_context(self, aggregate, strict):
-        original = requirement_context(aggregate.scheme, aggregate.artifacts.financial_branches) if (
-            strict and aggregate.artifacts.financial_branches) else None
+        original = (
+            requirement_context(aggregate.scheme, aggregate.artifacts.financial_branches)
+            if (strict and aggregate.artifacts.financial_branches)
+            else None
+        )
         wp04 = self._wp04_context(aggregate)
-        return {'financial_requirements': original, 'wp04_method_context': wp04} if wp04 is not None else original
+        return (
+            {"financial_requirements": original, "wp04_method_context": wp04}
+            if wp04 is not None
+            else original
+        )
 
     async def _review_for_release(
         self,
@@ -834,7 +915,9 @@ class ResearchApplicationService:
                     judgments=judgments,
                     proof_requirements=proof_requirements,
                     branch_results=aggregate.artifacts.financial_branches,
-                    requirement_context=self._review_requirement_context(aggregate, strict_financial_release),
+                    requirement_context=self._review_requirement_context(
+                        aggregate, strict_financial_release
+                    ),
                 )
             else:
                 review = DeterministicReviewer().review(
@@ -870,10 +953,12 @@ class ResearchApplicationService:
         if wp04_context is not None:
             fresh = await self.repository.get_run_fresh(run_id)
             if fresh is None or self._wp04_context(fresh) != wp04_context:
-                raise BindingDenied('STALE_INPUT', 'WP04 Review/Release context')
+                raise BindingDenied("STALE_INPUT", "WP04 Review/Release context")
         strict_snapshot = strict_financial_release or wp04_context is not None
         release_decision = ReleaseGate().evaluate(
-            requirement_context=self._review_requirement_context(aggregate, strict_financial_release),
+            requirement_context=self._review_requirement_context(
+                aggregate, strict_financial_release
+            ),
             review=review,
             proof_requirements=proof_outcome.requirements,
             proofs=proof_outcome.proofs,

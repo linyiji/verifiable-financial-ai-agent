@@ -763,10 +763,12 @@ class PostgreSQLPhase4ProductBackend:
                 from src.phase4_product.incremental import bind_incremental_plan
 
                 planned = bind_incremental_plan(planned, scheme.incremental_context)
-            runtime = RuntimeState.create(run_id=run_id, planned_graph=planned)
-            from src.application.research_outputs import configure_output_contracts
+            from src.application.research_outputs import canonical_output_contract_tasks
 
-            configure_output_contracts(runtime)
+            planned = planned.model_copy(
+                update={"tasks": canonical_output_contract_tasks(planned.tasks)}
+            )
+            runtime = RuntimeState.create(run_id=run_id, planned_graph=planned)
             admitted_at = datetime.now(UTC)
             run = ResearchRun(
                 run_id=run_id,

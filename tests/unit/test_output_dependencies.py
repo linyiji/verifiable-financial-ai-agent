@@ -1,6 +1,10 @@
 import pytest
 
-from src.application.research_outputs import configure_output_contracts, publish_output
+from src.application.research_outputs import (
+    canonical_output_contract_tasks,
+    configure_output_contracts,
+    publish_output,
+)
 from src.domain.enums import RunStatus, TaskStatus
 from src.domain.output_dependency import (
     LocalOutputFailure,
@@ -45,6 +49,70 @@ def test_sufficiency_any_of_and_enrichment():
     assert result.unavailable_optional == ["sma200", "news"]
     assert evidence_sufficiency(contract, {"revenue"}).status == "INSUFFICIENT"
     assert evidence_sufficiency(OutputRequirements(any_of=[[]]), set()).status == "INSUFFICIENT"
+
+
+def test_canonical_contracts_are_pure_and_preserve_ancestry_and_existing_contracts():
+    tasks = [
+        task("source", "evidence_collection"),
+        task("fund", "fundamental_analysis", ["source"]),
+        task("val", "valuation_analysis", ["fund"]),
+        task("risk", "risk_analysis", ["fund"]),
+        task("synth", "report_synthesis", ["val", "risk"]),
+        task("custom", "custom", ["fund"]),
+    ]
+    tasks[-1].output_requirements = OutputRequirements(any_of=[["source/source.filing"]])
+    before = [t.model_dump(mode="json") for t in tasks]
+    canonical = canonical_output_contract_tasks(tasks)
+    assert [t.model_dump(mode="json") for t in tasks] == before
+    assert [t.model_dump(mode="json") for t in canonical_output_contract_tasks(tasks)] == [
+        t.model_dump(mode="json") for t in canonical
+    ]
+    assert canonical_output_contract_tasks(canonical) == canonical
+    for original, enriched in zip(tasks, canonical, strict=True):
+        assert original is not enriched
+        assert enriched.model_dump(exclude={"output_requirements"}) == original.model_dump(
+            exclude={"output_requirements"}
+        )
+    for index, ancestors in (
+        (2, ["fund", "source"]),
+        (3, ["fund", "source"]),
+        (4, ["fund", "risk", "source", "val"]),
+    ):
+        assert canonical[index].output_requirements == OutputRequirements(
+            hard_required=["fund/revenue_growth", "fund/ebitda_margin"],
+            supporting=[f"{key}/agent_output" for key in ancestors],
+        )
+    assert canonical[-1].output_requirements == tasks[-1].output_requirements
+    state = RuntimeState.create(
+        run_id="RUN-1",
+        planned_graph=PlannedTaskGraph(graph_id="PLAN", run_id="RUN-1", tasks=tasks),
+    )
+    references = list(state.actual_graph.tasks)
+    configure_output_contracts(state)
+    assert state.actual_graph.tasks == canonical
+    assert all(a is b for a, b in zip(references, state.actual_graph.tasks, strict=True))
+    assert [t.model_dump(mode="json") for t in state.planned_graph.tasks] == before
+
+
+@pytest.mark.parametrize(
+    "profile", ["unknown_type", "unknown_actor", "unknown_skill", "no_fund", "two_funds"]
+)
+def test_canonical_contracts_leave_unsupported_profiles_strict(profile):
+    consumer = task("val", "valuation_analysis", ["fund"])
+    tasks = [task("fund", "fundamental_analysis"), consumer]
+    if profile == "unknown_type":
+        consumer.task_type = "custom"
+    elif profile == "unknown_actor":
+        consumer.assigned_agent = "custom"
+    elif profile == "unknown_skill":
+        consumer.skill_id = "custom_dcf_v2"
+    elif profile == "no_fund":
+        tasks[0].task_type = "custom"
+    else:
+        tasks.append(task("fund2", "fundamental_analysis"))
+        consumer.dependencies.append("fund2")
+    assert canonical_output_contract_tasks(tasks) == tasks
+    assert canonical_output_contract_tasks([]) == []
 
 
 @pytest.mark.asyncio
