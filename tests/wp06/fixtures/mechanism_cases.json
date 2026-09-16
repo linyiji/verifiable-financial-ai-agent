@@ -1,0 +1,1187 @@
+{
+  "manifest": {
+    "schema_version": "vefin-evaluation-cohort/v1",
+    "cohort_policy_id": "WP06_LOCAL_READY_MECHANISM_COHORT_V1",
+    "cohort_class": "MECHANISM_VALIDATION_COHORT",
+    "member_case_ids": [
+      "sha256:201b754ffcccbacdb57299066d4d75977a4926998a0b818628377c7b1d175c6b",
+      "sha256:707dd815a56f67782ad9539924341be8c81ac004d977364d1ccfa39c888bd1c3",
+      "sha256:9e309b00743b3ba56cf38a32264171f876f4fc60ebfadc8046a6652b97bc8bf8",
+      "sha256:e1de89f410e4cc298ef4b9b6c916aaada234893f7ea3727e035a91679c137500"
+    ],
+    "member_envelope_digests": [
+      "sha256:2de3c57ff4d340074badcf63e41b35faaec1cdacba2bcb5a1806fbaa8ac70d96",
+      "sha256:1d22934ba72749bd7b8c8d5dd4c6b48d9a3f69e6cae5178d0c7cd2a4a3cdaebd",
+      "sha256:fa2cb5dd020afee3602f5bc67fb1545e596f92f2e607fb2369a6b52ff12d26ba",
+      "sha256:4e63fcded0de9d82ef8abc4d331c791ca143eac155b3b724dae561af05f216ce"
+    ],
+    "member_source_scopes": [
+      {
+        "namespace": {
+          "kind": "DETACHED_OWNER_SNAPSHOT",
+          "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d"
+        },
+        "component_scopes": [
+          "RETAINED_LOCAL_FIXTURE",
+          "SYNTHETIC_CONTEXT"
+        ],
+        "classification": "LOCAL_SYNTHETIC",
+        "source_manifest": [
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Blob",
+            "source_id": "sha256:d1a6766540803f224db88b936189b859258eca17bdf0d56a3a08416aeddbae47",
+            "content_digest": "sha256:925a2a2bf6cac34747612777d860a27174c8f365785598515cee37b54bf92eca",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "RUN-WP02-LOCAL-FIXTURE",
+            "content_digest": "sha256:13b0a24d86f8c6f960bba9019e5fb401a99382a1beb17c05fc77f66984a2a2e5",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "sha256:ded9576e405089f62239f5052c7f9b97401ee42c79b59e06c67c7d690188ef1f",
+            "content_digest": "sha256:6f7e0859760e17973b42fa07f8b69233a15585278f68b9ca797ff6f6cec818b4",
+            "field_selectors": [
+              "/payload_snapshot/execution_receipt"
+            ],
+            "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Review",
+            "source_id": "RUN-WP02-LOCAL-FIXTURE",
+            "content_digest": "sha256:97131f06b886341035f16e6882bd76fc7f197f6c082b181cd729f5254a9b47c7",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "SYNTHETIC_CONTEXT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          }
+        ]
+      },
+      {
+        "namespace": {
+          "kind": "DETACHED_OWNER_SNAPSHOT",
+          "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33"
+        },
+        "component_scopes": [
+          "RETAINED_LOCAL_FIXTURE",
+          "SYNTHETIC_CONTEXT"
+        ],
+        "classification": "LOCAL_SYNTHETIC",
+        "source_manifest": [
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Blob",
+            "source_id": "sha256:21b04a6b43269d3685266bf6269823a466c3c71fd3f8c5853cd6474d45855642",
+            "content_digest": "sha256:d4c8a46a2f244f3b144f943c28b4440724f60eb11a23de4287138eba28545014",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "RUN-WP02-LOCAL-FIXTURE",
+            "content_digest": "sha256:eb935046fe9790f6e19df2e11be83de95568f3bcf68a23adc951416b9b0ee3fa",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "sha256:59af622ac46853a01ba716b9d0809808f5f999bf6bf7ba62e7ff8ef02e8a6720",
+            "content_digest": "sha256:fa012377cf89339e3cd1d2ecd28596714308c7771191f3a3e355c2c03f14622b",
+            "field_selectors": [
+              "/payload_snapshot/execution_receipt"
+            ],
+            "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "sha256:df8d2011ad90e161d99cbacd102d42b68346912ee2e74eb908a064a23c5296ef",
+            "content_digest": "sha256:70e40ccdaec91042d26640b99f5bf4d9f53ddf96f8883679364fd5c84e1288a0",
+            "field_selectors": [
+              "/payload_snapshot/execution_receipt"
+            ],
+            "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Review",
+            "source_id": "RUN-WP02-LOCAL-FIXTURE",
+            "content_digest": "sha256:97131f06b886341035f16e6882bd76fc7f197f6c082b181cd729f5254a9b47c7",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "SYNTHETIC_CONTEXT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          }
+        ]
+      },
+      {
+        "namespace": {
+          "kind": "DETACHED_OWNER_SNAPSHOT",
+          "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0"
+        },
+        "component_scopes": [
+          "RETAINED_LOCAL_FIXTURE",
+          "SYNTHETIC_CONTEXT"
+        ],
+        "classification": "LOCAL_SYNTHETIC",
+        "source_manifest": [
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Blob",
+            "source_id": "sha256:678b3b33bcc22f20d9bda4942c6ae7039dbc5d36a79acfbf91abab2b3c11880b",
+            "content_digest": "sha256:c222e1444a117c299634a9adca109281442525b943807434e66f47f0a8ff8655",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "RUN-WP02-LOCAL-FIXTURE",
+            "content_digest": "sha256:26f96b10d2cb8f5607e0dc3cd596282035f8c2c3bfa2069011574919eb8aa0ae",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "sha256:81e1648b445445e9f4c10b2471051817f489301bd36a68de877ca73ac6bf1323",
+            "content_digest": "sha256:2efc95730d97f9cd41d54fbc13ceb4d24c9b896115b7284104728ac0ab614530",
+            "field_selectors": [
+              "/payload_snapshot/execution_receipt"
+            ],
+            "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Review",
+            "source_id": "RUN-WP02-LOCAL-FIXTURE",
+            "content_digest": "sha256:97131f06b886341035f16e6882bd76fc7f197f6c082b181cd729f5254a9b47c7",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "SYNTHETIC_CONTEXT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          }
+        ]
+      },
+      {
+        "namespace": {
+          "kind": "DETACHED_OWNER_SNAPSHOT",
+          "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42"
+        },
+        "component_scopes": [
+          "RETAINED_LOCAL_FIXTURE",
+          "SYNTHETIC_CONTEXT"
+        ],
+        "classification": "LOCAL_SYNTHETIC",
+        "source_manifest": [
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Blob",
+            "source_id": "sha256:b50826201c6443536297b08e2cce0681c9c9754acd881c71241c452bf6fad956",
+            "content_digest": "sha256:8e3b28a70daca1dce97aab81953317a61081cbd08b336b342e1b0f654d04b41f",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "RUN-WP02-LOCAL-FIXTURE",
+            "content_digest": "sha256:2fdcffd8af811857af71e9a7957c6431af5be5d2681c1564a147a396cd97c866",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "sha256:84f599953e09a566ce630f11936ff2ac5b9e14de91e7d3a5fefec59ef9dd25f0",
+            "content_digest": "sha256:9ed84f871e5e569efc4d594d978990d292d24cc2bb39c0df00f1ca111a890128",
+            "field_selectors": [
+              "/payload_snapshot/execution_receipt"
+            ],
+            "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Repository",
+            "source_id": "sha256:a4fab6a501d0ce2ce2290ce364b712913887b6728c2d72d89f9d9c0d0c0887bf",
+            "content_digest": "sha256:308357ecf6983c9eab10fa14079c48f23457ff8da5f8a67408462c544ad46526",
+            "field_selectors": [
+              "/payload_snapshot/execution_receipt"
+            ],
+            "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          },
+          {
+            "source_namespace": {
+              "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+              "kind": "DETACHED_OWNER_SNAPSHOT"
+            },
+            "owner": "Review",
+            "source_id": "RUN-WP02-LOCAL-FIXTURE",
+            "content_digest": "sha256:97131f06b886341035f16e6882bd76fc7f197f6c082b181cd729f5254a9b47c7",
+            "field_selectors": [
+              "/"
+            ],
+            "evidence_scope": "SYNTHETIC_CONTEXT",
+            "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+          }
+        ]
+      }
+    ],
+    "member_output_digests": [
+      "sha256:d1a6766540803f224db88b936189b859258eca17bdf0d56a3a08416aeddbae47",
+      "sha256:21b04a6b43269d3685266bf6269823a466c3c71fd3f8c5853cd6474d45855642",
+      "sha256:678b3b33bcc22f20d9bda4942c6ae7039dbc5d36a79acfbf91abab2b3c11880b",
+      "sha256:b50826201c6443536297b08e2cce0681c9c9754acd881c71241c452bf6fad956"
+    ],
+    "comparability_status": "NOT_ESTABLISHED_NO_MODEL_COMPARISON",
+    "membership_policy": "ORDERED_IMMUTABLE_ALL_OR_DIAGNOSTIC",
+    "rubric_version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+    "cohort_id": "sha256:87b6f7eb4c80471496fc05d60418bdced1aebc6f29087b5acf1a24ce8a5f2abe"
+  },
+  "cases": [
+    {
+      "retained_label": "F_READY_ONE",
+      "case_id": "sha256:201b754ffcccbacdb57299066d4d75977a4926998a0b818628377c7b1d175c6b",
+      "identity": {
+        "schema_version": "vefin-evaluation-case/v1",
+        "evaluation_policy_id": "WP06_MECHANISM_ONLY_V1",
+        "source_scope": {
+          "namespace": {
+            "kind": "DETACHED_OWNER_SNAPSHOT",
+            "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d"
+          },
+          "component_scopes": [
+            "RETAINED_LOCAL_FIXTURE",
+            "SYNTHETIC_CONTEXT"
+          ],
+          "classification": "LOCAL_SYNTHETIC",
+          "source_manifest": [
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Blob",
+              "source_id": "sha256:d1a6766540803f224db88b936189b859258eca17bdf0d56a3a08416aeddbae47",
+              "content_digest": "sha256:925a2a2bf6cac34747612777d860a27174c8f365785598515cee37b54bf92eca",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "RUN-WP02-LOCAL-FIXTURE",
+              "content_digest": "sha256:13b0a24d86f8c6f960bba9019e5fb401a99382a1beb17c05fc77f66984a2a2e5",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "sha256:ded9576e405089f62239f5052c7f9b97401ee42c79b59e06c67c7d690188ef1f",
+              "content_digest": "sha256:6f7e0859760e17973b42fa07f8b69233a15585278f68b9ca797ff6f6cec818b4",
+              "field_selectors": [
+                "/payload_snapshot/execution_receipt"
+              ],
+              "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Review",
+              "source_id": "RUN-WP02-LOCAL-FIXTURE",
+              "content_digest": "sha256:97131f06b886341035f16e6882bd76fc7f197f6c082b181cd729f5254a9b47c7",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "SYNTHETIC_CONTEXT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            }
+          ]
+        },
+        "subject_type": "WP03_VALUATION_TASK_RESULT",
+        "subject_id": "sha256:09c00d93fddd3a5ee854d70593636c1eb39b619083ee5f33f51e71ed223dfba5",
+        "envelope_digest": "sha256:2de3c57ff4d340074badcf63e41b35faaec1cdacba2bcb5a1806fbaa8ac70d96",
+        "native_run_id": "RUN-WP02-LOCAL-FIXTURE",
+        "native_task_id": "RUN-WP02-LOCAL-FIXTURE:1",
+        "task_fingerprint": "sha256:aa4b563bb30b49e46cdabbc39317ae4fde2ac266e2441a661c5717433b60e1e9",
+        "graph_identity": {
+          "graph_id": "PLAN-WP02-actual",
+          "run_id": "RUN-WP02-LOCAL-FIXTURE",
+          "semantic_hash": "sha256:90325b73e2042bc51eee0c389c7fc517d3d1b7c06cc99ffdab2eb157bd393dcf",
+          "version": 1
+        },
+        "context_identity": {
+          "turns": [
+            {
+              "context_id": "sha256:88fc88f56b395787dd7c3fd17b5b2667f95ea46f5a3cabb582906334b6768ecf",
+              "context_revision": 1,
+              "source_manifest_digest": "sha256:68d724c0a28ad097e9f80b496085e15b8c582f1755dfd7cc340bbe57ac98fe0b",
+              "pre_B_id": "sha256:9ad21aa57515774c3989ec86619b42d240af6ea1fb70a4cc67f972ce32d514a7",
+              "request_manifest_digest": "sha256:cef631e18655895c5119a8e2bb255897beb29cbb6a30b78ee058375cd381b6d2",
+              "response_schema_digest": "sha256:3a202039b04e6bdfbd05c52d0f4be34f4a81f2ed9c2b88a685715fabcfc354bd"
+            }
+          ],
+          "final_context_id": "sha256:88fc88f56b395787dd7c3fd17b5b2667f95ea46f5a3cabb582906334b6768ecf",
+          "final_context_revision": 1
+        },
+        "native_subject_identity": {
+          "source_namespace": {
+            "anchor_digest": "sha256:a1e890b0205cf12cce5e1ac3989ffbededc9d3c796841c23d3df3627d18b775d",
+            "kind": "DETACHED_OWNER_SNAPSHOT"
+          },
+          "subject_type": "WP03_VALUATION_TASK_RESULT",
+          "run_id": "RUN-WP02-LOCAL-FIXTURE",
+          "task_id": "RUN-WP02-LOCAL-FIXTURE:1",
+          "task_fingerprint": "sha256:aa4b563bb30b49e46cdabbc39317ae4fde2ac266e2441a661c5717433b60e1e9",
+          "graph": {
+            "graph_id": "PLAN-WP02-actual",
+            "run_id": "RUN-WP02-LOCAL-FIXTURE",
+            "semantic_hash": "sha256:90325b73e2042bc51eee0c389c7fc517d3d1b7c06cc99ffdab2eb157bd393dcf",
+            "version": 1
+          },
+          "admission_binding_id": "sha256:d4ce31fca3317bb95dc46b7631eb5555dd09f226f7eb4db7af2800534ee09b61",
+          "ordered_B_ids": [
+            "sha256:80663c4fc5edb7fec002ea0cbafcf599cedcb248bc27f87cb73b391276388242",
+            "sha256:9ad21aa57515774c3989ec86619b42d240af6ea1fb70a4cc67f972ce32d514a7",
+            "sha256:ded9576e405089f62239f5052c7f9b97401ee42c79b59e06c67c7d690188ef1f"
+          ],
+          "result_id": "sha256:d45e26d854470991a129cafb5c71254f5d47b9e2574be75ff411088355b494bc",
+          "result_digest": "sha256:d45e26d854470991a129cafb5c71254f5d47b9e2574be75ff411088355b494bc",
+          "result_version": 1,
+          "current_result_id": "sha256:d45e26d854470991a129cafb5c71254f5d47b9e2574be75ff411088355b494bc",
+          "final_context_id": "sha256:88fc88f56b395787dd7c3fd17b5b2667f95ea46f5a3cabb582906334b6768ecf",
+          "final_context_revision": 1,
+          "final_context_manifest_digest": "sha256:68d724c0a28ad097e9f80b496085e15b8c582f1755dfd7cc340bbe57ac98fe0b",
+          "interaction_id": "sha256:4bb3b7b34923382116b97b3ae873879cb65ae0c01f7849b684e98303a099fde3",
+          "dispatch_membership": [
+            {
+              "call_id": "sha256:4bb3b7b34923382116b97b3ae873879cb65ae0c01f7849b684e98303a099fde3:1:1",
+              "pre_B_id": "sha256:9ad21aa57515774c3989ec86619b42d240af6ea1fb70a4cc67f972ce32d514a7",
+              "receipt_B_id": "sha256:ded9576e405089f62239f5052c7f9b97401ee42c79b59e06c67c7d690188ef1f",
+              "context_id": "sha256:88fc88f56b395787dd7c3fd17b5b2667f95ea46f5a3cabb582906334b6768ecf",
+              "context_revision": 1
+            }
+          ]
+        },
+        "output_artifact_id": "sha256:d1a6766540803f224db88b936189b859258eca17bdf0d56a3a08416aeddbae47",
+        "output_digest": "sha256:d1a6766540803f224db88b936189b859258eca17bdf0d56a3a08416aeddbae47",
+        "output_material_digest": "sha256:7da89a5e719357dda1d711d6030aea7729b5a9ed7a5ce62d262c3f302fb9bc5e",
+        "result_id": "sha256:d45e26d854470991a129cafb5c71254f5d47b9e2574be75ff411088355b494bc",
+        "result_digest": "sha256:d45e26d854470991a129cafb5c71254f5d47b9e2574be75ff411088355b494bc",
+        "rubric_version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+        "oracle_refs": [
+          {
+            "oracle_id": "D1_FIELDS_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:4331d7e3c5488113eecf5388ea3f6f68efb5d7673e388082160e198e7c46412f"
+          },
+          {
+            "oracle_id": "D2_EXACT_REFS_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:e0b65b310366f2670da122cc7945c2b3211983fe5ba5eb49806e7ee38a2dc52a"
+          },
+          {
+            "oracle_id": "D5_REVIEW_JOIN_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:e0b65b310366f2670da122cc7945c2b3211983fe5ba5eb49806e7ee38a2dc52a"
+          },
+          {
+            "oracle_id": "D6_STRICT_FINAL_SCHEMA_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:4331d7e3c5488113eecf5388ea3f6f68efb5d7673e388082160e198e7c46412f"
+          }
+        ],
+        "input_file_hashes": {
+          "envelope": "7ff212bbbfc3a992897dce7fe24feedee1255d135cbacea9146c95afdd34c250",
+          "snapshot": "6f714d8c6f76697cff70f4640bd13b8e80bd625fd199a75e8ee8efa73b021ecd"
+        }
+      },
+      "readiness_observation": "READY",
+      "case_validity": "NOT_EVALUATED",
+      "invalid_reasons": [],
+      "evaluation_digest": null,
+      "planned_stratum": "LOCAL_SYNTHETIC_1_TURN"
+    },
+    {
+      "retained_label": "F_READY_TWO",
+      "case_id": "sha256:707dd815a56f67782ad9539924341be8c81ac004d977364d1ccfa39c888bd1c3",
+      "identity": {
+        "schema_version": "vefin-evaluation-case/v1",
+        "evaluation_policy_id": "WP06_MECHANISM_ONLY_V1",
+        "source_scope": {
+          "namespace": {
+            "kind": "DETACHED_OWNER_SNAPSHOT",
+            "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33"
+          },
+          "component_scopes": [
+            "RETAINED_LOCAL_FIXTURE",
+            "SYNTHETIC_CONTEXT"
+          ],
+          "classification": "LOCAL_SYNTHETIC",
+          "source_manifest": [
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Blob",
+              "source_id": "sha256:21b04a6b43269d3685266bf6269823a466c3c71fd3f8c5853cd6474d45855642",
+              "content_digest": "sha256:d4c8a46a2f244f3b144f943c28b4440724f60eb11a23de4287138eba28545014",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "RUN-WP02-LOCAL-FIXTURE",
+              "content_digest": "sha256:eb935046fe9790f6e19df2e11be83de95568f3bcf68a23adc951416b9b0ee3fa",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "sha256:59af622ac46853a01ba716b9d0809808f5f999bf6bf7ba62e7ff8ef02e8a6720",
+              "content_digest": "sha256:fa012377cf89339e3cd1d2ecd28596714308c7771191f3a3e355c2c03f14622b",
+              "field_selectors": [
+                "/payload_snapshot/execution_receipt"
+              ],
+              "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "sha256:df8d2011ad90e161d99cbacd102d42b68346912ee2e74eb908a064a23c5296ef",
+              "content_digest": "sha256:70e40ccdaec91042d26640b99f5bf4d9f53ddf96f8883679364fd5c84e1288a0",
+              "field_selectors": [
+                "/payload_snapshot/execution_receipt"
+              ],
+              "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Review",
+              "source_id": "RUN-WP02-LOCAL-FIXTURE",
+              "content_digest": "sha256:97131f06b886341035f16e6882bd76fc7f197f6c082b181cd729f5254a9b47c7",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "SYNTHETIC_CONTEXT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            }
+          ]
+        },
+        "subject_type": "WP03_VALUATION_TASK_RESULT",
+        "subject_id": "sha256:182f2c542e082638c87751f5e1aa7064c6250c5a130239b0527b00b51212634c",
+        "envelope_digest": "sha256:1d22934ba72749bd7b8c8d5dd4c6b48d9a3f69e6cae5178d0c7cd2a4a3cdaebd",
+        "native_run_id": "RUN-WP02-LOCAL-FIXTURE",
+        "native_task_id": "RUN-WP02-LOCAL-FIXTURE:1",
+        "task_fingerprint": "sha256:aa4b563bb30b49e46cdabbc39317ae4fde2ac266e2441a661c5717433b60e1e9",
+        "graph_identity": {
+          "graph_id": "PLAN-WP02-actual",
+          "run_id": "RUN-WP02-LOCAL-FIXTURE",
+          "semantic_hash": "sha256:90325b73e2042bc51eee0c389c7fc517d3d1b7c06cc99ffdab2eb157bd393dcf",
+          "version": 1
+        },
+        "context_identity": {
+          "turns": [
+            {
+              "context_id": "sha256:bb00ff68a262e7dff26db006d77ca12542a8fad16d64aad94c72ba97f2274842",
+              "context_revision": 1,
+              "source_manifest_digest": "sha256:d597265e3376f00d2742d7f703c68c5b35691b9c8a411e3b5b4bc6cf0c829382",
+              "pre_B_id": "sha256:3ae15b0323ad1d279df8d188bc3f8791c97f7c6f3d7839b1f66afae542bad455",
+              "request_manifest_digest": "sha256:3285ae954ded37bf2bc72b3d70ecc7ef8baea1428525ab4965f72d60c268dcdd",
+              "response_schema_digest": "sha256:3a202039b04e6bdfbd05c52d0f4be34f4a81f2ed9c2b88a685715fabcfc354bd"
+            },
+            {
+              "context_id": "sha256:76ec2c877bf704cba3a760013afca8ef23b6021741963da80c9c8d93ef51671d",
+              "context_revision": 2,
+              "source_manifest_digest": "sha256:d623fc924af66f0069317c1b5d5d74544fdfe220078e57bc346d23a88b6d529a",
+              "pre_B_id": "sha256:88f5c12490f92dffd3712469845567b0da2aafca46b2cc553325f87729226927",
+              "request_manifest_digest": "sha256:4560a61746604e4095a446098bf1168b4fc74100d05a0e58b39af2fe7ea7498f",
+              "response_schema_digest": "sha256:9d9a1310e5cdfc35be22e6b867d8871dda22c6fb2f4d4882bf09827ce8ad1c16"
+            }
+          ],
+          "final_context_id": "sha256:76ec2c877bf704cba3a760013afca8ef23b6021741963da80c9c8d93ef51671d",
+          "final_context_revision": 2
+        },
+        "native_subject_identity": {
+          "source_namespace": {
+            "anchor_digest": "sha256:872b2e168c069588b2f41eb1978075fa9e928cf538885825c725aa9df9213c33",
+            "kind": "DETACHED_OWNER_SNAPSHOT"
+          },
+          "subject_type": "WP03_VALUATION_TASK_RESULT",
+          "run_id": "RUN-WP02-LOCAL-FIXTURE",
+          "task_id": "RUN-WP02-LOCAL-FIXTURE:1",
+          "task_fingerprint": "sha256:aa4b563bb30b49e46cdabbc39317ae4fde2ac266e2441a661c5717433b60e1e9",
+          "graph": {
+            "graph_id": "PLAN-WP02-actual",
+            "run_id": "RUN-WP02-LOCAL-FIXTURE",
+            "semantic_hash": "sha256:90325b73e2042bc51eee0c389c7fc517d3d1b7c06cc99ffdab2eb157bd393dcf",
+            "version": 1
+          },
+          "admission_binding_id": "sha256:183e3fc007d83f8f93aa685280f5082cbf32795862588b488f0d59f29e72d1de",
+          "ordered_B_ids": [
+            "sha256:9b02cf8bcf94a420f7626d9bafc4bf652f586d129aed3a747f6adc6dc55bc1a6",
+            "sha256:3ae15b0323ad1d279df8d188bc3f8791c97f7c6f3d7839b1f66afae542bad455",
+            "sha256:59af622ac46853a01ba716b9d0809808f5f999bf6bf7ba62e7ff8ef02e8a6720",
+            "sha256:88f5c12490f92dffd3712469845567b0da2aafca46b2cc553325f87729226927",
+            "sha256:df8d2011ad90e161d99cbacd102d42b68346912ee2e74eb908a064a23c5296ef"
+          ],
+          "result_id": "sha256:e64b32f13eb5636424c64917458a12254d5b1cb0ca5a30f3e8d0e1ee59663206",
+          "result_digest": "sha256:e64b32f13eb5636424c64917458a12254d5b1cb0ca5a30f3e8d0e1ee59663206",
+          "result_version": 1,
+          "current_result_id": "sha256:e64b32f13eb5636424c64917458a12254d5b1cb0ca5a30f3e8d0e1ee59663206",
+          "final_context_id": "sha256:76ec2c877bf704cba3a760013afca8ef23b6021741963da80c9c8d93ef51671d",
+          "final_context_revision": 2,
+          "final_context_manifest_digest": "sha256:d623fc924af66f0069317c1b5d5d74544fdfe220078e57bc346d23a88b6d529a",
+          "interaction_id": "sha256:b023bb65293a03ea0d90aab68abc36e79cd5e1279285f064708c1b4f9932cbfe",
+          "dispatch_membership": [
+            {
+              "call_id": "sha256:b023bb65293a03ea0d90aab68abc36e79cd5e1279285f064708c1b4f9932cbfe:1:1",
+              "pre_B_id": "sha256:3ae15b0323ad1d279df8d188bc3f8791c97f7c6f3d7839b1f66afae542bad455",
+              "receipt_B_id": "sha256:59af622ac46853a01ba716b9d0809808f5f999bf6bf7ba62e7ff8ef02e8a6720",
+              "context_id": "sha256:bb00ff68a262e7dff26db006d77ca12542a8fad16d64aad94c72ba97f2274842",
+              "context_revision": 1
+            },
+            {
+              "call_id": "sha256:b023bb65293a03ea0d90aab68abc36e79cd5e1279285f064708c1b4f9932cbfe:2:1",
+              "pre_B_id": "sha256:88f5c12490f92dffd3712469845567b0da2aafca46b2cc553325f87729226927",
+              "receipt_B_id": "sha256:df8d2011ad90e161d99cbacd102d42b68346912ee2e74eb908a064a23c5296ef",
+              "context_id": "sha256:76ec2c877bf704cba3a760013afca8ef23b6021741963da80c9c8d93ef51671d",
+              "context_revision": 2
+            }
+          ]
+        },
+        "output_artifact_id": "sha256:21b04a6b43269d3685266bf6269823a466c3c71fd3f8c5853cd6474d45855642",
+        "output_digest": "sha256:21b04a6b43269d3685266bf6269823a466c3c71fd3f8c5853cd6474d45855642",
+        "output_material_digest": "sha256:1be6c64d6249adfb8ad65f1c8e858005db7aded240d22729b3d3491be65d0a30",
+        "result_id": "sha256:e64b32f13eb5636424c64917458a12254d5b1cb0ca5a30f3e8d0e1ee59663206",
+        "result_digest": "sha256:e64b32f13eb5636424c64917458a12254d5b1cb0ca5a30f3e8d0e1ee59663206",
+        "rubric_version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+        "oracle_refs": [
+          {
+            "oracle_id": "D1_FIELDS_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:4331d7e3c5488113eecf5388ea3f6f68efb5d7673e388082160e198e7c46412f"
+          },
+          {
+            "oracle_id": "D2_EXACT_REFS_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:e0b65b310366f2670da122cc7945c2b3211983fe5ba5eb49806e7ee38a2dc52a"
+          },
+          {
+            "oracle_id": "D5_REVIEW_JOIN_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:e0b65b310366f2670da122cc7945c2b3211983fe5ba5eb49806e7ee38a2dc52a"
+          },
+          {
+            "oracle_id": "D6_STRICT_FINAL_SCHEMA_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:4331d7e3c5488113eecf5388ea3f6f68efb5d7673e388082160e198e7c46412f"
+          }
+        ],
+        "input_file_hashes": {
+          "envelope": "509c61cde7c97ed392035c2e1087462f4eeca48ff6cf02585d4c46399f5fba15",
+          "snapshot": "69bb08bfd9e494623abff92f4c781c089b7940c06c2bb8444ddfa965328a118a"
+        }
+      },
+      "readiness_observation": "READY",
+      "case_validity": "NOT_EVALUATED",
+      "invalid_reasons": [],
+      "evaluation_digest": null,
+      "planned_stratum": "LOCAL_SYNTHETIC_2_TURN"
+    },
+    {
+      "retained_label": "zero",
+      "case_id": "sha256:9e309b00743b3ba56cf38a32264171f876f4fc60ebfadc8046a6652b97bc8bf8",
+      "identity": {
+        "schema_version": "vefin-evaluation-case/v1",
+        "evaluation_policy_id": "WP06_MECHANISM_ONLY_V1",
+        "source_scope": {
+          "namespace": {
+            "kind": "DETACHED_OWNER_SNAPSHOT",
+            "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0"
+          },
+          "component_scopes": [
+            "RETAINED_LOCAL_FIXTURE",
+            "SYNTHETIC_CONTEXT"
+          ],
+          "classification": "LOCAL_SYNTHETIC",
+          "source_manifest": [
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Blob",
+              "source_id": "sha256:678b3b33bcc22f20d9bda4942c6ae7039dbc5d36a79acfbf91abab2b3c11880b",
+              "content_digest": "sha256:c222e1444a117c299634a9adca109281442525b943807434e66f47f0a8ff8655",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "RUN-WP02-LOCAL-FIXTURE",
+              "content_digest": "sha256:26f96b10d2cb8f5607e0dc3cd596282035f8c2c3bfa2069011574919eb8aa0ae",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "sha256:81e1648b445445e9f4c10b2471051817f489301bd36a68de877ca73ac6bf1323",
+              "content_digest": "sha256:2efc95730d97f9cd41d54fbc13ceb4d24c9b896115b7284104728ac0ab614530",
+              "field_selectors": [
+                "/payload_snapshot/execution_receipt"
+              ],
+              "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Review",
+              "source_id": "RUN-WP02-LOCAL-FIXTURE",
+              "content_digest": "sha256:97131f06b886341035f16e6882bd76fc7f197f6c082b181cd729f5254a9b47c7",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "SYNTHETIC_CONTEXT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            }
+          ]
+        },
+        "subject_type": "WP03_VALUATION_TASK_RESULT",
+        "subject_id": "sha256:539e210c65f0c8e8fcc3ad0fe78ae9b60224b6f97768b2cc6af5893231489ba5",
+        "envelope_digest": "sha256:fa2cb5dd020afee3602f5bc67fb1545e596f92f2e607fb2369a6b52ff12d26ba",
+        "native_run_id": "RUN-WP02-LOCAL-FIXTURE",
+        "native_task_id": "RUN-WP02-LOCAL-FIXTURE:1",
+        "task_fingerprint": "sha256:aa4b563bb30b49e46cdabbc39317ae4fde2ac266e2441a661c5717433b60e1e9",
+        "graph_identity": {
+          "graph_id": "PLAN-WP02-actual",
+          "run_id": "RUN-WP02-LOCAL-FIXTURE",
+          "semantic_hash": "sha256:90325b73e2042bc51eee0c389c7fc517d3d1b7c06cc99ffdab2eb157bd393dcf",
+          "version": 1
+        },
+        "context_identity": {
+          "turns": [
+            {
+              "context_id": "sha256:f5c3fd368a0f6ec4e620a4688100ae5c959384972384a47e6d1ab163e898fcc0",
+              "context_revision": 1,
+              "source_manifest_digest": "sha256:d8851d7467e573666a0881501b9232a569dbfbfacbee07b7fd17e50f69915524",
+              "pre_B_id": "sha256:c645f58430c21dc4c5595bb0d78abf63a07ae8a2bcf2913320c8ace7ce048017",
+              "request_manifest_digest": "sha256:a5f33f271c5d0ff9c1d78b932f5567982c8022d7f69739dcdf99f0a760048420",
+              "response_schema_digest": "sha256:3a202039b04e6bdfbd05c52d0f4be34f4a81f2ed9c2b88a685715fabcfc354bd"
+            }
+          ],
+          "final_context_id": "sha256:f5c3fd368a0f6ec4e620a4688100ae5c959384972384a47e6d1ab163e898fcc0",
+          "final_context_revision": 1
+        },
+        "native_subject_identity": {
+          "source_namespace": {
+            "anchor_digest": "sha256:2217e341d8ea95e12b1e9c34dd945743b23b2cb3a4e04b2cb31f45da0da739a0",
+            "kind": "DETACHED_OWNER_SNAPSHOT"
+          },
+          "subject_type": "WP03_VALUATION_TASK_RESULT",
+          "run_id": "RUN-WP02-LOCAL-FIXTURE",
+          "task_id": "RUN-WP02-LOCAL-FIXTURE:1",
+          "task_fingerprint": "sha256:aa4b563bb30b49e46cdabbc39317ae4fde2ac266e2441a661c5717433b60e1e9",
+          "graph": {
+            "graph_id": "PLAN-WP02-actual",
+            "run_id": "RUN-WP02-LOCAL-FIXTURE",
+            "semantic_hash": "sha256:90325b73e2042bc51eee0c389c7fc517d3d1b7c06cc99ffdab2eb157bd393dcf",
+            "version": 1
+          },
+          "admission_binding_id": "sha256:c0aeb5525c8879f7c37f667179d93787732d62cc8217d6b0eaac87f0c323df90",
+          "ordered_B_ids": [
+            "sha256:09dc2048b0e8526bbe8ab364a02f7db00bb844c20df51a72102d8ef798445769",
+            "sha256:c645f58430c21dc4c5595bb0d78abf63a07ae8a2bcf2913320c8ace7ce048017",
+            "sha256:81e1648b445445e9f4c10b2471051817f489301bd36a68de877ca73ac6bf1323"
+          ],
+          "result_id": "sha256:487a77ae41319ad3d23aa59315406f0799d3d44895fd94c9cc6d754319a34304",
+          "result_digest": "sha256:487a77ae41319ad3d23aa59315406f0799d3d44895fd94c9cc6d754319a34304",
+          "result_version": 1,
+          "current_result_id": "sha256:487a77ae41319ad3d23aa59315406f0799d3d44895fd94c9cc6d754319a34304",
+          "final_context_id": "sha256:f5c3fd368a0f6ec4e620a4688100ae5c959384972384a47e6d1ab163e898fcc0",
+          "final_context_revision": 1,
+          "final_context_manifest_digest": "sha256:d8851d7467e573666a0881501b9232a569dbfbfacbee07b7fd17e50f69915524",
+          "interaction_id": "sha256:cb929b28dbea1c0cdfda5d64829d0b62b7c305e837fd90c978b15df593e66c3d",
+          "dispatch_membership": [
+            {
+              "call_id": "sha256:cb929b28dbea1c0cdfda5d64829d0b62b7c305e837fd90c978b15df593e66c3d:1:1",
+              "pre_B_id": "sha256:c645f58430c21dc4c5595bb0d78abf63a07ae8a2bcf2913320c8ace7ce048017",
+              "receipt_B_id": "sha256:81e1648b445445e9f4c10b2471051817f489301bd36a68de877ca73ac6bf1323",
+              "context_id": "sha256:f5c3fd368a0f6ec4e620a4688100ae5c959384972384a47e6d1ab163e898fcc0",
+              "context_revision": 1
+            }
+          ]
+        },
+        "output_artifact_id": "sha256:678b3b33bcc22f20d9bda4942c6ae7039dbc5d36a79acfbf91abab2b3c11880b",
+        "output_digest": "sha256:678b3b33bcc22f20d9bda4942c6ae7039dbc5d36a79acfbf91abab2b3c11880b",
+        "output_material_digest": "sha256:555dc4149b568c7997d9b220a5ae463995a4e90cd64d82a2bf7b3386645c4d37",
+        "result_id": "sha256:487a77ae41319ad3d23aa59315406f0799d3d44895fd94c9cc6d754319a34304",
+        "result_digest": "sha256:487a77ae41319ad3d23aa59315406f0799d3d44895fd94c9cc6d754319a34304",
+        "rubric_version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+        "oracle_refs": [
+          {
+            "oracle_id": "D1_FIELDS_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:4331d7e3c5488113eecf5388ea3f6f68efb5d7673e388082160e198e7c46412f"
+          },
+          {
+            "oracle_id": "D2_EXACT_REFS_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:e0b65b310366f2670da122cc7945c2b3211983fe5ba5eb49806e7ee38a2dc52a"
+          },
+          {
+            "oracle_id": "D5_REVIEW_JOIN_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:e0b65b310366f2670da122cc7945c2b3211983fe5ba5eb49806e7ee38a2dc52a"
+          },
+          {
+            "oracle_id": "D6_STRICT_FINAL_SCHEMA_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:4331d7e3c5488113eecf5388ea3f6f68efb5d7673e388082160e198e7c46412f"
+          }
+        ],
+        "input_file_hashes": {
+          "envelope": "40c34b3d0aee3c9acc18331fb9f27d3a3180286aece08bbb0f311ce1655df967",
+          "snapshot": "2434fed1e002b4c18375abafce56bcd6a2afe799565831ebf34a49ba80fc2c6e"
+        }
+      },
+      "readiness_observation": "READY",
+      "case_validity": "NOT_EVALUATED",
+      "invalid_reasons": [],
+      "evaluation_digest": null,
+      "planned_stratum": "LOCAL_SYNTHETIC_1_TURN"
+    },
+    {
+      "retained_label": "zero_two",
+      "case_id": "sha256:e1de89f410e4cc298ef4b9b6c916aaada234893f7ea3727e035a91679c137500",
+      "identity": {
+        "schema_version": "vefin-evaluation-case/v1",
+        "evaluation_policy_id": "WP06_MECHANISM_ONLY_V1",
+        "source_scope": {
+          "namespace": {
+            "kind": "DETACHED_OWNER_SNAPSHOT",
+            "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42"
+          },
+          "component_scopes": [
+            "RETAINED_LOCAL_FIXTURE",
+            "SYNTHETIC_CONTEXT"
+          ],
+          "classification": "LOCAL_SYNTHETIC",
+          "source_manifest": [
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Blob",
+              "source_id": "sha256:b50826201c6443536297b08e2cce0681c9c9754acd881c71241c452bf6fad956",
+              "content_digest": "sha256:8e3b28a70daca1dce97aab81953317a61081cbd08b336b342e1b0f654d04b41f",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "RUN-WP02-LOCAL-FIXTURE",
+              "content_digest": "sha256:2fdcffd8af811857af71e9a7957c6431af5be5d2681c1564a147a396cd97c866",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "RETAINED_LOCAL_FIXTURE",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "sha256:84f599953e09a566ce630f11936ff2ac5b9e14de91e7d3a5fefec59ef9dd25f0",
+              "content_digest": "sha256:9ed84f871e5e569efc4d594d978990d292d24cc2bb39c0df00f1ca111a890128",
+              "field_selectors": [
+                "/payload_snapshot/execution_receipt"
+              ],
+              "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Repository",
+              "source_id": "sha256:a4fab6a501d0ce2ce2290ce364b712913887b6728c2d72d89f9d9c0d0c0887bf",
+              "content_digest": "sha256:308357ecf6983c9eab10fa14079c48f23457ff8da5f8a67408462c544ad46526",
+              "field_selectors": [
+                "/payload_snapshot/execution_receipt"
+              ],
+              "evidence_scope": "DETACHED_OWNER_SNAPSHOT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            },
+            {
+              "source_namespace": {
+                "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+                "kind": "DETACHED_OWNER_SNAPSHOT"
+              },
+              "owner": "Review",
+              "source_id": "RUN-WP02-LOCAL-FIXTURE",
+              "content_digest": "sha256:97131f06b886341035f16e6882bd76fc7f197f6c082b181cd729f5254a9b47c7",
+              "field_selectors": [
+                "/"
+              ],
+              "evidence_scope": "SYNTHETIC_CONTEXT",
+              "producer_baseline": "e290403578cd5485bcee53649ae14f835905d484"
+            }
+          ]
+        },
+        "subject_type": "WP03_VALUATION_TASK_RESULT",
+        "subject_id": "sha256:fb1f3102b3b215f8245a18fe76c5aa5bc2223008cc77cdba031c4856ccf37fe3",
+        "envelope_digest": "sha256:4e63fcded0de9d82ef8abc4d331c791ca143eac155b3b724dae561af05f216ce",
+        "native_run_id": "RUN-WP02-LOCAL-FIXTURE",
+        "native_task_id": "RUN-WP02-LOCAL-FIXTURE:1",
+        "task_fingerprint": "sha256:aa4b563bb30b49e46cdabbc39317ae4fde2ac266e2441a661c5717433b60e1e9",
+        "graph_identity": {
+          "graph_id": "PLAN-WP02-actual",
+          "run_id": "RUN-WP02-LOCAL-FIXTURE",
+          "semantic_hash": "sha256:90325b73e2042bc51eee0c389c7fc517d3d1b7c06cc99ffdab2eb157bd393dcf",
+          "version": 1
+        },
+        "context_identity": {
+          "turns": [
+            {
+              "context_id": "sha256:3b7c6672c22819c00398dd7d3888e239e158da4b2a53b88a1174eb4025d5b9b0",
+              "context_revision": 1,
+              "source_manifest_digest": "sha256:4942d0508c5cec2282ea479ead57729c7bf4bda18fda5580098f388392f9cb4d",
+              "pre_B_id": "sha256:5de9776cb91c9244aea60eeb7d3250f38ed704ed90f10bd91bd272227ee32d2b",
+              "request_manifest_digest": "sha256:f5425b0edbf506866b9992035e3865298954521cebf000b6093b3b0ade868034",
+              "response_schema_digest": "sha256:3a202039b04e6bdfbd05c52d0f4be34f4a81f2ed9c2b88a685715fabcfc354bd"
+            },
+            {
+              "context_id": "sha256:25194a124379823b469399f3ec7974489015823dd8e9c79da8bd05923667b0a3",
+              "context_revision": 2,
+              "source_manifest_digest": "sha256:86e7f24a07b5def1edbd22ef84fa132c98eca92f8602b27d88c107f163f48224",
+              "pre_B_id": "sha256:0d412918d97e28ab49c3c86e85896f064e21ac37f9d2cc5346b99e296b3051ea",
+              "request_manifest_digest": "sha256:06fdb327fd0a9d34a04c88eede041c4867bc7de782166c2fe1c77f1dd253d3ff",
+              "response_schema_digest": "sha256:9d9a1310e5cdfc35be22e6b867d8871dda22c6fb2f4d4882bf09827ce8ad1c16"
+            }
+          ],
+          "final_context_id": "sha256:25194a124379823b469399f3ec7974489015823dd8e9c79da8bd05923667b0a3",
+          "final_context_revision": 2
+        },
+        "native_subject_identity": {
+          "source_namespace": {
+            "anchor_digest": "sha256:8c355e204b207032e7a732f38985c7534531bbe562f478ab5c60881989a5cb42",
+            "kind": "DETACHED_OWNER_SNAPSHOT"
+          },
+          "subject_type": "WP03_VALUATION_TASK_RESULT",
+          "run_id": "RUN-WP02-LOCAL-FIXTURE",
+          "task_id": "RUN-WP02-LOCAL-FIXTURE:1",
+          "task_fingerprint": "sha256:aa4b563bb30b49e46cdabbc39317ae4fde2ac266e2441a661c5717433b60e1e9",
+          "graph": {
+            "graph_id": "PLAN-WP02-actual",
+            "run_id": "RUN-WP02-LOCAL-FIXTURE",
+            "semantic_hash": "sha256:90325b73e2042bc51eee0c389c7fc517d3d1b7c06cc99ffdab2eb157bd393dcf",
+            "version": 1
+          },
+          "admission_binding_id": "sha256:cc7faa73c3369da76ddd9283beb33c927af51bad2646a2c09d3aeeeff1d0cb40",
+          "ordered_B_ids": [
+            "sha256:87e800bd8cbbd6b73db73142fb02824b06a0694a601fe8c9d6b9706caee55081",
+            "sha256:5de9776cb91c9244aea60eeb7d3250f38ed704ed90f10bd91bd272227ee32d2b",
+            "sha256:a4fab6a501d0ce2ce2290ce364b712913887b6728c2d72d89f9d9c0d0c0887bf",
+            "sha256:0d412918d97e28ab49c3c86e85896f064e21ac37f9d2cc5346b99e296b3051ea",
+            "sha256:84f599953e09a566ce630f11936ff2ac5b9e14de91e7d3a5fefec59ef9dd25f0"
+          ],
+          "result_id": "sha256:f3a5fcdfb5aa80340481d062154e314e8090f03f12438a4225faeb0530b8b478",
+          "result_digest": "sha256:f3a5fcdfb5aa80340481d062154e314e8090f03f12438a4225faeb0530b8b478",
+          "result_version": 1,
+          "current_result_id": "sha256:f3a5fcdfb5aa80340481d062154e314e8090f03f12438a4225faeb0530b8b478",
+          "final_context_id": "sha256:25194a124379823b469399f3ec7974489015823dd8e9c79da8bd05923667b0a3",
+          "final_context_revision": 2,
+          "final_context_manifest_digest": "sha256:86e7f24a07b5def1edbd22ef84fa132c98eca92f8602b27d88c107f163f48224",
+          "interaction_id": "sha256:848d29ae5964850083f00b809dd2b51fe10fb60f5a886de31160830007a9f9b2",
+          "dispatch_membership": [
+            {
+              "call_id": "sha256:848d29ae5964850083f00b809dd2b51fe10fb60f5a886de31160830007a9f9b2:1:1",
+              "pre_B_id": "sha256:5de9776cb91c9244aea60eeb7d3250f38ed704ed90f10bd91bd272227ee32d2b",
+              "receipt_B_id": "sha256:a4fab6a501d0ce2ce2290ce364b712913887b6728c2d72d89f9d9c0d0c0887bf",
+              "context_id": "sha256:3b7c6672c22819c00398dd7d3888e239e158da4b2a53b88a1174eb4025d5b9b0",
+              "context_revision": 1
+            },
+            {
+              "call_id": "sha256:848d29ae5964850083f00b809dd2b51fe10fb60f5a886de31160830007a9f9b2:2:1",
+              "pre_B_id": "sha256:0d412918d97e28ab49c3c86e85896f064e21ac37f9d2cc5346b99e296b3051ea",
+              "receipt_B_id": "sha256:84f599953e09a566ce630f11936ff2ac5b9e14de91e7d3a5fefec59ef9dd25f0",
+              "context_id": "sha256:25194a124379823b469399f3ec7974489015823dd8e9c79da8bd05923667b0a3",
+              "context_revision": 2
+            }
+          ]
+        },
+        "output_artifact_id": "sha256:b50826201c6443536297b08e2cce0681c9c9754acd881c71241c452bf6fad956",
+        "output_digest": "sha256:b50826201c6443536297b08e2cce0681c9c9754acd881c71241c452bf6fad956",
+        "output_material_digest": "sha256:6f9ed2bc74f92d221b5ee94c087f7c389ad646c3fe246b8b5e002232cdc1d31a",
+        "result_id": "sha256:f3a5fcdfb5aa80340481d062154e314e8090f03f12438a4225faeb0530b8b478",
+        "result_digest": "sha256:f3a5fcdfb5aa80340481d062154e314e8090f03f12438a4225faeb0530b8b478",
+        "rubric_version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+        "oracle_refs": [
+          {
+            "oracle_id": "D1_FIELDS_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:4331d7e3c5488113eecf5388ea3f6f68efb5d7673e388082160e198e7c46412f"
+          },
+          {
+            "oracle_id": "D2_EXACT_REFS_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:e0b65b310366f2670da122cc7945c2b3211983fe5ba5eb49806e7ee38a2dc52a"
+          },
+          {
+            "oracle_id": "D5_REVIEW_JOIN_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:e0b65b310366f2670da122cc7945c2b3211983fe5ba5eb49806e7ee38a2dc52a"
+          },
+          {
+            "oracle_id": "D6_STRICT_FINAL_SCHEMA_V1",
+            "version": "WP06_D1_D2_D5_D6_RUBRIC_V1",
+            "source_digest": "sha256:4331d7e3c5488113eecf5388ea3f6f68efb5d7673e388082160e198e7c46412f"
+          }
+        ],
+        "input_file_hashes": {
+          "envelope": "22b4a7024bb7fd512f7e2c4d0aabe55226a6c3bf23726cd283dcabfa5a6d8910",
+          "snapshot": "7767563e9528842f4c0f503074c838cccba47172c52e77985ded1692c0c48be3"
+        }
+      },
+      "readiness_observation": "READY",
+      "case_validity": "NOT_EVALUATED",
+      "invalid_reasons": [],
+      "evaluation_digest": null,
+      "planned_stratum": "LOCAL_SYNTHETIC_2_TURN"
+    }
+  ],
+  "inputs": [
+    {
+      "label": "F_READY_ONE",
+      "envelope_path": "/Users/mac/codex-observability-setup/vefin-wp05-remediation/acceptor/work/fresh-fixtures/F_READY_ONE.envelope.json",
+      "envelope_sha256": "7ff212bbbfc3a992897dce7fe24feedee1255d135cbacea9146c95afdd34c250",
+      "snapshot_path": "/Users/mac/codex-observability-setup/vefin-wp05-remediation/acceptor/work/fresh-fixtures/F_READY_ONE.snapshot.json",
+      "snapshot_sha256": "6f714d8c6f76697cff70f4640bd13b8e80bd625fd199a75e8ee8efa73b021ecd",
+      "output_blob_id": "sha256:d1a6766540803f224db88b936189b859258eca17bdf0d56a3a08416aeddbae47",
+      "output_bytes_sha256_verified": true
+    },
+    {
+      "label": "F_READY_TWO",
+      "envelope_path": "/Users/mac/codex-observability-setup/vefin-wp05-remediation/acceptor/work/fresh-fixtures/F_READY_TWO.envelope.json",
+      "envelope_sha256": "509c61cde7c97ed392035c2e1087462f4eeca48ff6cf02585d4c46399f5fba15",
+      "snapshot_path": "/Users/mac/codex-observability-setup/vefin-wp05-remediation/acceptor/work/fresh-fixtures/F_READY_TWO.snapshot.json",
+      "snapshot_sha256": "69bb08bfd9e494623abff92f4c781c089b7940c06c2bb8444ddfa965328a118a",
+      "output_blob_id": "sha256:21b04a6b43269d3685266bf6269823a466c3c71fd3f8c5853cd6474d45855642",
+      "output_bytes_sha256_verified": true
+    },
+    {
+      "label": "zero",
+      "envelope_path": "/Users/mac/codex-observability-setup/vefin-wp05-remediation/acceptor/work/fresh-fixtures/zero.envelope.json",
+      "envelope_sha256": "40c34b3d0aee3c9acc18331fb9f27d3a3180286aece08bbb0f311ce1655df967",
+      "snapshot_path": "/Users/mac/codex-observability-setup/vefin-wp05-remediation/acceptor/work/fresh-fixtures/zero.snapshot.json",
+      "snapshot_sha256": "2434fed1e002b4c18375abafce56bcd6a2afe799565831ebf34a49ba80fc2c6e",
+      "output_blob_id": "sha256:678b3b33bcc22f20d9bda4942c6ae7039dbc5d36a79acfbf91abab2b3c11880b",
+      "output_bytes_sha256_verified": true
+    },
+    {
+      "label": "zero_two",
+      "envelope_path": "/Users/mac/codex-observability-setup/vefin-wp05-remediation/acceptor/work/fresh-fixtures/zero_two.envelope.json",
+      "envelope_sha256": "22b4a7024bb7fd512f7e2c4d0aabe55226a6c3bf23726cd283dcabfa5a6d8910",
+      "snapshot_path": "/Users/mac/codex-observability-setup/vefin-wp05-remediation/acceptor/work/fresh-fixtures/zero_two.snapshot.json",
+      "snapshot_sha256": "7767563e9528842f4c0f503074c838cccba47172c52e77985ded1692c0c48be3",
+      "output_blob_id": "sha256:b50826201c6443536297b08e2cce0681c9c9754acd881c71241c452bf6fad956",
+      "output_bytes_sha256_verified": true
+    }
+  ],
+  "source_pins": {
+    "/Users/mac/Verifiable_Financial_Agent_System_phase4/parent/src/domain/agent_output.py": "4331d7e3c5488113eecf5388ea3f6f68efb5d7673e388082160e198e7c46412f",
+    "/Users/mac/Verifiable_Financial_Agent_System_phase4/parent/src/domain/base.py": "f629b64e9e5995315160c0dca9daddf9fdff147db8bf3348694b1f9f435b1471",
+    "/Users/mac/Verifiable_Financial_Agent_System_phase4/parent/src/domain/node_binding.py": "f79a2fab7ccd4607b0c3c6b864e426e8d272ac6ad71964a5913d254423e2ef1c",
+    "/Users/mac/Verifiable_Financial_Agent_System_phase4/parent/src/agentic/valuation_context.py": "4b21e37084a10554542bda8601d96431374ae69fe266df2c576c1ea6fb756884",
+    "/Users/mac/Verifiable_Financial_Agent_System_phase4/parent/src/application/evaluation_input.py": "e0b65b310366f2670da122cc7945c2b3211983fe5ba5eb49806e7ee38a2dc52a"
+  },
+  "authority_pins": {
+    "/Users/mac/codex-observability-setup/vefin-build-state/wp06-contract-closure/E1_EVALUATION_CASE_COHORT_IDENTITY.md": "3cc37d431fe2d97803c99a07f5cae5634b62da9f9ae1972a2885cb2a8b881d13",
+    "/Users/mac/codex-observability-setup/vefin-build-state/wp06-contract-closure/E2_QUALITY_DIMENSIONS_ORACLES.md": "92d6612b973fef07e46bd458322be80998522eecbf30e8aeebb3e3908565726a",
+    "/Users/mac/codex-observability-setup/vefin-build-state/wp06-contract-closure/E3_COMPARABILITY_MISSING_METRICS.md": "ca1d3c673b98f3594bff7fba208f2845205cace11a51c0a56ed01aa837d1b1b9",
+    "/Users/mac/codex-observability-setup/vefin-build-state/wp06-contract-closure/E4_READ_ONLY_ALLOWLIST_HANDOFF.md": "afbcc544829abe65234ea5ee3905608c4318a031e2ade46f1ef8cf85122a6136",
+    "/Users/mac/codex-observability-setup/vefin-build-state/wp06-contract-closure/FUTURE_IMPLEMENTATION_CONTRACT.md": "0f4beb18a7437ea55f5b7e5e0574eccb4b2febbcb8815efedbc826e7dcafd341",
+    "/Users/mac/codex-observability-setup/vefin-build-state/wp06-contract-closure/FUTURE_ACCEPTANCE_TEST_PLAN.md": "e4404c3a993ed5ad89e14b4872edd858b52c8ff5e150e86528779d86de4e17b1",
+    "/Users/mac/codex-observability-setup/vefin-build-state/wp06-implementation-admission-preconditions/P1_SCOPE_AGGREGATION_ADDENDUM_V1.md": "8b34f8fd9c209257f2f5045ad09da5f4c4ef9eceb439b53dec192b947f9730fa",
+    "/Users/mac/codex-observability-setup/vefin-build-state/wp06-implementation-admission-preconditions/P2_WIRE_REPRESENTATION_D5_INTEGRITY_ADDENDUM_V1.md": "325b1b93b5675cb387953c8d9a719a4c205e9daccd6d3dd81feca6a6082c6f78",
+    "/Users/mac/codex-observability-setup/vefin-build-state/wp06-implementation-admission-preconditions/P3_TYPED_ACCEPTANCE_COVERAGE_ADDENDUM_V1.md": "99b69183fd0d4959a9d15bb5bde2f7de4710bb1389cccb1e83dec70762e163fc"
+  },
+  "regression_contract_sha256": "fe5a59a11b833d452a96f9e4dac0d624765905b6dec880cc8bf6dfdcf22a0450",
+  "baseline": {
+    "branch": "codex/recoverable-execution-policy-v1",
+    "head": "a134359801186ce4a52166546cb02fb71a6bcfc4",
+    "tree": "56b0a488a03b4298f7fc69a14e28787cb2b10b84"
+  },
+  "control_answer": {
+    "summary": "Bounded local mechanism control.",
+    "key_findings": [
+      "Exact retained reference binding."
+    ],
+    "risks": [],
+    "limitations": [],
+    "requires_follow_up": false
+  },
+  "controls_scope": "LOCAL_SYNTHETIC_ISOLATED_CONTROLS_NEVER_PRIMARY_MEMBERS"
+}
