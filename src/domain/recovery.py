@@ -166,6 +166,94 @@ class RecoveryContext(Frozen):
 attempt_failure_facts: ContextVar[dict | None] = ContextVar("attempt_failure_facts", default=None)
 
 
+class ProviderRejectionDetail(Frozen):
+    """Closed diagnostic vocabulary; never provider prose or arbitrary identifiers."""
+
+    provider_error_code: (
+        Literal[
+            "invalid_request",
+            "invalid_request_error",
+            "invalid_json",
+            "invalid_value",
+            "missing_required_parameter",
+            "unknown_parameter",
+            "unsupported_parameter",
+            "invalid_parameter",
+            "model_not_found",
+            "invalid_model",
+            "unsupported_model",
+            "unsupported_capability",
+            "context_length_exceeded",
+            "content_policy_violation",
+            "policy_violation",
+            "permission_denied",
+            "insufficient_quota",
+            "invalid_api_key",
+            "account_deactivated",
+            "rate_limit_exceeded",
+            "server_error",
+        ]
+        | None
+    ) = None
+    provider_error_type: (
+        Literal[
+            "invalid_request_error",
+            "authentication_error",
+            "permission_error",
+            "rate_limit_error",
+            "insufficient_quota",
+            "server_error",
+            "api_error",
+            "not_found_error",
+            "policy_error",
+        ]
+        | None
+    ) = None
+    provider_error_category: (
+        Literal[
+            "request_shape",
+            "model",
+            "capability",
+            "parameter",
+            "policy",
+            "account",
+            "entitlement",
+            "configuration",
+            "request_rejected",
+        ]
+        | None
+    ) = None
+    rejected_parameter: (
+        Literal[
+            "model",
+            "messages",
+            "tools",
+            "tool_choice",
+            "functions",
+            "function_call",
+            "response_format",
+            "response_format.type",
+            "response_format.json_schema",
+            "response_format.json_schema.name",
+            "response_format.json_schema.strict",
+            "response_format.json_schema.schema",
+            "temperature",
+            "top_p",
+            "max_tokens",
+            "max_completion_tokens",
+            "stream",
+            "stop",
+            "seed",
+            "n",
+        ]
+        | None
+    ) = None
+    provider_rejection_detail_present: bool | None = None
+    provider_rejection_detail_parse_status: Literal[
+        "PARSED", "NO_DETAIL", "INVALID_SAFE_DETAIL", "UNKNOWN"
+    ] = "UNKNOWN"
+
+
 class SafeFailureEvidence(Frozen):
     safe_code: Literal[
         "UNKNOWN_EXCEPTION",
@@ -210,6 +298,7 @@ class SafeFailureEvidence(Frozen):
     request_id_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     local_reason: Literal["LOCAL_PREFLIGHT_REJECTED", "DIRECT_FALLBACK_DISABLED"] | None = None
     resolved_model: ModelId | None = None
+    provider_rejection: ProviderRejectionDetail = Field(default_factory=ProviderRejectionDetail)
 
 
 def retain_attempt_facts(**facts):

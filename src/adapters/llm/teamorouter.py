@@ -5,7 +5,7 @@ import json
 from contextvars import ContextVar
 from hashlib import sha256
 from time import perf_counter
-from typing import Any, TypeVar
+from typing import Any, TypeVar, get_args
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -19,7 +19,12 @@ from src.adapters.llm.provider import (
     LLMStructuredResponse,
     StructuredOutputError,
 )
-from src.domain.recovery import attempt_failure_facts, retain_attempt_facts
+from src.domain.recovery import (
+    ModelId,
+    ProviderRejectionDetail,
+    attempt_failure_facts,
+    retain_attempt_facts,
+)
 from src.infrastructure.config.settings import LLMSettings
 from src.observability.model_transport import TransportObservation
 from src.observability.performance import annotate, observe, span
@@ -285,6 +290,10 @@ class OpenAICompatiblePlannerClient:
         attempt: int,
         started: float,
     ) -> LLMStructuredResponse[StructuredModel]:
+        # Rejection observations belong to this wire attempt, never a previous fallback.
+        retain_attempt_facts(
+            provider_rejection=ProviderRejectionDetail().model_dump(), resolved_model=None
+        )
         payload = {"model": model, **request_template}
         observer = context_call_observer.get()
         if observer is not None:
@@ -441,6 +450,8 @@ class OpenAICompatiblePlannerClient:
 
         retain_attempt_facts(safe_code="HTTP_RESPONSE")
         annotate(http_status=response.status_code)
+        if not response.is_success:
+            retain_attempt_facts(**_safe_rejection_facts(response))
         if response.status_code == 429:
             raise _RetryableProviderFailure(
                 "HTTP 429", LLMFailureClassification.QUOTA_OR_RATE_LIMIT
@@ -557,6 +568,82 @@ class TeamoRouterClient(OpenAICompatiblePlannerClient):
     """TeamoRouter specialization of the owned OpenAI-compatible boundary."""
 
     provider_name = "teamorouter"
+
+
+def _safe_rejection_facts(response: httpx.Response) -> dict[str, Any]:
+    # This boundary is observational: no body, free text, or unknown values escape.
+    # httpx has already buffered the response; cap parsing work, not transport size.
+    detail = ProviderRejectionDetail(
+        provider_rejection_detail_parse_status="INVALID_SAFE_DETAIL"
+    ).model_dump()
+    facts: dict[str, Any] = {"provider_rejection": detail}
+    try:
+        raw = response.content
+        if len(raw) > 16_384:
+            return facts
+        if not raw.strip():
+            detail.update(
+                provider_rejection_detail_present=False,
+                provider_rejection_detail_parse_status="NO_DETAIL",
+            )
+            return facts
+        body = response.json()
+        if not isinstance(body, dict):
+            return facts
+        error = body.get("error")
+        invalid = error is not None and not isinstance(error, dict)
+        error = error if isinstance(error, dict) else {}
+        keys = {
+            "code": "provider_error_code",
+            "type": "provider_error_type",
+            "category": "provider_error_category",
+            "param": "rejected_parameter",
+        }
+        for key, field in keys.items():
+            value = error.get(key)
+            if value is None:
+                continue
+            # Literal validation applies to values, not just key names or syntax.
+            allowed = get_args(get_args(ProviderRejectionDetail.model_fields[field].annotation)[0])
+            if type(value) is str and value in allowed:
+                detail[field] = value
+            else:
+                invalid = True
+        envelope_detail = False
+        model = body.get("model")
+        if type(model) is str and model in get_args(ModelId):
+            facts["resolved_model"] = model
+            envelope_detail = True
+        elif model is not None:
+            invalid = True
+        request_id = body.get("request_id")
+        if request_id is not None:
+            if type(request_id) is str and 0 < len(request_id) <= 256 and request_id.isascii():
+                envelope_detail = True
+                if not response.headers.get("x-request-id"):
+                    facts["request_id_sha256"] = "sha256:" + sha256(request_id.encode()).hexdigest()
+            else:
+                invalid = True
+        present = any(detail[field] is not None for field in keys.values())
+        detail["provider_rejection_detail_present"] = present
+        # Unknown keys are ignored. If they are all we got, safe detail is unavailable.
+        parsed = present or envelope_detail
+        unknown_keys = set(error) - set(keys) or set(body) - {"error", "model", "request_id"}
+        detail["provider_rejection_detail_parse_status"] = (
+            "INVALID_SAFE_DETAIL"
+            if invalid or (not parsed and unknown_keys)
+            else "PARSED"
+            if parsed
+            else "NO_DETAIL"
+        )
+    except Exception:
+        # Malformed JSON/encoding/depth or parser errors cannot replace HTTP failure.
+        return {
+            "provider_rejection": ProviderRejectionDetail(
+                provider_rejection_detail_parse_status="INVALID_SAFE_DETAIL"
+            ).model_dump()
+        }
+    return facts
 
 
 def _extract_content(body: dict[str, Any]) -> str | dict[str, Any]:
