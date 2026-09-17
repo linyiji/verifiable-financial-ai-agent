@@ -390,7 +390,9 @@ class InMemoryApplicationRepository:
             raise BindingDenied("STALE_INPUT", "dependency pointer")
         return root
 
-    async def record_method_observation(self, owner, task_id, observation, admission=None, calculation=None):
+    async def record_method_observation(
+        self, owner, task_id, observation, admission=None, calculation=None
+    ):
         from src.domain.financial_validation import MethodObservation
         observation = MethodObservation.model_validate(observation.model_dump())
         if observation != observation.identified():
@@ -400,8 +402,10 @@ class InMemoryApplicationRepository:
             task = aggregate.runtime.task(task_id)
             req = task.wp04_method_requirement
             if (req is None or not root.scheduler_started or observation.run_id != owner.run_id
-                    or observation.task_id != task_id or observation.object_id != aggregate.run.research_object_id
-                    or observation.owner_id != owner.owner_id or observation.owner_generation != owner.owner_generation
+                    or observation.task_id != task_id
+                    or observation.object_id != aggregate.run.research_object_id
+                    or observation.owner_id != owner.owner_id
+                    or observation.owner_generation != owner.owner_generation
                     or observation.task_fingerprint != task_fingerprint(task)
                     or observation.requirement_id != req.requirement_id
                     or observation.requirement_digest != req.requirement_digest
@@ -412,13 +416,19 @@ class InMemoryApplicationRepository:
                     or observation.descriptor_digest != req.descriptor.descriptor_digest):
                 raise BindingDenied('IDENTITY_MISMATCH', 'observation expected method')
             if observation.input_binding is not None:
-                input_body = {k: v for k, v in observation.input_binding.items() if k != 'input_identity_digest'}
+                input_body = {
+                    k: v for k, v in observation.input_binding.items()
+                    if k != 'input_identity_digest'
+                }
                 if (observation.input_identity_digest != digest(input_body, 'wp04-input-binding/v1')
-                        or observation.input_binding.get('input_identity_digest') != observation.input_identity_digest
-                        or observation.input_binding.get('requirement_digest') != req.requirement_digest):
+                        or observation.input_binding.get('input_identity_digest')
+                        != observation.input_identity_digest
+                        or observation.input_binding.get('requirement_digest')
+                        != req.requirement_digest):
                     raise BindingDenied('IDENTITY_MISMATCH', 'observation exact inputs')
             if observation.phase == 'PREPARED' and (
-                    observation.support_status != 'SUPPORTED' or observation.numeric_outcome != 'NONE'
+                    observation.support_status != 'SUPPORTED'
+                    or observation.numeric_outcome != 'NONE'
                     or observation.dispatch_count != 0 or observation.B_ref is not None
                     or observation.input_binding is None):
                 raise BindingDenied('IDENTITY_MISMATCH', 'PREPARED does not claim future execution')
@@ -429,7 +439,8 @@ class InMemoryApplicationRepository:
                         or observation.phase == 'DENIED_BEFORE_A'):
                     raise BindingDenied('IDENTITY_MISMATCH', 'method admission')
             elif (observation.phase != 'DENIED_BEFORE_A' or task_id in root.attempts
-                    or observation.admission_binding_id is not None or observation.reservation_id is not None
+                    or observation.admission_binding_id is not None
+                    or observation.reservation_id is not None
                     or observation.B_ref is not None or observation.dispatch_count != 0):
                 raise BindingDenied('STALE_WRITE_REJECTED', 'before-A observation')
             collection = aggregate.artifacts.wp04_method_observations or {}
@@ -437,13 +448,15 @@ class InMemoryApplicationRepository:
                 if collection[observation.observation_id] != observation:
                     raise BindingDenied('IDENTITY_MISMATCH', 'observation replay')
                 return observation
-            slot = lambda o: (o.run_id, o.task_fingerprint, o.owner_generation,
-                               o.requirement_digest, o.reservation_id, o.phase)
+            def slot(o):
+                return (o.run_id, o.task_fingerprint, o.owner_generation,
+                        o.requirement_digest, o.reservation_id, o.phase)
             if any(slot(item) == slot(observation) for item in collection.values()):
                 raise BindingDenied('STALE_WRITE_REJECTED', 'observation slot is immutable')
             if observation.previous_observation_id is not None:
                 previous = collection.get(observation.previous_observation_id)
-                if previous is None or previous.task_id != task_id or previous.reservation_id != observation.reservation_id:
+                if (previous is None or previous.task_id != task_id
+                        or previous.reservation_id != observation.reservation_id):
                     raise BindingDenied('IDENTITY_MISMATCH', 'observation predecessor')
             if observation.B_ref is not None:
                 b = root.resolved_inputs.get(observation.B_ref)
@@ -451,13 +464,16 @@ class InMemoryApplicationRepository:
                     raise BindingDenied('IDENTITY_MISMATCH', 'observation B')
             if observation.numeric_outcome == 'SUCCEEDED':
                 if (calculation is None or calculation.calculation_id != observation.calculation_ref
-                        or calculation.task_id != task_id or observation.phase != 'EXECUTION_FINISHED'
-                        or observation.support_status != 'SUPPORTED' or observation.dispatch_count != 1
+                        or calculation.task_id != task_id
+                        or observation.phase != 'EXECUTION_FINISHED'
+                        or observation.support_status != 'SUPPORTED'
+                        or observation.dispatch_count != 1
                         or observation.B_ref is None):
                     raise BindingDenied('IDENTITY_MISMATCH', 'observation calculation')
                 payload = calculation_core(calculation)
                 await self.verify_materials([OutputRecord(kind='CALCULATION_CORE',
-                    record_id=calculation.calculation_id, content_digest=digest(payload, 'calculation-core/v1'),
+                    record_id=calculation.calculation_id,
+                    content_digest=digest(payload, 'calculation-core/v1'),
                     record_schema='calculation-core/v1', payload_snapshot=payload,
                     location=calculation.calculation_id)], run_id=owner.run_id)
             elif observation.calculation_ref is not None:
@@ -475,15 +491,18 @@ class InMemoryApplicationRepository:
             # The denied reservation transaction has rolled back. Commit diagnostic
             # in its own owner-fenced transaction before propagating the original denial.
             from datetime import UTC, datetime
+
             from src.domain.financial_validation import MethodObservation
             req = task.wp04_method_requirement
             observation = MethodObservation(run_id=task.run_id, object_id=req.object_id,
-                task_id=task.task_id, owner_id=owner.owner_id, owner_generation=owner.owner_generation,
+                task_id=task.task_id, owner_id=owner.owner_id,
+                owner_generation=owner.owner_generation,
                 task_fingerprint=task_fingerprint(task), requirement_id=req.requirement_id,
                 requirement_digest=req.requirement_digest, requirement_state=req.requirement_state,
                 descriptor=req.descriptor, descriptor_digest=req.descriptor.descriptor_digest,
                 phase='DENIED_BEFORE_A', support_status=getattr(exc, 'support', 'UNKNOWN'),
-                diagnostic_code=exc.code, numeric_outcome='NONE', observed_at=datetime.now(UTC)).identified()
+                diagnostic_code=exc.code, numeric_outcome='NONE',
+                observed_at=datetime.now(UTC)).identified()
             try:
                 await self.record_method_observation(owner, task.task_id, observation)
             except BaseException as persistence_error:
@@ -521,13 +540,16 @@ class InMemoryApplicationRepository:
                 if verifier is None:
                     raise BindingDenied('METHOD_LOAD_EXPECTATION_MISSING')
                 verifier(req.descriptor)
-                if (req.scheme_hash != digest(aggregate.scheme) or req.scheme_id != aggregate.scheme.scheme_id
+                if (req.scheme_hash != digest(aggregate.scheme)
+                        or req.scheme_id != aggregate.scheme.scheme_id
                         or req.task_id != current.task_id or req.run_id != owner.run_id
                         or req.object_id != aggregate.run.research_object_id
                         or 'revenue_growth' not in aggregate.scheme.calculation_requirements
                         or (current.task_type, current.assigned_agent, current.skill_id) !=
-                           ('fundamental_analysis', 'fundamental_analyst', 'fundamental_analysis_v1')
-                        or requirements.get('wp04_candidates') != wp04_candidate_snapshot(aggregate, current)):
+                           ('fundamental_analysis', 'fundamental_analyst',
+                            'fundamental_analysis_v1')
+                        or requirements.get('wp04_candidates')
+                        != wp04_candidate_snapshot(aggregate, current)):
                     raise BindingDenied('IDENTITY_MISMATCH', 'WP04 requirement/candidates')
             dependencies = self._current_dependencies(aggregate, current)
             input_ids = set(current.task_input_evidence_ids)
@@ -660,12 +682,17 @@ class InMemoryApplicationRepository:
     ):
         async with self._binding_transaction(admission.run_id) as aggregate:
             root = self._validate_admission(aggregate, admission, require_started=True)
-            actual = tuple(
+            expected_ids = {
                 key
                 for key, value in root.resolved_inputs.items()
                 if value.admission_binding_id == admission.admission_binding_id
-            )
-            if not actual or actual != tuple(resolved_ids):
+            }
+            actual = tuple(resolved_ids)
+            if (
+                not expected_ids
+                or len(actual) != len(set(actual))
+                or expected_ids != set(actual)
+            ):
                 raise BindingDenied("MISSING_INPUT", "exact Stage B set")
             for key in actual:
                 step = root.resolved_inputs[key]
@@ -800,7 +827,8 @@ class InMemoryApplicationRepository:
         flags = validate_decimal_observation(metadata.get('decimal_flags_observation'))
         finishes = [o for o in (aggregate.artifacts.wp04_method_observations or {}).values()
                     if o.task_id == task.task_id and o.requirement_digest == req.requirement_digest
-                    and o.numeric_outcome == 'SUCCEEDED' and o.calculation_ref == calc.calculation_id
+                    and o.numeric_outcome == 'SUCCEEDED'
+                    and o.calculation_ref == calc.calculation_id
                     and o.B_ref == metadata.get('B_ref')]
         if len(finishes) != 1 or metadata.get('resulting_decimal_flags') != flags:
             raise BindingDenied('IDENTITY_MISMATCH', 'WP04 finish evidence')
