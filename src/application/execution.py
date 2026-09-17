@@ -14,7 +14,7 @@ from src.agentic.decisions import ResearchLeadReplanDecider
 from src.agentic.registry import RegistrationNotFoundError
 from src.agentic.research_agent import ResearchAgentInvocationError
 from src.agentic.specialist import SpecialistExecutionContext, SpecialistResult
-from src.application.repository import node_invocation
+from src.application.repository import node_invocation, node_recovery
 from src.application.research_outputs import (
     availability_map,
     configure_output_contracts,
@@ -110,6 +110,10 @@ class IntegratedTaskExecutor:
         profile = validate_runtime_profile(self._service, fresh, task)
         profile_token = execution_profile_context.set((task.run_id, task.task_id, profile, {}))
         token = node_invocation.set(context.admission)
+        reservation = fresh.node_binding.attempts[task.task_id]
+        recovery_token = node_recovery.set((
+            self._service.repository, context.admission, reservation.recovery,
+        ))
         self._active += 1
         self.parallel_peak = max(self.parallel_peak, self._active)
         try:
@@ -142,6 +146,7 @@ class IntegratedTaskExecutor:
         finally:
             self._active -= 1
             node_invocation.reset(token)
+            node_recovery.reset(recovery_token)
             execution_profile_context.reset(profile_token)
 
     async def _execute_instrumented_task(self, task: Task) -> TaskExecutionResult:
@@ -633,6 +638,17 @@ class IntegratedTaskExecutor:
                     + hashlib.sha256(await asyncio.to_thread(Path(source).read_bytes)).hexdigest(),
                 },
             )
+        reservation = self._aggregate.node_binding.attempts[task.task_id]
+        if reservation.prior_reservation_id is not None:
+            prior = [b for b in self._aggregate.node_binding.resolved_inputs.values()
+                     if b.reservation_id == reservation.prior_reservation_id
+                     and b.step_id == "calculation:" + calculation_id]
+            bound = self._bound_steps[-1]
+            if len(prior) != 1 or prior[0].payload_snapshot != bound.payload_snapshot:
+                raise BindingDenied("STALE_INPUT", "recovery calculation input")
+            saved = await self._service.repository.get_calculation(calculation_id)
+            if saved is not None:
+                return saved
         async with self._service.instrumentation.calculation(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -1241,6 +1257,16 @@ class IntegratedTaskExecutor:
                 inputs=build_risk_follow_up_context(self._aggregate, task, normalized_evidence),
             )
         if self._aggregate.node_binding is not None:
+            reservation = self._aggregate.node_binding.attempts[task.task_id]
+            if reservation.prior_reservation_id is not None:
+                prior_steps = [b for b in self._aggregate.node_binding.resolved_inputs.values()
+                               if b.reservation_id == reservation.prior_reservation_id
+                               and b.step_id == "agent-context"]
+                if len(prior_steps) != 1:
+                    raise BindingDenied("MISSING_INPUT", "prior exact agent context")
+                context = SpecialistExecutionContext.model_validate(
+                    prior_steps[0].payload_snapshot["context"]
+                )
             source = inspect.getsourcefile(type(agent))
             if not source:
                 raise BindingDenied("IDENTITY_MISMATCH", "Agent transform source")
@@ -1545,6 +1571,23 @@ class IntegratedTaskExecutor:
                 persisted = await self._service.evidence_repository.get(record.record_id)
                 if persisted is None or canonical_value(persisted) != record.payload_snapshot:
                     raise BindingDenied("MISSING_INPUT", "evidence original not committed")
+        reservation = self._aggregate.node_binding.attempts[task.task_id]
+        if reservation.prior_reservation_id is not None and step.startswith("calculation:"):
+            prior = [b for b in self._aggregate.node_binding.resolved_inputs.values()
+                     if b.reservation_id == reservation.prior_reservation_id and b.step_id == step]
+            if len(prior) != 1:
+                raise BindingDenied("MISSING_INPUT", "prior calculation binding")
+            proposed = canonical_value(payload)
+            previous = prior[0].payload_snapshot
+            def semantics(value):
+                return {**value, **{
+                    key: {k: v for k, v in value[key].items()
+                          if k not in {"created_at", "updated_at"}}
+                    for key in ("context", "capability")
+                }}
+            if semantics(proposed) != semantics(previous):
+                raise BindingDenied("STALE_INPUT", "recovery calculation semantics")
+            payload = previous
         binding = await self._service.repository.bind_resolved_inputs(
             node_invocation.get(), step_id=step, materials=material, payload=payload
         )

@@ -1776,6 +1776,18 @@ class PostgreSQLPhase4ProductBackend:
             self._wake.clear()
             async with self.uow_factory() as uow:
                 due = await uow.scheduler.list_due_admission_ids(due_at=datetime.now(UTC), limit=16)
+            # Same existing scheduler; the aggregate reservation is the recovery authority.
+            # Claim reads/locks current durable state, fencing concurrent deliveries.
+            for run_id in await self.service.repository.recovery_pending_run_ids():
+                try:
+                    owner = await self.service.repository.claim_execution(run_id)
+                except BindingDenied:
+                    continue
+                execution = asyncio.create_task(
+                    self._execute_started_run(run_id, execution_owner=owner)
+                )
+                self._executions.add(execution)
+                execution.add_done_callback(self._executions.discard)
             for admission_id in due:
                 try:
                     await self._start_admitted_run(admission_id)

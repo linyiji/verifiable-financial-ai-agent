@@ -224,6 +224,7 @@ class RecoveryEvidence(Frozen):
     scope: Scope
     kind: Literal["ATTEMPT_STARTED", "ATTEMPT_COMPLETED", "DECISION", "TERMINAL"]
     attempt_id: str | None = Field(default=None, pattern=r"^ATT-[0-9a-f-]{36}$")
+    node_reservation_id: str | None = None
     attempt_number: int = Field(default=0, ge=0, le=4)
     route: RouteId | None = None
     provider: Literal["teamorouter", "mimo"] | None = None
@@ -284,3 +285,36 @@ class RecoveryEvidence(Frozen):
                 ):
                     raise ValueError("Execution identity is outside policy")
         return self
+
+
+def applicable_recovery_evidence(records, scope, failed_reservation_id):
+    """Exact current Recovery stream; None is an identity, never a wildcard."""
+    return [record for record in records
+            if record.scope == scope and record.node_reservation_id == failed_reservation_id]
+
+
+def recovery_decision_is_current(records, scope, failed_reservation_id, saved):
+    """Validate saved provenance against the latest applicable durable timestamp.
+
+    Equal latest timestamps are ambiguous and fail closed, rather than letting
+    incidental row/list order or a random UUID authorize Recovery. Terminal
+    evidence retains A1 precedence regardless of its timestamp.
+    """
+    from datetime import datetime
+
+    owned = applicable_recovery_evidence(records, scope, failed_reservation_id)
+    if not owned or any(record.kind == "TERMINAL" for record in owned):
+        return False
+    latest_time = max(datetime.fromisoformat(record.timestamp) for record in owned)
+    latest = [record for record in owned
+              if datetime.fromisoformat(record.timestamp) == latest_time]
+    if len(latest) != 1:
+        return False
+    last = latest[0]
+    return (
+        last.kind == "DECISION" and last.outcome == "ALLOW"
+        and last.record_id == saved["refs"][-1]
+        and last.decision == RecoveryDecision.model_validate(saved["decision"])
+        and last.recovery_context == RecoveryContext.model_validate(saved["context"])
+        and any(record.record_id == saved["receipt_id"] for record in owned)
+    )

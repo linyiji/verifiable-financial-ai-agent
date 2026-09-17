@@ -31,6 +31,7 @@ from src.domain.recovery import (
     SafeFailureEvidence,
     Scope,
     attempt_failure_facts,
+    recovery_decision_is_current,
 )
 from src.evaluator.contracts import EvaluationAuthorizationError
 from src.infrastructure.database.recovery import capability_provenance
@@ -109,6 +110,10 @@ class AdaptiveRecovery:
         from src.application.execution_profiles import validate_recovery_profile
 
         frozen_profile = validate_recovery_profile(self, scope)
+        from src.application.repository import NodeRecoveryPending, node_recovery
+
+        durable = node_recovery.get()
+        resume = durable[2] if durable is not None else None
         generated = scope.operation_id.startswith("generated-capability:")
         owner_policy = TASK_POLICIES.get(scope.task_profile)
         ordered_route_walk = bool(owner_policy and owner_policy.ordered_route_walk)
@@ -187,6 +192,28 @@ class AdaptiveRecovery:
         refs = []
         last_failure = None
         last_failure_route = current
+        pending_decision = None
+        if resume is not None:
+            if resume["context"]["scope"] != scope.model_dump(mode="json"):
+                raise ValueError("Durable recovery scope changed")
+            history = list(resume["history"])
+            checked_routes = list(resume["checked_routes"])
+            attempted_models = list(resume["attempted_models"])
+            checks, decisions = resume["checks"], resume["decisions"]
+            model_switches = resume["model_switches"]
+            provider_switches = resume["provider_switches"]
+            provider_calls = resume["provider_calls"]
+            current = resume["current"]
+            last_failure_route = resume["last_failure_route"]
+            last_failure = FailureClass(resume["last_failure"])
+            refs = list(resume["refs"])
+            capabilities = {k: Capability(v) for k, v in resume["capabilities"].items()}
+            capability_refs = {k: tuple(v) for k, v in resume["capability_refs"].items()}
+            health = {k: Health(v) for k, v in resume["health"].items()}
+            started -= resume["elapsed"] + max(0, (
+                datetime.now(UTC) - datetime.fromisoformat(resume["saved_at"])
+            ).total_seconds())
+            pending_decision = RecoveryDecision.model_validate(resume["decision"])
 
         def remaining():
             return max(0.0, budget.max_total_recovery_time - (monotonic() - started))
@@ -198,6 +225,7 @@ class AdaptiveRecovery:
                 kind=kind,
                 outcome=outcome,
                 timestamp=datetime.now(UTC).isoformat(),
+                node_reservation_id=durable[1].attempt_reservation_id if durable else None,
                 **fields,
             )
             await self.store.append(value)
@@ -230,11 +258,21 @@ class AdaptiveRecovery:
             )
 
         # Re-delivery cannot reset budgets after crash or duplicate task scheduling.
-        if any(
-            r.scope.operation_id == scope.operation_id
-            for r in await self.store.records(scope.run_id, scope.task_id)
-        ):
-            await stop("INTERRUPTED_EXECUTION")
+        records = await self.store.records(scope.run_id, scope.task_id)
+        if resume is None:
+            # Initial delivery retains the operation single-entry fence (also
+            # enforced by the store). It cannot reset budgets with a new context.
+            if any(r.scope.operation_id == scope.operation_id for r in records):
+                await stop("INTERRUPTED_EXECUTION")
+        else:
+            # The immutable saved decision belongs to the failed reservation,
+            # not the newly admitted generation's UUID.
+            saved_record = next((r for r in records if r.record_id == refs[-1]), None)
+            if (saved_record is None or saved_record.node_reservation_id is None
+                    or not recovery_decision_is_current(
+                        records, scope, saved_record.node_reservation_id, resume,
+                    )):
+                await stop("INTERRUPTED_EXECUTION")
         if not routes[current].authority_exists:
             await stop("POLICY_DENIED")
         if budget.max_total_recovery_cost is not None:
@@ -438,110 +476,147 @@ class AdaptiveRecovery:
             finally:
                 attempt_failure_facts.reset(facts_token)
 
-        history.append(current)
-        attempted_models.append(routes[current].model)
-        response, failure = await invoke(current)
+        if resume is None:
+            history.append(current)
+            attempted_models.append(routes[current].model)
+            response, failure = await invoke(current)
+        else:
+            response = None
+            failure = RecoveryContext.model_validate(resume["context"]).failure
         while response is None:
-            if remaining() <= 0:
-                await stop("RECOVERY_BUDGET_EXHAUSTED")
-            if not failure.recoverable:
-                await stop("NONRECOVERABLE")
-            health[current] = Health.DEGRADED
-            discovery_history = history + checked_routes if ordered_route_walk else history
-            candidates = detector.candidates(
-                capabilities, discovery_history, budget, health, capability_refs
-            )
-            # Never spend a capability check on a route that cannot be used under
-            # the remaining switch budget. Independent policy still rechecks it.
-            candidates = tuple(
-                candidate.model_copy(
-                    update={"eligible": False, "next_allowed_action": Action.FAIL_TASK}
+            if pending_decision is not None:
+                decision = pending_decision
+                pending_decision = None
+                if remaining() <= 0:
+                    await stop("RECOVERY_BUDGET_EXHAUSTED")
+            else:
+                if remaining() <= 0:
+                    await stop("RECOVERY_BUDGET_EXHAUSTED")
+                if not failure.recoverable:
+                    await stop("NONRECOVERABLE")
+                health[current] = Health.DEGRADED
+                discovery_history = history + checked_routes if ordered_route_walk else history
+                candidates = detector.candidates(
+                    capabilities, discovery_history, budget, health, capability_refs
                 )
-                if candidate.route != current
-                and (
-                    (
-                        candidate.provider == routes[current].provider
-                        and model_switches >= budget.max_model_fallbacks
+                # Never spend a capability check on a route that cannot be used under
+                # the remaining switch budget. Independent policy still rechecks it.
+                candidates = tuple(
+                    candidate.model_copy(
+                        update={"eligible": False, "next_allowed_action": Action.FAIL_TASK}
                     )
-                    or (
-                        candidate.provider != routes[current].provider
-                        and provider_switches >= budget.max_cross_provider_switches
+                    if candidate.route != current
+                    and (
+                        (
+                            candidate.provider == routes[current].provider
+                            and model_switches >= budget.max_model_fallbacks
+                        )
+                        or (
+                            candidate.provider != routes[current].provider
+                            and provider_switches >= budget.max_cross_provider_switches
+                        )
                     )
+                    else candidate
+                    for candidate in candidates
                 )
-                else candidate
-                for candidate in candidates
-            )
-            recovery_context = RecoveryContext(
-                scope=scope,
-                failure=failure,
-                current_route=current,
-                candidates=candidates,
-                attempt_history=tuple(history),
-                remaining_attempts=budget.max_total_attempts_per_task - len(history),
-                remaining_checks=budget.max_capability_checks - checks,
-                remaining_decisions=budget.max_recovery_decisions - decisions,
-                remaining_seconds=remaining(),
-                evidence_refs=tuple(refs[-12:]),
-            )
-            if ordered_route_walk and not any(
-                candidate.eligible or candidate.next_allowed_action == Action.CAPABILITY_CHECK
-                for candidate in candidates
-            ):
-                decision = RecoveryDecision(
+                recovery_context = RecoveryContext(
                     scope=scope,
-                    action=Action.FAIL_TASK,
-                    reason_code="NO_ALLOWED_ROUTE",
-                    evidence_refs=recovery_context.evidence_refs,
+                    failure=failure,
+                    current_route=current,
+                    candidates=candidates,
+                    attempt_history=tuple(history),
+                    remaining_attempts=budget.max_total_attempts_per_task - len(history),
+                    remaining_checks=budget.max_capability_checks - checks,
+                    remaining_decisions=budget.max_recovery_decisions - decisions,
+                    remaining_seconds=remaining(),
+                    evidence_refs=tuple(refs[-12:]),
                 )
+                if ordered_route_walk and not any(
+                    candidate.eligible or candidate.next_allowed_action == Action.CAPABILITY_CHECK
+                    for candidate in candidates
+                ):
+                    decision = RecoveryDecision(
+                        scope=scope,
+                        action=Action.FAIL_TASK,
+                        reason_code="NO_ALLOWED_ROUTE",
+                        evidence_refs=recovery_context.evidence_refs,
+                    )
+                    await record(
+                        "DECISION",
+                        "ALLOW",
+                        action=decision.action,
+                        decision=decision,
+                        recovery_context=recovery_context,
+                    )
+                    await stop("POLICY_DENIED")
+                if (
+                    recovery_context.remaining_decisions <= 0
+                    or recovery_context.remaining_attempts <= 0
+                ):
+                    await stop("RECOVERY_BUDGET_EXHAUSTED")
+                try:
+                    decision = self.supervisor.decide(recovery_context)
+                    if inspect.isawaitable(decision):
+                        async with asyncio.timeout(remaining()):
+                            decision = await decision
+                    decision = RecoveryDecision.model_validate(decision)
+                except TimeoutError:
+                    await stop("RECOVERY_BUDGET_EXHAUSTED")
+                except EvaluationAuthorizationError:
+                    raise
+                except Exception:
+                    await stop("POLICY_DENIED")
+                allowed = policy_allows(
+                    decision,
+                    recovery_context,
+                    budget,
+                    model_switches=model_switches,
+                    provider_switches=provider_switches,
+                )
+                decisions += 1
                 await record(
                     "DECISION",
-                    "ALLOW",
+                    "ALLOW" if allowed else "DENY",
+                    route=decision.target_route,
                     action=decision.action,
                     decision=decision,
                     recovery_context=recovery_context,
                 )
-                await stop("POLICY_DENIED")
-            if (
-                recovery_context.remaining_decisions <= 0
-                or recovery_context.remaining_attempts <= 0
-            ):
-                await stop("RECOVERY_BUDGET_EXHAUSTED")
-            try:
-                decision = self.supervisor.decide(recovery_context)
-                if inspect.isawaitable(decision):
-                    async with asyncio.timeout(remaining()):
-                        decision = await decision
-                decision = RecoveryDecision.model_validate(decision)
-            except TimeoutError:
-                await stop("RECOVERY_BUDGET_EXHAUSTED")
-            except EvaluationAuthorizationError:
-                raise
-            except Exception:
-                await stop("POLICY_DENIED")
-            allowed = policy_allows(
-                decision,
-                recovery_context,
-                budget,
-                model_switches=model_switches,
-                provider_switches=provider_switches,
-            )
-            decisions += 1
-            await record(
-                "DECISION",
-                "ALLOW" if allowed else "DENY",
-                route=decision.target_route,
-                action=decision.action,
-                decision=decision,
-                recovery_context=recovery_context,
-            )
-            if not allowed:
-                await stop("POLICY_DENIED")
-            if decision.action in {Action.FAIL_TASK, Action.FAIL_RUN}:
-                await stop(
-                    "RECOVERY_BUDGET_EXHAUSTED"
-                    if decision.reason_code == "BUDGET_EXHAUSTED"
-                    else "POLICY_DENIED"
+                if not allowed:
+                    await stop("POLICY_DENIED")
+                if decision.action in {Action.FAIL_TASK, Action.FAIL_RUN}:
+                    await stop(
+                        "RECOVERY_BUDGET_EXHAUSTED"
+                        if decision.reason_code == "BUDGET_EXHAUSTED"
+                        else "POLICY_DENIED"
+                    )
+                # Re-entry must consume durable inputs, without reacquisition or
+                # replaying a method whose result embeds the prior reservation.
+                # Those invocations retain the existing in-call recovery path.
+                can_reenter = durable is not None and (
+                    not durable[1].authorized_input_requirements.get("acquire", False)
+                    and "wp04_candidates" not in durable[1].authorized_input_requirements
                 )
+                if can_reenter and not generated:
+                    owned = await self.store.records(scope.run_id, scope.task_id)
+                    completion = next(r for r in reversed(owned)
+                                      if r.scope == scope and r.kind == "ATTEMPT_COMPLETED")
+                    if (completion.outcome == "FAIL"
+                            and completion.failure_class == recovery_context.failure.failure_class):
+                        saved = dict(
+                            decision=decision.model_dump(mode="json"),
+                            context=recovery_context.model_dump(mode="json"),
+                            history=history, checked_routes=checked_routes,
+                            attempted_models=attempted_models, checks=checks, decisions=decisions,
+                            model_switches=model_switches, provider_switches=provider_switches,
+                            provider_calls=provider_calls, current=current,
+                            last_failure_route=last_failure_route, last_failure=last_failure.value,
+                            refs=refs, capabilities=capabilities, capability_refs=capability_refs,
+                            health=health, elapsed=monotonic() - started,
+                            receipt_id=completion.record_id, saved_at=datetime.now(UTC).isoformat(),
+                        )
+                        await durable[0].fail_node_for_recovery(durable[1], saved, self.store)
+                        raise NodeRecoveryPending(scope.task_id)
             target = decision.target_route
             if decision.action == Action.CAPABILITY_CHECK:
                 checks += 1

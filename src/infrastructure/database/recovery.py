@@ -1,5 +1,7 @@
 """Additive append-only recovery evidence, independent of historical aggregates."""
 
+from asyncio import Lock
+
 from sqlalchemy import JSON, ForeignKey, Index, String, select, text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,6 +37,15 @@ class RecoveryEvidenceStore:
     async def append(self, record):
         record = RecoveryEvidence.model_validate(record)
         async with self.sessions() as session, session.begin():
+            # Serialize evidence publication with same-node claim/reservation. Both
+            # authorities already share this PostgreSQL aggregate row.
+            from src.application.persistence import ResearchRunAggregateRow
+
+            await session.scalar(
+                select(ResearchRunAggregateRow.run_id)
+                .where(ResearchRunAggregateRow.run_id == record.scope.run_id)
+                .with_for_update()
+            )
             session.add(
                 RecoveryEvidenceRow(
                     record_id=record.record_id,
@@ -45,13 +56,17 @@ class RecoveryEvidenceStore:
             )
 
     async def records(self, run_id=None, task_id=None):
+        async with self.sessions() as session:
+            return await self.records_in_session(session, run_id, task_id)
+
+    @staticmethod
+    async def records_in_session(session, run_id=None, task_id=None):
         query = select(RecoveryEvidenceRow)
         if run_id is not None:
             query = query.where(RecoveryEvidenceRow.run_id == run_id)
         if task_id is not None:
             query = query.where(RecoveryEvidenceRow.task_id == task_id)
-        async with self.sessions() as session:
-            rows = list(await session.scalars(query))
+        rows = list(await session.scalars(query))
         result = []
         for row in rows:
             value = RecoveryEvidence.model_validate(row.payload)
@@ -110,8 +125,13 @@ class MemoryRecoveryEvidenceStore:
 
     def __init__(self):
         self.values = []
+        self.admission_lock = Lock()
 
     async def append(self, record):
+        async with self.admission_lock:
+            self._append(record)
+
+    def _append(self, record):
         record = RecoveryEvidence.model_validate(record)
         if any(value.record_id == record.record_id for value in self.values):
             raise ValueError("Duplicate immutable record")

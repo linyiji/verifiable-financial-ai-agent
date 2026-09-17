@@ -202,7 +202,12 @@ class AdmissionBinding(BindingValue):
 class AttemptReservation(BindingValue):
     admission: AdmissionBinding
     execution_started: bool = False
-    status: Literal["RESERVED", "DISPATCHED", "COMMITTED", "RESULT_UNKNOWN"]
+    status: Literal["RESERVED", "DISPATCHED", "COMMITTED", "RESULT_UNKNOWN", "FAILED"]
+    generation: int = Field(default=1, ge=1)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    prior_reservation_id: str | None = None
+    recovery: dict | None = None
 
 
 class ResolvedInputBinding(BindingValue):
@@ -249,7 +254,7 @@ class NodeBindingState(BaseModel):
     execution_mode: Literal["DEFAULT", "RECOVERABLE_V1", "UNKNOWN"]
     owner_generation: int = Field(ge=0)
     owner_id: str | None
-    lifecycle: Literal["UNCLAIMED", "ACTIVE", "CLOSED", "RESULT_UNKNOWN"]
+    lifecycle: Literal["UNCLAIMED", "ACTIVE", "CLOSED", "RESULT_UNKNOWN", "RECOVERY_PENDING"]
     binding_revision: int = Field(ge=0)
     scheduler_started: bool = False
     frozen_graph: GraphIdentity
@@ -257,6 +262,7 @@ class NodeBindingState(BaseModel):
     scenario_snapshot_digest: str | None = None
     execution_profile_snapshot_digest: str | None = None
     attempts: dict[str, AttemptReservation] = Field(default_factory=dict)
+    attempt_history: dict[str, AttemptReservation] = Field(default_factory=dict)
     resolved_inputs: dict[str, ResolvedInputBinding] = Field(default_factory=dict)
     results: dict[str, ResultBinding] = Field(default_factory=dict)
     current_results: dict[str, str] = Field(default_factory=dict)

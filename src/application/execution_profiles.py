@@ -349,10 +349,24 @@ def validate_runtime_profile(service, aggregate, task):
     )
     if profile.requested_route != (selection.route_id if selection else None):
         raise BindingDenied("PROFILE_SELECTION_CHANGED", task.task_id)
-    current = digest(runtime_configuration(service, task, selection), "execution-composition/v1")
+    current = canonical_value(runtime_configuration(service, task, selection))
+
+    def executable_configuration(configuration):
+        # CapabilityDefinition inherits audit timestamps initialized at module import.
+        # They are not executable authority. Keep the exact frozen snapshot/digest;
+        # compare every semantic definition field and implementation hash on restart.
+        return {**configuration, "native_tools": [
+            {**tool, "definition": {
+                key: value for key, value in tool["definition"].items()
+                if key not in {"created_at", "updated_at"}
+            }} if "definition" in tool else tool
+            for tool in configuration["native_tools"]
+        ]}
+
     if (
         profile.runtime_configuration_digest is None
-        or current != profile.runtime_configuration_digest
+        or executable_configuration(current)
+        != executable_configuration(profile.runtime_configuration)
     ):
         raise BindingDenied("PROFILE_COMPOSITION_INCOMPATIBLE", task.task_id)
     profile.require_method(task.skill_id)

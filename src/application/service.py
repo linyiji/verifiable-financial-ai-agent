@@ -555,6 +555,22 @@ class ResearchApplicationService:
                 # A current Run token alone does not authorize this invocation to close it.
                 raise
             current = await self.repository.validate_execution(owner)
+            from src.application.repository import NodeRecoveryPending
+
+            pending_leaves = [exc]
+            pending_only = True
+            while pending_leaves:
+                leaf = pending_leaves.pop()
+                if isinstance(leaf, BaseExceptionGroup):
+                    pending_leaves.extend(leaf.exceptions)
+                elif not isinstance(leaf, NodeRecoveryPending):
+                    pending_only = False
+            if stage == "TASK_EXECUTION" and pending_only:
+                pending = await self.repository.suspend_for_recovery(owner)
+                await self.repository.save_runtime_events(
+                    list(await self.event_store.replay(run_id))
+                )
+                return pending
             if stage == "TASK_EXECUTION":
                 from src.domain.financial_validation import MethodObservation
                 from src.domain.node_binding import task_fingerprint
@@ -695,6 +711,17 @@ class ResearchApplicationService:
         store = self._evidence_stores.setdefault(
             aggregate.run.run_id, RunEvidenceStore(aggregate.run.run_id)
         )
+        if aggregate.node_binding is not None and not store.records:
+            committed_evidence = {
+                record.record_id for result_id in aggregate.node_binding.current_results.values()
+                for record in aggregate.node_binding.results[result_id].output_records
+                if record.kind == "EVIDENCE"
+            }
+            store.restore_committed(
+                [record for record in aggregate.artifacts.evidence
+                 if record.evidence_id in committed_evidence],
+                aggregate.runtime.actual_graph.tasks,
+            )
         router = EvidenceTaskRouter(collector=self.evidence_collector, store=store)  # type: ignore[arg-type]
         routing = await router.route(
             task,

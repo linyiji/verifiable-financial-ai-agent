@@ -215,6 +215,10 @@ class DependencyScheduler:
                     )
                 ]
                 if errors:
+                    from src.application.repository import NodeRecoveryPending
+
+                    if all(isinstance(error, NodeRecoveryPending) for error in errors):
+                        raise ExceptionGroup("node recovery pending", errors)
                     self._block_failed_dependents(state)
                     state.run_status = RunStatus.FAILED
                     generated_capability_failed = any(
@@ -325,7 +329,8 @@ class DependencyScheduler:
                 admission = await self._admission_repository.reserve_node(
                     self._execution_owner, task, requirements
                 )
-                await self._admission_repository.dispatch_node(admission)
+                dispatched = await self._admission_repository.dispatch_node(admission)
+                attempt = dispatched.node_binding.attempts[task_id].generation
             if task.status is not TaskStatus.READY:
                 transition_task(task, TaskStatus.READY)
             transition_task(task, TaskStatus.RUNNING)
@@ -345,6 +350,11 @@ class DependencyScheduler:
                 state.task(task_id).status = TaskStatus.CANCELLED
                 raise
             except Exception as error:
+                from src.application.repository import NodeRecoveryPending
+
+                if isinstance(error, NodeRecoveryPending):
+                    state.task(task_id).status = TaskStatus.WAITING
+                    raise
                 task = state.task(task_id)
                 last_error = error
                 diagnostic = task_failure_diagnostic(error, task=task, attempt=attempt)

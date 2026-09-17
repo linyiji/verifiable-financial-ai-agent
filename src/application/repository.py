@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
 from copy import deepcopy
 from pathlib import Path
@@ -34,6 +34,13 @@ from src.domain.runtime_event import RuntimeEvent
 
 # Ephemeral invocation context, never serialized or restored from a checkpoint.
 node_invocation = ContextVar("vefin_node_invocation", default=None)
+# Invocation plumbing only; durable continuation lives in AttemptReservation.
+node_recovery = ContextVar("vefin_node_recovery", default=None)
+
+
+class NodeRecoveryPending(Exception):
+    """A known failed node has an authorized durable continuation."""
+
 
 
 def initialize_binding(aggregate, *, service=None, snapshot=None):
@@ -205,11 +212,16 @@ class ApplicationRepository(Protocol):
 
 class InMemoryApplicationRepository:
     def __init__(self) -> None:
+        self._recovery_stores = {}
         self._objects: dict[str, ResearchObject] = {}
         self._drafts: dict[str, ResearchRunDraft] = {}
         self._runs: dict[str, RunAggregate] = {}
         self._lock = asyncio.Lock()
         self._calculations: dict[str, CalculationRecord] = {}
+
+    async def get_calculation(self, calculation_id):
+        async with self._lock:
+            return deepcopy(self._calculations.get(calculation_id))
 
     async def save_calculation(self, calculation: CalculationRecord) -> None:
         async with self._lock:
@@ -286,7 +298,10 @@ class InMemoryApplicationRepository:
     @asynccontextmanager
     async def _binding_transaction(self, run_id):
         """Isolated in-memory test implementation; SQL subclass supplies durability."""
-        async with self._lock:
+        async with self._lock, AsyncExitStack() as fences:
+            store = self._recovery_stores.get(run_id)
+            if store is not None:
+                await fences.enter_async_context(store.admission_lock)
             current = self._runs.get(run_id)
             if current is None:
                 raise BindingDenied("STATE_REFRESH_REQUIRED", run_id)
@@ -306,9 +321,17 @@ class InMemoryApplicationRepository:
     async def claim_execution(self, run_id):
         async with self._binding_transaction(run_id) as aggregate:
             root = validate_root(aggregate)
-            if root.lifecycle != "UNCLAIMED" or root.owner_generation != 0 or root.owner_id:
+            recovering = root.lifecycle == "RECOVERY_PENDING"
+            if not recovering and (
+                root.lifecycle != "UNCLAIMED" or root.owner_generation != 0 or root.owner_id
+            ):
                 raise BindingDenied("OWNER_ALREADY_CLAIMED", run_id)
-            root.owner_generation = 1
+            if recovering:
+                self._validate_pending(aggregate)
+                for prior in root.attempts.values():
+                    if prior.status == "FAILED":
+                        await self._validate_current_recovery_evidence(prior)
+            root.owner_generation += 1
             root.owner_id = str(uuid4())
             root.lifecycle = "ACTIVE"
             from datetime import UTC, datetime
@@ -317,9 +340,13 @@ class InMemoryApplicationRepository:
 
             aggregate.run.status = RunStatus.RUNNING
             aggregate.runtime.run_status = RunStatus.RUNNING
-            aggregate.run.started_at = datetime.now(UTC)
-            aggregate.run.updated_at = aggregate.run.started_at
-            token = OwnerToken(run_id=run_id, owner_generation=1, owner_id=root.owner_id)
+            if not recovering:
+                aggregate.run.started_at = datetime.now(UTC)
+            aggregate.run.updated_at = datetime.now(UTC)
+            root.scheduler_started = False
+            token = OwnerToken(
+                run_id=run_id, owner_generation=root.owner_generation, owner_id=root.owner_id
+            )
         return token
 
     async def begin_scheduler(self, owner):
@@ -367,7 +394,8 @@ class InMemoryApplicationRepository:
                 or reservation.status != "COMMITTED"
                 or reservation.admission.admission_binding_id != result.admission_binding_id
                 or reservation.admission.attempt_reservation_id != result.reservation_id
-                or result.owner_generation != root.owner_generation
+                or result.owner_generation != reservation.admission.owner.owner_generation
+                or result.owner_generation > root.owner_generation
             ):
                 raise BindingDenied("STALE_INPUT", task_id)
             for ref in result.resolved_input_binding_ids:
@@ -548,8 +576,22 @@ class InMemoryApplicationRepository:
             current = aggregate.runtime.task(task.task_id)
             if task_fingerprint(current) != task_fingerprint(task):
                 raise BindingDenied("IDENTITY_MISMATCH", task.task_id)
-            if task.task_id in root.attempts:
-                raise BindingDenied("RESULT_UNKNOWN", "reservation already exists")
+            prior = root.attempts.get(task.task_id)
+            if prior is not None:
+                self._validate_recovery(aggregate, current, prior)
+                await self._validate_current_recovery_evidence(prior)
+                from datetime import UTC, datetime
+
+                from src.application.execution_profiles import frozen_profile
+
+                spent = prior.recovery["elapsed"] + max(0, (
+                    datetime.now(UTC) - datetime.fromisoformat(prior.recovery["saved_at"])
+                ).total_seconds())
+                budget = frozen_profile(aggregate, current).recovery_budget
+                if spent >= budget.max_total_recovery_time:
+                    raise BindingDenied("RECOVERY_BUDGET_EXHAUSTED", task.task_id)
+                if requirements != prior.admission.authorized_input_requirements:
+                    raise BindingDenied("IDENTITY_MISMATCH", "recovery requirements")
             if requirements.get("task") != task_semantics(current) or requirements.get(
                 "scheme"
             ) != canonical_value(aggregate.scheme):
@@ -636,20 +678,153 @@ class InMemoryApplicationRepository:
             admission = admission.model_copy(
                 update={"admission_binding_id": value_identity(admission, "admission_binding_id")}
             )
-            root.attempts[task.task_id] = AttemptReservation(admission=admission, status="RESERVED")
+            if prior is not None:
+                if (dependencies != prior.admission.dependency_result_bindings
+                        or preexisting != prior.admission.preexisting_inputs):
+                    raise BindingDenied("STALE_INPUT", "recovery accepted inputs")
+                root.attempt_history[prior.admission.attempt_reservation_id] = prior
+            root.attempts[task.task_id] = AttemptReservation(
+                admission=admission, status="RESERVED",
+                generation=prior.generation + 1 if prior else 1,
+                prior_reservation_id=prior.admission.attempt_reservation_id if prior else None,
+                recovery=prior.recovery if prior else None,
+            )
         return admission
+
+    async def _current_recovery_records(self, run_id, task_id):
+        store = self._recovery_stores.get(run_id)
+        if store is None:
+            raise BindingDenied("RECOVERY_EVIDENCE_MISMATCH", "current evidence unavailable")
+        return await store.records(run_id, task_id)
+
+    async def _validate_current_recovery_evidence(self, prior):
+        from src.domain.recovery import RecoveryContext, recovery_decision_is_current
+
+        saved = prior.recovery
+        context = RecoveryContext.model_validate(saved["context"])
+        admission = prior.admission
+        if (context.scope.run_id != admission.run_id
+                or context.scope.task_id != admission.task_id):
+            raise BindingDenied("RECOVERY_EVIDENCE_MISMATCH", admission.task_id)
+        records = await self._current_recovery_records(admission.run_id, admission.task_id)
+        if not recovery_decision_is_current(
+            records, context.scope, admission.attempt_reservation_id, saved,
+        ):
+            raise BindingDenied("RECOVERY_EVIDENCE_MISMATCH", admission.task_id)
+
+    @staticmethod
+    def _validate_recovery(aggregate, task, prior):
+        from src.agentic.recovery_policy import policy_allows
+        from src.application.execution_profiles import frozen_profile
+        from src.domain.enums import TaskStatus
+        from src.domain.recovery import Action, RecoveryContext, RecoveryDecision
+
+        root = validate_root(aggregate)
+        saved = prior.recovery
+        if (prior.status != "FAILED" or prior.completed_at is None or saved is None
+                or task.task_id in root.current_results or task.status is TaskStatus.COMPLETED):
+            raise BindingDenied("RESULT_UNKNOWN", "reservation is not a known recoverable failure")
+        profile = frozen_profile(aggregate, task)
+        budget = profile.recovery_budget
+        if (budget is None or prior.generation >= budget.max_total_attempts_per_task
+                or prior.admission.graph != root.frozen_graph
+                or prior.admission.task_fingerprint != task_fingerprint(task)
+                or saved["profile_digest"] != root.execution_profile_snapshot_digest
+                or saved["scenario_digest"] != root.scenario_snapshot_digest
+                or saved["requirements"] != prior.admission.authorized_input_requirements
+                or digest(aggregate.goal) != prior.admission.goal_hash
+                or digest(aggregate.scheme) != prior.admission.scheme_hash
+                or InMemoryApplicationRepository._current_dependencies(aggregate, task)
+                != prior.admission.dependency_result_bindings):
+            raise BindingDenied("RECOVERY_NOT_AUTHORIZED", task.task_id)
+        decision = RecoveryDecision.model_validate(saved["decision"])
+        context = RecoveryContext.model_validate(saved["context"])
+        profile.require_route(decision.target_route)
+        if (decision.action in {Action.FAIL_TASK, Action.FAIL_RUN}
+                or (decision.target_route != profile.resolved_route
+                    and decision.target_route not in profile.recovery_fallback_routes)
+                or not policy_allows(decision, context, budget,
+                    model_switches=saved["model_switches"],
+                    provider_switches=saved["provider_switches"])):
+            raise BindingDenied("RECOVERY_NOT_AUTHORIZED", task.task_id)
+        if any(task.task_id == dep.producer_task_id for result in root.results.values()
+               for dep in root.attempts[
+                   result.producer_task_id
+               ].admission.dependency_result_bindings):
+            raise BindingDenied("STALE_INPUT", "downstream accepted state")
+
+    @classmethod
+    def _validate_pending(cls, aggregate):
+        root = validate_root(aggregate)
+        failed = [a for a in root.attempts.values() if a.status == "FAILED"]
+        if not failed or any(a.status not in {"FAILED", "COMMITTED"}
+                             for a in root.attempts.values()):
+            raise BindingDenied("RESULT_UNKNOWN", "unsettled node reservation")
+        for prior in failed:
+            cls._validate_recovery(
+                aggregate, aggregate.runtime.task(prior.admission.task_id), prior
+            )
+
+    async def suspend_for_recovery(self, owner):
+        async with self._binding_transaction(owner.run_id) as aggregate:
+            root = validate_root(aggregate, owner)
+            self._validate_pending(aggregate)
+            root.lifecycle = "RECOVERY_PENDING"
+            root.owner_generation += 1
+            root.scheduler_started = False
+        return aggregate
+
+    async def fail_node_for_recovery(self, admission, saved, store):
+        from datetime import UTC, datetime
+
+        from src.domain.enums import TaskStatus
+        from src.domain.recovery import RecoveryContext, RecoveryDecision
+
+        self._recovery_stores[admission.run_id] = store
+        async with self._binding_transaction(admission.run_id) as aggregate:
+            root = self._validate_admission(aggregate, admission, require_started=True)
+            records = await store.records(admission.run_id, admission.task_id)
+            context = RecoveryContext.model_validate(saved["context"])
+            decision = RecoveryDecision.model_validate(saved["decision"])
+            owned = [r for r in records if r.scope == context.scope]
+            completion = next((r for r in reversed(owned) if r.kind == "ATTEMPT_COMPLETED"), None)
+            last = owned[-1] if owned else None
+            if (completion is None or completion.outcome != "FAIL"
+                    or completion.safe_failure is None
+                    or completion.safe_failure.retryable is not True
+                    or completion.failure_class != context.failure.failure_class
+                    or last is None or last.kind != "DECISION" or last.outcome != "ALLOW"
+                    or last.decision != decision or last.recovery_context != context
+                    or saved["receipt_id"] != completion.record_id
+                    or any(r.kind == "TERMINAL" for r in owned)):
+                raise BindingDenied("RECOVERY_EVIDENCE_MISMATCH", admission.task_id)
+            starts = {r.attempt_id for r in owned if r.kind == "ATTEMPT_STARTED"}
+            ends = {r.attempt_id for r in owned if r.kind == "ATTEMPT_COMPLETED"}
+            if starts != ends:
+                raise BindingDenied("RESULT_UNKNOWN", "unsettled provider request")
+            saved = {**saved, "profile_digest": root.execution_profile_snapshot_digest,
+                     "scenario_digest": root.scenario_snapshot_digest,
+                     "requirements": admission.authorized_input_requirements}
+            prior = root.attempts[admission.task_id].model_copy(update={
+                "status": "FAILED", "completed_at": datetime.now(UTC), "recovery": saved,
+            })
+            self._validate_recovery(aggregate, aggregate.runtime.task(admission.task_id), prior)
+            root.attempts[admission.task_id] = prior
+            aggregate.runtime.task(admission.task_id).status = TaskStatus.WAITING
 
     async def dispatch_node(self, admission):
         async with self._binding_transaction(admission.run_id) as aggregate:
             root = self._validate_admission(aggregate, admission, "RESERVED")
-            root.attempts[admission.task_id] = AttemptReservation(
-                admission=admission, status="DISPATCHED"
+            from datetime import UTC, datetime
+
+            root.attempts[admission.task_id] = root.attempts[admission.task_id].model_copy(
+                update={"status": "DISPATCHED", "started_at": datetime.now(UTC)}
             )
             from src.domain.enums import TaskStatus
 
             task = aggregate.runtime.task(admission.task_id)
             task.status = TaskStatus.RUNNING
-            task.attempt_count = 1
+            task.attempt_count = root.attempts[admission.task_id].generation
         return aggregate
 
     async def enter_node_execution(self, admission):
@@ -795,8 +970,10 @@ class InMemoryApplicationRepository:
             result = result.model_copy(update={"result_id": identity, "result_digest": identity})
             root.results[identity] = result
             root.current_results[task.task_id] = identity
-            root.attempts[task.task_id] = AttemptReservation(
-                admission=admission, status="COMMITTED", execution_started=True
+            from datetime import UTC, datetime
+
+            root.attempts[task.task_id] = root.attempts[task.task_id].model_copy(
+                update={"status": "COMMITTED", "completed_at": datetime.now(UTC)}
             )
             from src.domain.enums import TaskStatus
 

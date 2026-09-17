@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 from datetime import UTC, datetime
 
@@ -53,6 +54,8 @@ from src.infrastructure.database.models import (
 )
 from src.observability.performance import observe
 from src.runtime.state import RuntimeState
+
+_binding_session = ContextVar("recovery_admission_session", default=None)
 
 
 class ResearchObjectRow(Base):
@@ -295,7 +298,11 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             validate_root(aggregate)
             for result in aggregate.node_binding.results.values():
                 await self.verify_materials(result.output_records, run_id=run_id, session=session)
-            yield aggregate
+            token = _binding_session.set(session)
+            try:
+                yield aggregate
+            finally:
+                _binding_session.reset(token)
             aggregate.node_binding.binding_revision += 1
             aggregate.runtime.binding_ref = aggregate.node_binding.reference()
             row.payload = self._payload(aggregate)
@@ -303,6 +310,14 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             session.info["wp02_root_write"] = (run_id, aggregate.node_binding.binding_revision)
             await self._persist_children(session, aggregate)
         self._runs.pop(run_id, None)
+
+    async def _current_recovery_records(self, run_id, task_id):
+        from src.infrastructure.database.recovery import RecoveryEvidenceStore
+
+        session = _binding_session.get()
+        if session is None:
+            raise BindingDenied("RECOVERY_EVIDENCE_MISMATCH", "admission transaction missing")
+        return await RecoveryEvidenceStore.records_in_session(session, run_id, task_id)
 
     async def verify_materials(self, materials, *, run_id, session=None):
         await super().verify_materials(materials, run_id=run_id)
@@ -353,6 +368,15 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         aggregate.runtime.binding_ref = root.reference()
         row.payload = cls._payload(aggregate)
         return OwnerToken(run_id=aggregate.run.run_id, owner_generation=1, owner_id=root.owner_id)
+
+    async def recovery_pending_run_ids(self):
+        async with self._sessions() as session:
+            return list(await session.scalars(
+                select(ResearchRunAggregateRow.run_id).where(
+                    ResearchRunAggregateRow.payload["node_binding"]["lifecycle"].as_string()
+                    == "RECOVERY_PENDING"
+                ).limit(16)
+            ))
 
     async def get_run_fresh(self, run_id):
         async with self._sessions() as session:
@@ -469,6 +493,11 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             row.projection_sequence = projection_sequence
             row.projection_revision += 1
             await self._persist_children(session, aggregate)
+
+    async def get_calculation(self, calculation_id):
+        async with self._sessions() as session:
+            row = await session.get(CalculationRecordRow, calculation_id)
+            return CalculationRecord.model_validate(row.payload) if row is not None else None
 
     async def save_calculation(self, calculation: CalculationRecord) -> None:
         async with self._sessions() as session:

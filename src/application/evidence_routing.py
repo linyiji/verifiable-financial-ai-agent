@@ -102,6 +102,19 @@ class RunEvidenceStore:
         self._task_outputs: dict[str, list[str]] = {}
         self._announced_ids: set[str] = set()
 
+    def restore_committed(self, records, tasks):
+        """Hydrate the existing cache from repository-verified accepted outputs only."""
+        for record in records:
+            self._register_record(record)
+            self._announced_ids.add(record.evidence_id)
+        for task in tasks:
+            self._task_inputs[task.task_id] = [
+                identity for identity in task.task_input_evidence_ids if identity in self._records
+            ]
+            self._task_outputs[task.task_id] = [
+                identity for identity in task.task_output_evidence_ids if identity in self._records
+            ]
+
     def register_acquisition(
         self, acquisition: EvidenceTaskAcquisitionResult
     ) -> TaskEvidenceRoutingResult:
