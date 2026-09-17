@@ -385,6 +385,47 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             await self._persist_children(session, aggregate)
         self._runs.pop(aggregate.run.run_id, None)
 
+    @asynccontextmanager
+    async def projection_publication(self, event: RuntimeEvent):
+        """Capture the publication reference under the root's existing write lock.
+
+        The durable event authorizes only its watermark, not any business mutation.
+        Keep this transaction open through the guarded watermark save so a lawful
+        binding transition cannot invalidate the publisher's own snapshot.
+        """
+        async with self._sessions() as session, session.begin():
+            row = await session.scalar(
+                select(ResearchRunAggregateRow)
+                .where(ResearchRunAggregateRow.run_id == event.run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BindingDenied("STATE_REFRESH_REQUIRED", event.run_id)
+            persisted = await session.get(RuntimeEventRow, event.event_id)
+            if (
+                persisted is None
+                or persisted.run_id != event.run_id
+                or persisted.sequence != event.sequence
+                or RuntimeEvent.model_validate(persisted.payload) != event
+            ):
+                raise BindingDenied("IDENTITY_MISMATCH", "publication event")
+            aggregate = self._to_aggregate(row.payload)
+            if aggregate.node_binding is not None:
+                validate_root(aggregate)
+                if event.task_id is not None:
+                    aggregate.runtime.task(event.task_id)
+            yield aggregate, session
+
+    @asynccontextmanager
+    async def _watermark_session(self, session):
+        if session is not None:
+            if not session.in_transaction():
+                raise RuntimeError("watermark publication requires an active transaction")
+            yield session
+        else:
+            async with self._sessions() as owned, owned.begin():
+                yield owned
+
     @observe("persistence.watermark_transaction", aggregate="aggregate")
     async def save_run_with_projection_watermark(
         self,
@@ -392,16 +433,18 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         *,
         projection_sequence: int,
         expected_binding_ref=None,
+        publication_session: AsyncSession | None = None,
     ) -> None:
         """Persist one aggregate and its public event watermark atomically."""
 
         if projection_sequence < 1:
             raise ValueError("projection_sequence must be positive")
-        async with self._sessions() as session, session.begin():
+        async with self._watermark_session(publication_session) as session:
             row = await session.scalar(
                 select(ResearchRunAggregateRow)
                 .where(ResearchRunAggregateRow.run_id == aggregate.run.run_id)
                 .with_for_update()
+                .execution_options(populate_existing=True)
             )
             if row is None:
                 raise KeyError(aggregate.run.run_id)

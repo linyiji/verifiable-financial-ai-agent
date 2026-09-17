@@ -762,7 +762,8 @@ def test_production_execution_preserves_scheduler_start_during_event_publish(
         blocked_once = False
 
         async def publish_after_barrier(
-            aggregate, *, projection_sequence: int, expected_binding_ref=None
+            aggregate, *, projection_sequence: int, expected_binding_ref=None,
+            publication_session=None,
         ) -> None:
             nonlocal blocked_once
             if not blocked_once:
@@ -773,6 +774,7 @@ def test_production_execution_preserves_scheduler_start_during_event_publish(
                 aggregate,
                 projection_sequence=projection_sequence,
                 expected_binding_ref=expected_binding_ref,
+                publication_session=publication_session,
             )
 
         repository.save_run_with_projection_watermark = publish_after_barrier

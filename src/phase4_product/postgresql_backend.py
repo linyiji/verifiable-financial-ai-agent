@@ -1719,30 +1719,29 @@ class PostgreSQLPhase4ProductBackend:
     @observe("event.projection_publication", event="event")
     async def _publish_runtime_event(self, event: RuntimeEvent) -> None:
         async with measured_lock(self._projection_lock, "event.projection_lock_wait"):
-            aggregate = await self.service.repository.get_run_fresh(event.run_id)
-            if aggregate is None:
-                return
-            if event.type is RuntimeEventType.RUN_FAILED:
-                terminal_status = RunStatus(str(event.payload.get("status", "")))
-                if terminal_status not in {RunStatus.FAILED, RunStatus.CANCELLED}:
-                    raise ValueError("run.failed requires a failed or cancelled Run status")
-                aggregate.run.status = terminal_status
-                aggregate.run.completed_at = event.timestamp
-                aggregate.runtime.run_status = terminal_status
-            if event.timestamp > aggregate.run.updated_at:
-                aggregate.run.updated_at = event.timestamp
             repository = self.service.repository
             if not isinstance(repository, SQLAlchemyApplicationRepository):
                 raise RuntimeError(
                     "PostgreSQL Product event publication requires its SQLAlchemy repository"
                 )
-            await repository.save_run_with_projection_watermark(
-                aggregate,
-                projection_sequence=event.sequence,
-                expected_binding_ref=aggregate.node_binding.reference()
-                if aggregate.node_binding
-                else None,
-            )
+            async with repository.projection_publication(event) as (aggregate, session):
+                if event.type is RuntimeEventType.RUN_FAILED:
+                    terminal_status = RunStatus(str(event.payload.get("status", "")))
+                    if terminal_status not in {RunStatus.FAILED, RunStatus.CANCELLED}:
+                        raise ValueError("run.failed requires a failed or cancelled Run status")
+                    aggregate.run.status = terminal_status
+                    aggregate.run.completed_at = event.timestamp
+                    aggregate.runtime.run_status = terminal_status
+                if event.timestamp > aggregate.run.updated_at:
+                    aggregate.run.updated_at = event.timestamp
+                await repository.save_run_with_projection_watermark(
+                    aggregate,
+                    projection_sequence=event.sequence,
+                    expected_binding_ref=aggregate.node_binding.reference()
+                    if aggregate.node_binding
+                    else None,
+                    publication_session=session,
+                )
 
     async def _published_projection_sequence(self, run_id: str) -> int:
         async with self.sessions() as session:
