@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextvars import ContextVar
+from hashlib import sha256
 from time import perf_counter
 from typing import Any, TypeVar
 
@@ -18,6 +19,7 @@ from src.adapters.llm.provider import (
     LLMStructuredResponse,
     StructuredOutputError,
 )
+from src.domain.recovery import attempt_failure_facts, retain_attempt_facts
 from src.infrastructure.config.settings import LLMSettings
 from src.observability.model_transport import TransportObservation
 from src.observability.performance import annotate, observe, span
@@ -138,6 +140,7 @@ class OpenAICompatiblePlannerClient:
         )
         started = perf_counter()
         attempted: list[str] = []
+        retain_attempt_facts(dispatch_state="NOT_DISPATCHED", dispatch_basis="LOCAL_PREFLIGHT")
         try:
             _validate_completion_url(self._completion_url)
             request_template = self._request_template(
@@ -146,6 +149,9 @@ class OpenAICompatiblePlannerClient:
                 schema_name=schema_name,
             )
         except Exception:
+            retain_attempt_facts(
+                safe_code="LOCAL_PREFLIGHT_REJECTED", local_reason="LOCAL_PREFLIGHT_REJECTED"
+            )
             raise LLMRequestError(
                 f"{self.provider_name} {schema_name} request failed preflight",
                 requested_model=requested_model,
@@ -158,6 +164,9 @@ class OpenAICompatiblePlannerClient:
                 elapsed_seconds=perf_counter() - started,
             ) from None
         if force_fallback:
+            retain_attempt_facts(
+                safe_code="DIRECT_FALLBACK_DISABLED", local_reason="DIRECT_FALLBACK_DISABLED"
+            )
             raise LLMRequestError(
                 f"{self.provider_name} direct fallback routing is disabled",
                 requested_model=requested_model,
@@ -294,6 +303,67 @@ class OpenAICompatiblePlannerClient:
                     route=self.route_ids.get(model),
                     task_profile=self.task_profile,
                 )
+                method = None
+
+                async def receipt_trace(name, info):
+                    nonlocal method
+                    if name in {
+                        "http11.send_request_headers.started",
+                        "http2.send_request_headers.started",
+                    }:
+                        method = getattr(info.get("request"), "method", None)
+                    if method == b"POST":
+                        if name in {
+                            "http11.send_request_body.complete",
+                            "http2.send_request_body.complete",
+                        }:
+                            retain_attempt_facts(
+                                dispatch_state="DISPATCHED", dispatch_basis="HTTP_REQUEST_BODY_SENT"
+                            )
+                        if name in {
+                            "http11.receive_response_headers.complete",
+                            "http2.receive_response_headers.complete",
+                        }:
+                            value = info.get("return_value")
+                            if isinstance(value, tuple):
+                                status = (
+                                    value[1]
+                                    if len(value) == 4
+                                    else value[0]
+                                    if len(value) == 2
+                                    else None
+                                )
+                                headers = (
+                                    value[3]
+                                    if len(value) == 4
+                                    else value[1]
+                                    if len(value) == 2
+                                    else ()
+                                )
+                                if type(status) is int and 100 <= status <= 599:
+                                    retain_attempt_facts(
+                                        http_status=status,
+                                        dispatch_state="DISPATCHED",
+                                        dispatch_basis="HTTP_RESPONSE",
+                                    )
+                                if isinstance(headers, (list, tuple)):
+                                    for header in headers:
+                                        if (
+                                            isinstance(header, tuple)
+                                            and len(header) == 2
+                                            and type(header[0]) is bytes
+                                            and type(header[1]) is bytes
+                                            and header[0].lower() == b"x-request-id"
+                                            and header[1]
+                                        ):
+                                            retain_attempt_facts(
+                                                request_id_sha256="sha256:"
+                                                + sha256(header[1]).hexdigest()
+                                            )
+                                            break
+                    if observation.enabled:
+                        await observation.trace(name, info)
+
                 transport_error = None
                 try:
                     if self._client is None:
@@ -303,23 +373,42 @@ class OpenAICompatiblePlannerClient:
                             observation.bind(client, self._completion_url)
                             if observer is not None:
                                 observer.dispatch(self, payload)
+                            retain_attempt_facts(dispatch_state="UNKNOWN", dispatch_basis="UNKNOWN")
                             response = await client.post(
                                 self._completion_url,
                                 json=payload,
                                 headers=headers,
-                                extensions=observation.extensions,
+                                extensions={"trace": receipt_trace}
+                                if attempt_failure_facts.get() is not None
+                                else observation.extensions,
                             )
                     else:
                         observation.bind(self._client, self._completion_url)
                         if observer is not None:
                             observer.dispatch(self, payload)
+                        retain_attempt_facts(dispatch_state="UNKNOWN", dispatch_basis="UNKNOWN")
                         response = await self._client.post(
                             self._completion_url,
                             json=payload,
                             headers=headers,
                             timeout=self._execution_policy.httpx_timeout,
-                            extensions=observation.extensions,
+                            extensions={"trace": receipt_trace}
+                            if attempt_failure_facts.get() is not None
+                            else observation.extensions,
                         )
+                    retain_attempt_facts(
+                        dispatch_state="DISPATCHED",
+                        dispatch_basis="HTTP_RESPONSE",
+                        http_status=response.status_code
+                        if 100 <= response.status_code <= 599
+                        else None,
+                        request_id_sha256=(
+                            "sha256:"
+                            + sha256(response.headers["x-request-id"].encode()).hexdigest()
+                        )
+                        if response.headers.get("x-request-id")
+                        else None,
+                    )
                     if observer is not None:
                         await observer.response(response)
                     observation.complete(response)
@@ -330,22 +419,27 @@ class OpenAICompatiblePlannerClient:
                     observation.finish(transport_error)
                 http_timing.set(http_status=response.status_code)
         except httpx.ConnectTimeout:
+            retain_attempt_facts(safe_code="CONNECT_TIMEOUT")
             raise _RetryableProviderFailure(
                 "connect timeout", LLMFailureClassification.CONNECT_TIMEOUT
             ) from None
         except httpx.ReadTimeout:
+            retain_attempt_facts(safe_code="READ_TIMEOUT")
             raise _RetryableProviderFailure(
                 "read timeout", LLMFailureClassification.READ_TIMEOUT
             ) from None
         except httpx.RemoteProtocolError:
+            retain_attempt_facts(safe_code="REMOTE_PROTOCOL_ERROR")
             raise _RetryableProviderFailure(
                 "remote protocol error", LLMFailureClassification.REMOTE_PROTOCOL_ERROR
             ) from None
         except httpx.TransportError as exc:
+            retain_attempt_facts(safe_code="TRANSPORT_ERROR")
             raise _RetryableProviderFailure(
                 type(exc).__name__, LLMFailureClassification.PROVIDER_UNAVAILABLE
             ) from None
 
+        retain_attempt_facts(safe_code="HTTP_RESPONSE")
         annotate(http_status=response.status_code)
         if response.status_code == 429:
             raise _RetryableProviderFailure(
@@ -377,6 +471,14 @@ class OpenAICompatiblePlannerClient:
         try:
             body = response.json()
             metadata = body if isinstance(body, dict) else {}
+            if metadata.get("model") in (
+                "gpt-5.6-sol",
+                "gpt-5.6-luna",
+                "gpt-5.6-terra",
+                "mimo-v2.5",
+                "mimo-v2.5-pro",
+            ):
+                retain_attempt_facts(resolved_model=metadata["model"])
             usage_metadata = (
                 metadata.get("usage") if isinstance(metadata.get("usage"), dict) else {}
             )
@@ -391,6 +493,7 @@ class OpenAICompatiblePlannerClient:
             content = _extract_content(body)
             decoded = json.loads(content) if isinstance(content, str) else content
         except (ValueError, TypeError, KeyError, IndexError) as exc:
+            retain_attempt_facts(safe_code="INVALID_PROVIDER_RESPONSE")
             raise StructuredOutputError(
                 f"{self.provider_name} response failed {schema_name} decoding: "
                 f"{type(exc).__name__}",
@@ -406,6 +509,7 @@ class OpenAICompatiblePlannerClient:
         try:
             output = response_model.model_validate(decoded)
         except ValidationError as exc:
+            retain_attempt_facts(safe_code="SCHEMA_VALIDATION_FAILED")
             raise StructuredOutputError(
                 f"{self.provider_name} response failed {schema_name} validation: "
                 f"{type(exc).__name__}",
@@ -422,6 +526,7 @@ class OpenAICompatiblePlannerClient:
         usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
         actual_model = body.get("model")
         if not isinstance(actual_model, str) or not actual_model:
+            retain_attempt_facts(safe_code="MODEL_IDENTITY_MISMATCH")
             raise LLMRequestError(
                 "Provider did not report model identity",
                 failure_classification=LLMFailureClassification.MODEL_IDENTITY_MISMATCH,

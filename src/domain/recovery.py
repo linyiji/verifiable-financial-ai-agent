@@ -1,5 +1,6 @@
 """Closed, provider-neutral Phase 6 recovery contracts. No prompts or error text."""
 
+from contextvars import ContextVar
 from enum import StrEnum
 from typing import Literal
 
@@ -161,6 +162,63 @@ class RecoveryContext(Frozen):
     evidence_refs: tuple[str, ...] = Field(default=(), max_length=12)
 
 
+# Ephemeral producer plumbing, scoped/reset by the existing receipt owner. Never a store.
+attempt_failure_facts: ContextVar[dict | None] = ContextVar("attempt_failure_facts", default=None)
+
+
+class SafeFailureEvidence(Frozen):
+    safe_code: Literal[
+        "UNKNOWN_EXCEPTION",
+        "CONNECT_TIMEOUT",
+        "READ_TIMEOUT",
+        "TRANSPORT_ERROR",
+        "REMOTE_PROTOCOL_ERROR",
+        "HTTP_RESPONSE",
+        "LOCAL_PREFLIGHT_REJECTED",
+        "DIRECT_FALLBACK_DISABLED",
+        "INVALID_PROVIDER_RESPONSE",
+        "SCHEMA_VALIDATION_FAILED",
+        "MODEL_IDENTITY_MISMATCH",
+        "PROVIDER_ERROR",
+        "VALIDATION_ERROR",
+        "EVALUATION_AUTHORIZATION_REJECTED",
+        "TIMEOUT",
+    ] = "UNKNOWN_EXCEPTION"
+    normalized_failure_class: Literal[
+        "model_identity_mismatch",
+        "preflight_failure",
+        "authentication_failure",
+        "quota_or_rate_limit",
+        "retryable_http_failure",
+        "provider_unavailable",
+        "connect_timeout",
+        "read_timeout",
+        "overall_deadline_exceeded",
+        "remote_protocol_error",
+        "invalid_provider_response",
+        "semantic_schema_failure",
+        "request_rejected",
+        "UNKNOWN",
+    ] = "UNKNOWN"
+    retryable: bool | None = None
+    provider_retryable: bool | None = None
+    dispatch_state: Literal["NOT_DISPATCHED", "DISPATCHED", "UNKNOWN"] = "UNKNOWN"
+    dispatch_basis: Literal[
+        "LOCAL_PREFLIGHT", "HTTP_REQUEST_BODY_SENT", "HTTP_RESPONSE", "UNKNOWN"
+    ] = "UNKNOWN"
+    http_status: int | None = Field(default=None, ge=100, le=599)
+    request_id_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    local_reason: Literal["LOCAL_PREFLIGHT_REJECTED", "DIRECT_FALLBACK_DISABLED"] | None = None
+    resolved_model: ModelId | None = None
+
+
+def retain_attempt_facts(**facts):
+    target = attempt_failure_facts.get()
+    if target is not None:
+        # All callers supply closed codes and typed facts, never exception strings.
+        target.update(facts)
+
+
 class RecoveryEvidence(Frozen):
     record_id: str = Field(pattern=r"^REC-[0-9a-f-]{36}$")
     scope: Scope
@@ -173,6 +231,7 @@ class RecoveryEvidence(Frozen):
     capability_check: bool = False
     outcome: Literal["STARTED", "PASS", "FAIL", "ALLOW", "DENY", "CANCELLED"]
     failure_class: FailureClass | None = None
+    safe_failure: SafeFailureEvidence | None = None
     actual_model: ModelId | None = None
     requested_model: ModelId | None = None
     execution_policy: dict | None = None

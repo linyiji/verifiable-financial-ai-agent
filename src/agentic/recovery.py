@@ -28,7 +28,9 @@ from src.domain.recovery import (
     RecoveryContext,
     RecoveryDecision,
     RecoveryEvidence,
+    SafeFailureEvidence,
     Scope,
+    attempt_failure_facts,
 )
 from src.evaluator.contracts import EvaluationAuthorizationError
 from src.infrastructure.database.recovery import capability_provenance
@@ -269,6 +271,33 @@ class AdaptiveRecovery:
             clock = monotonic()
             actual_model = None
             execution_outcome = None
+            facts = {}
+            facts_token = attempt_failure_facts.set(facts)
+
+            def safe_failure(exc, retryable=None):
+                values = dict(facts)
+                values.setdefault(
+                    "safe_code",
+                    "PROVIDER_ERROR"
+                    if isinstance(exc, LLMProviderError)
+                    else "VALIDATION_ERROR"
+                    if type(exc) is ValidationError
+                    else "TIMEOUT"
+                    if type(exc) is TimeoutError
+                    else "EVALUATION_AUTHORIZATION_REJECTED"
+                    if type(exc) is EvaluationAuthorizationError
+                    else "UNKNOWN_EXCEPTION",
+                )
+                code = exc.failure_classification if isinstance(exc, LLMProviderError) else None
+                values["normalized_failure_class"] = (
+                    code.value if isinstance(code, Code) else "UNKNOWN"
+                )
+                values["provider_retryable"] = (
+                    exc.retryable if isinstance(exc, LLMProviderError) else None
+                )
+                values["retryable"] = retryable
+                return SafeFailureEvidence(**values)
+
             task_timeout = asyncio.timeout(remaining())
             try:
                 async with task_timeout:
@@ -329,13 +358,14 @@ class AdaptiveRecovery:
                     latency_ms=(monotonic() - clock) * 1000,
                 )
                 raise
-            except EvaluationAuthorizationError:
+            except EvaluationAuthorizationError as exc:
                 await record(
                     "ATTEMPT_COMPLETED",
                     "FAIL",
                     **common,
                     latency_ms=(monotonic() - clock) * 1000,
                     failure_class=FailureClass.NON_RECOVERABLE_RUNTIME_FAILURE,
+                    safe_failure=safe_failure(exc, False),
                 )
                 await record("TERMINAL", "FAIL", route=route, reason_code="NONRECOVERABLE")
                 raise
@@ -349,6 +379,7 @@ class AdaptiveRecovery:
                         **common,
                         latency_ms=(monotonic() - clock) * 1000,
                         failure_class=last_failure,
+                        safe_failure=safe_failure(exc),
                         reason_code="RECOVERY_BUDGET_EXHAUSTED",
                     )
                     await stop("RECOVERY_BUDGET_EXHAUSTED")
@@ -373,6 +404,7 @@ class AdaptiveRecovery:
                     **common,
                     latency_ms=(monotonic() - clock) * 1000,
                     failure_class=assessment.failure_class,
+                    safe_failure=safe_failure(exc, assessment.recoverable),
                     actual_model=actual_model,
                     execution_outcome=execution_outcome,
                     policy_gate_result="DENY"
@@ -382,6 +414,8 @@ class AdaptiveRecovery:
                 last_failure = assessment.failure_class
                 last_failure_route = route
                 return None, assessment
+            finally:
+                attempt_failure_facts.reset(facts_token)
 
         history.append(current)
         attempted_models.append(routes[current].model)
