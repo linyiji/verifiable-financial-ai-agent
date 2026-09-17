@@ -19,7 +19,7 @@ class LocalRawArtifactStore:
     """Content-addressed local raw snapshot storage with atomic promotion."""
 
     def __init__(self, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
+        self._artifact_root = artifact_root.resolve()
 
     async def put_raw_snapshot(
         self,

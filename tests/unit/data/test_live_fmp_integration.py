@@ -702,3 +702,149 @@ async def test_external_provider_metrics_are_reference_only() -> None:
     assert "gross_profit_ratio" not in income_fields
     assert "provider_reference_free_cash_flow" in cashflow_fields
     assert "free_cash_flow" not in cashflow_fields
+
+
+async def _raw_reference_process(phase, root):
+    """Isolated test transport; real provider, store, PostgreSQL and binding consumer."""
+    import asyncio
+    import hashlib
+    import json
+    import os
+    from types import SimpleNamespace
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from src.application.execution import IntegratedTaskExecutor
+    from src.application.persistence import (
+        SessionFactoryEvidenceRepository,
+        SQLAlchemyApplicationRepository,
+    )
+    from src.application.repository import node_invocation
+    from src.data.hashing import canonical_json
+    from src.data.ingestion import EvidenceProvenance
+    from src.domain.node_binding import BindingDenied
+    from src.infrastructure.database.base import Base
+    from tests.wp02.test_node_binding import admitted, aggregate
+
+    root = Path(root)
+    engine = create_async_engine(os.environ["TEST_POSTGRESQL_URL"])
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    repository = SQLAlchemyApplicationRepository(sessions)
+    evidence_repository = SessionFactoryEvidenceRepository(sessions)
+    expected = canonical_json({
+        "endpoint": "profile", "http_status": 200,
+        "retrieved_at": RETRIEVED_AT.isoformat(), "payload": _payloads()[FMPEndpoint.PROFILE],
+    })
+    token = None
+    try:
+        if phase == "produce":
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            value = aggregate(("evidence_collection",))
+            _, admission = await admitted(repository, value)
+            token = node_invocation.set(admission)
+            store = LocalRawArtifactStore(Path("configured-raw"))
+            service = EvidenceIngestionService(
+                repository=evidence_repository, artifact_store=store,
+                freshness_policy=FreshnessPolicy(max_age_days=365),
+            )
+            provider = FMPProvider(EndpointTransport(_payloads()))
+            result = await service.ingest(
+                provider=provider, request=_request("company_profile"),
+                run_id=value.run.run_id, object_id=value.run.research_object_id,
+                provenance=EvidenceProvenance(
+                    producer_task_id=admission.task_id, source_endpoint="profile",
+                ),
+            )
+            assert result.accepted.records
+            # Repeat existing-file path using the same provider snapshot and normal ingestion.
+            repeat = await service.ingest(
+                provider=provider, request=_request("company_profile"),
+                run_id=value.run.run_id, object_id=value.run.research_object_id,
+                provenance=EvidenceProvenance(
+                    producer_task_id=admission.task_id, source_endpoint="profile",
+                ),
+            )
+            assert repeat.records == result.records and not repeat.created_records
+            (root / "producer-records.json").write_text(json.dumps([
+                e.model_dump(mode="json") for e in result.accepted.records
+            ]))
+        else:
+            # Producer has exited. Read authoritative rows using new process/session.
+            value = await repository.get_run_fresh("RUN-WP02-LOCAL-FIXTURE")
+            task = value.runtime.actual_graph.tasks[0]
+            admission = value.node_binding.attempts[task.task_id].admission
+            token = node_invocation.set(admission)
+            records = [e for e in await evidence_repository.list_by_run(value.run.run_id)
+                       if e.status.value == "ACCEPTED"]
+            assert [e.model_dump(mode="json") for e in records] == json.loads(
+                (root / "producer-records.json").read_text()
+            )
+            value.artifacts.evidence = records
+            task.task_output_evidence_ids = [e.evidence_id for e in records]
+            executor = IntegratedTaskExecutor(SimpleNamespace(
+                repository=repository, evidence_repository=evidence_repository,
+                valuation_context_enabled=False,
+            ), value)
+            for record in records:
+                path = Path(record.raw_artifact_ref)
+                assert path.is_absolute()
+                assert path == (root / "producer" / "configured-raw" / "runs"
+                                / value.run.run_id / "evidence" / f"{record.snapshot_hash}.json")
+                assert await asyncio.to_thread(path.read_bytes) == expected
+                assert hashlib.sha256(expected).hexdigest() == record.snapshot_hash
+                assert record.provider == "fmp" and record.source_endpoint == "profile"
+                assert record.producer_task_id == task.task_id
+            material = executor._bound_materials(task)
+            binding = await executor._bind_step(task, "acquisition", {"proof": "test data"})
+            assert tuple(binding.material_refs) == material
+            persisted = await repository.get_run_fresh(value.run.run_id)
+            assert binding.resolved_input_binding_id in persisted.node_binding.resolved_inputs
+            original = records[0]
+            # Local negative controls do not mutate persisted rows or stored source bytes.
+            for updates, reason in [
+                ({"raw_artifact_ref": str(root / "absent.json")}, "MISSING_INPUT"),
+                ({"raw_artifact_ref": "relative.json"}, "MISSING_INPUT"),
+                ({"snapshot_hash": "0" * 64}, "IDENTITY_MISMATCH"),
+                ({"run_id": "WRONG-RUN"}, "IDENTITY_MISMATCH"),
+                ({"object_id": "WRONG-OBJECT"}, "IDENTITY_MISMATCH"),
+                ({"producer_task_id": "UNADMITTED"}, "STALE_INPUT"),
+            ]:
+                value.artifacts.evidence = [original.model_copy(update=updates), *records[1:]]
+                with pytest.raises(BindingDenied, match=reason):
+                    executor._bound_materials(task)
+            value.artifacts.evidence = records
+            assert executor._bound_materials(task) == material
+            print(json.dumps({"phase": phase, "records": len(records),
+                              "snapshot_hash": records[0].snapshot_hash,
+                              "raw_ref": records[0].raw_artifact_ref,
+                              "binding_id": binding.resolved_input_binding_id}))
+    finally:
+        if token is not None:
+            node_invocation.reset(token)
+        await engine.dispose()
+
+
+def test_raw_reference_postgresql_fresh_process(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    if "TEST_POSTGRESQL_URL" not in os.environ:
+        pytest.skip("disposable PostgreSQL required")
+    repo = Path(__file__).resolve().parents[3]
+    env = {**os.environ, "PYTHONPATH": str(repo)}
+    for phase, cwd in [("produce", "producer"), ("consume", "consumer")]:
+        directory = tmp_path / cwd
+        directory.mkdir()
+        script = (
+            "import asyncio,sys; from tests.unit.data.test_live_fmp_integration "
+            "import _raw_reference_process; "
+            "asyncio.run(_raw_reference_process(sys.argv[1], sys.argv[2]))"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script, phase, str(tmp_path)], cwd=directory,
+            env=env, capture_output=True, text=True, timeout=60,
+        )
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        print(completed.stdout)

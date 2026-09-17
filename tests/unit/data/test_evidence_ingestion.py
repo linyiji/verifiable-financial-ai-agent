@@ -147,3 +147,74 @@ async def test_raw_payload_is_written_to_artifact_store(tmp_path: Path) -> None:
 def _assert_artifact_matches_fixture(artifact: Path) -> None:
     assert artifact.is_file()
     assert json.loads(artifact.read_text()) == json.loads(FIXTURE.read_text())
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+async def test_raw_store_reference_survives_cwd_changes(tmp_path, monkeypatch, absolute):
+    import asyncio
+    import hashlib
+
+    from src.data.hashing import canonical_json, snapshot_hash
+
+    origin, consumer = tmp_path / "origin", tmp_path / "consumer"
+    origin.mkdir()
+    consumer.mkdir()
+    monkeypatch.chdir(origin)
+    root = origin / "configured" if absolute else Path("configured")
+    store = LocalRawArtifactStore(root)
+    assert store._artifact_root == origin / "configured"
+    # Even the first write must stay anchored to construction, not write-time cwd.
+    monkeypatch.chdir(consumer)
+    payload = {"source": "isolated test data", "values": [1, "原文", None]}
+    expected = canonical_json(payload)
+    identity = snapshot_hash(payload)
+    target = origin / "configured" / "runs" / "RUN-STORE-TEST" / "evidence" / f"{identity}.json"
+    promotions = []
+    original_replace = Path.replace
+
+    def observe_promotion(temporary, destination):
+        assert temporary.parent == target.parent
+        assert temporary.read_bytes() == expected
+        assert not target.exists()
+        promotions.append((temporary, destination))
+        return original_replace(temporary, destination)
+
+    monkeypatch.setattr(Path, "replace", observe_promotion)
+    ref = await store.put_raw_snapshot(
+        run_id="RUN-STORE-TEST", snapshot_hash=identity, payload=payload,
+    )
+    assert Path(ref).is_absolute() and Path(ref) == target
+    assert (await asyncio.to_thread(Path(ref).read_bytes)) == expected
+    assert hashlib.sha256(await asyncio.to_thread(Path(ref).read_bytes)).hexdigest() == identity
+    assert len(promotions) == 1 and promotions[0][1] == target
+    assert not promotions[0][0].exists()
+    monkeypatch.chdir(origin)
+    assert await store.put_raw_snapshot(
+        run_id="RUN-STORE-TEST", snapshot_hash=identity, payload=payload,
+    ) == ref
+    assert len(promotions) == 1
+    monkeypatch.chdir(consumer)
+    assert (await asyncio.to_thread(Path(ref).read_bytes)) == expected
+    with pytest.raises(ValueError, match="hash collision"):
+        await store.put_raw_snapshot(
+            run_id="RUN-STORE-TEST", snapshot_hash=identity, payload={"different": True},
+        )
+    assert (await asyncio.to_thread(Path(ref).read_bytes)) == expected
+
+
+async def test_raw_store_does_not_publish_failed_atomic_promotion(tmp_path, monkeypatch):
+    from src.data.hashing import snapshot_hash
+
+    payload = {"source": "isolated atomic failure test"}
+    identity = snapshot_hash(payload)
+    store = LocalRawArtifactStore(tmp_path)
+    target = tmp_path / "runs" / "RUN-ATOMIC" / "evidence" / f"{identity}.json"
+
+    def fail_promotion(temporary, destination):
+        assert temporary.is_file() and destination == target
+        raise OSError("test promotion failure")
+
+    monkeypatch.setattr(Path, "replace", fail_promotion)
+    with pytest.raises(OSError, match="test promotion failure"):
+        await store.put_raw_snapshot(run_id="RUN-ATOMIC", snapshot_hash=identity, payload=payload)
+    assert not target.exists()
