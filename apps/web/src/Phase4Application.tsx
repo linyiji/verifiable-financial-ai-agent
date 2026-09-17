@@ -1,3 +1,4 @@
+import {modelSelectionPreferences, type ModelSelectionOption} from "./types/modelSelection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Phase4ApiError, Phase4TransportError } from "./api/client";
 import type { ProjectionLifecycle } from "./components/ResearchRuntimeWorkspace";
@@ -515,6 +516,16 @@ export function Phase4Application() {
     return ()=>{cancelled=true;};
   }, [selected?.objectId, source]);
 
+  const [modelRoute, setModelRoute] = useState("");
+  const [modelOptions, setModelOptions] = useState<readonly ModelSelectionOption[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void source.getModelSelectionOptions().then(options => {
+      if (!cancelled) setModelOptions(options);
+    }).catch(caught => { if (!cancelled) setError(safeEnvelope(caught)); });
+    return () => { cancelled = true; };
+  }, [source]);
+
   const prepare = async () => {
     if (!selected || !goal.trim() || !baseReady) return;
     setError(null);
@@ -524,7 +535,7 @@ export function Phase4Application() {
         researchObjectId: selected.objectId,
         researchGoal: goal,
         asOf,
-        preferences: {}
+        preferences: modelSelectionPreferences(modelRoute)
         ,...(baseView ? {baseRunId: baseView.source_run_id, baseResearchViewVersion: baseView.research_view_version_id} : {})
       }));
       setDraft(value);
@@ -649,6 +660,9 @@ export function Phase4Application() {
     {error && <TypedError error={error} onRetry={() => void loadObjects()} onDismiss={() => setError(null)} />}
     <NewResearchTaskPage
       baseView={baseView}
+      modelRoute={modelRoute}
+      modelOptions={modelOptions}
+      onModelChange={route => { setModelRoute(route); setDraft(null); }}
       step={step}
       objects={objects}
       selected={selected}

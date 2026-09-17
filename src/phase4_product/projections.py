@@ -725,16 +725,22 @@ def project_object(research_object: object) -> ObjectIdentityV1:
 def project_goal(goal: object, *, expected_object_id: str) -> GoalProjectionV1:
     if _required_string(goal, "research_object_id", "Goal") != expected_object_id:
         raise ProjectionIntegrityError("Goal belongs to another ResearchObject")
+    from src.domain.model_selection import selected_model
+
     preferences = _field(goal, "preferences")
     # Preferences are an authoring surface, not an open channel.  The current
     # Core accepts only the frozen preparation keys.
     try:
+        selection = selected_model(preferences) if isinstance(preferences, Mapping) else None
         safe_preferences = safe_json_object(
-            preferences,
+            {key: value for key, value in preferences.items() if key != "model_selection"}
+            if selection is not None else preferences,
             allowed_keys={"currency", "depth", "include_peers"},
             context="Goal.preferences",
         )
-    except UnsafeProjectionData as exc:
+        if selection is not None:
+            safe_preferences["model_selection"] = selection.model_dump(mode="json")
+    except (UnsafeProjectionData, ValueError) as exc:
         raise ProjectionIntegrityError(str(exc)) from exc
     return GoalProjectionV1(
         goal_id=_required_string(goal, "goal_id", "Goal"),

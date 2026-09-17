@@ -129,3 +129,16 @@ def describe_route(client):
         else "NATIVE_SCHEMA_CONSTRAINED",
         client.execution_policy,
     )
+
+
+def model_selection_options():
+    """Safe selectable identities; credentials and task authority are checked at invocation."""
+    from typing import get_args
+
+    from src.domain.recovery import RouteId
+
+    return [
+        {"route_id": route, "label": route.removeprefix("teamorouter-").title()}
+        for route in get_args(RouteId)
+        if route == "teamorouter-terra"
+    ]

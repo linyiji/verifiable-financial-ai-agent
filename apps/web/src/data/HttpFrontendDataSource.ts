@@ -1,3 +1,4 @@
+import {decodeModelSelectionOptions} from "../types/modelSelection";
 import {decodeResearchMemory} from "../types/researchMemory";
 import {decodeRecoveryEvidence} from "../types/recovery";
 import {
@@ -218,6 +219,11 @@ export class HttpFrontendDataSource implements Phase4FrontendDataSource {
       phase4ApiRoutes.objects
     );
     return result;
+  }
+
+  getModelSelectionOptions() {
+    return this.client.requestJson({method: "GET", path: "/api/model-selection-options",
+      expectedStatuses: [200], decode: decodeModelSelectionOptions});
   }
 
   getResearchMemory(objectId: string, options?: Phase4RequestOptions) {

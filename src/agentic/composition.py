@@ -31,3 +31,25 @@ def build_research_agent_registry(provider, artifacts, *, profile_providers=None
             )
         )
     return registry
+
+
+def selected_research_agent(registry, task, selection, provider_factory):
+    """Compose a fresh invocation; shared Agents and credentials remain unchanged."""
+    agent = registry.get(task.assigned_agent)
+    if selection is None:
+        return agent
+    if selection.route_id not in TASK_CANDIDATES.get(task.task_type, ()):
+        raise ValueError("Initial provider is outside governed recovery authority")
+    if type(agent) is not LLMResearchAgent or task.task_type not in agent.supported_task_types:
+        raise ValueError("Explicit model selection requires supported research Agent composition")
+    if provider_factory is None:
+        raise ValueError("Explicit model selection provider configuration is unavailable")
+    provider = provider_factory(selection.route_id)
+    provider.task_profile = task.task_type
+    return LLMResearchAgent(
+        agent_id=agent.agent_id,
+        supported_task_types=agent.supported_task_types,
+        provider=provider,
+        artifacts=agent._artifacts,
+        recovery=agent._recovery,
+    )

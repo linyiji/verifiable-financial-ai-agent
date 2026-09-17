@@ -1,3 +1,4 @@
+import type {ModelSelectionOption} from "../types/modelSelection";
 import type { NormalizedObjectIdentity, PreparedResearchDraft } from "../types/domain";
 import {IncrementalContext} from "../components/IncrementalContext";
 import type {ResearchViewVersion} from "../types/researchMemory";
@@ -5,6 +6,9 @@ import type {ResearchViewVersion} from "../types/researchMemory";
 export type NewResearchStep = "OBJECT" | "GOAL" | "SCHEME" | "CONFIRM";
 
 export interface NewResearchTaskPageProps {
+  readonly modelRoute?: string;
+  readonly modelOptions?: readonly ModelSelectionOption[];
+  readonly onModelChange?: (route: string) => void;
   readonly baseView?: ResearchViewVersion | null;
   readonly step: NewResearchStep;
   readonly objects: readonly NormalizedObjectIdentity[];
@@ -48,6 +52,9 @@ export function researchPlanLabel(value: string): string {
 
 export function NewResearchTaskPage({
   baseView,
+  modelRoute = "",
+  modelOptions = [],
+  onModelChange,
   step,
   objects,
   selected,
@@ -88,6 +95,15 @@ export function NewResearchTaskPage({
       <p>历史摘要仅作为背景。AI 将判断哪些材料需要更新、重新验证或用于避免重复问题；没有可安全沿用的材料时，继续沿用可以为零。</p>
     </section>}
     {draft?.schemeSnapshot.incrementalContext && <IncrementalContext context={draft.schemeSnapshot.incrementalContext}/>}
+    <label className="card pad">模型 · Model
+      <select aria-label="模型 · Model" value={modelRoute}
+        disabled={preparing || confirming || step === "SCHEME" || step === "CONFIRM"}
+        onChange={event => onModelChange?.(event.target.value)}>
+        <option value="">默认 · Default</option>
+        {modelOptions.map(option => <option key={option.route_id} value={option.route_id}>{option.label}</option>)}
+      </select>
+      <small>所选模型须符合各研究任务的授权范围；不支持的任务将明确拒绝。</small>
+    </label>
     <div className="research-wizard">
       <div className="card wizard-main">
         {step === "OBJECT" && <ObjectStep objects={objects} selected={selected} onSelect={onSelectObject} onNext={() => onStepChange("GOAL")} />}

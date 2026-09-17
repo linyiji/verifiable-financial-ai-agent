@@ -116,6 +116,7 @@ class ResearchApplicationService:
         calculation_extensions: Sequence[TaskCalculationExtension] = (),
         proof_workflow: ProofWorkflow | None = None,
         agent_registry: AgentRegistry | None = None,
+        selected_provider_factory=None,
         report_publisher: ProfessionalReportPublisher | None = None,
         recovery_evidence_store=None,
         wp04_method_binding_enabled: bool = False,
@@ -156,6 +157,7 @@ class ResearchApplicationService:
         self.calculation_extensions = list(calculation_extensions)
         self.proof_workflow = proof_workflow
         self.agent_registry = agent_registry or AgentRegistry()
+        self.selected_provider_factory = selected_provider_factory
         self.report_publisher = report_publisher
         self.recovery_evidence_store = recovery_evidence_store
 

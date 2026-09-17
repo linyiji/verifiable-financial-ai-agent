@@ -214,6 +214,9 @@ class PrepareResearchRunRequestV1(FrozenWireModel):
 
     @model_validator(mode="after")
     def paired_base(self):
+        from src.domain.model_selection import selected_model
+
+        selected_model(self.preferences)
         if (self.base_run_id is None) != (self.base_research_view_version is None):
             raise ValueError("explicit base Run and view identity must be paired")
         return self

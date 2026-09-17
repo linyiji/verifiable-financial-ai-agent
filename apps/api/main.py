@@ -129,6 +129,9 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
                 event_store=persistence.event_store,
                 checkpoint_store=persistence.checkpoint_store,
                 agent_registry=research_agents,
+                selected_provider_factory=lambda route: configured_incremental_provider(
+                    settings, route_id=route
+                ),
                 recovery_evidence_store=adaptive_recovery.store,
                 report_publisher=ProfessionalReportPublisher(
                     ControlledArtifactStore(Path(settings.artifact_root) / "phase4-report")

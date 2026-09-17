@@ -1038,7 +1038,7 @@ class IntegratedTaskExecutor:
             from src.agentic.valuation_context import ValuationInteraction, validate_composition
             from src.application.research_context import ContextProjection
 
-            agent = self._service.agent_registry.get(task.assigned_agent)
+            agent = self._research_agent(task)
             route = validate_composition(agent, task)
             projection = ContextProjection(
                 self, task, node_invocation.get(), agent._provider.model_name, route
@@ -1100,6 +1100,19 @@ class IntegratedTaskExecutor:
         self._aggregate.artifacts.task_outputs[task.task_id] = supporting_output
         return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
 
+    def _research_agent(self, task):
+        from src.agentic.composition import selected_research_agent
+        from src.domain.model_selection import selected_model
+
+        if task.run_id != self._aggregate.run.run_id:
+            raise ValueError("research Agent dispatch attempted cross-Run execution")
+        return selected_research_agent(
+            self._service.agent_registry,
+            task,
+            selected_model(self._aggregate.goal.preferences),
+            getattr(self._service, "selected_provider_factory", None),
+        )
+
     async def _invoke_research_agent(
         self,
         task: Task,
@@ -1108,9 +1121,12 @@ class IntegratedTaskExecutor:
         additional_input_refs: tuple[str, ...] = (),
     ) -> SpecialistResult | None:
         try:
-            agent = self._service.agent_registry.get(task.assigned_agent)
+            agent = self._research_agent(task)
         except RegistrationNotFoundError:
-            if self._service.agent_registry.registered_ids():
+            if (
+                self._service.agent_registry.registered_ids()
+                or "model_selection" in self._aggregate.goal.preferences
+            ):
                 raise
             return None
         if task.task_type not in agent.supported_task_types:

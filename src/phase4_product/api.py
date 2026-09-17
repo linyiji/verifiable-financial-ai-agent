@@ -472,6 +472,13 @@ def create_phase4_product_router() -> APIRouter:
         route_class=Phase4NegotiatedRoute,
     )
 
+    @router.get("/model-selection-options")
+    async def selection_options(request: Request, response: Response):
+        from src.adapters.llm.routes import model_selection_options
+
+        _admit_contract(request, response)
+        return model_selection_options()
+
     @router.post("/objects", response_model=ResearchObjectDetailV1, status_code=201)
     async def create_object(
         payload: CreateResearchObjectRequestV1,
