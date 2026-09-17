@@ -358,7 +358,7 @@ class ResearchApplicationService:
             actual_graph_id=runtime.actual_graph.graph_id,
         )
         aggregate = RunAggregate(run=run, goal=draft.goal, scheme=scheme, runtime=runtime)
-        initialize_binding(aggregate)
+        initialize_binding(aggregate, service=self)
         await self.repository.add_run(aggregate)
         await self.event_store.emit(
             run_id=run_id,

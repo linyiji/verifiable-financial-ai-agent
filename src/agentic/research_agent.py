@@ -48,6 +48,9 @@ class LLMResearchAgent:
         self._recovery = recovery
 
     async def execute_valuation_turn(self, package, response_model):
+        from src.application.execution_profiles import authorize_model_provider
+
+        authorize_model_provider(self._provider)
         from src.adapters.llm.teamorouter import context_call_observer
         from src.agentic.valuation_context import ValuationInteraction
         from src.application.research_context import encoded
@@ -139,6 +142,9 @@ class LLMResearchAgent:
         )
 
     async def execute(self, context: SpecialistExecutionContext) -> SpecialistResult:
+        from src.application.execution_profiles import authorize_model_provider
+
+        authorize_model_provider(self._provider)
         task = context.task
         if task.assigned_agent != self.agent_id:
             raise ValueError("research Agent was dispatched under another actor identity")

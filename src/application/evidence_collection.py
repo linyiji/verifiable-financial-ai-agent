@@ -261,7 +261,9 @@ class LiveFMPEvidenceCollector:
             raise ValueError("producer task must belong to the evidence run")
         results: list[EvidenceIngestionResult] = []
         endpoint_statuses: list[EndpointCollectionStatus] = []
-        for plan in evidence_request_plans(symbol=symbol, as_of=as_of, scope=scope):
+        from src.application.execution_profiles import active_profile, profile_request_plans
+
+        for plan in profile_request_plans(symbol=symbol, as_of=as_of, scope=scope):
             probe = await self._provider.probe(plan.request)
             result = await self._ingest_probe(
                 probe=probe,
@@ -279,9 +281,15 @@ class LiveFMPEvidenceCollector:
                 capability = (
                     "company_news" if plan.request.dataset == "news" else "earnings_transcript"
                 )
-                policy = data_policy(
-                    capability, fuse=self._fuse_news and capability == "company_news"
-                )
+                profile = active_profile()
+                if profile is not None:
+                    policy = profile.data_permission(plan.request.dataset).discovery_policy
+                    if policy is None:
+                        raise ValueError("Frozen discovery policy missing")
+                else:
+                    policy = data_policy(
+                        capability, fuse=self._fuse_news and capability == "company_news"
+                    )
                 capability_execution = {
                     "capability_id": capability,
                     "preferred_provider": "fmp",
@@ -481,7 +489,7 @@ def evidence_request_plans(
                 dataset="historical_prices",
                 as_of=as_of,
                 fields=("adjClose", "adjustedClose", "close", "volume"),
-                # Phase 3 technical indicators require an accepted 200-day window.
+                # Broad v1 historical market context; not a required technical method.
                 limit=250,
             ),
             category=EvidenceCategory.MARKET,

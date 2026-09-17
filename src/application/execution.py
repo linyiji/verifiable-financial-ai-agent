@@ -102,6 +102,13 @@ class IntegratedTaskExecutor:
             != context.admission.authorized_input_requirements
         ):
             raise BindingDenied("IDENTITY_MISMATCH", "authorized work changed")
+        from src.application.execution_profiles import (
+            execution_profile_context,
+            validate_runtime_profile,
+        )
+
+        profile = validate_runtime_profile(self._service, fresh, task)
+        profile_token = execution_profile_context.set((task.run_id, task.task_id, profile, {}))
         token = node_invocation.set(context.admission)
         self._active += 1
         self.parallel_peak = max(self.parallel_peak, self._active)
@@ -135,6 +142,7 @@ class IntegratedTaskExecutor:
         finally:
             self._active -= 1
             node_invocation.reset(token)
+            execution_profile_context.reset(profile_token)
 
     async def _execute_instrumented_task(self, task: Task) -> TaskExecutionResult:
         self._require_bound_invocation(task)
@@ -594,6 +602,11 @@ class IntegratedTaskExecutor:
         context: CapabilityContext,
     ):
         self._require_bound_invocation(task)
+        from src.application.execution_profiles import validate_runtime_profile
+
+        profile = validate_runtime_profile(self._service, self._aggregate, task)
+        profile.require_tool(capability_id)
+        profile.require_method(capability_id + "_v1")
         calculation_id = str(inputs.get("calculation_id", ""))
         if capability_id == 'revenue_growth' and task.wp04_method_requirement is not None:
             return await self._execute_wp04(task, inputs, context)
@@ -1421,6 +1434,10 @@ class IntegratedTaskExecutor:
             not task.parent_task_id or task.parent_task_id not in self._upstream_task_ids(task)
         ):
             raise BindingDenied("IDENTITY_MISMATCH", "initial follow-up parent")
+        from src.application.execution_profiles import frozen_profile
+
+        profile = frozen_profile(self._aggregate, task)
+        profile.require_method(task.skill_id)
         from src.application.evidence_routing import EvidenceTaskRouter
 
         scope = EvidenceTaskRouter._acquisition_scope(EvidenceTaskRouter, task)
@@ -1430,6 +1447,7 @@ class IntegratedTaskExecutor:
             "task": task_semantics(task),
             "scheme": canonical_value(self._aggregate.scheme),
             "resolved_handler": handler,
+            "execution_profile_digest": digest(profile, "node-execution-profile/v1"),
             "acquisition_scope": scope.value if scope else None,
             "acquire": self._should_acquire_evidence(task),
         }

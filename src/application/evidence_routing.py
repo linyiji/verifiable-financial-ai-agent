@@ -284,6 +284,12 @@ class EvidenceTaskRouter:
         acquisition_result: TaskEvidenceRoutingResult | None = None
         scope = self._acquisition_scope(task) if acquire else None
         if scope is not None:
+            from src.application.execution_profiles import active_profile
+            from src.domain.node_binding import BindingDenied
+
+            profile = active_profile()
+            if profile is not None and scope.value not in profile.data_scope_ids:
+                raise BindingDenied("DATA_SCOPE_NOT_AUTHORIZED", scope.value)
             acquisition = await self._collector.collect_scope(
                 task_id=task.task_id,
                 scope=scope,

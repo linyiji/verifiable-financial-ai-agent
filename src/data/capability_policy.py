@@ -1,6 +1,7 @@
 """Finite data capability authority. No learned ranking and no model-granted access."""
 
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -51,3 +52,23 @@ def data_policy(capability, *, task_profile="research_news_analysis", fuse=False
         mode="SELECT_ONE" if len(candidates) == 1 else "FUSE" if fuse else "FALLBACK",
         requirement="HARD_REQUIRED" if structured else "ENRICHMENT",
     )
+
+
+# Product Owner adoption (V5 §2E), distinct from the implementation registry above.
+# Changing an implementation/request plan does not itself adopt new permissions.
+FUNDAMENTALS_DATA_PERMISSION_VERSION = "product-adopted-current-request-sets/v1"
+FUNDAMENTALS_DATA_SCOPES_V1 = MappingProxyType(
+    {
+        "COMPANY": (
+            "company_profile",
+            "annual_financials",
+            "balance_sheet",
+            "cash_flow",
+            "market_price",
+            "historical_prices",
+            "analyst_recommendations",
+        ),
+        "PEER": ("peer_multiples",),
+        "RESEARCH_NEWS": ("news", "transcript"),
+    }
+)

@@ -22,6 +22,7 @@ from src.domain.calculation import CalculationRecord
 from src.domain.canonical_execution_record import CanonicalExecutionRecord
 from src.domain.enums import TaskStatus
 from src.domain.evidence import EvidenceRecord
+from src.domain.execution_profile import ExecutionSnapshot
 from src.domain.proof import ProofRecord
 from src.domain.released_research_result import ReleasedResearchResult
 from src.domain.report import ReportArtifactRecord
@@ -273,8 +274,15 @@ class AtomicConfirmCommit:
     initial_events: tuple[RuntimeEvent, ...]
     projection_revision: Literal[1] = 1
     node_binding_schema: Literal["wp02-node-binding/v1"] = "wp02-node-binding/v1"
+    execution_snapshot: ExecutionSnapshot | None = None
 
     def __post_init__(self, idempotency_key: str) -> None:
+        if self.execution_snapshot is not None:
+            snapshot = ExecutionSnapshot.model_validate(self.execution_snapshot.model_dump())
+            if {n.task_id for n in snapshot.nodes} != {t.task_id for t in self.tasks}:
+                raise ValueError("Confirm profile/task identity mismatch")
+            for task in self.tasks:
+                snapshot.for_task(task)
         public_admission = self.idempotency_outcome.admission
         draft = self.consumed_draft
         scheduler = self.scheduler_admission

@@ -183,9 +183,7 @@ async def test_memory_change_during_actual_model(tmp_path, monkeypatch):
     async def configure(service, value, agent):
         p = await projection(MemoryReader())
         fresh = await p.service.repository.get_run_fresh(p.task.run_id)
-        service.repository._runs[
-            value.run.run_id
-        ].scheme.incremental_context = fresh.scheme.incremental_context
+        value.scheme.incremental_context = fresh.scheme.incremental_context
         service.research_memory_reader = MemoryReader()
 
     result, calls, receipts, task = await run_case(tmp_path, monkeypatch, "memory_stale", configure)
@@ -328,9 +326,7 @@ async def test_memory_retrieval_through_actual_consumer(tmp_path, monkeypatch):
         )
         reader.base = reader.base.model_copy(update={"items": (item,)})
         service.research_memory_reader = reader
-        service.repository._runs[
-            value.run.run_id
-        ].scheme.incremental_context = IncrementalResearchContext(
+        value.scheme.incremental_context = IncrementalResearchContext(
             research_object_id="OBJECT-WP02",
             base_run_id="HISTORY-1",
             base_research_view_version="VIEW-1",
@@ -370,9 +366,7 @@ async def test_memory_change_immediately_before_result(tmp_path, monkeypatch):
     async def configure(service, value, agent):
         p = await projection(MemoryReader())
         fresh = await p.service.repository.get_run_fresh(p.task.run_id)
-        service.repository._runs[
-            value.run.run_id
-        ].scheme.incremental_context = fresh.scheme.incremental_context
+        value.scheme.incremental_context = fresh.scheme.incremental_context
         reader = MemoryReader()
         service.research_memory_reader = reader
         original = agent.retain_valuation_final

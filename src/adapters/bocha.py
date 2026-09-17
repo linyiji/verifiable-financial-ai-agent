@@ -43,6 +43,20 @@ class BochaDiscovery:
         }
 
     async def acquire(self, request, capability):
+        from src.application.execution_profiles import active_profile, authorize_data_request
+        from src.domain.node_binding import BindingDenied, digest
+
+        permission = authorize_data_request(request, "bocha")
+        profile = active_profile()
+        if profile is not None and digest(self.domains, "data-sources/v1") != (
+            profile.runtime_configuration["data"]["source_authorities_digest"]
+        ):
+            raise BindingDenied("PROFILE_COMPOSITION_INCOMPATIBLE", "data source authority")
+        if permission is not None and (
+            permission.discovery_policy is None
+            or permission.discovery_policy.capability_id != capability
+        ):
+            raise BindingDenied("DATA_CAPABILITY_NOT_AUTHORIZED", capability)
         if "bocha" not in CAPABILITIES.get(capability, ()):
             return (), DataOutcome.FAILED, "CAPABILITY_NOT_AUTHORIZED"
         if not self._key or not self._key.get_secret_value():

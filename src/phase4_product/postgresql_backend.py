@@ -768,6 +768,18 @@ class PostgreSQLPhase4ProductBackend:
             planned = planned.model_copy(
                 update={"tasks": canonical_output_contract_tasks(planned.tasks)}
             )
+            from src.application.execution_profiles import resolve_execution_snapshot
+            from src.domain.node_binding import BindingDenied
+
+            try:
+                execution_snapshot = resolve_execution_snapshot(
+                    scheme, goal, planned.tasks, self.service
+                )
+            except BindingDenied as failure:
+                raise product_error(
+                    "CONFLICT", "execution profile resolution failed closed",
+                    details={"reason_code": failure.code},
+                ) from None
             runtime = RuntimeState.create(run_id=run_id, planned_graph=planned)
             admitted_at = datetime.now(UTC)
             run = ResearchRun(
@@ -809,6 +821,7 @@ class PostgreSQLPhase4ProductBackend:
                 run=run, scheme=scheme, planned=planned, timestamp=admitted_at
             )
             commit = AtomicConfirmCommit(
+                execution_snapshot=execution_snapshot,
                 consumed_draft=mark_draft_consumed(
                     draft_record, admission=admission, consumed_at=admitted_at
                 ),

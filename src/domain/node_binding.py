@@ -253,6 +253,9 @@ class NodeBindingState(BaseModel):
     binding_revision: int = Field(ge=0)
     scheduler_started: bool = False
     frozen_graph: GraphIdentity
+    execution_snapshot: dict | None = None
+    scenario_snapshot_digest: str | None = None
+    execution_profile_snapshot_digest: str | None = None
     attempts: dict[str, AttemptReservation] = Field(default_factory=dict)
     resolved_inputs: dict[str, ResolvedInputBinding] = Field(default_factory=dict)
     results: dict[str, ResultBinding] = Field(default_factory=dict)

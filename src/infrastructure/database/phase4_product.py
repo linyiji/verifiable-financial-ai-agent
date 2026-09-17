@@ -249,7 +249,7 @@ def _aggregate_payload(commit: AtomicConfirmCommit) -> dict[str, Any]:
             run_status=commit.run.status,
         ),
     )
-    initialize_binding(aggregate)
+    initialize_binding(aggregate, snapshot=commit.execution_snapshot)
     return SQLAlchemyApplicationRepository._payload(aggregate)
 
 

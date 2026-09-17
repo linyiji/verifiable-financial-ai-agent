@@ -97,6 +97,20 @@ async def test_page_prepare_confirm_reload_scoped_invocation(database, choice): 
                 },
                 headers={**headers, "Idempotency-Key": f"confirm-{i}"},
             )
+            if i:
+                # The full graph contains Terra-denied peer/news tasks. V5 moves
+                # this existing authorization failure to atomic Confirm.
+                assert confirmed.status_code == 409, confirmed.text
+                assert confirmed.json()["error"]["details"]["reason_code"] == "MODEL_NOT_AUTHORIZED"
+                from sqlalchemy import func, select
+
+                from src.application.persistence import ResearchRunAggregateRow
+
+                async with sessions() as session:
+                    assert await session.scalar(
+                        select(func.count()).select_from(ResearchRunAggregateRow)
+                    ) == 0
+                continue
             assert confirmed.status_code == 201, confirmed.text
             run_ids.append((i, confirmed.json()["admission"]["run_id"]))
         # Reload committed configuration without starting a scheduler or provider.

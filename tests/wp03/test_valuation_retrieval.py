@@ -45,7 +45,7 @@ async def run_case(tmp_path, monkeypatch, mode="final", configure=None):
         observed["interaction"] = self
 
     monkeypatch.setattr(ValuationInteraction, "__init__", capture)
-    service, value, _, _ = await wired(tmp_path)
+    service, value, _, _ = await wired(tmp_path, persist=False)
     agent = service.agent_registry.get("valuation_analyst")
     config = LLMSettings(
         provider="teamorouter",
@@ -66,6 +66,12 @@ async def run_case(tmp_path, monkeypatch, mode="final", configure=None):
     service.valuation_context_enabled = True
     if configure:
         await configure(service, value, agent)
+    from src.application.repository import initialize_binding
+
+    # The optional composition is part of this fixture's initial Confirm envelope.
+    value.node_binding = None
+    initialize_binding(value, service=service)
+    await service.repository.add_run(value)
     calls = []
     wire_payloads = []
     original_client = httpx.AsyncClient
@@ -293,6 +299,10 @@ async def test_composition_denied(tmp_path, monkeypatch, composition):
         else:
             agent._provider._client = object()
 
+    if composition == "recovery":
+        with pytest.raises(BindingDenied, match="PROFILE_COMPOSITION_UNSUPPORTED"):
+            await run_case(tmp_path, monkeypatch, configure=configure)
+        return
     result, calls, _, task = await run_case(tmp_path, monkeypatch, configure=configure)
     assert not calls
     assert task.task_id not in result.node_binding.current_results

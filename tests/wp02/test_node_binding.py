@@ -146,8 +146,8 @@ class FakeCollector:
 
 
 class FakeLLM:
-    provider_name = "local-fake"
-    model_name = "fake-model"
+    provider_name = "teamorouter"
+    model_name = "gpt-5.6-sol"
 
     def __init__(self, repository):
         self.repository, self.calls = repository, []
@@ -181,10 +181,9 @@ class FakeLLM:
         )
 
 
-async def wired(tmp_path, repository=None):
+async def wired(tmp_path, repository=None, *, persist=True):
     repository = repository or InMemoryApplicationRepository()
     value = aggregate()
-    await repository.add_run(value)
     await repository.add_object(
         ResearchObject(
             object_id="OBJECT-WP02", symbol="TEST", company_name="Fixture", exchange="LOCAL"
@@ -213,6 +212,11 @@ async def wired(tmp_path, repository=None):
         evidence_collector=collector,
         agent_registry=registry,
     )
+    # Resolve the fixture composition at initial Confirm, before durable insertion.
+    value.node_binding = None
+    initialize_binding(value, service=service)
+    if persist:
+        await repository.add_run(value)
     return service, value, collector, provider
 
 

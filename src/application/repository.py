@@ -36,13 +36,18 @@ from src.domain.runtime_event import RuntimeEvent
 node_invocation = ContextVar("vefin_node_invocation", default=None)
 
 
-def initialize_binding(aggregate):
+def initialize_binding(aggregate, *, service=None, snapshot=None):
     from src.application.research_outputs import configure_output_contracts
 
     configure_output_contracts(aggregate.runtime)
     if aggregate.node_binding is not None:
         validate_root(aggregate)
         return
+    from src.application.execution_profiles import resolve_execution_snapshot
+
+    snapshot = snapshot or resolve_execution_snapshot(
+        aggregate.scheme, aggregate.goal, aggregate.runtime.actual_graph.tasks, service
+    )
     aggregate.node_binding = NodeBindingState(
         run_id=aggregate.run.run_id,
         execution_mode="DEFAULT",
@@ -51,7 +56,11 @@ def initialize_binding(aggregate):
         lifecycle="UNCLAIMED",
         binding_revision=0,
         frozen_graph=GraphIdentity.of(aggregate.runtime.actual_graph),
+        execution_snapshot=snapshot.model_dump(mode="json"),
+        scenario_snapshot_digest=snapshot.scenario_snapshot_digest,
+        execution_profile_snapshot_digest=snapshot.execution_profile_snapshot_digest,
     )
+    validate_root(aggregate)
     aggregate.runtime.binding_ref = aggregate.node_binding.reference()
 
 
@@ -61,6 +70,19 @@ def validate_root(aggregate, owner=None):
         raise BindingDenied("STATE_REFRESH_REQUIRED", "missing node binding")
     if aggregate.scheme.confirmed_at is None:
         raise BindingDenied("STATE_REFRESH_REQUIRED", "Scheme not confirmed")
+    from src.application.execution_profiles import frozen_profile
+    from src.domain.execution_profile import ExecutionSnapshot
+
+    if root.execution_snapshot is None:
+        raise BindingDenied("PROFILE_BINDING_MISSING", aggregate.run.run_id)
+    snapshot = ExecutionSnapshot.model_validate(root.execution_snapshot)
+    if (root.scenario_snapshot_digest != snapshot.scenario_snapshot_digest
+            or root.execution_profile_snapshot_digest != snapshot.execution_profile_snapshot_digest
+            or {n.task_id for n in snapshot.nodes}
+            != {t.task_id for t in aggregate.runtime.actual_graph.tasks}):
+        raise BindingDenied("PROFILE_BINDING_MISMATCH", aggregate.run.run_id)
+    for task in aggregate.runtime.actual_graph.tasks:
+        frozen_profile(aggregate, task)
     # Revalidate rather than trust a mutable model or cached reference.
     NodeBindingState.model_validate(root.model_dump())
     if (

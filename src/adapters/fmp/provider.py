@@ -336,6 +336,15 @@ class FMPProvider:
 
     @observe("data.probe")
     async def probe(self, request: ProviderRequest) -> FMPFetchResult:
+        from src.application.execution_profiles import active_profile, authorize_data_request
+        from src.domain.node_binding import BindingDenied
+
+        authorize_data_request(request, "fmp")
+        profile = active_profile()
+        if profile is not None and list(self._transient_retry_delays) != (
+            profile.runtime_configuration["data"]["transient_retry_delays"]
+        ):
+            raise BindingDenied("PROFILE_COMPOSITION_INCOMPATIBLE", "data transport")
         spec = endpoint_for(request.dataset)
         params = _params_for(spec, request)
         if spec.endpoint is FMPEndpoint.HISTORICAL and request.limit >= 200:

@@ -106,6 +106,9 @@ class AdaptiveRecovery:
         self, context, scope, initial_provider, *, output_validator=None, **kwargs
     ):
         """Shared authority and ledger; generated operations use exact owned scope."""
+        from src.application.execution_profiles import validate_recovery_profile
+
+        frozen_profile = validate_recovery_profile(self, scope)
         generated = scope.operation_id.startswith("generated-capability:")
         owner_policy = TASK_POLICIES.get(scope.task_profile)
         ordered_route_walk = bool(owner_policy and owner_policy.ordered_route_walk)
@@ -116,7 +119,13 @@ class AdaptiveRecovery:
         )
         if digest(context.model_dump(mode="json")) != scope.context_hash:
             raise ValueError("Recovery scope/context mismatch")
-        allowed_routes = TASK_CANDIDATES.get(scope.task_profile, ())
+        if frozen_profile is not None:
+            owner_policy = frozen_profile.owner_policy
+            budget = frozen_profile.recovery_budget
+        allowed_routes = (
+            frozen_profile.allowed_model_routes if frozen_profile is not None
+            else TASK_CANDIDATES.get(scope.task_profile, ())
+        )
         routes = {
             key: self.detector.routes[key] for key in allowed_routes if key in self.detector.routes
         }
@@ -132,6 +141,7 @@ class AdaptiveRecovery:
         )
         if current is None or (not generated and not routes[current].authority_exists):
             raise ValueError("Initial provider is outside governed recovery authority")
+        initial_route = current
         history, checked_routes, health, attempted_models = [], [], dict(self.initial_health), []
         checks = decisions = model_switches = provider_switches = provider_calls = 0
         started = monotonic()
@@ -232,9 +242,20 @@ class AdaptiveRecovery:
         if capabilities[current] in {Capability.QUARANTINED, Capability.UNSUPPORTED}:
             await stop("POLICY_DENIED")
 
+        model_grants = self.model_grants
+        if frozen_profile is not None and model_grants is None:
+            model_grants = {
+                (scope.task_profile, grant.requested_route): grant.actual_routes
+                for grant in frozen_profile.owner_policy.dynamic_grants
+            }
         frozen_input = digest([message.model_dump() for message in kwargs["messages"]])
 
         async def invoke(route, check=False):
+            if frozen_profile is not None:
+                validate_recovery_profile(self, scope)
+                frozen_profile.require_route(route)
+                if route != initial_route and route not in frozen_profile.recovery_fallback_routes:
+                    raise ValueError("Fallback route outside frozen envelope")
             nonlocal last_failure, last_failure_route, provider_calls
             candidate = routes[route]
             if (
@@ -253,7 +274,7 @@ class AdaptiveRecovery:
                 capabilities,
                 budget,
                 check=check,
-                grants=self.model_grants,
+                grants=model_grants,
             )
             common = dict(
                 attempt_id=attempt_id,
