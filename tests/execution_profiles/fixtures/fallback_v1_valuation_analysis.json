@@ -1,0 +1,438 @@
+{
+  "schema_version": "confirmed-execution-profile/v1",
+  "scenario": {
+    "scenario_id": "company_fundamental_research_v1",
+    "scenario_version": "1",
+    "permission_source": "PRODUCT_DEFINED",
+    "research_depth": "STANDARD_QUALITATIVE",
+    "task_categories": [
+      "evidence_collection",
+      "valuation_analysis"
+    ],
+    "evidence_requirement": "ACCEPTED_PROVENANCE_PERIOD_UNIT_AS_OF",
+    "counter_evidence_requirement": "CURRENT_RISK_NEWS_OUTPUT_AND_EXPLICIT_LIMITATIONS",
+    "valuation_requirement": "NOT_QUANTIFIED_IN_CURRENT_SCOPE",
+    "review_requirement": "INDEPENDENT_FINANCIAL_REVIEW_AND_EXISTING_RELEASE_GATES",
+    "report_requirements": [],
+    "budget_policy": "WIDE_NODE_LEVEL_ENVELOPES_V1",
+    "aggregate_numeric_ceiling": "NOT_YET_ENFORCED_IN_V1",
+    "execution_family": "company_fundamental_nodes",
+    "execution_family_version": "1",
+    "stop_conditions": [
+      "MISSING_HARD_INPUT",
+      "IDENTITY_FAILURE",
+      "INVALID_OUTPUT",
+      "POLICY_DENIED",
+      "NODE_ENVELOPE_EXHAUSTED",
+      "REQUIRED_REVIEW_UNRESOLVED"
+    ],
+    "user_problem_expression": "FREE",
+    "clarity_and_planning": "BOUNDED",
+    "graph_mutation": "DISABLED",
+    "arbitrary_capability_discovery": "DISABLED",
+    "generated_methods_tools": "DISABLED",
+    "autonomous_replan": "DISABLED",
+    "report_schema": "FIXED",
+    "core_formulas": "FIXED"
+  },
+  "nodes": [
+    {
+      "output_contract_digest": "sha256:2ba17598801518581a19aaab21a79a7b1e0b5e3b3eedec558e1651e6ccfb785d",
+      "task_id": "RUN-WP02-LOCAL-FIXTURE:0",
+      "profile": {
+        "profile_id": "company_fundamental_nodes/evidence_collection",
+        "profile_version": "1",
+        "task_type": "evidence_collection",
+        "permission_source": "PRODUCT_DEFINED",
+        "policy_evidence_source": "CURRENT_ACTIVE_OWNER_TASK_POLICY",
+        "execution_class": "DETERMINISTIC",
+        "allowed_method_ids": [
+          "evidence_collection_v1"
+        ],
+        "allowed_tool_ids": [
+          "evidence_router",
+          "company_profile",
+          "annual_financials",
+          "balance_sheet",
+          "cash_flow",
+          "market_price",
+          "historical_prices",
+          "analyst_recommendations"
+        ],
+        "data_scope_ids": [
+          "COMPANY"
+        ],
+        "data_permissions": [
+          {
+            "data_scope_id": "COMPANY",
+            "capability_id": "company_profile",
+            "fields": [],
+            "observation_limit": 1,
+            "expected_period": null,
+            "category": "COMPANY_PROFILE",
+            "purpose": "company_identity",
+            "providers": [
+              "fmp"
+            ],
+            "max_requests": 6,
+            "request_count_unit": "CAPABILITY_INVOCATION",
+            "envelope_source": "PROFILE_DEFAULT",
+            "requirement": "ALLOWED_COLLECTOR_OWNS_REQUIREMENT",
+            "discovery_policy": null
+          },
+          {
+            "data_scope_id": "COMPANY",
+            "capability_id": "annual_financials",
+            "fields": [
+              "revenue",
+              "ebitda"
+            ],
+            "observation_limit": 5,
+            "expected_period": null,
+            "category": "FINANCIAL_STATEMENT",
+            "purpose": "fundamental_financials",
+            "providers": [
+              "fmp"
+            ],
+            "max_requests": 6,
+            "request_count_unit": "CAPABILITY_INVOCATION",
+            "envelope_source": "PROFILE_DEFAULT",
+            "requirement": "ALLOWED_COLLECTOR_OWNS_REQUIREMENT",
+            "discovery_policy": null
+          },
+          {
+            "data_scope_id": "COMPANY",
+            "capability_id": "balance_sheet",
+            "fields": [
+              "totalAssets",
+              "totalDebt",
+              "totalStockholdersEquity"
+            ],
+            "observation_limit": 2,
+            "expected_period": null,
+            "category": "FINANCIAL_STATEMENT",
+            "purpose": "balance_sheet_analysis",
+            "providers": [
+              "fmp"
+            ],
+            "max_requests": 6,
+            "request_count_unit": "CAPABILITY_INVOCATION",
+            "envelope_source": "PROFILE_DEFAULT",
+            "requirement": "ALLOWED_COLLECTOR_OWNS_REQUIREMENT",
+            "discovery_policy": null
+          },
+          {
+            "data_scope_id": "COMPANY",
+            "capability_id": "cash_flow",
+            "fields": [
+              "operatingCashFlow",
+              "capitalExpenditure",
+              "freeCashFlow"
+            ],
+            "observation_limit": 2,
+            "expected_period": null,
+            "category": "FINANCIAL_STATEMENT",
+            "purpose": "cash_flow_analysis",
+            "providers": [
+              "fmp"
+            ],
+            "max_requests": 6,
+            "request_count_unit": "CAPABILITY_INVOCATION",
+            "envelope_source": "PROFILE_DEFAULT",
+            "requirement": "ALLOWED_COLLECTOR_OWNS_REQUIREMENT",
+            "discovery_policy": null
+          },
+          {
+            "data_scope_id": "COMPANY",
+            "capability_id": "market_price",
+            "fields": [
+              "price",
+              "volume",
+              "marketCap",
+              "pe"
+            ],
+            "observation_limit": 1,
+            "expected_period": null,
+            "category": "MARKET",
+            "purpose": "market_context",
+            "providers": [
+              "fmp"
+            ],
+            "max_requests": 6,
+            "request_count_unit": "CAPABILITY_INVOCATION",
+            "envelope_source": "PROFILE_DEFAULT",
+            "requirement": "ALLOWED_COLLECTOR_OWNS_REQUIREMENT",
+            "discovery_policy": null
+          },
+          {
+            "data_scope_id": "COMPANY",
+            "capability_id": "historical_prices",
+            "fields": [
+              "adjClose",
+              "adjustedClose",
+              "close",
+              "volume"
+            ],
+            "observation_limit": 250,
+            "expected_period": null,
+            "category": "MARKET",
+            "purpose": "historical_market_context",
+            "providers": [
+              "fmp"
+            ],
+            "max_requests": 6,
+            "request_count_unit": "CAPABILITY_INVOCATION",
+            "envelope_source": "PROFILE_DEFAULT",
+            "requirement": "ALLOWED_COLLECTOR_OWNS_REQUIREMENT",
+            "discovery_policy": null
+          },
+          {
+            "data_scope_id": "COMPANY",
+            "capability_id": "analyst_recommendations",
+            "fields": [],
+            "observation_limit": 5,
+            "expected_period": null,
+            "category": "ANALYST",
+            "purpose": "analyst_consensus_context",
+            "providers": [
+              "fmp"
+            ],
+            "max_requests": 6,
+            "request_count_unit": "CAPABILITY_INVOCATION",
+            "envelope_source": "PROFILE_DEFAULT",
+            "requirement": "ALLOWED_COLLECTOR_OWNS_REQUIREMENT",
+            "discovery_policy": null
+          }
+        ],
+        "data_permission_policy_version": "product-adopted-current-request-sets/v1",
+        "owner_policy": {
+          "version": "recoverable-owner-policy/v1",
+          "task_profile": "evidence_collection",
+          "kind": "NATIVE_DATA",
+          "candidates": [],
+          "preferred_route": null,
+          "dynamic_grants": [],
+          "cross_provider_allowed": false,
+          "recovery_budget": null,
+          "ordered_route_walk": false,
+          "exact_check_consumption": "NOT_APPLICABLE",
+          "substituted_check_consumption": "NOT_APPLICABLE",
+          "outer_deadline_seconds": null,
+          "budget_source": "Explicit finite V1 Intent/Run DATA_REQUEST budget required; no invented cap",
+          "preferred_override_source": "CapabilityExecutionPolicy + configured native adapters",
+          "reason": "FMP structured evidence and Bocha Web discovery; no model authorization"
+        },
+        "allowed_model_routes": [],
+        "requested_route": null,
+        "resolved_route": null,
+        "observed_route": "UNKNOWN_AT_CONFIRM",
+        "selection_origin": "SYSTEM_DEFAULT",
+        "profile_default_route": null,
+        "recovery_fallback_routes": [],
+        "recovery_budget": null,
+        "envelope_source": "PROFILE_DEFAULT",
+        "envelope_classification": "PROFILE_POLICY",
+        "runtime_configuration": {
+          "agent": null,
+          "recovery": null,
+          "data": {
+            "fuse_news": false,
+            "discovery": false,
+            "source_authorities_digest": "sha256:0467ea4a9ccd1b062bb474d1cefe7e49ad95de90fc64f4156e3f91d31e6b12d4",
+            "transient_retry_delays": null
+          },
+          "native_tools": [],
+          "valuation_context": false
+        },
+        "runtime_configuration_digest": "sha256:9c529f3dddf2c20b493dad56dd0568d00005649357b7ad657af5f3821d9e2876",
+        "evidence_requirement": "ACCEPTED_INPUTS_AND_PROVENANCE",
+        "review_gate": "EXISTING_INDEPENDENT_REVIEW_BEFORE_RELEASE",
+        "stop_conditions": [
+          "MISSING_HARD_INPUT",
+          "IDENTITY_FAILURE",
+          "INVALID_OUTPUT",
+          "POLICY_DENIED",
+          "NODE_ENVELOPE_EXHAUSTED",
+          "REQUIRED_REVIEW_UNRESOLVED"
+        ]
+      }
+    },
+    {
+      "output_contract_digest": "sha256:2ba17598801518581a19aaab21a79a7b1e0b5e3b3eedec558e1651e6ccfb785d",
+      "task_id": "RUN-WP02-LOCAL-FIXTURE:1",
+      "profile": {
+        "profile_id": "company_fundamental_nodes/valuation_analysis",
+        "profile_version": "1",
+        "task_type": "valuation_analysis",
+        "permission_source": "PRODUCT_DEFINED",
+        "policy_evidence_source": "CURRENT_ACTIVE_OWNER_TASK_POLICY",
+        "execution_class": "BOUNDED_ADAPTIVE",
+        "allowed_method_ids": [
+          "valuation_analysis_v1"
+        ],
+        "allowed_tool_ids": [
+          "evidence_router"
+        ],
+        "data_scope_ids": [],
+        "data_permissions": [],
+        "data_permission_policy_version": "product-adopted-current-request-sets/v1",
+        "owner_policy": {
+          "version": "recoverable-owner-policy/v1",
+          "task_profile": "valuation_analysis",
+          "kind": "SPECIALIST",
+          "candidates": [
+            "teamorouter-sol",
+            "teamorouter-luna",
+            "teamorouter-terra",
+            "mimo-direct"
+          ],
+          "preferred_route": "teamorouter-sol",
+          "dynamic_grants": [
+            {
+              "requested_route": "teamorouter-luna",
+              "actual_routes": [
+                "teamorouter-terra"
+              ]
+            }
+          ],
+          "cross_provider_allowed": true,
+          "recovery_budget": {
+            "max_total_attempts_per_task": 3,
+            "max_same_route_attempts": 1,
+            "max_model_fallbacks": 1,
+            "max_cross_provider_switches": 1,
+            "max_capability_checks": 1,
+            "max_recovery_decisions": 5,
+            "max_runtime_replans": 0,
+            "max_total_recovery_time": 300.0,
+            "max_total_recovery_cost": null
+          },
+          "ordered_route_walk": false,
+          "exact_check_consumption": "SEPARATE_EXECUTION",
+          "substituted_check_consumption": "CONSUME_ONCE",
+          "outer_deadline_seconds": null,
+          "budget_source": "RecoveryBudget defaults retained by Owner V1",
+          "preferred_override_source": "Settings.specialist_provider_routes; candidate gate applies",
+          "reason": "Existing prospective authority; no new model or substitution grant"
+        },
+        "allowed_model_routes": [
+          "teamorouter-sol",
+          "teamorouter-luna",
+          "teamorouter-terra",
+          "mimo-direct"
+        ],
+        "requested_route": null,
+        "resolved_route": "teamorouter-sol",
+        "observed_route": "UNKNOWN_AT_CONFIRM",
+        "selection_origin": "SYSTEM_DEFAULT",
+        "profile_default_route": "teamorouter-sol",
+        "recovery_fallback_routes": [
+          "teamorouter-sol",
+          "teamorouter-luna",
+          "teamorouter-terra",
+          "mimo-direct"
+        ],
+        "recovery_budget": {
+          "max_total_attempts_per_task": 3,
+          "max_same_route_attempts": 1,
+          "max_model_fallbacks": 1,
+          "max_cross_provider_switches": 1,
+          "max_capability_checks": 1,
+          "max_recovery_decisions": 5,
+          "max_runtime_replans": 0,
+          "max_total_recovery_time": 300.0,
+          "max_total_recovery_cost": null
+        },
+        "envelope_source": "PROFILE_DEFAULT",
+        "envelope_classification": "PROFILE_POLICY",
+        "runtime_configuration": {
+          "agent": {
+            "provider": "teamorouter",
+            "model": "gpt-5.6-sol",
+            "routes": {},
+            "execution_policy": null,
+            "fallback_model": null,
+            "endpoint_digest": "sha256:af9a0471483f6dc9f35990da91af5060f86e3dc472cf6947fd7908ecdcc56358"
+          },
+          "recovery": {
+            "budget": null,
+            "routes": {
+              "teamorouter-sol": [
+                "teamorouter",
+                "gpt-5.6-sol"
+              ],
+              "teamorouter-luna": [
+                "teamorouter",
+                "gpt-5.6-luna"
+              ],
+              "mimo-direct": [
+                "mimo",
+                "mimo-v2.5"
+              ],
+              "teamorouter-terra": [
+                "teamorouter",
+                "gpt-5.6-terra"
+              ]
+            },
+            "clients": {
+              "teamorouter-sol": {
+                "provider": "teamorouter",
+                "model": "gpt-5.6-sol",
+                "routes": {},
+                "execution_policy": null,
+                "fallback_model": null,
+                "endpoint_digest": "sha256:af9a0471483f6dc9f35990da91af5060f86e3dc472cf6947fd7908ecdcc56358"
+              },
+              "teamorouter-luna": {
+                "provider": "teamorouter",
+                "model": "gpt-5.6-luna",
+                "routes": {},
+                "execution_policy": null,
+                "fallback_model": null,
+                "endpoint_digest": "sha256:af9a0471483f6dc9f35990da91af5060f86e3dc472cf6947fd7908ecdcc56358"
+              },
+              "mimo-direct": {
+                "provider": "mimo",
+                "model": "mimo-v2.5",
+                "routes": {},
+                "execution_policy": null,
+                "fallback_model": null,
+                "endpoint_digest": "sha256:af9a0471483f6dc9f35990da91af5060f86e3dc472cf6947fd7908ecdcc56358"
+              },
+              "teamorouter-terra": {
+                "provider": "teamorouter",
+                "model": "gpt-5.6-terra",
+                "routes": {},
+                "execution_policy": null,
+                "fallback_model": null,
+                "endpoint_digest": "sha256:af9a0471483f6dc9f35990da91af5060f86e3dc472cf6947fd7908ecdcc56358"
+              }
+            },
+            "grants": []
+          },
+          "data": {
+            "fuse_news": false,
+            "discovery": false,
+            "source_authorities_digest": "sha256:0467ea4a9ccd1b062bb474d1cefe7e49ad95de90fc64f4156e3f91d31e6b12d4",
+            "transient_retry_delays": null
+          },
+          "native_tools": [],
+          "valuation_context": false
+        },
+        "runtime_configuration_digest": "sha256:d31db6adead021f031ffca402b9b1a50324705e143d8ace577fd1fd239bc9a2c",
+        "evidence_requirement": "ACCEPTED_INPUTS_AND_PROVENANCE",
+        "review_gate": "EXISTING_INDEPENDENT_REVIEW_BEFORE_RELEASE",
+        "stop_conditions": [
+          "MISSING_HARD_INPUT",
+          "IDENTITY_FAILURE",
+          "INVALID_OUTPUT",
+          "POLICY_DENIED",
+          "NODE_ENVELOPE_EXHAUSTED",
+          "REQUIRED_REVIEW_UNRESOLVED"
+        ]
+      }
+    }
+  ],
+  "scenario_snapshot_digest": "sha256:63a7f4261a5a4f450c3ea1ca5ca46182af17dfd034756ad0944b64f6ea141097",
+  "execution_profile_snapshot_digest": "sha256:4f2a0145dd1f61caee9c4f9620e08a2c0ec03b584b7306f8dd06a1d00c109df9"
+}

@@ -10,6 +10,7 @@ from src.application.evidence_collection import evidence_request_plans
 from src.application.evidence_routing import EvidenceTaskRouter
 from src.data.capability_policy import FUNDAMENTALS_DATA_SCOPES_V1, data_policy
 from src.domain.execution_profile import (
+    AcceptedRequestProof,
     DataPermission,
     ExecutionSnapshot,
     NodeExecutionProfile,
@@ -141,6 +142,7 @@ def resolve_execution_snapshot(
     The Run's object/as-of feed request construction but are deliberately discarded
     from the permission values. They remain existing Goal/Run inputs.
     """
+    prospective_defaults = scenario is None and node_profiles is None
     selection = selected_model(goal.preferences)
     scenario = scenario or ScenarioProfile(
         task_categories=tuple(sorted({t.task_type for t in tasks})),
@@ -250,6 +252,18 @@ def resolve_execution_snapshot(
                 ),
             )
         )
+    if prospective_defaults:
+        tightened = [default_recovery_profile(node.profile) for node in nodes]
+        if any(a != b.profile for a, b in zip(tightened, nodes, strict=True)):
+            scenario = scenario.model_copy(update={"execution_family_version": "2"})
+            nodes = [
+                node.model_copy(update={"profile": narrow_profile(
+                    node.profile,
+                    selected.model_copy(update={"profile_version": "2"}),
+                    scenario,
+                )})
+                for node, selected in zip(nodes, tightened, strict=True)
+            ]
     if node_profiles:
         # A versioned, explicitly supplied product profile can tighten this family.
         # New grants require a separately adopted product contract, not registry growth.
@@ -276,6 +290,15 @@ def narrow_profile(current, selected, scenario):
         or selected.owner_policy != current.owner_policy
     ):
         raise BindingDenied("PROFILE_VERSION_INCOMPATIBLE", selected.profile_id)
+    if selected.accepted_request_proof is not None:
+        if (
+            selected.accepted_request_proof != accepted_terra_proof(selected.task_type)
+            or selected.profile_version != "2"
+            or current.resolved_route != "teamorouter-sol"
+            or (selected.task_type == "valuation_analysis"
+                and current.runtime_configuration.get("valuation_context") is not False)
+        ):
+            raise BindingDenied("PROFILE_PROOF_ADOPTION_DENIED", selected.task_type)
     for field in (
         "allowed_method_ids",
         "allowed_tool_ids",
@@ -488,3 +511,121 @@ def authorize_model_provider(provider):
         raise BindingDenied("PROFILE_COMPOSITION_INCOMPATIBLE", "model provider")
     if profile.requested_route is not None and route != profile.requested_route:
         raise BindingDenied("MODEL_SELECTION_CHANGED", route)
+
+
+BOUNDED_TERRA_POLICY = "OWNER_ADOPTED_BOUNDED_TERRA_RECOVERY_V1"
+
+
+def accepted_terra_proof(task_type):
+    """Two reviewed profile entries, not runtime receipt discovery or certification storage.
+
+    Receipt content digests identify the retained RUN.json and safe request receipt.
+    Their output_hash is absent: these are compatibility proofs, never fake Run outputs.
+    """
+    if task_type == "risk_analysis":
+        values = dict(
+            agent_id="risk_analyst", schema_identity="RiskResearchAgentStructuredOutput",
+            schema_digest="sha256:d896db2e712e14b9a8d9bfc03351a1f384a66529758722204c6c09cd8f4e28ee",
+            receipt_id="REC-d1169af9-1065-4506-bf67-e3fbdc1dd8d8",
+            attempt_id="ATT-e76b9ff9-a69d-47df-bbcd-6a4599d644f1",
+            receipt_content_digest="sha256:828bf51d4cbf08304b4ae17913a16626848b51645d4adb46c820b7062780e7c0",
+            request_receipt_digest="sha256:e117d8c608461b791ee0dec21b55bad0ec9b02a8d3ceefdf69fc491be87b90b5",
+        )
+    elif task_type == "valuation_analysis":
+        values = dict(
+            agent_id="valuation_analyst", schema_identity="StandardResearchAgentStructuredOutput",
+            schema_digest="sha256:171e6d6a310ab660f0aa9075b6b9bc0fe84863f4a27ab5f94a63131aa76a91ab",
+            receipt_id="REC-3e6680cf-2b72-4b52-a65f-249d77e76cef",
+            attempt_id="ATT-1304bf4c-3742-4b14-83a8-0a7dfdd33c9b",
+            receipt_content_digest="sha256:b01b74d12d55d255c16a7b0a419a31e552a6cc7cf698c92cc7be3cf768bea41b",
+            request_receipt_digest="sha256:f6465e4e1487d474b52659563f8944153d6ba8e74de3f32fc752042cc681aff6",
+        )
+    else:
+        return None
+    proof = AcceptedRequestProof(
+        adoption_version="bounded-terra-request-proof/v1", profile_version="2",
+        task_type=task_type, skill_id=f"{task_type}_v1",
+        provider="teamorouter", route="teamorouter-terra", model="gpt-5.6-terra",
+        schema_name=f"{task_type}_research_output_v1",
+        request_builder="src.agentic.research_agent._messages/v1",
+        builder_digest="sha256:12f89727e41d5d0da4f55e0810c2325624d1065e6959f36c10a944f853510671",
+        template_digest="sha256:089e28db045eb0214d4278dd2f98863299d3b0f8255dcf6da97da66c51d099cb",
+        valuation_context_enabled=False if task_type == "valuation_analysis" else None,
+        workload_type="RESEARCH_AGENT_EXECUTION",
+        status="ACCEPTED_BOUNDED_REQUEST_FAMILY", acceptance_digest="", **values,
+    )
+    return proof.model_copy(update={"acceptance_digest": proof.content_digest()})
+
+
+def default_recovery_profile(profile):
+    # Explicit selection/configuration and context interaction keep their own authority.
+    if (
+        profile.task_type not in {"risk_analysis", "valuation_analysis"}
+        or profile.resolved_route != "teamorouter-sol"
+        or profile.requested_route not in {None, "teamorouter-sol"}
+        or (profile.task_type == "valuation_analysis"
+            and profile.runtime_configuration.get("valuation_context") is not False)
+        or profile.runtime_configuration.get("recovery") is None
+        or profile.envelope_source != "PROFILE_DEFAULT"
+    ):
+        return profile
+    return profile.model_copy(update={
+        "profile_version": "2",
+        "policy_evidence_source": BOUNDED_TERRA_POLICY,
+        "allowed_model_routes": ("teamorouter-sol", "teamorouter-terra"),
+        "recovery_fallback_routes": ("teamorouter-terra",),
+        "recovery_budget": profile.recovery_budget.model_copy(update={"max_capability_checks": 0}),
+        "accepted_request_proof": accepted_terra_proof(profile.task_type),
+    })
+
+
+def adopted_request_matches(profile, context, scope, candidate, request):
+    """Use frozen acceptance only; exact current builder/schema/route, no ambient proof lookup."""
+    from src.adapters.llm.teamorouter import _structured_request_template
+    from src.agentic.research_agent import _messages
+    from src.phase4_product.hashing import canonical_json_sha256
+
+    proof = profile.accepted_request_proof
+    if proof is None or candidate is None:
+        return False
+    try:
+        builder_digest = "sha256:" + hashlib.sha256(
+            inspect.getsource(_messages).encode()
+        ).hexdigest()
+        template_digest = "sha256:" + hashlib.sha256(
+            inspect.getsource(_structured_request_template).encode()
+        ).hexdigest()
+        return (
+            proof.status == "ACCEPTED_BOUNDED_REQUEST_FAMILY"
+            and proof.adoption_version == "bounded-terra-request-proof/v1"
+            and proof.acceptance_digest == proof.content_digest()
+            and proof.profile_version == profile.profile_version
+            and proof.task_type == profile.task_type
+            == scope.task_profile == context.task.task_type
+            and proof.skill_id == context.task.skill_id
+            and proof.skill_id in profile.allowed_method_ids
+            and proof.agent_id == scope.agent_id == context.task.assigned_agent
+            and (proof.route, proof.provider, proof.model)
+            == (candidate.route, candidate.provider, candidate.model)
+            and candidate.authority_exists
+            and proof.route in profile.recovery_fallback_routes
+            and proof.schema_digest == scope.contract_hash
+            == canonical_json_sha256(request["response_model"].model_json_schema())
+            and proof.schema_identity == request["response_model"].__name__
+            and proof.schema_name == request["schema_name"]
+            and proof.workload_type == request["workload_type"]
+            and proof.request_builder == "src.agentic.research_agent._messages/v1"
+            and proof.builder_digest == builder_digest
+            and proof.template_digest == template_digest
+            and (
+                (proof.task_type == "risk_analysis" and proof.valuation_context_enabled is None)
+                or (proof.task_type == "valuation_analysis"
+                    and proof.valuation_context_enabled is False
+                    and profile.runtime_configuration.get("valuation_context") is False)
+            )
+            and scope.operation_id == "specialist"
+            and request["messages"] == _messages(context)
+            and set(request) == {"messages", "response_model", "schema_name", "workload_type"}
+        )
+    except (KeyError, TypeError, AttributeError, OSError):
+        return False

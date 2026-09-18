@@ -6,7 +6,7 @@ acquired only through the existing Confirm / frozen graph / admission transactio
 
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from src.data.capability_policy import FUNDAMENTALS_DATA_PERMISSION_VERSION, DataCapabilityPolicy
 from src.domain.node_binding import BindingDenied, BindingValue, digest
@@ -67,6 +67,38 @@ class ScenarioProfile(BindingValue):
     core_formulas: Literal["FIXED"] = "FIXED"
 
 
+class AcceptedRequestProof(BindingValue):
+    """Owner-adopted bounded evidence, frozen at Confirm; never a Run result."""
+
+    adoption_version: str
+    profile_version: str
+    task_type: str
+    skill_id: str
+    agent_id: str
+    provider: str
+    route: RouteId
+    model: str
+    schema_name: str
+    schema_identity: str
+    schema_digest: str
+    request_builder: str
+    builder_digest: str
+    template_digest: str
+    valuation_context_enabled: bool | None
+    workload_type: str
+    status: str
+    receipt_id: str
+    attempt_id: str
+    receipt_content_digest: str
+    request_receipt_digest: str
+    acceptance_digest: str
+
+    def content_digest(self):
+        return digest(
+            self.model_dump(exclude={"acceptance_digest"}), "accepted-request-proof/v1"
+        )
+
+
 class NodeExecutionProfile(BindingValue):
     profile_id: str
     profile_version: str = "1"
@@ -96,6 +128,16 @@ class NodeExecutionProfile(BindingValue):
     evidence_requirement: str = "ACCEPTED_INPUTS_AND_PROVENANCE"
     review_gate: str = "EXISTING_INDEPENDENT_REVIEW_BEFORE_RELEASE"
     stop_conditions: tuple[str, ...]
+
+    accepted_request_proof: AcceptedRequestProof | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_snapshot_codec(self, handler):
+        values = handler(self)
+        # An absent extension has exactly the historical serialized shape and hash.
+        if self.accepted_request_proof is None:
+            values.pop("accepted_request_proof", None)
+        return values
 
     @property
     def allowed_data_capability_ids(self):

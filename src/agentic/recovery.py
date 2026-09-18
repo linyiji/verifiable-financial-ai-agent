@@ -162,6 +162,31 @@ class AdaptiveRecovery:
             )
             for key, c in routes.items()
         }
+        from src.application.execution_profiles import BOUNDED_TERRA_POLICY, adopted_request_matches
+
+        bounded_proof_policy = (
+            frozen_profile is not None
+            and frozen_profile.policy_evidence_source == BOUNDED_TERRA_POLICY
+        )
+
+        def adopt_bounded_proof():
+            if not bounded_proof_policy:
+                return
+            for key in frozen_profile.recovery_fallback_routes:
+                if key not in routes:
+                    continue
+                # Schema-only certificates and saved decisions cannot widen this family.
+                negative = capabilities.get(key) in {Capability.QUARANTINED, Capability.UNSUPPORTED}
+                matched = adopted_request_matches(
+                    frozen_profile, context, scope, routes[key], kwargs
+                )
+                if not negative:
+                    capabilities[key] = Capability.VERIFIED if matched else Capability.UNKNOWN
+                    capability_refs[key] = (
+                        (frozen_profile.accepted_request_proof.receipt_id,) if matched else ()
+                    )
+
+        adopt_bounded_proof()
         observed_records = await self.store.records()
         for key, (status, reference) in capability_provenance(
             observed_records, scope, routes
@@ -189,6 +214,14 @@ class AdaptiveRecovery:
                     FailureClass.RATE_LIMIT,
                 }:
                     health[observed.route] = Health.DEGRADED
+        current_negative_capabilities = {
+            key: (status, capability_refs[key])
+            for key, status in capabilities.items()
+            if status in {Capability.QUARANTINED, Capability.UNSUPPORTED}
+        }
+        current_unavailable_routes = {
+            key for key, status in health.items() if status == Health.UNAVAILABLE
+        }
         refs = []
         last_failure = None
         last_failure_route = current
@@ -214,6 +247,15 @@ class AdaptiveRecovery:
                 datetime.now(UTC) - datetime.fromisoformat(resume["saved_at"])
             ).total_seconds())
             pending_decision = RecoveryDecision.model_validate(resume["decision"])
+
+        if bounded_proof_policy:
+            # Recheck the current request on resume, then retain fresh negative evidence.
+            adopt_bounded_proof()
+            for key, (status, references) in current_negative_capabilities.items():
+                capabilities[key] = status
+                capability_refs[key] = references
+            for key in current_unavailable_routes:
+                health[key] = Health.UNAVAILABLE
 
         def remaining():
             return max(0.0, budget.max_total_recovery_time - (monotonic() - started))
@@ -298,6 +340,12 @@ class AdaptiveRecovery:
                 frozen_profile.require_route(route)
                 if route != initial_route and route not in frozen_profile.recovery_fallback_routes:
                     raise ValueError("Fallback route outside frozen envelope")
+            if bounded_proof_policy and route != initial_route and (
+                not adopted_request_matches(frozen_profile, context, scope, routes[route], kwargs)
+                or capabilities[route] != Capability.VERIFIED
+                or health.get(route) == Health.UNAVAILABLE
+            ):
+                await stop("POLICY_DENIED")
             nonlocal last_failure, last_failure_route, provider_calls
             candidate = routes[route]
             if (
