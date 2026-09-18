@@ -603,6 +603,13 @@ def _safe_rejection_facts(response: httpx.Response) -> dict[str, Any]:
             value = error.get(key)
             if value is None:
                 continue
+            if key == "code" and type(value) is int:
+                try:
+                    numeric = ProviderRejectionDetail(provider_error_code_numeric=value)
+                    detail["provider_error_code_numeric"] = numeric.provider_error_code_numeric
+                except ValidationError:
+                    invalid = True
+                continue
             # Literal validation applies to values, not just key names or syntax.
             allowed = get_args(get_args(ProviderRejectionDetail.model_fields[field].annotation)[0])
             if type(value) is str and value in allowed:
@@ -624,7 +631,9 @@ def _safe_rejection_facts(response: httpx.Response) -> dict[str, Any]:
                     facts["request_id_sha256"] = "sha256:" + sha256(request_id.encode()).hexdigest()
             else:
                 invalid = True
-        present = any(detail[field] is not None for field in keys.values())
+        present = detail["provider_error_code_numeric"] is not None or any(
+            detail[field] is not None for field in keys.values()
+        )
         detail["provider_rejection_detail_present"] = present
         # Unknown keys are ignored. If they are all we got, safe detail is unavailable.
         parsed = present or envelope_detail

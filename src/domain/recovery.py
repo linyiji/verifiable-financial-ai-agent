@@ -195,6 +195,10 @@ class ProviderRejectionDetail(Frozen):
         ]
         | None
     ) = None
+    # Exact across interoperable JSON readers; no coercion of bool/float/string.
+    provider_error_code_numeric: int | None = Field(
+        default=None, strict=True, ge=-(2**53 - 1), le=2**53 - 1
+    )
     provider_error_type: (
         Literal[
             "invalid_request_error",

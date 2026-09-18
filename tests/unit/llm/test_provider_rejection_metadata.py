@@ -23,7 +23,16 @@ from tests.unit.llm.test_teamorouter import settings
 
 SECRET = "SENSITIVE_SENTINEL prompt messages tool arguments API-key private reasoning"
 MODELS = ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra"]
+NUMERIC_CASES = {
+    "numeric": (123, 400),
+    "numeric-zero": (0, 400),
+    "numeric-min": (-(2**53 - 1), 400),
+    "numeric-max": (2**53 - 1, 400),
+    "numeric-429": (123, 429),
+    "numeric-500": (123, 500),
+}
 CASES = ["structured", "extra", "html", "empty", "429", "500", "header", "malformed"]
+CASES += list(NUMERIC_CASES)
 
 
 def response_for(case, model):
@@ -69,6 +78,9 @@ def response_for(case, model):
             ],
         }
     status = 200 if case == "success" else int(case) if case.isdigit() else 400
+    if case in NUMERIC_CASES:
+        body["error"].update(code=NUMERIC_CASES[case][0], message=SECRET)
+        status = NUMERIC_CASES[case][1]
     return httpx.Response(status, json=body, headers=headers)
 
 
@@ -124,22 +136,25 @@ async def test_offline_rejection_matrix(case, model):
     detail = f.provider_rejection
     assert row.requested_model == model and row.provider == "teamorouter"
     assert row.attempt_id and row.latency_ms >= 0 and row.outcome == "FAIL"
-    assert f.http_status == (int(case) if case.isdigit() else 400)
+    status = NUMERIC_CASES[case][1] if case in NUMERIC_CASES else (
+        int(case) if case.isdigit() else 400
+    )
+    assert f.http_status == status
     assert f.dispatch_state == "DISPATCHED" and f.dispatch_basis == "HTTP_RESPONSE"
     assert f.safe_code == "HTTP_RESPONSE"
-    assert f.retryable == f.provider_retryable == (case in {"429", "500"})
+    assert f.retryable == f.provider_retryable == (status in {429, 500})
     assert f.normalized_failure_class == (
         "quota_or_rate_limit"
-        if case == "429"
+        if status == 429
         else "retryable_http_failure"
-        if case == "500"
+        if status == 500
         else "request_rejected"
     )
     assert row.failure_class == (
         "RATE_LIMIT"
-        if case == "429"
+        if status == 429
         else "PROVIDER_UNAVAILABLE"
-        if case == "500"
+        if status == 500
         else "NON_RECOVERABLE_RUNTIME_FAILURE"
     )
     assert calls[0].method == "POST"
@@ -155,7 +170,14 @@ async def test_offline_rejection_matrix(case, model):
         )
         assert detail.provider_rejection_detail_present == (None if case == "html" else False)
     else:
-        assert detail.provider_error_code == "unsupported_parameter"
+        assert detail.provider_error_code == (
+            None if case in NUMERIC_CASES else "unsupported_parameter"
+        )
+        assert detail.provider_error_code_numeric == (
+            NUMERIC_CASES[case][0] if case in NUMERIC_CASES else None
+        )
+        if case in NUMERIC_CASES:
+            assert type(detail.provider_error_code_numeric) is int
         assert detail.provider_error_type == "invalid_request_error"
         assert detail.provider_error_category == "parameter"
         assert detail.rejected_parameter == "response_format"
@@ -190,7 +212,9 @@ def test_values_are_closed_at_extraction_and_receipt_boundary(field, key, value)
     facts = _safe_rejection_facts(httpx.Response(400, json={"error": {key: value}}))
     detail = facts["provider_rejection"]
     assert detail[field] is None
-    assert detail["provider_rejection_detail_parse_status"] == "INVALID_SAFE_DETAIL"
+    assert detail["provider_rejection_detail_parse_status"] == (
+        "PARSED" if key == "code" and type(value) is int else "INVALID_SAFE_DETAIL"
+    )
     with pytest.raises(ValidationError):
         ProviderRejectionDetail(**{field: value})
 
@@ -314,3 +338,40 @@ def test_only_digest_of_untrusted_request_identifier_can_escape():
     for value in ("x" * 257, "é", [], {}, 42):
         facts = _safe_rejection_facts(httpx.Response(400, json={"request_id": value}))
         assert "request_id_sha256" not in facts
+
+
+@pytest.mark.parametrize("value", [123, -123, 0, -(2**53 - 1), 2**53 - 1])
+def test_numeric_code_alone_is_exact_safe_detail(value):
+    facts = _safe_rejection_facts(httpx.Response(400, json={"error": {"code": value}}))
+    detail = SafeFailureEvidence(**facts).provider_rejection
+    assert detail.provider_error_code is None
+    assert detail.provider_error_code_numeric == value
+    assert type(detail.provider_error_code_numeric) is int
+    assert detail.provider_rejection_detail_present is True
+    assert detail.provider_rejection_detail_parse_status == "PARSED"
+    fresh = ProviderRejectionDetail.model_validate_json(detail.model_dump_json())
+    assert fresh == detail and type(fresh.provider_error_code_numeric) is int
+
+
+@pytest.mark.parametrize("value", [2**53, -(2**53), True, False, 400.1, 400.0, "400", SECRET])
+def test_numeric_code_boundary_rejects_non_integer_or_out_of_range(value):
+    facts = _safe_rejection_facts(httpx.Response(400, json={"error": {"code": value}}))
+    detail = SafeFailureEvidence(**facts).provider_rejection
+    assert detail.provider_error_code is None
+    assert detail.provider_error_code_numeric is None
+    assert detail.provider_rejection_detail_present is False
+    assert detail.provider_rejection_detail_parse_status == "INVALID_SAFE_DETAIL"
+    with pytest.raises(ValidationError):
+        ProviderRejectionDetail(provider_error_code_numeric=value)
+
+
+def test_numeric_partial_safe_detail_preserves_invalid_known_field_status():
+    facts = _safe_rejection_facts(
+        httpx.Response(400, json={"error": {"code": 123, "type": SECRET, "message": SECRET}})
+    )
+    detail = SafeFailureEvidence(**facts).provider_rejection
+    assert detail.provider_error_code_numeric == 123
+    assert detail.provider_error_type is None
+    assert detail.provider_rejection_detail_present is True
+    assert detail.provider_rejection_detail_parse_status == "INVALID_SAFE_DETAIL"
+    assert SECRET not in json.dumps(facts)

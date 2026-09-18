@@ -14,7 +14,12 @@ from src.application.persistence import ResearchRunAggregateRow
 from tests.phase4.backend_product.test_failure_receipt_persistence import READER
 from tests.phase4.backend_product.test_memory_postgresql import database  # noqa: F401
 from tests.phase4.backend_product.test_recovery_persistence import store  # noqa: F401
-from tests.unit.llm.test_provider_rejection_metadata import CASES, MODELS, exercise_rejection
+from tests.unit.llm.test_provider_rejection_metadata import (
+    CASES,
+    MODELS,
+    NUMERIC_CASES,
+    exercise_rejection,
+)
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("TEST_POSTGRESQL_URL"), reason="disposable PostgreSQL required"
@@ -56,6 +61,12 @@ async def test_rejection_metadata_fresh_reader(store, case, model):  # noqa: F81
         durable["safe_failure"]["provider_rejection"]["provider_rejection_detail_parse_status"]
         != "UNKNOWN"
     )
+
+    if case in NUMERIC_CASES:
+        numeric = durable["safe_failure"]["provider_rejection"]["provider_error_code_numeric"]
+        assert numeric == NUMERIC_CASES[case][0]
+        assert type(numeric) is int
+        assert durable["safe_failure"]["provider_rejection"]["provider_error_code"] is None
 
     if destination := os.environ.get("REJECTION_METADATA_PROOF_DIR"):
         await asyncio.to_thread(Path(destination).mkdir, parents=True, exist_ok=True)
