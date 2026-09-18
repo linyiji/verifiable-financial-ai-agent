@@ -322,7 +322,11 @@ async def test_rejection_metadata_is_not_inherited_by_later_wire_attempt():
                     response_model=Output,
                     schema_name="answer",
                 )
-        safe = SafeFailureEvidence(**facts)
+        failure_facts = dict(facts)
+        transport = failure_facts.pop("transport_evidence")
+        assert transport.provider_http_status == 500
+        assert transport.exception_class is None
+        safe = SafeFailureEvidence(**failure_facts)
         assert safe.http_status == 500 and safe.resolved_model is None
         assert safe.request_id_sha256 is None
         assert safe.provider_rejection.provider_error_code is None

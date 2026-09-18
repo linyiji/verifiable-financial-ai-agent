@@ -219,6 +219,10 @@ class AdaptiveRecovery:
             return max(0.0, budget.max_total_recovery_time - (monotonic() - started))
 
         async def record(kind, outcome, **fields):
+            if kind == "ATTEMPT_COMPLETED":
+                facts = attempt_failure_facts.get()
+                if facts is not None:
+                    fields["transport_evidence"] = facts.get("transport_evidence")
             value = RecoveryEvidence(
                 record_id="REC-" + str(uuid4()),
                 scope=scope,
@@ -335,6 +339,7 @@ class AdaptiveRecovery:
 
             def safe_failure(exc, retryable=None):
                 values = dict(facts)
+                values.pop("transport_evidence", None)
                 values.setdefault(
                     "safe_code",
                     "PROVIDER_ERROR"

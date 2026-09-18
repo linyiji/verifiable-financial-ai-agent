@@ -2,7 +2,7 @@
 
 from contextvars import ContextVar
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -258,6 +258,59 @@ class ProviderRejectionDetail(Frozen):
     ] = "UNKNOWN"
 
 
+# Only the observer's exact type allowlist supplies these bounded identifiers.
+SafeExceptionClass = Annotated[str, Field(max_length=64, pattern=r"^[A-Za-z][A-Za-z0-9_]*$")]
+SafeExceptionModule = Annotated[str, Field(max_length=96, pattern=r"^[A-Za-z][A-Za-z0-9_.]*$")]
+TransportIdentity = Annotated[str, Field(pattern=r"^[0-9a-f]{32}$", max_length=32)]
+ObservedFlag = Annotated[bool, Field(strict=True)] | None
+
+
+class SafeTransportEvidence(Frozen):
+    """Fixed-size observation snapshot; None means UNKNOWN, never an inferred event."""
+
+    proxy_connect_started: ObservedFlag = None
+    proxy_connect_completed: ObservedFlag = None
+    proxy_connect_status_present: ObservedFlag = None
+    proxy_connect_http_status: int | None = Field(default=None, strict=True, ge=100, le=599)
+    proxy_tunnel_established: ObservedFlag = None
+    tls_started: ObservedFlag = None
+    tls_completed: ObservedFlag = None
+    tls_namespace: Literal["CONNECTION_START_TLS", "PROXY_START_TLS", "UNKNOWN"] = "UNKNOWN"
+    connection_tls_started: ObservedFlag = None
+    connection_tls_completed: ObservedFlag = None
+    proxy_tls_started: ObservedFlag = None
+    proxy_tls_completed: ObservedFlag = None
+    target_headers_started: ObservedFlag = None
+    target_body_started: ObservedFlag = None
+    target_body_completed: ObservedFlag = None
+    provider_response_headers_received: ObservedFlag = None
+    provider_http_status_present: ObservedFlag = None
+    provider_http_status: int | None = Field(default=None, strict=True, ge=100, le=599)
+    exception_class: SafeExceptionClass | None = None
+    exception_module: SafeExceptionModule | None = None
+    errno: int | None = Field(default=None, strict=True, ge=-(2**31), le=2**31 - 1)
+    cause_exception_class: SafeExceptionClass | None = None
+    cause_exception_module: SafeExceptionModule | None = None
+    context_exception_class: SafeExceptionClass | None = None
+    context_exception_module: SafeExceptionModule | None = None
+    inner_exception_class: SafeExceptionClass | None = None
+    inner_exception_module: SafeExceptionModule | None = None
+    trace_exception_class: SafeExceptionClass | None = None
+    trace_exception_module: SafeExceptionModule | None = None
+    trace_cause_exception_class: SafeExceptionClass | None = None
+    trace_cause_exception_module: SafeExceptionModule | None = None
+    trace_context_exception_class: SafeExceptionClass | None = None
+    trace_context_exception_module: SafeExceptionModule | None = None
+    process_identity: TransportIdentity | None = None
+    attempt_identity: TransportIdentity | None = None
+    client_identity: TransportIdentity | None = None
+    pool_identity: TransportIdentity | None = None
+    client_ownership: Literal["ATTEMPT", "CALLER", "UNKNOWN"] = "UNKNOWN"
+    client_closed: ObservedFlag = None
+    proxy_route: Literal["DIRECT", "PROXY", "UNKNOWN"] = "UNKNOWN"
+    telemetry_error: bool = Field(default=False, strict=True)
+
+
 class SafeFailureEvidence(Frozen):
     safe_code: Literal[
         "UNKNOWN_EXCEPTION",
@@ -326,6 +379,7 @@ class RecoveryEvidence(Frozen):
     outcome: Literal["STARTED", "PASS", "FAIL", "ALLOW", "DENY", "CANCELLED"]
     failure_class: FailureClass | None = None
     safe_failure: SafeFailureEvidence | None = None
+    transport_evidence: SafeTransportEvidence | None = None
     actual_model: ModelId | None = None
     requested_model: ModelId | None = None
     execution_policy: dict | None = None

@@ -292,7 +292,9 @@ class OpenAICompatiblePlannerClient:
     ) -> LLMStructuredResponse[StructuredModel]:
         # Rejection observations belong to this wire attempt, never a previous fallback.
         retain_attempt_facts(
-            provider_rejection=ProviderRejectionDetail().model_dump(), resolved_model=None
+            provider_rejection=ProviderRejectionDetail().model_dump(),
+            resolved_model=None,
+            transport_evidence=None,
         )
         payload = {"model": model, **request_template}
         observer = context_call_observer.get()
@@ -314,7 +316,7 @@ class OpenAICompatiblePlannerClient:
                 )
                 method = None
 
-                async def receipt_trace(name, info):
+                async def receipt_dispatch_trace(name, info):
                     nonlocal method
                     if name in {
                         "http11.send_request_headers.started",
@@ -370,8 +372,14 @@ class OpenAICompatiblePlannerClient:
                                                 + sha256(header[1]).hexdigest()
                                             )
                                             break
-                    if observation.enabled:
-                        await observation.trace(name, info)
+
+                async def receipt_trace(name, info):
+                    # Only observation is fail-open. Enforcement hooks below stay authoritative.
+                    try:
+                        await receipt_dispatch_trace(name, info)
+                    except Exception:
+                        observation.telemetry_error()
+                    await observation.trace(name, info)
 
                 transport_error = None
                 try:
