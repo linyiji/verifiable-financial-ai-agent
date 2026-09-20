@@ -259,7 +259,8 @@ class NodeBindingState(BaseModel):
     owner_generation: int = Field(ge=0)
     owner_id: str | None
     lifecycle: Literal[
-        "UNCLAIMED", "ACTIVE", "CLOSED", "RESULT_UNKNOWN", "RECOVERY_PENDING", "WAITING_REPLAN"
+        "UNCLAIMED", "ACTIVE", "CLOSED", "RESULT_UNKNOWN", "RECOVERY_PENDING", "WAITING_REPLAN",
+        "EXTERNAL_FAILURE_PAUSED", "EXTERNAL_RESUME_PENDING"
     ]
     binding_revision: int = Field(ge=0)
     scheduler_started: bool = False
@@ -274,6 +275,10 @@ class NodeBindingState(BaseModel):
     current_results: dict[str, str] = Field(default_factory=dict)
     invalidation_refs: list[str] = Field(default_factory=list)
     replan: dict | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    external_failure_resume: dict | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     def reference(self):
         return BindingReference(

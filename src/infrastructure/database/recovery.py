@@ -41,11 +41,27 @@ class RecoveryEvidenceStore:
             # authorities already share this PostgreSQL aggregate row.
             from src.application.persistence import ResearchRunAggregateRow
 
-            await session.scalar(
-                select(ResearchRunAggregateRow.run_id)
+            row = await session.scalar(
+                select(ResearchRunAggregateRow)
                 .where(ResearchRunAggregateRow.run_id == record.scope.run_id)
                 .with_for_update()
             )
+            if row is not None and row.payload.get("node_binding", {}).get(
+                "external_failure_resume"
+            ) is not None:
+                from src.application.persistence import SQLAlchemyApplicationRepository
+                from src.application.resume_runtime import validate_recovery_writer
+
+                validate_recovery_writer(
+                    SQLAlchemyApplicationRepository._to_aggregate(row.payload), record,
+                    await self.records_in_session(
+                        session, record.scope.run_id, record.scope.task_id
+                    ),
+                )
+            elif record.scope.operation_id.startswith("risk-resume:"):
+                from src.domain.node_binding import BindingDenied
+
+                raise BindingDenied("RESUME_AUTHORIZATION_MISSING")
             session.add(
                 RecoveryEvidenceRow(
                     record_id=record.record_id,
@@ -129,6 +145,13 @@ class MemoryRecoveryEvidenceStore:
 
     async def append(self, record):
         async with self.admission_lock:
+            repository = getattr(self, "binding_repository", None)
+            if repository is not None:
+                from src.application.resume_runtime import validate_recovery_writer
+
+                aggregate = repository._runs.get(record.scope.run_id)
+                if aggregate is not None:
+                    validate_recovery_writer(aggregate, record, self.values)
             self._append(record)
 
     def _append(self, record):

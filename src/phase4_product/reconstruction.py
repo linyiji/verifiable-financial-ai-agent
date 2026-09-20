@@ -664,6 +664,22 @@ def _validate_events(
             raise _integrity("Run start event exists without persisted started_at")
     elif len(started) != 1:
         raise _integrity("persisted started_at requires exactly one run.started event")
+    if any(event.type is RuntimeEventType.EXTERNAL_RESUME_AUTHORIZED for event in events):
+        # Resume preserves historical terminal events. The production cursor
+        # validates the ordered, typed authorization boundary between cycles.
+        from src.runtime.events import validate_event_log
+
+        current_terminal = validate_event_log(run.run_id, events)
+        if terminal:
+            expected_type = (RuntimeEventType.RUN_COMPLETED if run.status is RunStatus.RELEASED
+                             else RuntimeEventType.RUN_FAILED)
+            if (current_terminal is None or current_terminal.type is not expected_type
+                    or current_terminal.payload.get("status") != run.status.value
+                    or run.completed_at is None or current_terminal != events[-1]):
+                raise _integrity("Current Resume terminal closure disagrees with persisted Run")
+        elif current_terminal is not None or run.completed_at is not None:
+            raise _integrity("Resumed nonterminal Run retains current terminal state")
+        return events
     if terminal:
         if run.completed_at is None:
             raise _integrity("terminal Run is missing completed_at")

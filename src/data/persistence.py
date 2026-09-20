@@ -25,6 +25,7 @@ class EvidenceRecordRow(Base):
     __tablename__ = "evidence_records"
 
     evidence_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    validation_provenance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     document_authority: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     run_id: Mapped[str] = mapped_column(String(128), index=True)
     object_id: Mapped[str] = mapped_column(String(128), index=True)
@@ -92,6 +93,8 @@ class SQLAlchemyEvidenceRepository:
 
 def _to_row(record: EvidenceRecord) -> EvidenceRecordRow:
     payload = record.model_dump(mode="python")
+    if record.validation_provenance is not None:
+        payload["validation_provenance"] = record.validation_provenance.model_dump(mode="json")
     payload["normalized_value"] = json.loads(json.dumps(payload["normalized_value"], default=str))
     payload["status"] = record.status.value
     payload["evidence_category"] = record.evidence_category.value
@@ -109,6 +112,7 @@ def _to_row(record: EvidenceRecord) -> EvidenceRecordRow:
 
 def _to_domain(row: EvidenceRecordRow) -> EvidenceRecord:
     return EvidenceRecord(
+        validation_provenance=row.validation_provenance,
         document_authority=row.document_authority,
         evidence_id=row.evidence_id,
         run_id=row.run_id,

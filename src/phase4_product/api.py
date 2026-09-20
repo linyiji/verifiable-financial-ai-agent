@@ -43,6 +43,11 @@ from src.phase4_product.contracts import (
 )
 from src.phase4_product.draft_review import ExactDraftReview, RenewDraftLeaseRequest
 from src.phase4_product.errors import ProductError, product_error
+from src.phase4_product.external_resume import (
+    AuthorizeExternalResume,
+    ExternalResumeProjection,
+    ExternalResumeResponse,
+)
 from src.phase4_product.hashing import require_sha256_identity
 from src.phase4_product.memory_contracts import MaterializeMemoryRequest, ResearchMemorySnapshot
 from src.phase4_product.reexecution import (
@@ -477,6 +482,27 @@ def create_phase4_product_router() -> APIRouter:
         default_response_class=Phase4JSONResponse,
         route_class=Phase4NegotiatedRoute,
     )
+
+    @router.get("/research-runs/{run_id}/external-resume", response_model=ExternalResumeProjection)
+    async def get_external_resume(run_id: str, request: Request, response: Response):
+        from src.phase4_product.external_resume import read
+
+        _admit_contract(request, response)
+        response.headers["Cache-Control"] = "no-store"
+        return await read(_backend(request), run_id)
+
+    @router.post("/research-runs/{run_id}/external-resume", response_model=ExternalResumeResponse)
+    async def authorize_external_resume(
+        run_id: str, payload: AuthorizeExternalResume, request: Request, response: Response
+    ):
+        from src.phase4_product.external_resume import decide
+
+        _admit_contract(request, response)
+        result = await decide(_backend(request), run_id, payload, _idempotency_key(request))
+        response.status_code = (403 if result["outcome"] == "DENIED" else
+                                409 if result["outcome"] == "STALE_RESUME_REJECTED" else 200)
+        response.headers["Cache-Control"] = "no-store"
+        return result
 
     @router.get("/research-runs/{run_id}/replan")
     async def get_replan(run_id: str, request: Request, response: Response):

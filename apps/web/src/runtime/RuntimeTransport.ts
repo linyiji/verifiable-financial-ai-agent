@@ -5,6 +5,10 @@ export const RUNTIME_EVENT_CONTRACT_VERSION = "phase4-runtime-event/v1" as const
 export const RUNTIME_PAYLOAD_SCHEMA_VERSION = 1 as const;
 
 export const RUNTIME_EVENT_TYPES_V1 = [
+  "external_failure.closed",
+  "external_failure.resume_authorized",
+  "external_failure.cycle_claimed",
+  "external_failure.cycle_succeeded",
   "closure.recovery_started",
   "run.created", "run.started", "run.status_changed", "run.completed", "run.failed",
   "scheme.generation_started", "scheme.generated", "scheme.confirmed", "plan.generated",
@@ -54,6 +58,10 @@ export type RuntimeEventEffectV1 =
   | "TERMINAL";
 
 export const RUNTIME_EVENT_EFFECT_BY_TYPE_V1 = Object.freeze({
+  "external_failure.closed": "REFRESH_PROJECTION",
+  "external_failure.resume_authorized": "REFRESH_PROJECTION",
+  "external_failure.cycle_claimed": "REFRESH_PROJECTION",
+  "external_failure.cycle_succeeded": "REFRESH_PROJECTION",
   "closure.recovery_started": "REFRESH_PROJECTION",
   "run.started": "PATCH_PROJECTION",
   "run.status_changed": "PATCH_PROJECTION",
@@ -317,7 +325,20 @@ const isRiskReplanAudit = (value: unknown) => isRecord(value)
   && isNullableSafeString(value.decision_id) && isNullableSafeString(value.failure_code)
   && isUtcTimestamp(value.timestamp);
 
+const isExternalFailureAudit = (value: unknown): boolean => isRecord(value)
+  && Object.keys(value).length === 8
+  && [value.event_id, value.run_id, value.failure_id].every(isSafeString)
+  && isNullableSafeString(value.cycle_id) && isNullableSafeString(value.authorization_id)
+  && isPositiveInteger(value.binding_revision) && isUtcTimestamp(value.timestamp)
+  && ["external_failure.closed", "external_failure.resume_authorized",
+      "external_failure.cycle_claimed", "external_failure.cycle_succeeded"].includes(value.type as string);
+
 const PAYLOAD_SPECS = Object.freeze({
+  "external_failure.closed": spec({external_failure: isExternalFailureAudit}),
+  "external_failure.resume_authorized": spec({external_failure: isExternalFailureAudit}),
+  "external_failure.cycle_claimed": spec({external_failure: isExternalFailureAudit}),
+  "external_failure.cycle_succeeded": spec({external_failure: isExternalFailureAudit}),
+
   "closure.recovery_started": spec({attempt_id: isSafeString, failed_event_id: isSafeString,
     snapshot_hash: isSafeString, status: isLiteral("REVIEW")}),
   "run.created": spec({ object_id: isSafeString }),
@@ -586,6 +607,12 @@ export function decodeRuntimeEventV1(
   }
 
   validatePayload(eventType, input.payload, identity);
+  if (eventType.startsWith("external_failure.")) {
+    const audit = input.payload.external_failure as UnknownRecord;
+    if (audit.type !== eventType || audit.run_id !== input.run_id || audit.event_id !== input.event_id) {
+      malformed("External failure audit does not close to the event envelope", identity);
+    }
+  }
   if (eventType === "graph.edge_added" || eventType === "graph.edge_removed") {
     for (const field of ["source_task_id", "target_task_id"] as const) {
       const referencedTaskId = input.payload[field];
@@ -777,6 +804,10 @@ export class RuntimeEventIngestionGuard {
     const existingFingerprint = this.fingerprintBySequence.get(event.sequence);
     const existingSequence = this.sequenceByEventId.get(event.eventId);
 
+    const external = event.payload.externalFailure;
+    const externalTransition = ["external_failure.closed", "external_failure.resume_authorized"].includes(event.type)
+      && this.terminalStatus === "FAILED" && isRecord(external)
+      && external.run_id === event.runId && external.event_id === event.eventId;
     const audit = event.payload.riskReplan;
     const terminalDenial = event.type === "replan.reopen_stale_rejected"
       && isRecord(audit) && audit.type === event.type && audit.run_id === event.runId
@@ -786,7 +817,7 @@ export class RuntimeEventIngestionGuard {
       && audit.terminal_status === this.terminalStatus
       && isSafeString(audit.command_key_digest) && isSafeString(audit.request_hash)
       && isNonnegativeInteger(audit.decision_revision);
-    if (this.terminalSequence !== null && event.sequence > this.terminalSequence && !terminalDenial) {
+    if (this.terminalSequence !== null && event.sequence > this.terminalSequence && !terminalDenial && !externalTransition) {
       throw new RuntimeIngestionError(
         "EVENT_AFTER_TERMINAL",
         "A business event followed the terminal event",
@@ -825,6 +856,10 @@ export class RuntimeEventIngestionGuard {
     this.fingerprintBySequence.set(event.sequence, fingerprint);
     this.sequenceByEventId.set(event.eventId, event.sequence);
     this.committedSequence = event.sequence;
+    if (event.type === "external_failure.resume_authorized") {
+      this.terminalSequence = null;
+      this.terminalStatus = null;
+    }
     if (event.effect === "TERMINAL") {
       this.terminalSequence = event.sequence;
       this.terminalStatus = event.payload.status;
@@ -851,6 +886,10 @@ export class RuntimeEventIngestionGuard {
     }
     this.fingerprintBySequence.set(event.sequence, fingerprint);
     this.sequenceByEventId.set(event.eventId, event.sequence);
+    if (event.type === "external_failure.resume_authorized") {
+      this.terminalSequence = null;
+      this.terminalStatus = null;
+    }
     if (event.effect === "TERMINAL") {
       this.terminalSequence = event.sequence;
       this.terminalStatus = event.payload.status;

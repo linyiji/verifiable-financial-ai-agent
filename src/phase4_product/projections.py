@@ -23,8 +23,6 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from src.phase4_product.admission import clarity_from_prepared_draft_v1
-
 from src.assurance.independent_financial_review import (
     financial_review_input_snapshot_hash,
 )
@@ -34,6 +32,7 @@ from src.domain.evidence import EvidenceRecord
 from src.domain.financial_semantics import MaterialFinancialClaim, ReleasedFinancialMetric
 from src.domain.proof import ProofPolicyDecision
 from src.output.financial_metrics import MATERIAL_FORMULAS
+from src.phase4_product.admission import clarity_from_prepared_draft_v1
 from src.phase4_product.artifacts import (
     ArtifactProjectionError,
     ArtifactRepresentationSource,
@@ -71,17 +70,17 @@ from src.phase4_product.contracts import (
     ReleasedResultProjectionV1,
     ReportArtifactGroupV1,
     ResearchBriefViewV1,
-    ResearchRunDraftV1,
-    ResearchTaskContractViewV1,
-    RunAdmissionV1,
     ResearchRunCollectionV1,
     ResearchRunDetailV1,
+    ResearchRunDraftV1,
     ResearchRunHistoryCollectionV1,
+    ResearchTaskContractViewV1,
     ResultSummaryV1,
     ReviewAvailabilityRefV1,
     ReviewCorrectionRefV1,
     ReviewSubjectV1,
     ReviewSummaryV1,
+    RunAdmissionV1,
     RunCollectionActivityV1,
     RunCollectionItemV1,
     RunCollectionObjectV1,
@@ -331,7 +330,7 @@ _SAFE_FAILURE_ALLOWLIST: JsonAllowlist = {
 _SAFE_FAILURE_CODES_BY_STAGE: dict[str, frozenset[str]] = {
     "PLANNING": frozenset({"PLANNING_FAILED"}),
     "DATA_EVIDENCE": frozenset({"DATA_EVIDENCE_FAILED"}),
-    "TASK_EXECUTION": frozenset({"TASK_EXECUTION_FAILED"}),
+    "TASK_EXECUTION": frozenset({"TASK_EXECUTION_FAILED", "RESULT_UNKNOWN"}),
     "GENERATED_CAPABILITY": frozenset({"GENERATED_CAPABILITY_FAILED"}),
     "FINANCIAL_REVIEW": frozenset(
         {"FINANCIAL_REVIEW_BLOCKED", "FINANCIAL_REVIEW_FAILED", "REVIEW_BLOCKED"}
@@ -342,6 +341,8 @@ _SAFE_FAILURE_CODES_BY_STAGE: dict[str, frozenset[str]] = {
     "POST_SCHEDULER": frozenset(
         {
             "POST_SCHEDULER_FAILED",
+            "REVIEW_BLOCKED",
+            "RELEASE_GATE_BLOCKED",
             "REQUIRED_CALCULATION_UNAVAILABLE",
             "REQUIRED_RESEARCH_OUTPUT_MISSING",
             "INCOMPLETE_RESEARCH_NOT_RELEASED",
@@ -775,6 +776,9 @@ def project_scheme(
             _field(scheme, "assurance_requirements"),
             allowed_keys={
                 "financial_review",
+                "review_required",
+                "accepted_evidence_only",
+                "deterministic_financial_values",
                 "proof_policy",
                 "required",
                 "reviewer",
@@ -1383,6 +1387,15 @@ def project_event(
             key: graph_keys if key in {"graph", "base_graph"} else None
             for key in RiskReplanAudit.model_fields
         }}
+    if event_type.startswith("external_failure."):
+        from src.domain.external_failure_resume import ExternalFailureAuditV1
+
+        audit = ExternalFailureAuditV1.model_validate(raw_payload["external_failure"])
+        if audit.type != event_type or audit.run_id != run_id:
+            raise ProjectionIntegrityError("External failure audit identity mismatch")
+        allowed_keys = {
+            "external_failure": {key: None for key in ExternalFailureAuditV1.model_fields}
+        }
     if allowed_keys is None:
         raise ProjectionIntegrityError(f"unsupported RuntimeEvent type: {event_type}")
     sequence = _positive_int(_field(event, "sequence"), context="RuntimeEvent.sequence")

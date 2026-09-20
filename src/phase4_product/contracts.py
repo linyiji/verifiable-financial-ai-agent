@@ -395,7 +395,9 @@ class RunAdmissionV1(FrozenWireModel):
 class ResearchTaskContractViewV1(FrozenWireModel):
     """Library-only references from an admission and optional later snapshot."""
 
-    view_schema_version: Literal["phase4-research-task-contract-view/v1"] = "phase4-research-task-contract-view/v1"
+    view_schema_version: Literal["phase4-research-task-contract-view/v1"] = (
+        "phase4-research-task-contract-view/v1"
+    )
     admission: RunAdmissionV1
     projection_revision: int | None
     projection_sequence: int | None
@@ -708,6 +710,9 @@ class TerminalStateV1(FrozenWireModel):
 
 
 class AtomicRunProjectionV1(FrozenWireModel):
+    external_failure_resume: dict | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     risk_replan: dict | None = Field(default=None, exclude_if=lambda value: value is None)
     projection_schema_version: Literal["phase4-run-projection/v1"] = "phase4-run-projection/v1"
     projection_revision: int = Field(ge=1)

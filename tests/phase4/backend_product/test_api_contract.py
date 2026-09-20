@@ -290,6 +290,13 @@ def test_router_preserves_frozen_routes_and_explicit_phase5_extensions() -> None
         for method in route.methods
     }
     assert observed == EXPECTED_A_ROUTES | {
+        ("GET", "/api/research-runs/{run_id}/replan"),
+        ("POST", "/api/research-runs/{run_id}/replans/{proposal_id}/approve"),
+        ("POST", "/api/research-runs/{run_id}/replans/{proposal_id}/reject"),
+        ("POST", "/api/research-runs/{run_id}/replans/{proposal_id}/reopen"),
+        ("POST", "/api/research-runs/{run_id}/cancel"),
+        ("GET", "/api/research-runs/{run_id}/external-resume"),
+        ("POST", "/api/research-runs/{run_id}/external-resume"),
         ("GET", "/api/model-selection-options"),
         ("GET", "/api/objects/{object_id}/memory"),
         ("POST", "/api/objects/{object_id}/memory/materialize"),

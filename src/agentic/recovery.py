@@ -91,6 +91,10 @@ class AdaptiveRecovery:
 
     async def execute(self, context, initial_provider, **kwargs):
         task = context.task
+        from src.application.repository import node_invocation
+
+        admission = node_invocation.get()
+        cycle_id = getattr(admission, "policy_refs", {}).get("external_resume_cycle")
         scope = Scope(
             run_id=task.run_id,
             task_id=task.task_id,
@@ -98,6 +102,7 @@ class AdaptiveRecovery:
             scheme_id=context.inputs["scheme_id"],
             task_profile=task.task_type,
             agent_id=task.assigned_agent,
+            operation_id="risk-resume:" + cycle_id if cycle_id else "specialist",
             context_hash=digest(context.model_dump(mode="json")),
             contract_hash=digest(kwargs["response_model"].model_json_schema()),
         )
@@ -114,6 +119,15 @@ class AdaptiveRecovery:
 
         durable = node_recovery.get()
         resume = durable[2] if durable is not None else None
+        cycle = None
+        if durable is not None:
+            from src.application.resume_runtime import cycle_for
+
+            if getattr(durable[1], "policy_refs", {}).get("external_resume_cycle"):
+                current_aggregate = await durable[0].check_invocation(durable[1])
+                cycle = cycle_for(current_aggregate, scope.task_id)
+            if hasattr(self.store, "admission_lock") and hasattr(durable[0], "_runs"):
+                self.store.binding_repository = durable[0]
         generated = scope.operation_id.startswith("generated-capability:")
         owner_policy = TASK_POLICIES.get(scope.task_profile)
         ordered_route_walk = bool(owner_policy and owner_policy.ordered_route_walk)
@@ -127,6 +141,10 @@ class AdaptiveRecovery:
         if frozen_profile is not None:
             owner_policy = frozen_profile.owner_policy
             budget = frozen_profile.recovery_budget
+        if cycle is not None:
+            if scope.operation_id != cycle.operation_id:
+                raise ValueError("Resume cycle scope changed")
+            budget = cycle.budget
         allowed_routes = (
             frozen_profile.allowed_model_routes if frozen_profile is not None
             else TASK_CANDIDATES.get(scope.task_profile, ())
@@ -271,7 +289,10 @@ class AdaptiveRecovery:
                 health[key] = Health.UNAVAILABLE
 
         def remaining():
-            return max(0.0, budget.max_total_recovery_time - (monotonic() - started))
+            seconds = budget.max_total_recovery_time - (monotonic() - started)
+            if cycle is not None:
+                seconds = min(seconds, (cycle.deadline_at - datetime.now(UTC)).total_seconds())
+            return max(0.0, seconds)
 
         async def record(kind, outcome, **fields):
             if kind == "ATTEMPT_COMPLETED":
@@ -340,7 +361,7 @@ class AdaptiveRecovery:
             await stop("POLICY_DENIED")
 
         model_grants = self.model_grants
-        if child_proof_policy:
+        if child_proof_policy or cycle is not None:
             model_grants = {}
         if frozen_profile is not None and model_grants is None:
             model_grants = {
@@ -621,6 +642,13 @@ class AdaptiveRecovery:
                     recovery_context.remaining_decisions <= 0
                     or recovery_context.remaining_attempts <= 0
                 ):
+                    if cycle is not None and recovery_context.remaining_attempts <= 0:
+                        decision = RecoveryDecision(
+                            scope=scope, action=Action.FAIL_TASK, reason_code="BUDGET_EXHAUSTED",
+                            evidence_refs=recovery_context.evidence_refs,
+                        )
+                        await record("DECISION", "ALLOW", action=decision.action,
+                                     decision=decision, recovery_context=recovery_context)
                     await stop("RECOVERY_BUDGET_EXHAUSTED")
                 try:
                     decision = self.supervisor.decide(recovery_context)

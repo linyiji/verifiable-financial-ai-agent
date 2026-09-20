@@ -1020,6 +1020,21 @@ class PostgreSQLPhase4ProductBackend:
                     "risk_replan": replan_projection(
                         self.service.repository._to_aggregate(aggregate))
                 })
+            root = aggregate.get("node_binding") or {}
+            if root and (root.get("external_failure_resume") is not None
+                         or run.status is RunStatus.FAILED):
+                from src.phase4_product.external_resume import LOCAL_ACTOR, public_state
+
+                inspected = await self.service.repository.inspect_external_failure(
+                    run_id, actor=LOCAL_ACTOR
+                )
+                if inspected["binding_ref"]["binding_revision"] != root["binding_revision"]:
+                    raise product_error(
+                        "TRANSIENT_BACKEND_ERROR", "Resume projection changed during reconstruction"
+                    )
+                projection = projection.model_copy(update={
+                    "external_failure_resume": public_state(run_id, inspected)
+                })
             if persist:
                 await session.execute(
                     pg_insert(Phase4RunProjectionRow)
@@ -1803,7 +1818,11 @@ class PostgreSQLPhase4ProductBackend:
                 due = await uow.scheduler.list_due_admission_ids(due_at=datetime.now(UTC), limit=16)
             # Same existing scheduler; the aggregate reservation is the recovery authority.
             # Claim reads/locks current durable state, fencing concurrent deliveries.
-            for run_id in await self.service.repository.recovery_pending_run_ids():
+            pending_runtime = (
+                await self.service.repository.external_resume_pending_run_ids()
+                + await self.service.repository.recovery_pending_run_ids()
+            )
+            for run_id in pending_runtime:
                 try:
                     owner = await self.service.repository.claim_execution(run_id)
                 except BindingDenied:

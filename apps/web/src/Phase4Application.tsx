@@ -585,6 +585,7 @@ export function Phase4Application() {
       {error && <TypedError error={error} onRetry={() => retryLoad.current?.()} onDismiss={() => setError(null)} />}
       {quarantine && <div className="alert" data-testid="identity-quarantine" data-reason={quarantine}>请求的 Task 不属于当前 Research Run，已停止显示该 Task。</div>}
       {selectedRunProjection && <ResearchRunPage
+        onResumeChanged={() => loadRun(selectedRunProjection.run.runId)}
         projection={selectedRunProjection}
         source={source}
         connection={connection ?? initialConnection(selectedRunProjection.run.runId, selectedRunProjection.projectionSequence)}

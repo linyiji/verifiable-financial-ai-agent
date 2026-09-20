@@ -134,6 +134,8 @@ class ResearchApplicationService:
         if wp04_diagnostic_store is not None:
             self.repository.wp04_diagnostic_store = wp04_diagnostic_store
         self.event_store = event_store or InMemoryRuntimeEventStore()
+        if type(self.repository) is InMemoryApplicationRepository:
+            self.repository.resume_event_store = self.event_store
         self.checkpoint_store = checkpoint_store or InMemoryCheckpointStore()
         self.evidence_repository = evidence_repository or InMemoryEvidenceRepository()
         self.fixture_path = fixture_path or (

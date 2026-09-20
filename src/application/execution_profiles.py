@@ -654,9 +654,25 @@ def adopted_request_matches(profile, context, scope, candidate, request):
                     and proof.valuation_context_enabled is False
                     and profile.runtime_configuration.get("valuation_context") is False)
             )
-            and scope.operation_id == "specialist"
+            and _adopted_operation_matches(scope)
             and request["messages"] == _messages(context)
             and set(request) == {"messages", "response_model", "schema_name", "workload_type"}
         )
     except (KeyError, TypeError, AttributeError, OSError):
         return False
+
+
+def _adopted_operation_matches(scope):
+    if scope.operation_id == "specialist":
+        return True
+    from src.application.repository import node_invocation
+
+    admission = node_invocation.get()
+    # Resume changes the ledger operation identity, not the frozen request family.
+    # Repository admission and provider-entry fences separately revalidate authority.
+    return bool(
+        admission is not None and scope.task_profile == "risk_analysis"
+        and (scope.run_id, scope.task_id) == (admission.run_id, admission.task_id)
+        and admission.policy_refs.get("external_resume_cycle")
+        and scope.operation_id == "risk-resume:" + admission.policy_refs["external_resume_cycle"]
+    )

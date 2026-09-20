@@ -302,7 +302,9 @@ export function reduceRuntimeEvent(
     return state;
   }
   const receiptForId = state.appliedEvents.find((receipt) => receipt.eventId === eventId);
-  if (state.connection.kind === "TERMINAL") {
+  const terminalResume = state.projection.run.backendStatus === "FAILED"
+    && ["external_failure.closed", "external_failure.resume_authorized"].includes(type);
+  if (state.connection.kind === "TERMINAL" && !terminalResume) {
     return quarantineTerminalEvent(
       state,
       event,

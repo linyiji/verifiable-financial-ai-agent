@@ -42,6 +42,10 @@
     "type": {
       "type": "string",
       "enum": [
+        "external_failure.closed",
+        "external_failure.resume_authorized",
+        "external_failure.cycle_claimed",
+        "external_failure.cycle_succeeded",
         "run.created",
         "run.started",
         "run.status_changed",
@@ -226,7 +230,11 @@
                 "replan.reopen_stale_rejected",
                 "replan.failed",
                 "replan.fulfilled",
-                "research.cancelled"
+                "research.cancelled",
+                "external_failure.closed",
+                "external_failure.resume_authorized",
+                "external_failure.cycle_claimed",
+                "external_failure.cycle_succeeded"
               ]
             },
             "effect": {
@@ -347,7 +355,11 @@
                 "proof.generated",
                 "proof.verified",
                 "proof.failed",
-                "release.completed"
+                "release.completed",
+                "external_failure.closed",
+                "external_failure.resume_authorized",
+                "external_failure.cycle_claimed",
+                "external_failure.cycle_succeeded"
               ]
             },
             "graph_version": {
@@ -1003,6 +1015,46 @@
             },
             "payload": {
               "$ref": "#/$defs/riskReplanAuditPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "external_failure.closed"
+            },
+            "payload": {
+              "$ref": "#/$defs/externalFailureAuditPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "external_failure.resume_authorized"
+            },
+            "payload": {
+              "$ref": "#/$defs/externalFailureAuditPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "external_failure.cycle_claimed"
+            },
+            "payload": {
+              "$ref": "#/$defs/externalFailureAuditPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "external_failure.cycle_succeeded"
+            },
+            "payload": {
+              "$ref": "#/$defs/externalFailureAuditPayload"
             }
           }
         }
@@ -2117,11 +2169,94 @@
           "$ref": "#/$defs/RiskReplanAudit"
         }
       }
+    },
+    "ExternalFailureAuditV1": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "external_failure.closed",
+            "external_failure.resume_authorized",
+            "external_failure.cycle_claimed",
+            "external_failure.cycle_succeeded"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "failure_id": {
+          "title": "Failure Id",
+          "type": "string"
+        },
+        "cycle_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle Id"
+        },
+        "authorization_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Authorization Id"
+        },
+        "binding_revision": {
+          "minimum": 1,
+          "title": "Binding Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "type",
+        "timestamp",
+        "run_id",
+        "failure_id",
+        "binding_revision"
+      ],
+      "title": "ExternalFailureAuditV1",
+      "type": "object"
+    },
+    "externalFailureAuditPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_failure"
+      ],
+      "properties": {
+        "external_failure": {
+          "$ref": "#/$defs/ExternalFailureAuditV1"
+        }
+      }
     }
   },
   "x-runtime-event-disposition": {
-    "raw_type_count": 65,
-    "supported_v1_count": 58,
+    "raw_type_count": 69,
+    "supported_v1_count": 62,
     "unsupported_v1": [
       "scheme.generation_started",
       "evidence.conflict",
@@ -2171,7 +2306,7 @@
     ],
     "effect_counts": {
       "PATCH_PROJECTION": 10,
-      "REFRESH_PROJECTION": 31,
+      "REFRESH_PROJECTION": 35,
       "OBSERVATION_ONLY": 15,
       "TERMINAL": 2
     }

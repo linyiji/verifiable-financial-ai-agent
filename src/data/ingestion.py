@@ -18,7 +18,13 @@ from src.domain.enums import (
     FinancialPeriodBasis,
     TechnicalPriceBasis,
 )
-from src.domain.evidence import AcceptedEvidenceBundle, EvidenceRecord
+from src.domain.evidence import (
+    AcceptedEvidenceBundle,
+    EvidenceRecord,
+    EvidenceValidationFreshness,
+    EvidenceValidationProvenance,
+    EvidenceValidationRequest,
+)
 from src.observability.performance import observe, span
 
 
@@ -94,6 +100,13 @@ class EvidenceIngestionService:
                 snapshot_hash=snapshot.snapshot_hash,
                 provenance=provenance,
                 raw_record=snapshot.records[validated.raw_index],
+                validation_provenance=EvidenceValidationProvenance(
+                    request=EvidenceValidationRequest.model_validate(request.model_dump()),
+                    freshness=EvidenceValidationFreshness(
+                        max_age_days=freshness_policy.max_age_days
+                    ),
+                    mapped_record_index=validated.raw_index,
+                ),
             )
             for validated in diagnostics
             if validated.normalized is not None
@@ -138,6 +151,7 @@ def _to_evidence_record(
     snapshot_hash: str,
     provenance: EvidenceProvenance,
     raw_record: JsonObject,
+    validation_provenance: EvidenceValidationProvenance,
 ) -> EvidenceRecord:
     assert validated.normalized is not None
     assert validated.period is not None
@@ -147,6 +161,7 @@ def _to_evidence_record(
     if isinstance(value, Decimal):
         value = _canonical_decimal(value)
     return EvidenceRecord(
+        validation_provenance=validation_provenance,
         document_authority=raw_record.get("document_authority"),
         evidence_id=f"EVD-{uuid5(NAMESPACE_URL, evidence_key)}",
         run_id=run_id,
@@ -203,6 +218,7 @@ def _canonical_decimal(value: Decimal) -> str:
 
 def _assert_same_evidence_identity(existing: EvidenceRecord, candidate: EvidenceRecord) -> None:
     identity_fields = (
+        "validation_provenance",
         "document_authority",
         "run_id",
         "object_id",

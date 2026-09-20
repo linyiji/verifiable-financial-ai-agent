@@ -169,7 +169,15 @@ class RuntimeEventCursor:
 
         if self.terminal_sequence is not None:
             prior_id = self._by_sequence[self.terminal_sequence][0]
-            if not is_terminal_reopen_rejection(event, self._terminal_status) and not (
+            external_transition = (
+                event.type in {RuntimeEventType.EXTERNAL_FAILURE_CLOSED,
+                               RuntimeEventType.EXTERNAL_RESUME_AUTHORIZED}
+                and self._terminal_type is RuntimeEventType.RUN_FAILED
+                and self._terminal_status == "FAILED"
+            )
+            if not external_transition and not is_terminal_reopen_rejection(
+                event, self._terminal_status
+            ) and not (
                 event.type is RuntimeEventType.CLOSURE_RECOVERY_STARTED
                 and event.payload.get("failed_event_id") == prior_id
                 and self._terminal_type is RuntimeEventType.RUN_FAILED
@@ -189,6 +197,8 @@ class RuntimeEventCursor:
         self._by_sequence[event.sequence] = (event.event_id, fingerprint)
         self._sequence_by_event_id[event.event_id] = event.sequence
         self.committed_sequence = event.sequence
+        if event.type is RuntimeEventType.EXTERNAL_RESUME_AUTHORIZED:
+            self.terminal_sequence = None
         if event.type is RuntimeEventType.CLOSURE_RECOVERY_STARTED:
             self.terminal_sequence = None
             self._recovered = True
@@ -267,7 +277,8 @@ def validate_event_log(run_id: str, events: Sequence[RuntimeEvent]) -> RuntimeEv
             )
         if event.type in _TERMINAL_EVENT_TYPES:
             terminal = event
-        elif event.type is RuntimeEventType.CLOSURE_RECOVERY_STARTED:
+        elif event.type in {RuntimeEventType.CLOSURE_RECOVERY_STARTED,
+                            RuntimeEventType.EXTERNAL_RESUME_AUTHORIZED}:
             terminal = None
     return terminal
 

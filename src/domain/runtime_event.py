@@ -12,6 +12,10 @@ from src.domain.base import DomainModel, JsonObject, utc_now
 
 
 class RuntimeEventType(StrEnum):
+    EXTERNAL_FAILURE_CLOSED = "external_failure.closed"
+    EXTERNAL_RESUME_AUTHORIZED = "external_failure.resume_authorized"
+    EXTERNAL_CYCLE_CLAIMED = "external_failure.cycle_claimed"
+    EXTERNAL_CYCLE_SUCCEEDED = "external_failure.cycle_succeeded"
     RUN_CREATED = "run.created"
     RUN_STARTED = "run.started"
     RUN_STATUS_CHANGED = "run.status_changed"
@@ -170,7 +174,10 @@ _REPLAN_V1_TYPES = frozenset(
 )
 UNSUPPORTED_RUNTIME_EVENT_TYPES -= {RuntimeEventType.REPLAN_REJECTED}
 SUPPORTED_RUNTIME_EVENT_TYPES = frozenset(RuntimeEventType) - UNSUPPORTED_RUNTIME_EVENT_TYPES
-_REFRESH_TYPES |= _REPLAN_V1_TYPES
+_EXTERNAL_FAILURE_TYPES = frozenset(
+    event for event in RuntimeEventType if event.value.startswith("external_failure.")
+)
+_REFRESH_TYPES |= _REPLAN_V1_TYPES | _EXTERNAL_FAILURE_TYPES
 
 EVENT_EFFECT_BY_TYPE: Mapping[RuntimeEventType, RuntimeEventEffect] = MappingProxyType(
     {
@@ -526,6 +533,16 @@ def validate_runtime_event_payload(
 ) -> None:
     """Validate the frozen V1 public payload without inventing missing values."""
 
+    if event_type in _EXTERNAL_FAILURE_TYPES:
+        from src.domain.external_failure_resume import ExternalFailureAuditV1
+
+        if set(payload) != {"external_failure"}:
+            raise ValueError("Unknown external failure payload fields")
+        value = ExternalFailureAuditV1.model_validate(payload["external_failure"])
+        if value.type != event_type.value:
+            raise ValueError("External failure audit type mismatch")
+        return
+
     if event_type in _REPLAN_V1_TYPES and "risk_replan" in payload:
         from src.domain.risk_replan import RiskReplanAudit
 
@@ -697,6 +714,10 @@ def project_runtime_event_payload_v1(
     event_type: RuntimeEventType, payload: Mapping[str, Any]
 ) -> JsonObject:
     """Allowlist public fields and mechanically normalize legacy internal payloads."""
+
+    if event_type in _EXTERNAL_FAILURE_TYPES:
+        validate_runtime_event_payload(event_type, payload)
+        return dict(payload)
 
     if event_type in _REPLAN_V1_TYPES and "risk_replan" in payload:
         validate_runtime_event_payload(event_type, payload)

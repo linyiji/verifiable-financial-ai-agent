@@ -92,6 +92,12 @@ def validate_root(aggregate, owner=None):
         frozen_profile(aggregate, task)
     # Revalidate rather than trust a mutable model or cached reference.
     NodeBindingState.model_validate(root.model_dump())
+    if root.external_failure_resume is not None or root.lifecycle in {
+        "EXTERNAL_FAILURE_PAUSED", "EXTERNAL_RESUME_PENDING"
+    }:
+        from src.application.external_failure_resume import validate_control
+
+        validate_control(aggregate)
     if root.replan is not None:
         from src.application.risk_replan import validate_replan_root
 
@@ -167,6 +173,9 @@ def compare_whole(current, proposed):
 
 @runtime_checkable
 class ApplicationRepository(Protocol):
+    async def resume_external_failure(self, request, *, actor): ...
+    async def inspect_external_failure(self, run_id, *, actor): ...
+    async def external_resume_pending_run_ids(self): ...
     async def get_run_fresh(self, run_id: str) -> RunAggregate | None: ...
     async def claim_execution(self, run_id: str) -> OwnerToken: ...
     async def begin_scheduler(self, owner: OwnerToken) -> None: ...
@@ -214,7 +223,60 @@ class ApplicationRepository(Protocol):
     async def list_runs_for_object(self, object_id: str) -> list[RunAggregate]: ...
 
 
+class _ResumeReadOnly(Exception):
+    def __init__(self, result):
+        self.result = result
+
+
 class InMemoryApplicationRepository:
+    async def resume_external_failure(self, request, *, actor):
+        from src.application.external_failure_resume import authorize, control, request_replay
+        from src.domain.external_failure_resume import ResumeExternalFailure
+
+        request = ResumeExternalFailure.model_validate(request)
+        try:
+            async with self._binding_transaction(
+                request.run_id, resume_replay=(request, actor)
+            ) as aggregate:
+                replay = request_replay(control(aggregate), request, actor=actor)
+                if replay is not None:
+                    raise _ResumeReadOnly(replay)
+                result = await authorize(self, aggregate, request, actor=actor)
+        except _ResumeReadOnly as replay:
+            return replay.result
+        return result
+
+    @staticmethod
+    def _committed_resume_replay(aggregate, request, actor):
+        from src.application.external_failure_resume import committed_request_replay, control
+
+        if request.run_id != aggregate.run.run_id:
+            raise BindingDenied("RESUME_IDENTITY_MISMATCH")
+        receipt = committed_request_replay(control(aggregate), request, actor=actor)
+        if receipt is not None:
+            raise _ResumeReadOnly(receipt)
+
+    async def inspect_external_failure(self, run_id, *, actor):
+        from src.application.external_failure_resume import inspect
+
+        try:
+            async with self._binding_transaction(run_id) as aggregate:
+                raise _ResumeReadOnly(await inspect(self, aggregate, actor=actor))
+        except _ResumeReadOnly as inspected:
+            return inspected.result
+
+    async def _resume_terminal_event(self, aggregate):
+        from src.application.resume_runtime import require_terminal_event
+
+        store = getattr(self, "resume_event_store", None)
+        events = await store.replay(aggregate.run.run_id) if store is not None else []
+        require_terminal_event(aggregate, events[-1] if events else None)
+
+    async def external_resume_pending_run_ids(self):
+        return [key for key, value in self._runs.items()
+                if value.node_binding is not None
+                and value.node_binding.lifecycle == "EXTERNAL_RESUME_PENDING"][:16]
+
     async def suspend_replan(self, owner):
         from src.application.risk_replan import control
         from src.domain.enums import RunStatus
@@ -353,7 +415,7 @@ class InMemoryApplicationRepository:
         ]
 
     @asynccontextmanager
-    async def _binding_transaction(self, run_id):
+    async def _binding_transaction(self, run_id, *, resume_replay=None):
         """Isolated in-memory test implementation; SQL subclass supplies durability."""
         async with self._lock, AsyncExitStack() as fences:
             store = self._recovery_stores.get(run_id)
@@ -364,6 +426,8 @@ class InMemoryApplicationRepository:
                 raise BindingDenied("STATE_REFRESH_REQUIRED", run_id)
             snapshot = deepcopy(current)
             validate_root(snapshot)
+            if resume_replay is not None:
+                self._committed_resume_replay(snapshot, *resume_replay)
             for result in snapshot.node_binding.results.values():
                 await self.verify_materials(result.output_records, run_id=run_id)
             if snapshot.node_binding.replan is not None:
@@ -375,6 +439,12 @@ class InMemoryApplicationRepository:
             yield snapshot
             snapshot.node_binding.binding_revision += 1
             snapshot.runtime.binding_ref = snapshot.node_binding.reference()
+            events = (snapshot.node_binding.external_failure_resume or {}).get("audit", [])
+            prior_count = len((current.node_binding.external_failure_resume or {}).get("audit", []))
+            if len(events) > prior_count:
+                from src.application.resume_runtime import publish_memory_events
+
+                await publish_memory_events(self, snapshot, events[prior_count:])
             self._runs[run_id] = deepcopy(snapshot)
 
     async def get_run_fresh(self, run_id):
@@ -385,6 +455,9 @@ class InMemoryApplicationRepository:
         async with self._binding_transaction(run_id) as aggregate:
             root = validate_root(aggregate)
             recovering = root.lifecycle == "RECOVERY_PENDING"
+            from src.application.resume_runtime import claim_cycle
+
+            external_resume = await claim_cycle(self, aggregate)
             from src.application.risk_replan import control, proposal, store
 
             state = control(aggregate)
@@ -396,7 +469,7 @@ class InMemoryApplicationRepository:
                 if value.application_state != "APPLIED":
                     raise BindingDenied("REPLAN_NOT_AUTHORIZED")
                 store(aggregate, state.model_copy(update={"resume_eligible": False}))
-            if not recovering and not replan_resume and (
+            if not recovering and not replan_resume and not external_resume and (
                 root.lifecycle != "UNCLAIMED" or root.owner_generation != 0 or root.owner_id
             ):
                 raise BindingDenied("OWNER_ALREADY_CLAIMED", run_id)
@@ -414,7 +487,7 @@ class InMemoryApplicationRepository:
 
             aggregate.run.status = RunStatus.RUNNING
             aggregate.runtime.run_status = RunStatus.RUNNING
-            if not recovering and not replan_resume:
+            if not recovering and not replan_resume and not external_resume:
                 aggregate.run.started_at = datetime.now(UTC)
             aggregate.run.updated_at = datetime.now(UTC)
             root.scheduler_started = False
@@ -498,6 +571,9 @@ class InMemoryApplicationRepository:
     @staticmethod
     def _validate_admission(aggregate, admission, status="DISPATCHED", *, require_started=False):
         root = validate_root(aggregate, admission.owner)
+        from src.application.resume_runtime import validate_cycle_admission
+
+        validate_cycle_admission(aggregate, admission)
         check_value_identity(admission, "admission_binding_id")
         task = aggregate.runtime.task(admission.task_id)
         from src.application.risk_replan import child_dependency
@@ -670,6 +746,9 @@ class InMemoryApplicationRepository:
 
             admission_allowed(aggregate, task, dispatch=False)
             current = aggregate.runtime.task(task.task_id)
+            from src.application.resume_runtime import reserve_cycle
+
+            cycle = await reserve_cycle(self, aggregate, current)
             if task_fingerprint(current) != task_fingerprint(task):
                 raise BindingDenied("IDENTITY_MISMATCH", task.task_id)
             prior = root.attempts.get(task.task_id)
@@ -770,6 +849,9 @@ class InMemoryApplicationRepository:
                 policy_refs={
                     "confirmed_scheme": aggregate.scheme.scheme_id,
                     "scope": "fixed-initial-graph-default/v1",
+                    **({"external_resume_cycle": cycle.cycle_id,
+                        "external_resume_authorization": cycle.authorization_id,
+                        "external_resume_ordinal": cycle.cycle_ordinal} if cycle else {}),
                 },
                 candidate_dependency=(child_dependency(aggregate, current).model_dump(mode="json")
                                       if child_dependency(aggregate, current) else None),
@@ -784,7 +866,9 @@ class InMemoryApplicationRepository:
                 root.attempt_history[prior.admission.attempt_reservation_id] = prior
             root.attempts[task.task_id] = AttemptReservation(
                 admission=admission, status="RESERVED",
-                generation=prior.generation + 1 if prior else 1,
+                generation=(prior.generation + 1 if prior else
+                            cycle.prior_failure_cycle_identity.failed_reservation_generation + 1
+                            if cycle else 1),
                 prior_reservation_id=prior.admission.attempt_reservation_id if prior else None,
                 recovery=prior.recovery if prior else None,
             )
@@ -828,7 +912,13 @@ class InMemoryApplicationRepository:
         from src.application.risk_replan import recovery_carried
 
         carried = recovery_carried(aggregate, task, prior)
-        if (budget is None or prior.generation >= budget.max_total_attempts_per_task
+        from src.application.resume_runtime import cycle_attempt_number, cycle_for
+
+        cycle = cycle_for(aggregate, task.task_id)
+        if cycle is not None:
+            budget = cycle.budget
+        if (budget is None or cycle_attempt_number(aggregate, prior)
+                >= budget.max_total_attempts_per_task
                 or (prior.admission.graph != root.frozen_graph and not carried)
                 or prior.admission.task_fingerprint != task_fingerprint(task)
                 or (saved["profile_digest"] != root.execution_profile_snapshot_digest
@@ -1163,6 +1253,9 @@ class InMemoryApplicationRepository:
                 aggregate.artifacts.task_outputs[task.task_id] = canonical_value(
                     artifacts.task_outputs[task.task_id]
                 )
+            from src.application.resume_runtime import committed_cycle
+
+            committed_cycle(aggregate, task)
             if task.task_type == "risk_follow_up" and root.replan is not None:
                 from src.application.risk_replan import finalize_parent
 
@@ -1193,6 +1286,10 @@ class InMemoryApplicationRepository:
     async def close_execution(self, owner, *, unknown=False):
         async with self._binding_transaction(owner.run_id) as aggregate:
             root = validate_root(aggregate, owner)
+            from src.application.resume_runtime import settle_cycle
+
+            if unknown and await settle_cycle(self, aggregate):
+                return aggregate
             root.lifecycle = "RESULT_UNKNOWN" if unknown else "CLOSED"
             if unknown:
                 for key, attempt in tuple(root.attempts.items()):

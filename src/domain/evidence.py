@@ -27,7 +27,41 @@ class DocumentAuthority(BaseModel):
     period_verified: Literal[False] = False
 
 
+class EvidenceValidationRequest(BaseModel):
+    """Exact request seen by the supported normalized-record validator."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    symbol: str = Field(min_length=1)
+    dataset: str = Field(min_length=1)
+    as_of: date
+    expected_period: str | None = None
+    fields: tuple[str, ...] = ()
+    limit: int = Field(default=20, strict=True, ge=1, le=500)
+
+
+class EvidenceValidationFreshness(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    rule_version: Literal["record-as-of-max-age/v1"] = "record-as-of-max-age/v1"
+    max_age_days: int = Field(strict=True, ge=0)
+
+
+class EvidenceValidationProvenance(BaseModel):
+    """Bounded ingestion facts; acceptance and permission remain existing authorities."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_version: Literal["evidence-validation/v1"] = "evidence-validation/v1"
+    validator_version: Literal["normalized-record-validation/v1"] = (
+        "normalized-record-validation/v1"
+    )
+    request: EvidenceValidationRequest
+    freshness: EvidenceValidationFreshness
+    mapped_record_index: int = Field(strict=True, ge=0)
+
+
 class EvidenceRecord(TimestampedModel):
+    validation_provenance: EvidenceValidationProvenance | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     document_authority: DocumentAuthority | None = Field(
         default=None, exclude_if=lambda value: value is None
     )

@@ -543,6 +543,7 @@ export interface NormalizedTerminalState {
 }
 
 export interface RunProjection {
+  readonly externalFailureResume?: SafeJsonObject;
   readonly riskReplan?: SafeJsonObject;
   readonly projectionSchemaVersion: typeof RUN_PROJECTION_SCHEMA_VERSION;
   readonly projectionRevision: number;
@@ -3098,6 +3099,7 @@ export function decodeRunProjection(
       "proof",
       "execution",
       "terminal",
+      "external_failure_resume",
       "risk_replan"
     ],
     "$"
@@ -3337,6 +3339,31 @@ export function decodeRunProjection(
   ) {
     return fail("$.terminal", "terminal state contradicts Run/lifecycle/watermark");
   }
+  const externalFailureResume = input.external_failure_resume === undefined ? undefined
+    : decodeSafeJsonObject(input.external_failure_resume, "$.external_failure_resume");
+  if (externalFailureResume !== undefined && (externalFailureResume.run_id !== run.runId
+      || externalFailureResume.schema_version !== "external-failure-control/v1")) {
+    return fail("$.external_failure_resume", "Resume identity mismatch");
+  }
+  let resumeIndex = -1;
+  for (let i = 0; i < activity.length; i++) {
+    if (activity[i].type !== "external_failure.resume_authorized") continue;
+    const audit = externalFailureResume?.audit;
+    const cycles = externalFailureResume?.authorized_cycles;
+    if (!Array.isArray(audit) || !Array.isArray(cycles)) {
+      return fail("$.activity", "Resume authorization requires durable control history");
+    }
+    const authorization = audit.find(a => a !== null && typeof a === "object" && !Array.isArray(a)
+      && a.event_id === activity[i].eventId && a.type === activity[i].type && a.run_id === run.runId);
+    if (!authorization || typeof authorization !== "object" || Array.isArray(authorization)
+        || !cycles.some(c => c !== null && typeof c === "object" && !Array.isArray(c)
+          && c.cycle_id === authorization.cycle_id && c.authorization_id === authorization.authorization_id)
+        || !activity.slice(resumeIndex + 1, i).some(e => e.type === "run.failed" && e.status === "FAILED")
+        || activity.slice(resumeIndex + 1, i).some(e => e.type === "run.completed")) {
+      return fail("$.activity", "Resume authorization does not close to its failed cycle");
+    }
+    resumeIndex = i;
+  }
   if (terminal.isTerminal) {
     const finalActivity = activity.at(-1);
     const recoveryIndex = activity.findIndex(event => event.type === "closure.recovery_started");
@@ -3345,7 +3372,8 @@ export function decodeRunProjection(
       activity[recoveryIndex - 1]?.type !== "run.failed" ||
       activity[recoveryIndex - 1]?.status !== "FAILED"
     )) return fail("$.activity", "closure recovery must follow one historical failure");
-    const currentActivity = recoveryIndex < 0 ? activity : activity.slice(recoveryIndex + 1);
+    const currentIndex = Math.max(recoveryIndex, resumeIndex);
+    const currentActivity = currentIndex < 0 ? activity : activity.slice(currentIndex + 1);
     const completedActivityCount = currentActivity.filter(
       (event) => event.type === "run.completed"
     ).length;
@@ -3402,6 +3430,7 @@ export function decodeRunProjection(
     }
   }
   return freezeDeep({
+    ...(externalFailureResume === undefined ? {} : { externalFailureResume }),
     ...(riskReplan === undefined ? {} : { riskReplan }),
     projectionSchemaVersion: RUN_PROJECTION_SCHEMA_VERSION,
     projectionRevision,

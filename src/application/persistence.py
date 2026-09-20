@@ -285,7 +285,7 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             await session.commit()
 
     @asynccontextmanager
-    async def _binding_transaction(self, run_id):
+    async def _binding_transaction(self, run_id, *, resume_replay=None):
         async with self._sessions() as session, session.begin():
             row = await session.scalar(
                 select(ResearchRunAggregateRow)
@@ -296,6 +296,12 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 raise BindingDenied("STATE_REFRESH_REQUIRED", run_id)
             aggregate = self._to_aggregate(row.payload)
             validate_root(aggregate)
+            # The locked durable root owns receipts; exact replay exits without writes.
+            if resume_replay is not None:
+                self._committed_resume_replay(aggregate, *resume_replay)
+            previous_resume_events = len(
+                (aggregate.node_binding.external_failure_resume or {}).get("audit", [])
+            )
             previous_replan_events = len((aggregate.node_binding.replan or {}).get("audit", []))
             for result in aggregate.node_binding.results.values():
                 await self.verify_materials(result.output_records, run_id=run_id, session=session)
@@ -315,11 +321,45 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 await self._persist_replan_events(
                     session, row, aggregate, previous_replan_events
                 )
+            if aggregate.node_binding.external_failure_resume is not None:
+                await self._persist_resume_events(session, row, aggregate, previous_resume_events)
             row.payload = self._payload(aggregate)
             row.status = aggregate.run.status.value
             session.info["wp02_root_write"] = (run_id, aggregate.node_binding.binding_revision)
             await self._persist_children(session, aggregate)
         self._runs.pop(run_id, None)
+
+    async def _persist_resume_events(self, session, row, aggregate, previous_count):
+        from sqlalchemy import insert, update
+
+        from src.application.external_failure_resume import current_envelope
+        from src.domain.runtime_event import RuntimeEventType, normalize_runtime_event_v1
+        from src.infrastructure.database.postgresql_events import PostgresRuntimeEventStore
+
+        events = aggregate.node_binding.external_failure_resume["audit"][previous_count:]
+        if not events:
+            return
+        if session.bind.dialect.name != "postgresql":
+            raise BindingDenied("RESUME_POSTGRESQL_AUTHORITY_REQUIRED")
+        await PostgresRuntimeEventStore._lock_run_event_writes(session, aggregate.run.run_id)
+        row.projection_revision += 1
+        for item in events:
+            sequence = await session.scalar(insert(RuntimeEventRow).values(
+                event_id=item["event_id"], run_id=aggregate.run.run_id,
+                sequence=None, payload={},
+            ).returning(RuntimeEventRow.sequence))
+            event = RuntimeEvent(
+                event_id=item["event_id"], run_id=aggregate.run.run_id,
+                task_id=current_envelope(aggregate).task_id,
+                type=RuntimeEventType(item["type"]),
+                timestamp=datetime.fromisoformat(item["timestamp"]), sequence=sequence,
+                payload={"external_failure": item},
+            )
+            normalize_runtime_event_v1(event)
+            await session.execute(update(RuntimeEventRow).where(
+                RuntimeEventRow.event_id == event.event_id
+            ).values(payload=event.model_dump(mode="json")))
+            row.projection_sequence = sequence
 
     async def _persist_replan_events(self, session, row, aggregate, previous_count):
         from datetime import datetime
@@ -407,6 +447,8 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
     async def verify_materials(self, materials, *, run_id, session=None):
         await super().verify_materials(materials, run_id=run_id)
         if session is None:
+            session = _binding_session.get()
+        if session is None:
             async with self._sessions() as reader:
                 return await self.verify_materials(materials, run_id=run_id, session=reader)
         from src.data.persistence import EvidenceRecordRow, _to_domain
@@ -453,6 +495,29 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
         aggregate.runtime.binding_ref = root.reference()
         row.payload = cls._payload(aggregate)
         return OwnerToken(run_id=aggregate.run.run_id, owner_generation=1, owner_id=root.owner_id)
+
+    async def _resume_terminal_event(self, aggregate):
+        from src.application.resume_runtime import require_terminal_event
+        from src.infrastructure.database.postgresql_events import PostgresRuntimeEventStore
+
+        session = _binding_session.get()
+        if session is None:
+            raise BindingDenied("RESUME_TRANSACTION_REQUIRED")
+        await PostgresRuntimeEventStore._lock_run_event_writes(session, aggregate.run.run_id)
+        row = await session.scalar(select(RuntimeEventRow).where(
+            RuntimeEventRow.run_id == aggregate.run.run_id
+        ).order_by(RuntimeEventRow.sequence.desc()).limit(1))
+        require_terminal_event(aggregate, RuntimeEvent.model_validate(row.payload) if row else None)
+
+    async def external_resume_pending_run_ids(self):
+        async with self._sessions() as session:
+            return list(await session.scalars(select(ResearchRunAggregateRow.run_id).where(
+                ResearchRunAggregateRow.status == "RUNNING",
+                ResearchRunAggregateRow.payload["node_binding"]["lifecycle"].as_string()
+                == "EXTERNAL_RESUME_PENDING",
+                ResearchRunAggregateRow.payload["node_binding"]["external_failure_resume"][
+                    "current_cycle_id"].as_string().is_not(None),
+            ).limit(16)))
 
     async def recovery_pending_run_ids(self):
         async with self._sessions() as session:
