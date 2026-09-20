@@ -670,11 +670,8 @@ class ResearchApplicationService:
                     current.artifacts.closure_diagnostic.update(
                         code=binding_failures[0]["code"], binding_failures=binding_failures
                     )
-            await self.repository.save_run(current)
-            await self.repository.close_execution(owner, unknown=not policy_blocked)
-            await self.event_store.emit(
-                run_id=run_id,
-                event_type=RuntimeEventType.RUN_FAILED,
+            await self.repository.finalize_failure(
+                owner, current, unknown=not policy_blocked, event_store=self.event_store,
                 payload={
                     "status": "FAILED",
                     "failure_stage": stage,
@@ -683,7 +680,6 @@ class ResearchApplicationService:
                     else getattr(exc, "code", "RESULT_UNKNOWN"),
                     "binding_failures": binding_failures,
                 },
-                timestamp=terminal_at,
             )
             await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
             if policy_blocked:

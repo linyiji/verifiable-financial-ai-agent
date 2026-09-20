@@ -285,7 +285,7 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
             await session.commit()
 
     @asynccontextmanager
-    async def _binding_transaction(self, run_id, *, resume_replay=None):
+    async def _binding_transaction(self, run_id, *, resume_replay=None, terminal_failure=None):
         async with self._sessions() as session, session.begin():
             row = await session.scalar(
                 select(ResearchRunAggregateRow)
@@ -296,6 +296,8 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 raise BindingDenied("STATE_REFRESH_REQUIRED", run_id)
             aggregate = self._to_aggregate(row.payload)
             validate_root(aggregate)
+            if terminal_failure is not None:
+                await self._replay_failure(session, aggregate, terminal_failure)
             # The locked durable root owns receipts; exact replay exits without writes.
             if resume_replay is not None:
                 self._committed_resume_replay(aggregate, *resume_replay)
@@ -323,11 +325,85 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 )
             if aggregate.node_binding.external_failure_resume is not None:
                 await self._persist_resume_events(session, row, aggregate, previous_resume_events)
+            if terminal_failure is not None:
+                await self._persist_terminal_failure(session, row, aggregate, terminal_failure)
             row.payload = self._payload(aggregate)
             row.status = aggregate.run.status.value
+            if terminal_failure is not None:
+                row.updated_at = aggregate.run.completed_at
             session.info["wp02_root_write"] = (run_id, aggregate.node_binding.binding_revision)
             await self._persist_children(session, aggregate)
         self._runs.pop(run_id, None)
+
+    async def finalize_failure(self, owner, proposed, *, unknown, payload, event_store):
+        from src.application.terminal_failure import FailureReplay, failure_command
+
+        # PostgreSQL owns the product event log. Other compositions retain the
+        # repository adapter contract (their event store is supplied separately).
+        async with self._sessions() as session:
+            if session.get_bind().dialect.name != "postgresql":
+                return await super().finalize_failure(
+                    owner, proposed, unknown=unknown, payload=payload, event_store=event_store,
+                )
+        command = failure_command(owner, proposed, unknown, payload)
+        try:
+            async with self._binding_transaction(
+                owner.run_id, terminal_failure=command,
+            ) as aggregate:
+                compare_whole(aggregate, proposed)
+                validate_root(aggregate, owner)
+                for field in ("run", "goal", "scheme", "runtime", "node_binding", "artifacts"):
+                    setattr(aggregate, field, deepcopy(getattr(proposed, field)))
+                await self._close_execution_state(aggregate, owner, unknown=unknown)
+        except FailureReplay as replay:
+            return replay.event
+        return command["event"]
+
+    async def _replay_failure(self, session, aggregate, command):
+        from src.application.terminal_failure import FailureReplay, verify_failure_replay
+        from src.infrastructure.database.postgresql_events import PostgresRuntimeEventStore
+
+        PostgresRuntimeEventStore._require_postgresql(session)
+        row = await session.get(RuntimeEventRow, command["event_id"])
+        if row is not None:
+            event = PostgresRuntimeEventStore._decode_row(aggregate.run.run_id, row)
+            verify_failure_replay(aggregate, event, command)
+            raise FailureReplay(event)
+
+    async def _persist_terminal_failure(self, session, row, aggregate, command):
+        from sqlalchemy import insert, update
+
+        from src.application.terminal_failure import failure_payload
+        from src.domain.runtime_event import RuntimeEventType, normalize_runtime_event_v1
+        from src.infrastructure.database.postgresql_events import PostgresRuntimeEventStore
+
+        run_id = aggregate.run.run_id
+        await PostgresRuntimeEventStore._lock_run_event_writes(session, run_id)
+        await PostgresRuntimeEventStore._reject_post_terminal_write(session, run_id)
+        predecessor = await session.scalar(select(RuntimeEventRow).where(
+            RuntimeEventRow.run_id == run_id,
+        ).order_by(RuntimeEventRow.sequence.desc()).limit(1))
+        causal = await session.scalar(select(RuntimeEventRow).where(
+            RuntimeEventRow.run_id == run_id,
+            RuntimeEventRow.payload["type"].as_string() == "task.failed",
+        ).order_by(RuntimeEventRow.sequence.desc()).limit(1))
+        sequence = await session.scalar(insert(RuntimeEventRow).values(
+            event_id=command["event_id"], run_id=run_id, sequence=None, payload={},
+        ).returning(RuntimeEventRow.sequence))
+        event = RuntimeEvent(
+            event_id=command["event_id"], run_id=run_id,
+            type=RuntimeEventType.RUN_FAILED, timestamp=aggregate.run.completed_at,
+            sequence=sequence, payload=failure_payload(
+                aggregate, command, predecessor, causal,
+            ),
+        )
+        normalize_runtime_event_v1(event)
+        await session.execute(update(RuntimeEventRow).where(
+            RuntimeEventRow.event_id == event.event_id,
+        ).values(payload=event.model_dump(mode="json")))
+        row.projection_sequence = sequence
+        row.projection_revision += 1
+        command["event"] = event
 
     async def _persist_resume_events(self, session, row, aggregate, previous_count):
         from sqlalchemy import insert, update

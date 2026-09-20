@@ -1283,19 +1283,33 @@ class InMemoryApplicationRepository:
         if len(finishes) != 1 or metadata.get('resulting_decimal_flags') != flags:
             raise BindingDenied('IDENTITY_MISMATCH', 'WP04 finish evidence')
 
+    async def finalize_failure(self, owner, proposed, *, unknown, payload, event_store):
+        """Nondurable repository adapter; SQL supplies the atomic durable owner."""
+        from src.domain.runtime_event import RuntimeEventType
+
+        await self.save_run(proposed)
+        await self.close_execution(owner, unknown=unknown)
+        return await event_store.emit(
+            run_id=owner.run_id, event_type=RuntimeEventType.RUN_FAILED,
+            payload=payload, timestamp=proposed.run.completed_at,
+        )
+
+    async def _close_execution_state(self, aggregate, owner, *, unknown):
+        root = validate_root(aggregate, owner)
+        from src.application.resume_runtime import settle_cycle
+
+        if unknown and await settle_cycle(self, aggregate):
+            return
+        root.lifecycle = "RESULT_UNKNOWN" if unknown else "CLOSED"
+        if unknown:
+            for key, attempt in tuple(root.attempts.items()):
+                if attempt.status in {"RESERVED", "DISPATCHED"}:
+                    root.attempts[key] = attempt.model_copy(update={"status": "RESULT_UNKNOWN"})
+        root.owner_generation += 1
+
     async def close_execution(self, owner, *, unknown=False):
         async with self._binding_transaction(owner.run_id) as aggregate:
-            root = validate_root(aggregate, owner)
-            from src.application.resume_runtime import settle_cycle
-
-            if unknown and await settle_cycle(self, aggregate):
-                return aggregate
-            root.lifecycle = "RESULT_UNKNOWN" if unknown else "CLOSED"
-            if unknown:
-                for key, attempt in tuple(root.attempts.items()):
-                    if attempt.status in {"RESERVED", "DISPATCHED"}:
-                        root.attempts[key] = attempt.model_copy(update={"status": "RESULT_UNKNOWN"})
-            root.owner_generation += 1
+            await self._close_execution_state(aggregate, owner, unknown=unknown)
         return aggregate
 
     async def verify_materials(self, materials, *, run_id):

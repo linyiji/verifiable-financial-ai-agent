@@ -322,6 +322,9 @@ class PostgresRuntimeEventStore:
                 committed_sequence=max(row.sequence - 1, 0),
                 received_sequence=row.sequence,
             )
+        from src.application.terminal_failure import verify_failure_event
+
+        verify_failure_event(event)
         return event
 
     @classmethod
