@@ -754,6 +754,16 @@ class IntegratedTaskExecutor:
             supporting_output={"status": "agent_assessment_required"},
         )
         if agent_result is not None:
+            if (agent_result.agent_output is not None
+                    and agent_result.agent_output.structured_output.requires_follow_up
+                    and self._aggregate.node_binding is not None):
+                from src.application.risk_replan import frozen_policy
+
+                frozen_policy(self._aggregate)
+                return TaskExecutionResult(
+                    result_ref=agent_result.agent_output.artifact_ref,
+                    output_refs=(agent_result.agent_output.output_id,),
+                )
             execution = self._accept_research_agent_output(
                 task,
                 agent_result,
@@ -961,8 +971,7 @@ class IntegratedTaskExecutor:
                 agent_result,
                 supporting_output=supporting_output,
             )
-        self._aggregate.artifacts.task_outputs[task.task_id] = supporting_output
-        return TaskExecutionResult(result_ref=f"analysis://{task.task_id}")
+        raise BindingDenied("REPLAN_CHILD_AGENT_UNAVAILABLE", task.task_id)
 
     async def _execute_research_news_analysis(self, task: Task) -> TaskExecutionResult:
         self._require_bound_invocation(task)
@@ -1367,6 +1376,8 @@ class IntegratedTaskExecutor:
             output
             for output in self._aggregate.artifacts.agent_outputs
             if output.status == "SUCCESS" and output.task_id in upstream_task_ids
+            and (self._aggregate.node_binding is None
+                 or output.task_id in self._aggregate.node_binding.current_results)
         ]
         foreign = [output.output_id for output in outputs if output.run_id != task.run_id]
         if foreign:
@@ -1476,6 +1487,12 @@ class IntegratedTaskExecutor:
             "execution_profile_digest": digest(profile, "node-execution-profile/v1"),
             "acquisition_scope": scope.value if scope else None,
             "acquire": self._should_acquire_evidence(task),
+            **({"risk_replan_policy_digest": digest(
+                self._aggregate.node_binding.execution_snapshot["scenario"][
+                    "risk_follow_up_policy"], "risk-follow-up-policy/v1")}
+               if task.task_type == "risk_analysis"
+               and self._aggregate.node_binding.execution_snapshot["scenario"].get(
+                   "risk_follow_up_policy") is not None else {}),
         }
 
     def _bound_materials(self, task):
@@ -1489,6 +1506,13 @@ class IntegratedTaskExecutor:
             for record in self._aggregate.node_binding.results[dep.result_id].output_records
         }
         allowed.update(record.record_id for record in admission.preexisting_inputs)
+        if admission.candidate_dependency is not None:
+            from src.application.risk_replan import child_dependency, control
+
+            if child_dependency(self._aggregate, task).model_dump(mode="json") != (
+                    admission.candidate_dependency):
+                raise BindingDenied("REPLAN_CHILD_DEPENDENCY_DENIED")
+            allowed.add(control(self._aggregate).candidate.output_record.record_id)
         if self._service.valuation_context_enabled and task.task_type == "valuation_analysis":
             ids.update(
                 e.evidence_id
@@ -1627,6 +1651,20 @@ class IntegratedTaskExecutor:
             payload_snapshot=payload,
         )
         current.result_ref = result.result_ref
+        attempt_ids = []
+        candidate_request = task.task_type == "risk_analysis" and any(
+            item.task_id == task.task_id and item.structured_output is not None
+            and item.structured_output.requires_follow_up
+            for item in self._aggregate.artifacts.agent_outputs
+        )
+        if candidate_request:
+            store = self._service.recovery_evidence_store
+            if store is not None:
+                self._service.repository._recovery_stores[task.run_id] = store
+                rows = await store.records(task.run_id, task.task_id)
+                attempt_ids = [r.attempt_id for r in rows
+                               if r.kind == "ATTEMPT_COMPLETED" and r.outcome == "PASS"
+                               and r.node_reservation_id == admission.attempt_reservation_id]
         committed = await self._service.repository.commit_node_result(
             admission,
             task=current,
@@ -1634,6 +1672,7 @@ class IntegratedTaskExecutor:
             output_records=(*materials, snapshot),
             resolved_ids=[item.resolved_input_binding_id for item in self._bound_steps],
             observed={
+                **({"attempt_ids": attempt_ids} if candidate_request else {}),
                 **({"wp03_context": interaction.summary()} if interaction else {}),
                 "agent_outputs": [
                     canonical_value(item)
@@ -1642,6 +1681,12 @@ class IntegratedTaskExecutor:
                 ],
             },
         )
+        from src.domain.risk_replan import CandidateBinding
+
+        if isinstance(committed, CandidateBinding):
+            from src.application.risk_replan import ReplanSuspended
+
+            raise ReplanSuspended()
         return replace(result, result_binding_id=committed.result_id)
 
     def _handler_for(self, task: Task):

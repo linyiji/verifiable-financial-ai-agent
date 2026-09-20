@@ -296,8 +296,14 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 raise BindingDenied("STATE_REFRESH_REQUIRED", run_id)
             aggregate = self._to_aggregate(row.payload)
             validate_root(aggregate)
+            previous_replan_events = len((aggregate.node_binding.replan or {}).get("audit", []))
             for result in aggregate.node_binding.results.values():
                 await self.verify_materials(result.output_records, run_id=run_id, session=session)
+            if aggregate.node_binding.replan is not None:
+                from src.application.risk_replan import control
+
+                await self.verify_materials([control(aggregate).candidate.output_record],
+                                            run_id=run_id, session=session)
             token = _binding_session.set(session)
             try:
                 yield aggregate
@@ -305,11 +311,90 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                 _binding_session.reset(token)
             aggregate.node_binding.binding_revision += 1
             aggregate.runtime.binding_ref = aggregate.node_binding.reference()
+            if aggregate.node_binding.replan is not None:
+                await self._persist_replan_events(
+                    session, row, aggregate, previous_replan_events
+                )
             row.payload = self._payload(aggregate)
             row.status = aggregate.run.status.value
             session.info["wp02_root_write"] = (run_id, aggregate.node_binding.binding_revision)
             await self._persist_children(session, aggregate)
         self._runs.pop(run_id, None)
+
+    async def _persist_replan_events(self, session, row, aggregate, previous_count):
+        from datetime import datetime
+
+        from sqlalchemy import insert, update
+
+        from src.domain.runtime_event import (
+            RuntimeEvent,
+            RuntimeEventType,
+            normalize_runtime_event_v1,
+        )
+        from src.infrastructure.database.postgresql_events import PostgresRuntimeEventStore
+
+        events = aggregate.node_binding.replan["audit"][previous_count:]
+        if not events:
+            return
+        row.projection_revision += 1
+        if session.bind.dialect.name != "postgresql":
+            raise BindingDenied("REPLAN_POSTGRESQL_AUTHORITY_REQUIRED")
+        await PostgresRuntimeEventStore._lock_run_event_writes(session, aggregate.run.run_id)
+        for item in events:
+            sequence = await session.scalar(insert(RuntimeEventRow).values(
+                event_id=item["event_id"], run_id=aggregate.run.run_id,
+                sequence=None, payload={},
+            ).returning(RuntimeEventRow.sequence))
+            event = RuntimeEvent(
+                event_id=item["event_id"], run_id=aggregate.run.run_id,
+                task_id=aggregate.node_binding.replan["candidate"]["task_id"],
+                type=RuntimeEventType(item["type"]), timestamp=datetime.fromisoformat(
+                    item["timestamp"]), sequence=sequence, payload={"risk_replan": item},
+            )
+            normalize_runtime_event_v1(event)
+            await session.execute(update(RuntimeEventRow).where(
+                RuntimeEventRow.event_id == event.event_id).values(
+                    payload=event.model_dump(mode="json")))
+            row.projection_sequence = sequence
+            if item["type"] == "replan.fulfilled":
+                finalization = aggregate.node_binding.replan["finalization"]
+                for task_id in (finalization["fulfilling_child_task_id"],
+                                finalization["source_task_id"]):
+                    completion_id = item["event_id"] + "-" + (
+                        "parent" if task_id == finalization["source_task_id"] else "child")
+                    sequence = await session.scalar(insert(RuntimeEventRow).values(
+                        event_id=completion_id, run_id=aggregate.run.run_id,
+                        sequence=None, payload={},
+                    ).returning(RuntimeEventRow.sequence))
+                    task = aggregate.runtime.task(task_id)
+                    completion = RuntimeEvent(
+                        event_id=completion_id, run_id=aggregate.run.run_id, task_id=task_id,
+                        type=RuntimeEventType.TASK_COMPLETED, timestamp=event.timestamp,
+                        sequence=sequence, payload={"attempt": task.attempt_count},
+                    )
+                    normalize_runtime_event_v1(completion)
+                    await session.execute(update(RuntimeEventRow).where(
+                        RuntimeEventRow.event_id == completion_id).values(
+                            payload=completion.model_dump(mode="json")))
+                    row.projection_sequence = sequence
+            if item["type"] == "research.cancelled":
+                terminal_id = item["event_id"] + "-terminal"
+                sequence = await session.scalar(insert(RuntimeEventRow).values(
+                    event_id=terminal_id, run_id=aggregate.run.run_id,
+                    sequence=None, payload={},
+                ).returning(RuntimeEventRow.sequence))
+                terminal = RuntimeEvent(
+                    event_id=terminal_id, run_id=aggregate.run.run_id,
+                    type=RuntimeEventType.RUN_FAILED, timestamp=event.timestamp,
+                    sequence=sequence, payload={"status": "CANCELLED",
+                        "failure_stage": "CANCELLATION", "failure_code": "RUN_CANCELLED",
+                        "safe_message": "Research was explicitly cancelled."},
+                )
+                normalize_runtime_event_v1(terminal)
+                await session.execute(update(RuntimeEventRow).where(
+                    RuntimeEventRow.event_id == terminal_id).values(
+                        payload=terminal.model_dump(mode="json")))
+                row.projection_sequence = sequence
 
     async def _current_recovery_records(self, run_id, task_id):
         from src.infrastructure.database.recovery import RecoveryEvidenceStore
@@ -377,6 +462,29 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
                     == "RECOVERY_PENDING"
                 ).limit(16)
             ))
+
+    async def replan_work_run_ids(self):
+        from sqlalchemy import or_
+
+        async with self._sessions() as session:
+            state = ResearchRunAggregateRow.payload["node_binding"]["replan"]
+            return list(await session.scalars(select(ResearchRunAggregateRow.run_id).where(
+                ResearchRunAggregateRow.status == "WAITING_REPLAN",
+                or_(state["wait_reason"].as_string() == "DECISION_APPLY",
+                    state["resume_eligible"].as_boolean().is_(True)),
+            ).limit(16)))
+
+    async def replan_projection(self, run_id):
+        from src.application.risk_replan import projection
+
+        async with self._sessions() as session:
+            row = await session.get(ResearchRunAggregateRow, run_id)
+            if row is None:
+                raise BindingDenied("REPLAN_NOT_FOUND")
+            aggregate = self._to_aggregate(row.payload)
+            validate_root(aggregate)
+            return {**projection(aggregate), "projection_revision": row.projection_revision,
+                    "projection_sequence": row.projection_sequence}
 
     async def get_run_fresh(self, run_id):
         async with self._sessions() as session:
@@ -519,6 +627,13 @@ class SQLAlchemyApplicationRepository(InMemoryApplicationRepository):
 
     async def save_runtime_events(self, events: list[RuntimeEvent]) -> None:
         async with self._sessions() as session:
+            if session.get_bind().dialect.name == "postgresql":
+                from src.infrastructure.database.postgresql_events import PostgresRuntimeEventStore
+
+                # This compatibility writer can insert missing events too. Lock
+                # roots before any read can autoflush event/counter/FK writes.
+                for run_id in sorted({event.run_id for event in events}):
+                    await PostgresRuntimeEventStore._lock_run_event_writes(session, run_id)
             for event in events:
                 row = await session.get(RuntimeEventRow, event.event_id)
                 payload = event.model_dump(mode="json")

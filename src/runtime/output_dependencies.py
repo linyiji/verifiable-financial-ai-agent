@@ -22,7 +22,18 @@ class ExecutionContinuationGate:
         )
 
 
-def resolve_outputs(state, task, *, committed_results=None, require_current=False):
+def resolve_outputs(state, task, *, committed_results=None, require_current=False,
+                    candidate_dependency=None):
+    candidate_parent = None
+    if candidate_dependency is not None:
+        from src.domain.risk_replan import CandidateDependency
+
+        CandidateDependency.model_validate(candidate_dependency)
+        if (task.task_type != "risk_follow_up" or not task.parent_task_id
+                or task.dependencies != [task.parent_task_id]
+                or state.task(task.parent_task_id).task_type != "risk_analysis"):
+            raise ValueError("Candidate dependency is restricted to the exact Risk child")
+        candidate_parent = task.parent_task_id
     # With a binding marker, local outputs are navigation hints only. The caller
     # must supply the freshly resolved root pointers (admission revalidates bytes).
     if (
@@ -31,11 +42,12 @@ def resolve_outputs(state, task, *, committed_results=None, require_current=Fals
         and task.dependencies
         and (
             committed_results is None
-            or any(key not in committed_results for key in task.dependencies)
+            or any(key not in committed_results and key != candidate_parent
+                   for key in task.dependencies)
         )
     ):
         return "WAITING", list(task.dependencies)
-    predecessors = [state.task(key) for key in task.dependencies]
+    predecessors = [state.task(key) for key in task.dependencies if key != candidate_parent]
     if task.output_requirements is None:
         missing = [item.task_id for item in predecessors if item.status is not TaskStatus.COMPLETED]
         return (

@@ -62,6 +62,11 @@ async def main():
             assert clients["teamorouter-sol"].calls == 0
             assert clients["teamorouter-terra"].calls == 1
     elif phase == "C":
+        # Prospective scenario v2 requires the independently proven child composition.
+        # Parent execution phases A/B retain their original governed client doubles.
+        from tests.risk_replan.fixtures.child_composition import configure_child
+
+        configure_child(service)
         obj = await service.create_object(symbol="BETA", company_name="Synthetic", exchange="LOCAL")
         backend = PostgreSQLPhase4ProductBackend(sessions=sessions, service=service)
         draft = await backend.prepare_run(

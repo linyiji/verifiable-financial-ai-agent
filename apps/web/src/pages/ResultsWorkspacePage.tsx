@@ -63,6 +63,7 @@ const RUN_STATUS_LABELS: Readonly<Record<ResultsWorkspaceV1["runStatus"], string
   AWAITING_CONFIRMATION: "等待确认",
   PLANNING: "规划中",
   RUNNING: "研究中",
+  WAITING_REPLAN: "等待后续研究决定",
   REVIEW: "复核中",
   PROVING: "验证中",
   RELEASED: "已完成",

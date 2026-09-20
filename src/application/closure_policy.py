@@ -41,6 +41,16 @@ def _ancestors(state, task):
 
 def classify_execution_closure(aggregate):
     result = ExecutionClosureState()
+    if (getattr(aggregate, "node_binding", None) is not None
+            and aggregate.node_binding.replan is not None):
+        from src.application.risk_replan import control
+
+        state = control(aggregate)
+        if state.wait_reason != "FULFILLED" or aggregate.run.status.value == "CANCELLED":
+            result.fatal_reason = "INCOMPLETE_RESEARCH_NOT_RELEASED"
+            result.reason_codes = ["RISK_FOLLOW_UP_INCOMPLETE"]
+            result.required_outputs.missing = [state.candidate.task_id]
+            return result
     gaps = []
     calculations = {
         c.capability_id for c in aggregate.artifacts.calculations if c.status.value == "PASS"

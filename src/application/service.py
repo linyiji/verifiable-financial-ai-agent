@@ -556,6 +556,21 @@ class ResearchApplicationService:
                 raise
             current = await self.repository.validate_execution(owner)
             from src.application.repository import NodeRecoveryPending
+            from src.application.risk_replan import ReplanSuspended
+
+            leaves = [exc]
+            control_leaves = []
+            while leaves:
+                leaf = leaves.pop()
+                if isinstance(leaf, BaseExceptionGroup):
+                    leaves.extend(leaf.exceptions)
+                else:
+                    control_leaves.append(leaf)
+            if (stage == "TASK_EXECUTION"
+                    and any(isinstance(e, ReplanSuspended) for e in control_leaves)
+                    and all(isinstance(e, (ReplanSuspended, NodeRecoveryPending))
+                            for e in control_leaves)):
+                return await self.repository.suspend_replan(owner)
 
             pending_leaves = [exc]
             pending_only = True

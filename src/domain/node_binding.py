@@ -197,12 +197,15 @@ class AdmissionBinding(BindingValue):
     preexisting_inputs: tuple[OutputRecord, ...] = ()
     dependency_result_bindings: tuple[DependencyBinding, ...] = ()
     policy_refs: dict
+    candidate_dependency: dict | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class AttemptReservation(BindingValue):
     admission: AdmissionBinding
     execution_started: bool = False
-    status: Literal["RESERVED", "DISPATCHED", "COMMITTED", "RESULT_UNKNOWN", "FAILED"]
+    status: Literal[
+        "RESERVED", "DISPATCHED", "COMMITTED", "RESULT_UNKNOWN", "FAILED", "CANDIDATE_RETAINED"
+    ]
     generation: int = Field(default=1, ge=1)
     started_at: datetime | None = None
     completed_at: datetime | None = None
@@ -240,6 +243,7 @@ class ResultBinding(BindingValue):
     supersedes_refs: tuple[str, ...] = ()
     invalidates_refs: tuple[str, ...] = ()
     observed_execution: dict = Field(default_factory=dict)
+    finalization_binding: dict | None = Field(default=None, exclude_if=lambda value: value is None)
 
     def dependency(self):
         return DependencyBinding(
@@ -254,7 +258,9 @@ class NodeBindingState(BaseModel):
     execution_mode: Literal["DEFAULT", "RECOVERABLE_V1", "UNKNOWN"]
     owner_generation: int = Field(ge=0)
     owner_id: str | None
-    lifecycle: Literal["UNCLAIMED", "ACTIVE", "CLOSED", "RESULT_UNKNOWN", "RECOVERY_PENDING"]
+    lifecycle: Literal[
+        "UNCLAIMED", "ACTIVE", "CLOSED", "RESULT_UNKNOWN", "RECOVERY_PENDING", "WAITING_REPLAN"
+    ]
     binding_revision: int = Field(ge=0)
     scheduler_started: bool = False
     frozen_graph: GraphIdentity
@@ -267,6 +273,7 @@ class NodeBindingState(BaseModel):
     results: dict[str, ResultBinding] = Field(default_factory=dict)
     current_results: dict[str, str] = Field(default_factory=dict)
     invalidation_refs: list[str] = Field(default_factory=list)
+    replan: dict | None = Field(default=None, exclude_if=lambda value: value is None)
 
     def reference(self):
         return BindingReference(

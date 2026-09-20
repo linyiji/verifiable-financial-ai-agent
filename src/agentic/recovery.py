@@ -163,16 +163,21 @@ class AdaptiveRecovery:
             for key, c in routes.items()
         }
         from src.application.execution_profiles import BOUNDED_TERRA_POLICY, adopted_request_matches
+        from src.application.risk_replan_profile import CHILD_POLICY
 
         bounded_proof_policy = (
             frozen_profile is not None
-            and frozen_profile.policy_evidence_source == BOUNDED_TERRA_POLICY
+            and frozen_profile.policy_evidence_source in {BOUNDED_TERRA_POLICY, CHILD_POLICY}
+        )
+        child_proof_policy = (
+            frozen_profile is not None and frozen_profile.policy_evidence_source == CHILD_POLICY
         )
 
         def adopt_bounded_proof():
             if not bounded_proof_policy:
                 return
-            for key in frozen_profile.recovery_fallback_routes:
+            for key in (frozen_profile.allowed_model_routes if child_proof_policy
+                        else frozen_profile.recovery_fallback_routes):
                 if key not in routes:
                     continue
                 # Schema-only certificates and saved decisions cannot widen this family.
@@ -183,6 +188,9 @@ class AdaptiveRecovery:
                 if not negative:
                     capabilities[key] = Capability.VERIFIED if matched else Capability.UNKNOWN
                     capability_refs[key] = (
+                        (frozen_profile.runtime_configuration["risk_follow_up_request"][
+                            "primary" if key == "teamorouter-sol" else "fallback"
+                        ]["receipt_id"],) if matched and child_proof_policy else
                         (frozen_profile.accepted_request_proof.receipt_id,) if matched else ()
                     )
 
@@ -214,6 +222,11 @@ class AdaptiveRecovery:
                     FailureClass.RATE_LIMIT,
                 }:
                     health[observed.route] = Health.DEGRADED
+        if child_proof_policy:
+            # An explicit current outage cannot be healed by an older parent PASS.
+            for key, status in self.initial_health.items():
+                if status == Health.UNAVAILABLE:
+                    health[key] = status
         current_negative_capabilities = {
             key: (status, capability_refs[key])
             for key, status in capabilities.items()
@@ -327,6 +340,8 @@ class AdaptiveRecovery:
             await stop("POLICY_DENIED")
 
         model_grants = self.model_grants
+        if child_proof_policy:
+            model_grants = {}
         if frozen_profile is not None and model_grants is None:
             model_grants = {
                 (scope.task_profile, grant.requested_route): grant.actual_routes
@@ -340,7 +355,7 @@ class AdaptiveRecovery:
                 frozen_profile.require_route(route)
                 if route != initial_route and route not in frozen_profile.recovery_fallback_routes:
                     raise ValueError("Fallback route outside frozen envelope")
-            if bounded_proof_policy and route != initial_route and (
+            if bounded_proof_policy and (child_proof_policy or route != initial_route) and (
                 not adopted_request_matches(frozen_profile, context, scope, routes[route], kwargs)
                 or capabilities[route] != Capability.VERIFIED
                 or health.get(route) == Health.UNAVAILABLE

@@ -39,6 +39,12 @@ def build_risk_follow_up_context(aggregate, task, normalized_evidence):
         and output.status == "SUCCESS"
         and output.structured_output is not None
     ]
+    root = getattr(aggregate, "node_binding", None)
+    if root is not None and root.replan is not None:
+        from src.application.risk_replan import child_dependency, control, validate_candidate
+
+        child_dependency(aggregate, task)
+        outputs = [validate_candidate(aggregate, control(aggregate).candidate)]
     if len(outputs) != 1:
         raise ValueError("Follow-up requires one successful parent Risk output")
     output = outputs[0]

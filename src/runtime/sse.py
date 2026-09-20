@@ -8,7 +8,6 @@ from types import MappingProxyType
 from src.domain.runtime_event import (
     EVENT_CONTRACT_VERSION,
     RuntimeEvent,
-    RuntimeEventType,
     normalize_runtime_event_v1,
 )
 from src.runtime.events import (
@@ -138,21 +137,12 @@ async def runtime_event_stream(
             yield encode_sse_heartbeat()
             continue
         accepted: list[tuple[RuntimeEvent, str]] = []
-        for index, event in enumerate(events):
+        for event in events:
             disposition = cursor.accept(event)
             if disposition is EventApplyDisposition.DUPLICATE_IGNORED:
                 continue
-            if (
-                cursor.terminal_sequence is not None
-                and index != len(events) - 1
-                and events[index + 1].type is not RuntimeEventType.CLOSURE_RECOVERY_STARTED
-            ):
-                raise EventReconciliationRequired(
-                    EventRecoveryReason.POST_TERMINAL_EVENT,
-                    run_id=run_id,
-                    committed_sequence=cursor.committed_sequence,
-                    received_sequence=events[index + 1].sequence,
-                )
+            # The cursor validates the entire batch before any frame is yielded,
+            # including typed denial audits that leave terminal execution closed.
             accepted.append((event, encode_sse_event(event)))
         for event, frame in accepted:
             yield frame

@@ -279,6 +279,25 @@ def resolve_execution_snapshot(
             else node
             for node in nodes
         ]
+    if prospective_defaults and scenario.execution_family_version == "2":
+        risks = [t for t in tasks if t.task_type == "risk_analysis"]
+        consumers = ([t for t in tasks if risks[0].task_id in t.dependencies]
+                     if len(risks) == 1 else [])
+        if len(consumers) == 1 and consumers[0].task_type == "report_synthesis":
+            from src.application.risk_replan_profile import freeze_child_template
+
+            child = freeze_child_template(service, scheme, goal, risks[0])
+            scenario = scenario.model_copy(update={
+                "scenario_version": "2", "graph_mutation": "RISK_ADD_CHILD_TASK_HUMAN_V1",
+                "risk_follow_up_policy": {
+                    "policy_version": "RISK_ADD_CHILD_TASK_HUMAN_V1",
+                    "max_approved_expansions_per_run": 1, "max_per_source_node": 1,
+                    "max_child_expansions": 0,
+                    "decline_policy": "DURABLE_DECLINED_INCOMPLETE_PAUSE/v1",
+                    "child_template": child.model_dump(mode="json"),
+                    "child_template_digest": digest(child, "node-execution-profile/v1"),
+                },
+            })
     return ExecutionSnapshot.freeze(scenario, nodes)
 
 
@@ -373,6 +392,14 @@ def validate_runtime_profile(service, aggregate, task):
     if profile.requested_route != (selection.route_id if selection else None):
         raise BindingDenied("PROFILE_SELECTION_CHANGED", task.task_id)
     current = canonical_value(runtime_configuration(service, task, selection))
+    from src.application.risk_replan_profile import CHILD_POLICY, validate_child_profile
+
+    if profile.policy_evidence_source == CHILD_POLICY:
+        from src.application.risk_follow_up import build_risk_follow_up_context
+        from src.application.risk_replan_profile import child_configuration, source_digest
+
+        validate_child_profile(profile)
+        current = child_configuration(current, source_digest(build_risk_follow_up_context))
 
     def executable_configuration(configuration):
         # CapabilityDefinition inherits audit timestamps initialized at module import.
@@ -581,6 +608,10 @@ def default_recovery_profile(profile):
 
 def adopted_request_matches(profile, context, scope, candidate, request):
     """Use frozen acceptance only; exact current builder/schema/route, no ambient proof lookup."""
+    from src.application.risk_replan_profile import CHILD_POLICY, adopted_child_matches
+
+    if profile.policy_evidence_source == CHILD_POLICY:
+        return adopted_child_matches(profile, context, scope, candidate, request)
     from src.adapters.llm.teamorouter import _structured_request_template
     from src.agentic.research_agent import _messages
     from src.phase4_product.hashing import canonical_json_sha256

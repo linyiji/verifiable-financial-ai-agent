@@ -121,6 +121,14 @@ class DependencyScheduler:
                     state.completed_output_refs = dict(fresh.runtime.completed_output_refs)
                     state.binding_ref = fresh.node_binding.reference()
                     self._bound_results = dict(fresh.node_binding.current_results)
+                    from src.application.risk_replan import ReplanSuspended, control
+
+                    replan = control(fresh)
+                    if replan is not None and replan.wait_reason not in {
+                        "FOLLOW_UP_EXECUTION", "FULFILLED"
+                    }:
+                        raise ReplanSuspended()
+                    self._replan_aggregate = fresh
                 # Approved graph mutations may add CREATED tasks while a wave is running.
                 self._admit_created_tasks(state)
                 if all(task.status is TaskStatus.COMPLETED for task in state.actual_graph.tasks):
@@ -216,6 +224,12 @@ class DependencyScheduler:
                 ]
                 if errors:
                     from src.application.repository import NodeRecoveryPending
+                    from src.application.risk_replan import ReplanSuspended
+
+                    if all(isinstance(error, (NodeRecoveryPending, ReplanSuspended))
+                           for error in errors) and any(
+                               isinstance(error, ReplanSuspended) for error in errors):
+                        raise ReplanSuspended()
 
                     if all(isinstance(error, NodeRecoveryPending) for error in errors):
                         raise ExceptionGroup("node recovery pending", errors)
@@ -276,10 +290,15 @@ class DependencyScheduler:
     def _promote_ready_tasks(self, state: RuntimeState) -> list[Task]:
         ready: list[Task] = []
         for task in state.actual_graph.tasks:
+            from src.application.risk_replan import child_dependency
+
+            candidate = (child_dependency(self._replan_aggregate, task)
+                         if getattr(self, "_replan_aggregate", None) is not None else None)
             if (
                 task.status in {TaskStatus.WAITING, TaskStatus.BLOCKED}
                 and resolve_outputs(
                     state, task, committed_results=self._bound_results, require_current=True
+                    , candidate_dependency=candidate
                 )[0]
                 == "READY"
             ):
@@ -351,6 +370,11 @@ class DependencyScheduler:
                 raise
             except Exception as error:
                 from src.application.repository import NodeRecoveryPending
+                from src.application.risk_replan import ReplanSuspended
+
+                if isinstance(error, ReplanSuspended):
+                    state.task(task_id).status = TaskStatus.WAITING_REPLAN
+                    raise
 
                 if isinstance(error, NodeRecoveryPending):
                     state.task(task_id).status = TaskStatus.WAITING
@@ -428,6 +452,12 @@ class DependencyScheduler:
                 state.completed_output_refs[task.task_id] = list(result.output_refs)
                 if task.status is not TaskStatus.COMPLETED:
                     transition_task(task, TaskStatus.COMPLETED)
+                paired_completion = (bound and current.node_binding.replan is not None
+                    and current.node_binding.replan.get("finalization") is not None
+                    and current.node_binding.replan["finalization"]["fulfilling_child_task_id"]
+                    == task.task_id)
+                if paired_completion:
+                    return
                 await self._event_store.emit(
                     run_id=state.run_id,
                     task_id=task.task_id,

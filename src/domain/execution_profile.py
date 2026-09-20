@@ -59,12 +59,30 @@ class ScenarioProfile(BindingValue):
     )
     user_problem_expression: Literal["FREE"] = "FREE"
     clarity_and_planning: Literal["BOUNDED"] = "BOUNDED"
-    graph_mutation: Literal["DISABLED"] = "DISABLED"
+    graph_mutation: Literal["DISABLED", "RISK_ADD_CHILD_TASK_HUMAN_V1"] = "DISABLED"
     arbitrary_capability_discovery: Literal["DISABLED"] = "DISABLED"
     generated_methods_tools: Literal["DISABLED"] = "DISABLED"
     autonomous_replan: Literal["DISABLED"] = "DISABLED"
     report_schema: Literal["FIXED"] = "FIXED"
     core_formulas: Literal["FIXED"] = "FIXED"
+    risk_follow_up_policy: dict | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def validate_risk_replan_policy(self):
+        if self.risk_follow_up_policy is not None:
+            from src.domain.risk_replan import POLICY, RiskFollowUpPolicyV1
+
+            policy = RiskFollowUpPolicyV1.model_validate(self.risk_follow_up_policy)
+            if (self.scenario_version != "2" or self.execution_family_version != "2"
+                    or self.graph_mutation != POLICY
+                    or policy.child_template_digest != digest(
+                        policy.child_template, "node-execution-profile/v1")):
+                raise ValueError("Corrupt Risk Replan policy")
+        elif self.graph_mutation != "DISABLED":
+            raise ValueError("Missing Risk Replan policy")
+        return self
 
 
 class AcceptedRequestProof(BindingValue):

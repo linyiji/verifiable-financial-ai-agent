@@ -12,7 +12,7 @@ from hashlib import sha256
 from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
-from src.domain.runtime_event import RuntimeEvent, RuntimeEventType
+from src.domain.runtime_event import RuntimeEvent, RuntimeEventType, normalize_runtime_event_v1
 
 
 class EventSequenceError(ValueError):
@@ -24,6 +24,28 @@ _CANONICAL_NUMERIC_CURSOR = re.compile(r"(?:0|[1-9][0-9]*)\Z")
 _SIGNED_OR_NONCANONICAL_NUMERIC_CURSOR = re.compile(r"[+-]?[0-9]+\Z")
 _OPAQUE_EVENT_CURSOR = re.compile(r"[A-Za-z0-9._:-]{1,256}\Z")
 _TERMINAL_EVENT_TYPES = frozenset({RuntimeEventType.RUN_COMPLETED, RuntimeEventType.RUN_FAILED})
+
+
+def is_terminal_reopen_rejection(event: RuntimeEvent, terminal_status: str | None) -> bool:
+    """A typed denial is an audit fact, never a restart of terminal execution."""
+    if event.type is not RuntimeEventType.REPLAN_REOPEN_STALE_REJECTED:
+        return False
+    try:
+        normalize_runtime_event_v1(event)
+    except (TypeError, ValueError):
+        return False
+    audit = event.payload.get("risk_replan", {})
+    return (
+        audit.get("run_id") == event.run_id
+        and audit.get("event_id") == event.event_id
+        and audit.get("actor") == "LOCAL_SINGLE_USER"
+        and audit.get("failure_code") == "REPLAN_TERMINAL_RUN"
+        and terminal_status in {"CANCELLED", "FAILED", "RELEASED"}
+        and audit.get("terminal_status") == terminal_status
+        and bool(audit.get("command_key_digest"))
+        and bool(audit.get("request_hash"))
+        and audit.get("decision_revision") is not None
+    )
 
 
 class CursorErrorCode(StrEnum):
@@ -105,7 +127,7 @@ class CursorPreflight:
 
     @property
     def terminal_at_cursor(self) -> bool:
-        return self.terminal_sequence is not None and self.sequence == self.terminal_sequence
+        return self.terminal_sequence is not None and self.sequence >= self.terminal_sequence
 
 
 @dataclass(slots=True)
@@ -147,7 +169,7 @@ class RuntimeEventCursor:
 
         if self.terminal_sequence is not None:
             prior_id = self._by_sequence[self.terminal_sequence][0]
-            if not (
+            if not is_terminal_reopen_rejection(event, self._terminal_status) and not (
                 event.type is RuntimeEventType.CLOSURE_RECOVERY_STARTED
                 and event.payload.get("failed_event_id") == prior_id
                 and self._terminal_type is RuntimeEventType.RUN_FAILED

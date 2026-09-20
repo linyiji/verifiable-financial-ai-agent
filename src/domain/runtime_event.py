@@ -35,6 +35,15 @@ class RuntimeEventType(StrEnum):
     REPLAN_REQUESTED = "replan.requested"
     REPLAN_APPROVED = "replan.approved"
     REPLAN_REJECTED = "replan.rejected"
+    REPLAN_WAITING_FOR_DECISION = "replan.waiting_for_decision"
+    REPLAN_PAUSED_INCOMPLETE = "replan.paused_incomplete"
+    REPLAN_REOPENED = "replan.reopened"
+    REPLAN_APPLIED = "replan.applied"
+    REPLAN_STALE_REJECTED = "replan.stale_rejected"
+    REPLAN_REOPEN_STALE_REJECTED = "replan.reopen_stale_rejected"
+    REPLAN_FAILED = "replan.failed"
+    REPLAN_FULFILLED = "replan.fulfilled"
+    RESEARCH_CANCELLED = "research.cancelled"
     GRAPH_TASK_ADDED = "graph.task_added"
     GRAPH_EDGE_ADDED = "graph.edge_added"
     GRAPH_EDGE_REMOVED = "graph.edge_removed"
@@ -155,6 +164,14 @@ UNSUPPORTED_RUNTIME_EVENT_TYPES = frozenset(
 )
 SUPPORTED_RUNTIME_EVENT_TYPES = frozenset(RuntimeEventType) - UNSUPPORTED_RUNTIME_EVENT_TYPES
 
+_REPLAN_V1_TYPES = frozenset(
+    event for event in RuntimeEventType
+    if event.value.startswith("replan.") or event is RuntimeEventType.RESEARCH_CANCELLED
+)
+UNSUPPORTED_RUNTIME_EVENT_TYPES -= {RuntimeEventType.REPLAN_REJECTED}
+SUPPORTED_RUNTIME_EVENT_TYPES = frozenset(RuntimeEventType) - UNSUPPORTED_RUNTIME_EVENT_TYPES
+_REFRESH_TYPES |= _REPLAN_V1_TYPES
+
 EVENT_EFFECT_BY_TYPE: Mapping[RuntimeEventType, RuntimeEventEffect] = MappingProxyType(
     {
         **{event_type: RuntimeEventEffect.PATCH_PROJECTION for event_type in _PATCH_TYPES},
@@ -195,7 +212,8 @@ _RUN_STATUSES = frozenset(
         "SCHEME_GENERATING",
         "AWAITING_CONFIRMATION",
         "PLANNING",
-        "RUNNING",
+    "RUNNING",
+    "WAITING_REPLAN",
         "REVIEW",
         "PROVING",
         "RELEASED",
@@ -353,6 +371,9 @@ _PAYLOAD_SPECS: Mapping[
             {"replan_id": _string, "decided_by": _string},
             {},
         ),
+        RuntimeEventType.REPLAN_REJECTED: (
+            {"replan_id": _string, "decided_by": _string}, {},
+        ),
         RuntimeEventType.GRAPH_TASK_ADDED: ({"replan_id": _string}, {}),
         RuntimeEventType.GRAPH_EDGE_ADDED: (
             {"replan_id": _string, "source_task_id": _string, "target_task_id": _string},
@@ -505,6 +526,16 @@ def validate_runtime_event_payload(
 ) -> None:
     """Validate the frozen V1 public payload without inventing missing values."""
 
+    if event_type in _REPLAN_V1_TYPES and "risk_replan" in payload:
+        from src.domain.risk_replan import RiskReplanAudit
+
+        if set(payload) != {"risk_replan"}:
+            raise ValueError("Unknown Risk Replan payload fields")
+        value = RiskReplanAudit.model_validate(payload["risk_replan"])
+        if value.type != event_type.value:
+            raise ValueError("Risk Replan audit type mismatch")
+        return
+
     if event_type in UNSUPPORTED_RUNTIME_EVENT_TYPES:
         raise ValueError(f"unsupported Phase 4 runtime event: {event_type.value}")
     if event_type is RuntimeEventType.TASK_PROGRESS:
@@ -514,6 +545,8 @@ def validate_runtime_event_payload(
         if payload:
             raise ValueError(f"{event_type.value} payload must be empty")
         return
+    if event_type not in _PAYLOAD_SPECS:
+        raise ValueError(f"{event_type.value} requires a typed Risk Replan audit payload")
     required, optional = _PAYLOAD_SPECS[event_type]
     actual = set(payload)
     missing = set(required) - actual
@@ -664,6 +697,10 @@ def project_runtime_event_payload_v1(
     event_type: RuntimeEventType, payload: Mapping[str, Any]
 ) -> JsonObject:
     """Allowlist public fields and mechanically normalize legacy internal payloads."""
+
+    if event_type in _REPLAN_V1_TYPES and "risk_replan" in payload:
+        validate_runtime_event_payload(event_type, payload)
+        return dict(payload)
 
     if event_type in UNSUPPORTED_RUNTIME_EVENT_TYPES:
         raise ValueError(f"unsupported Phase 4 runtime event: {event_type.value}")

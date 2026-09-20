@@ -1013,6 +1013,13 @@ class PostgreSQLPhase4ProductBackend:
                         proof_refs=tuple(p.proof_id for p in retained_proofs),
                     )
                 projection = projection.model_copy(update=updates)
+            if (aggregate.get("node_binding") or {}).get("replan") is not None:
+                from src.application.risk_replan import projection as replan_projection
+
+                projection = projection.model_copy(update={
+                    "risk_replan": replan_projection(
+                        self.service.repository._to_aggregate(aggregate))
+                })
             if persist:
                 await session.execute(
                     pg_insert(Phase4RunProjectionRow)
@@ -1374,6 +1381,10 @@ class PostgreSQLPhase4ProductBackend:
         }
         for replan in artifacts.replans:
             history = histories.get(replan.replan_id)
+            if replan.risk_follow_up is not None and history is None:
+                # Proposed changes belong to the dedicated Replan projection; only
+                # applied transitions are graph path changes.
+                continue
             raw_operations = history.get("operations", []) if isinstance(history, dict) else []
             operations: list[dict[str, object]] = []
             for operation in raw_operations:
@@ -1774,6 +1785,20 @@ class PostgreSQLPhase4ProductBackend:
             except TimeoutError:
                 pass
             self._wake.clear()
+            for run_id in await self.service.repository.replan_work_run_ids():
+                try:
+                    current = await self.service.repository.get_run_fresh(run_id)
+                    if current.node_binding.replan["wait_reason"] == "DECISION_APPLY":
+                        if await self.service.repository.apply_replan(run_id) is None:
+                            continue
+                    owner = await self.service.repository.claim_execution(run_id)
+                except BindingDenied:
+                    continue
+                execution = asyncio.create_task(
+                    self._execute_started_run(run_id, execution_owner=owner)
+                )
+                self._executions.add(execution)
+                execution.add_done_callback(self._executions.discard)
             async with self.uow_factory() as uow:
                 due = await uow.scheduler.list_due_admission_ids(due_at=datetime.now(UTC), limit=16)
             # Same existing scheduler; the aggregate reservation is the recovery authority.

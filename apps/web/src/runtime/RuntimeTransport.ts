@@ -12,6 +12,7 @@ export const RUNTIME_EVENT_TYPES_V1 = [
   "task.waiting_for_capability", "task.resumed", "task.self_correcting",
   "task.correction_resolved", "task.completed", "task.failed",
   "replan.requested", "replan.approved", "replan.rejected",
+  "replan.waiting_for_decision", "replan.paused_incomplete", "replan.reopened", "replan.applied", "replan.stale_rejected", "replan.reopen_stale_rejected", "replan.failed", "replan.fulfilled", "research.cancelled",
   "graph.task_added", "graph.edge_added", "graph.edge_removed", "graph.version_changed",
   "evidence.accepted", "evidence.conflict", "calculation.started", "calculation.completed",
   "capability.gap_detected", "capability.build_requested", "capability.build_started",
@@ -28,7 +29,6 @@ export type RuntimeEventTypeV1 = typeof RUNTIME_EVENT_TYPES_V1[number];
 
 export const UNSUPPORTED_RUNTIME_EVENT_TYPES_V1 = [
   "scheme.generation_started",
-  "replan.rejected",
   "evidence.conflict",
   "workspace.created",
   "capability.generation_started",
@@ -74,6 +74,17 @@ export const RUNTIME_EVENT_EFFECT_BY_TYPE_V1 = Object.freeze({
   "task.correction_resolved": "REFRESH_PROJECTION",
   "replan.requested": "REFRESH_PROJECTION",
   "replan.approved": "REFRESH_PROJECTION",
+  "replan.rejected": "REFRESH_PROJECTION",
+  "replan.waiting_for_decision": "REFRESH_PROJECTION",
+  "replan.paused_incomplete": "REFRESH_PROJECTION",
+  "replan.reopened": "REFRESH_PROJECTION",
+  "replan.applied": "REFRESH_PROJECTION",
+  "replan.stale_rejected": "REFRESH_PROJECTION",
+  "replan.reopen_stale_rejected": "REFRESH_PROJECTION",
+  "replan.failed": "REFRESH_PROJECTION",
+  "replan.fulfilled": "REFRESH_PROJECTION",
+  "research.cancelled": "REFRESH_PROJECTION",
+
   "graph.task_added": "REFRESH_PROJECTION",
   "graph.edge_added": "REFRESH_PROJECTION",
   "graph.edge_removed": "REFRESH_PROJECTION",
@@ -217,7 +228,7 @@ const NEW_TASK_REFERENCE_TYPES = new Set<SupportedRuntimeEventTypeV1>([
 ]);
 
 const RUN_STATUSES = new Set([
-  "DRAFT", "SCHEME_GENERATING", "AWAITING_CONFIRMATION", "PLANNING", "RUNNING",
+  "DRAFT", "SCHEME_GENERATING", "AWAITING_CONFIRMATION", "PLANNING", "RUNNING", "WAITING_REPLAN",
   "REVIEW", "PROVING", "RELEASED", "FAILED", "CANCELLED"
 ]);
 const NONTERMINAL_RUN_STATUSES = new Set(
@@ -277,6 +288,35 @@ const EMPTY_PAYLOAD_TYPES = new Set<SupportedRuntimeEventTypeV1>([
   "run.started", "task.ready", "review.started"
 ]);
 
+const REPLAN_AUDIT_TYPES = new Set<string>(["replan.requested", "replan.approved", "replan.rejected", "replan.waiting_for_decision", "replan.paused_incomplete", "replan.reopened", "replan.applied", "replan.stale_rejected", "replan.reopen_stale_rejected", "replan.failed", "replan.fulfilled", "research.cancelled"]);
+const isGraphIdentity = (value: unknown) => isRecord(value)
+  && Object.keys(value).sort().join() === "graph_id,run_id,semantic_hash,version"
+  && isSafeString(value.run_id) && isSafeString(value.graph_id)
+  && isSafeString(value.semantic_hash) && isPositiveInteger(value.version);
+const REPLAN_LINEAGE_FIELDS = [
+  "transition_id", "old_execution_snapshot_digest", "new_execution_snapshot_digest",
+  "authorized_diff_digest"
+];
+const REPLAN_COMMAND_FIELDS = [
+  "command_key_digest", "request_hash", "decision_revision", "terminal_status"
+];
+const isRiskReplanAudit = (value: unknown) => isRecord(value)
+  && Object.keys(value).filter((key) => ![...REPLAN_LINEAGE_FIELDS, ...REPLAN_COMMAND_FIELDS].includes(key)).sort().join() === "actor,base_graph,control_revision,decision_id,event_id,failure_code,graph,object_id,proposal_digest,proposal_id,run_id,schema_version,timestamp,type"
+  && REPLAN_LINEAGE_FIELDS.every((key) => !(key in value) || isNullableSafeString(value[key]))
+  && ["command_key_digest", "request_hash"].every((key) => !(key in value) || isNullableSafeString(value[key]))
+  && (!("decision_revision" in value) || value.decision_revision === null || isNonnegativeInteger(value.decision_revision))
+  && (!("terminal_status" in value) || value.terminal_status === null
+      || ["CANCELLED", "FAILED", "RELEASED"].includes(value.terminal_status as string))
+  && value.schema_version === "risk-follow-up-audit/v1"
+  && typeof value.type === "string" && REPLAN_AUDIT_TYPES.has(value.type)
+  && [value.event_id, value.run_id, value.object_id, value.proposal_id,
+      value.proposal_digest].every(isSafeString)
+  && isGraphIdentity(value.base_graph) && isGraphIdentity(value.graph)
+  && isNonnegativeInteger(value.control_revision)
+  && (value.actor === null || value.actor === "LOCAL_SINGLE_USER")
+  && isNullableSafeString(value.decision_id) && isNullableSafeString(value.failure_code)
+  && isUtcTimestamp(value.timestamp);
+
 const PAYLOAD_SPECS = Object.freeze({
   "closure.recovery_started": spec({attempt_id: isSafeString, failed_event_id: isSafeString,
     snapshot_hash: isSafeString, status: isLiteral("REVIEW")}),
@@ -309,6 +349,17 @@ const PAYLOAD_SPECS = Object.freeze({
   ),
   "replan.requested": spec({ replan_id: isSafeString, decision: isOneOf(REPLAN_DECISIONS) }),
   "replan.approved": spec({ replan_id: isSafeString, decided_by: isSafeString }),
+  "replan.rejected": spec({ replan_id: isSafeString, decided_by: isSafeString }),
+  "replan.waiting_for_decision": spec({risk_replan: isRiskReplanAudit}),
+  "replan.paused_incomplete": spec({risk_replan: isRiskReplanAudit}),
+  "replan.reopened": spec({risk_replan: isRiskReplanAudit}),
+  "replan.applied": spec({risk_replan: isRiskReplanAudit}),
+  "replan.stale_rejected": spec({risk_replan: isRiskReplanAudit}),
+  "replan.reopen_stale_rejected": spec({risk_replan: isRiskReplanAudit}),
+  "replan.failed": spec({risk_replan: isRiskReplanAudit}),
+  "replan.fulfilled": spec({risk_replan: isRiskReplanAudit}),
+  "research.cancelled": spec({risk_replan: isRiskReplanAudit}),
+
   "graph.task_added": spec({ replan_id: isSafeString }),
   "graph.edge_added": spec({ replan_id: isSafeString, source_task_id: isSafeString, target_task_id: isSafeString }),
   "graph.edge_removed": spec({ replan_id: isSafeString, source_task_id: isSafeString, target_task_id: isSafeString }),
@@ -418,6 +469,13 @@ function validatePayload(
   payload: UnknownRecord,
   identity: SafeRuntimeEventIdentity
 ) {
+  if (REPLAN_AUDIT_TYPES.has(eventType) && "risk_replan" in payload) {
+    if (Object.keys(payload).length !== 1 || !isRiskReplanAudit(payload.risk_replan)
+        || (payload.risk_replan as UnknownRecord).type !== eventType) {
+      malformed("Invalid typed Risk Replan audit", identity);
+    }
+    return;
+  }
   if (eventType === "task.progress") {
     validateTaskProgress(payload, identity);
     return;
@@ -684,6 +742,7 @@ export class RuntimeEventIngestionGuard {
   private readonly fingerprintBySequence = new Map<number, string>();
   private readonly sequenceByEventId = new Map<string, number>();
   private terminalSequence: number | null = null;
+  private terminalStatus: unknown = null;
   private committedSequence: number;
 
   constructor(options: RuntimeEventIngestionGuardOptions) {
@@ -718,7 +777,16 @@ export class RuntimeEventIngestionGuard {
     const existingFingerprint = this.fingerprintBySequence.get(event.sequence);
     const existingSequence = this.sequenceByEventId.get(event.eventId);
 
-    if (this.terminalSequence !== null && event.sequence > this.terminalSequence) {
+    const audit = event.payload.riskReplan;
+    const terminalDenial = event.type === "replan.reopen_stale_rejected"
+      && isRecord(audit) && audit.type === event.type && audit.run_id === event.runId
+      && audit.event_id === event.eventId && audit.actor === "LOCAL_SINGLE_USER"
+      && audit.failure_code === "REPLAN_TERMINAL_RUN"
+      && ["CANCELLED", "FAILED", "RELEASED"].includes(this.terminalStatus as string)
+      && audit.terminal_status === this.terminalStatus
+      && isSafeString(audit.command_key_digest) && isSafeString(audit.request_hash)
+      && isNonnegativeInteger(audit.decision_revision);
+    if (this.terminalSequence !== null && event.sequence > this.terminalSequence && !terminalDenial) {
       throw new RuntimeIngestionError(
         "EVENT_AFTER_TERMINAL",
         "A business event followed the terminal event",
@@ -757,7 +825,10 @@ export class RuntimeEventIngestionGuard {
     this.fingerprintBySequence.set(event.sequence, fingerprint);
     this.sequenceByEventId.set(event.eventId, event.sequence);
     this.committedSequence = event.sequence;
-    if (event.effect === "TERMINAL") this.terminalSequence = event.sequence;
+    if (event.effect === "TERMINAL") {
+      this.terminalSequence = event.sequence;
+      this.terminalStatus = event.payload.status;
+    }
     return { kind: "APPLIED", event, lastSequence: this.committedSequence };
   }
 
@@ -780,7 +851,10 @@ export class RuntimeEventIngestionGuard {
     }
     this.fingerprintBySequence.set(event.sequence, fingerprint);
     this.sequenceByEventId.set(event.eventId, event.sequence);
-    if (event.effect === "TERMINAL") this.terminalSequence = event.sequence;
+    if (event.effect === "TERMINAL") {
+      this.terminalSequence = event.sequence;
+      this.terminalStatus = event.payload.status;
+    }
   }
 }
 

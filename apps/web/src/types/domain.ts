@@ -26,6 +26,7 @@ export type BackendRunStatus =
   | "AWAITING_CONFIRMATION"
   | "PLANNING"
   | "RUNNING"
+  | "WAITING_REPLAN"
   | "REVIEW"
   | "PROVING"
   | "RELEASED"
@@ -60,6 +61,7 @@ export type BackendTaskStatus =
   | "WAITING"
   | "READY"
   | "RUNNING"
+  | "WAITING_REPLAN"
   | "WAITING_FOR_CAPABILITY"
   | "SELF_CORRECTING"
   | "BLOCKED"
@@ -541,6 +543,7 @@ export interface NormalizedTerminalState {
 }
 
 export interface RunProjection {
+  readonly riskReplan?: SafeJsonObject;
   readonly projectionSchemaVersion: typeof RUN_PROJECTION_SCHEMA_VERSION;
   readonly projectionRevision: number;
   readonly projectionSequence: number;
@@ -859,6 +862,7 @@ export const RUN_STATUS_MAP: Readonly<
   AWAITING_CONFIRMATION: { status: "AWAITING_CONFIRMATION", stage: "CONFIRM", terminal: false },
   PLANNING: { status: "PLANNING", stage: "PLANNING", terminal: false },
   RUNNING: { status: "RESEARCHING", stage: "RESEARCH", terminal: false },
+  WAITING_REPLAN: { status: "RESEARCHING", stage: "RESEARCH", terminal: false },
   REVIEW: { status: "REVIEWING", stage: "REVIEW", terminal: false },
   PROVING: { status: "PROVING", stage: "PROVING", terminal: false },
   RELEASED: { status: "COMPLETED", stage: "COMPLETE", terminal: true },
@@ -871,6 +875,7 @@ export const TASK_STATUS_MAP: Readonly<
 > = Object.freeze({
   CREATED: { status: "QUEUED", terminal: false },
   WAITING: { status: "QUEUED", terminal: false },
+  WAITING_REPLAN: { status: "WAITING_SUPPORT", terminal: false },
   READY: { status: "READY", terminal: false },
   RUNNING: { status: "ACTIVE", terminal: false },
   WAITING_FOR_CAPABILITY: { status: "WAITING_SUPPORT", terminal: false },
@@ -3092,7 +3097,8 @@ export function decodeRunProjection(
       "artifacts",
       "proof",
       "execution",
-      "terminal"
+      "terminal",
+      "risk_replan"
     ],
     "$"
   );
@@ -3381,7 +3387,22 @@ export function decodeRunProjection(
       return fail(`$.${name}.availability`, "terminal Run resource cannot remain PENDING");
     }
   }
+  let riskReplan: SafeJsonObject | undefined;
+  if (input.risk_replan !== undefined) {
+    riskReplan = decodeSafeJsonObject(input.risk_replan, "$.risk_replan");
+    if (riskReplan.schema_version !== "risk-follow-up-projection/v1"
+        || riskReplan.run_id !== run.runId || riskReplan.object_id !== object.objectId
+        || riskReplan.status !== run.backendStatus) {
+      return fail("$.risk_replan", "Replan projection does not close to this Run/Object");
+    }
+    const graph = decodeObject(riskReplan.graph, "$.risk_replan.graph");
+    if (graph.run_id !== run.runId || graph.graph_id !== activeGraph.graphId
+        || graph.version !== activeGraph.version) {
+      return fail("$.risk_replan.graph", "Replan graph does not close to the current projection");
+    }
+  }
   return freezeDeep({
+    ...(riskReplan === undefined ? {} : { riskReplan }),
     projectionSchemaVersion: RUN_PROJECTION_SCHEMA_VERSION,
     projectionRevision,
     projectionSequence,

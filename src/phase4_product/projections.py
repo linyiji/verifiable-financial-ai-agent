@@ -133,6 +133,7 @@ _RUN_STATUS: dict[str, tuple[str, bool, str | None]] = {
     "AWAITING_CONFIRMATION": ("CONFIRM", False, None),
     "PLANNING": ("PLANNING", False, None),
     "RUNNING": ("RESEARCH", False, None),
+    "WAITING_REPLAN": ("RESEARCH", False, None),
     "REVIEW": ("REVIEW", False, None),
     "PROVING": ("PROVING", False, None),
     "RELEASED": ("COMPLETE", True, "SUCCESS"),
@@ -144,6 +145,7 @@ _TASK_STATUS: dict[str, tuple[str, bool]] = {
     "WAITING": ("QUEUED", False),
     "READY": ("READY", False),
     "RUNNING": ("ACTIVE", False),
+    "WAITING_REPLAN": ("WAITING_SUPPORT", False),
     "WAITING_FOR_CAPABILITY": ("WAITING_SUPPORT", False),
     "SELF_CORRECTING": ("CORRECTING", False),
     "BLOCKED": ("BLOCKED", False),
@@ -1370,6 +1372,17 @@ def project_event(
         raise ProjectionIntegrityError("RuntimeEvent belongs to another Run")
     event_type = _enum_text(_field(event, "type"), context="RuntimeEvent.type")
     allowed_keys = _EVENT_PAYLOAD_KEYS.get(event_type)
+    raw_payload = _field(event, "payload")
+    if (event_type.startswith("replan.") or event_type == "research.cancelled") and (
+            isinstance(raw_payload, dict) and "risk_replan" in raw_payload):
+        from src.domain.risk_replan import RiskReplanAudit
+
+        RiskReplanAudit.model_validate(raw_payload["risk_replan"])
+        graph_keys = {"run_id": None, "graph_id": None, "version": None, "semantic_hash": None}
+        allowed_keys = {"risk_replan": {
+            key: graph_keys if key in {"graph", "base_graph"} else None
+            for key in RiskReplanAudit.model_fields
+        }}
     if allowed_keys is None:
         raise ProjectionIntegrityError(f"unsupported RuntimeEvent type: {event_type}")
     sequence = _positive_int(_field(event, "sequence"), context="RuntimeEvent.sequence")

@@ -79,3 +79,4 @@ class ReplanRequest(TimestampedModel):
     decision: ReplanDecision = ReplanDecision.PENDING
     decided_by: str | None = None
     created_task_ids: list[str] = Field(default_factory=list)
+    risk_follow_up: dict | None = Field(default=None, exclude_if=lambda value: value is None)

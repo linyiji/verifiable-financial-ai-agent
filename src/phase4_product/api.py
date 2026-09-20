@@ -51,6 +51,12 @@ from src.phase4_product.reexecution import (
     ReexecutionAdmission,
     ReexecutionAuthorization,
 )
+from src.phase4_product.risk_replan import (
+    ApproveReplan,
+    CancelResearch,
+    DeclineReplan,
+    ReopenReplan,
+)
 
 CONTRACT_HEADER = "X-Phase4-Contract-Version"
 JSON_MEDIA_TYPE = "application/json; charset=utf-8"
@@ -471,6 +477,60 @@ def create_phase4_product_router() -> APIRouter:
         default_response_class=Phase4JSONResponse,
         route_class=Phase4NegotiatedRoute,
     )
+
+    @router.get("/research-runs/{run_id}/replan")
+    async def get_replan(run_id: str, request: Request, response: Response):
+        from src.phase4_product.risk_replan import read
+
+        _admit_contract(request, response)
+        result = await read(_backend(request), run_id)
+        response.headers["ETag"] = '"replan-' + str(result["binding_revision"]) + '"'
+        return result
+
+    @router.post("/research-runs/{run_id}/replans/{proposal_id}/approve")
+    async def approve_replan(run_id: str, proposal_id: str, payload: ApproveReplan,
+                             request: Request, response: Response):
+        from src.phase4_product.risk_replan import decide
+
+        _admit_contract(request, response)
+        result = await decide(_backend(request), run_id, proposal_id, payload, "APPROVE",
+                              _idempotency_key(request))
+        response.status_code = (409 if result["receipt"]["outcome"] == "REJECTED"
+                                else 200 if result["receipt"]["historical_replay"] else 202)
+        return result
+
+    @router.post("/research-runs/{run_id}/replans/{proposal_id}/reject")
+    async def decline_replan(run_id: str, proposal_id: str, payload: DeclineReplan,
+                             request: Request, response: Response):
+        from src.phase4_product.risk_replan import decide
+
+        _admit_contract(request, response)
+        result = await decide(_backend(request), run_id, proposal_id, payload, "DECLINE",
+                              _idempotency_key(request))
+        response.status_code = 409 if result["receipt"]["outcome"] == "REJECTED" else 200
+        return result
+
+    @router.post("/research-runs/{run_id}/replans/{proposal_id}/reopen")
+    async def reopen_replan(run_id: str, proposal_id: str, payload: ReopenReplan,
+                            request: Request, response: Response):
+        from src.phase4_product.risk_replan import decide
+
+        _admit_contract(request, response)
+        result = await decide(_backend(request), run_id, proposal_id, payload, "REOPEN",
+                              _idempotency_key(request))
+        response.status_code = 409 if result["receipt"]["outcome"] == "REJECTED" else 200
+        return result
+
+    @router.post("/research-runs/{run_id}/cancel")
+    async def cancel_research(run_id: str, payload: CancelResearch,
+                              request: Request, response: Response):
+        from src.phase4_product.risk_replan import decide
+
+        _admit_contract(request, response)
+        result = await decide(_backend(request), run_id, None, payload, "CANCEL",
+                              _idempotency_key(request))
+        response.status_code = 409 if result["receipt"]["outcome"] == "REJECTED" else 200
+        return result
 
     @router.get("/model-selection-options")
     async def selection_options(request: Request, response: Response):

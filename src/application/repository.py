@@ -92,6 +92,10 @@ def validate_root(aggregate, owner=None):
         frozen_profile(aggregate, task)
     # Revalidate rather than trust a mutable model or cached reference.
     NodeBindingState.model_validate(root.model_dump())
+    if root.replan is not None:
+        from src.application.risk_replan import validate_replan_root
+
+        validate_replan_root(aggregate)
     if (
         aggregate.runtime.run_id != aggregate.run.run_id
         or aggregate.runtime.actual_graph.run_id != aggregate.run.run_id
@@ -211,6 +215,59 @@ class ApplicationRepository(Protocol):
 
 
 class InMemoryApplicationRepository:
+    async def suspend_replan(self, owner):
+        from src.application.risk_replan import control
+        from src.domain.enums import RunStatus
+
+        async with self._binding_transaction(owner.run_id) as aggregate:
+            root = validate_root(aggregate, owner)
+            if control(aggregate) is None:
+                raise BindingDenied("REPLAN_NOT_FOUND")
+            if any(a.status == "DISPATCHED" for a in root.attempts.values()):
+                raise BindingDenied("RESULT_UNKNOWN", "Replan still draining")
+            root.lifecycle = "WAITING_REPLAN"
+            root.scheduler_started = False
+            aggregate.run.status = aggregate.runtime.run_status = RunStatus.WAITING_REPLAN
+            aggregate.run.completed_at = None
+        return aggregate
+
+    async def replan_projection(self, run_id):
+        from src.application.risk_replan import projection
+
+        aggregate = await self.get_run_fresh(run_id)
+        if aggregate is None:
+            raise BindingDenied("REPLAN_NOT_FOUND")
+        validate_root(aggregate)
+        return projection(aggregate)
+
+    async def decide_replan(self, run_id, command, *, actor, key):
+        from src.application.risk_replan import decide
+
+        async with self._binding_transaction(run_id) as aggregate:
+            result = decide(aggregate, command, actor=actor, key=key)
+        return result
+
+    async def apply_replan(self, run_id):
+        from src.application.risk_replan import apply, audit, control, proposal, store
+
+        try:
+            async with self._binding_transaction(run_id) as aggregate:
+                result = await apply(self, aggregate)
+        except BindingDenied as error:
+            async with self._binding_transaction(run_id) as aggregate:
+                state = control(aggregate)
+                request, value = proposal(aggregate)
+                if (state.transition is None and request.decision.value == "APPROVED"
+                        and aggregate.run.status.value != "CANCELLED"):
+                    value = value.model_copy(update={"application_state": "FAILED",
+                                                    "failure_code": error.code})
+                    state = state.model_copy(update={"wait_reason": "CONTROL_FAILED",
+                        "control_revision": state.control_revision + 1, "resume_eligible": False})
+                    state = audit(aggregate, state, "replan.failed", code=error.code)
+                    store(aggregate, state, request, value)
+            raise
+        return result
+
     def __init__(self) -> None:
         self._recovery_stores = {}
         self._objects: dict[str, ResearchObject] = {}
@@ -309,6 +366,12 @@ class InMemoryApplicationRepository:
             validate_root(snapshot)
             for result in snapshot.node_binding.results.values():
                 await self.verify_materials(result.output_records, run_id=run_id)
+            if snapshot.node_binding.replan is not None:
+                from src.application.risk_replan import control
+
+                await self.verify_materials(
+                    [control(snapshot).candidate.output_record], run_id=run_id
+                )
             yield snapshot
             snapshot.node_binding.binding_revision += 1
             snapshot.runtime.binding_ref = snapshot.node_binding.reference()
@@ -322,7 +385,18 @@ class InMemoryApplicationRepository:
         async with self._binding_transaction(run_id) as aggregate:
             root = validate_root(aggregate)
             recovering = root.lifecycle == "RECOVERY_PENDING"
-            if not recovering and (
+            from src.application.risk_replan import control, proposal, store
+
+            state = control(aggregate)
+            replan_resume = (root.lifecycle == "WAITING_REPLAN" and state is not None
+                             and state.resume_eligible and state.transition is not None
+                             and aggregate.run.status.value == "WAITING_REPLAN")
+            if replan_resume:
+                request, value = proposal(aggregate)
+                if value.application_state != "APPLIED":
+                    raise BindingDenied("REPLAN_NOT_AUTHORIZED")
+                store(aggregate, state.model_copy(update={"resume_eligible": False}))
+            if not recovering and not replan_resume and (
                 root.lifecycle != "UNCLAIMED" or root.owner_generation != 0 or root.owner_id
             ):
                 raise BindingDenied("OWNER_ALREADY_CLAIMED", run_id)
@@ -340,7 +414,7 @@ class InMemoryApplicationRepository:
 
             aggregate.run.status = RunStatus.RUNNING
             aggregate.runtime.run_status = RunStatus.RUNNING
-            if not recovering:
+            if not recovering and not replan_resume:
                 aggregate.run.started_at = datetime.now(UTC)
             aggregate.run.updated_at = datetime.now(UTC)
             root.scheduler_started = False
@@ -366,6 +440,9 @@ class InMemoryApplicationRepository:
     @staticmethod
     def _current_dependencies(aggregate, task):
         root = validate_root(aggregate)
+        from src.application.risk_replan import child_dependency, reuse_valid
+
+        candidate = child_dependency(aggregate, task)
         ancestor_ids = set(task.dependencies)
         pending = list(ancestor_ids)
         while pending:
@@ -375,6 +452,8 @@ class InMemoryApplicationRepository:
                     pending.append(key)
         bindings = []
         for task_id in sorted(ancestor_ids):
+            if candidate is not None and task_id == task.parent_task_id:
+                continue
             result_id = root.current_results.get(task_id)
             result = root.results.get(result_id)
             if result is None or result_id in root.invalidation_refs:
@@ -384,14 +463,21 @@ class InMemoryApplicationRepository:
                 result.result_id != result.result_digest
                 or result.producer_task_id != task_id
                 or result.run_id != root.run_id
-                or result.graph != root.frozen_graph
+                or (result.graph != root.frozen_graph and not reuse_valid(aggregate, result))
                 or result.task_fingerprint != task_fingerprint(aggregate.runtime.task(task_id))
             ):
                 raise BindingDenied("IDENTITY_MISMATCH", task_id)
             reservation = root.attempts.get(task_id)
             if (
                 reservation is None
-                or reservation.status != "COMMITTED"
+                or (reservation.status != "COMMITTED" and not (
+                    reservation.status == "CANDIDATE_RETAINED"
+                    and result.finalization_binding is not None
+                    and root.replan is not None
+                    and root.replan.get("finalization") == result.finalization_binding
+                    and result.finalization_binding["target_graph"]
+                    == root.frozen_graph.model_dump(mode="json")
+                ))
                 or reservation.admission.admission_binding_id != result.admission_binding_id
                 or reservation.admission.attempt_reservation_id != result.reservation_id
                 or result.owner_generation != reservation.admission.owner.owner_generation
@@ -414,6 +500,13 @@ class InMemoryApplicationRepository:
         root = validate_root(aggregate, admission.owner)
         check_value_identity(admission, "admission_binding_id")
         task = aggregate.runtime.task(admission.task_id)
+        from src.application.risk_replan import child_dependency
+
+        candidate = child_dependency(aggregate, task)
+        if admission.candidate_dependency != (
+            candidate.model_dump(mode="json") if candidate else None
+        ):
+            raise BindingDenied("REPLAN_CHILD_DEPENDENCY_DENIED")
         reservation = root.attempts.get(task.task_id)
         if (
             reservation is None
@@ -573,6 +666,9 @@ class InMemoryApplicationRepository:
     async def _reserve_node(self, owner, task, requirements, preexisting=()):
         async with self._binding_transaction(owner.run_id) as aggregate:
             root = validate_root(aggregate, owner)
+            from src.application.risk_replan import admission_allowed, child_dependency
+
+            admission_allowed(aggregate, task, dispatch=False)
             current = aggregate.runtime.task(task.task_id)
             if task_fingerprint(current) != task_fingerprint(task):
                 raise BindingDenied("IDENTITY_MISMATCH", task.task_id)
@@ -650,6 +746,7 @@ class InMemoryApplicationRepository:
                     current,
                     committed_results=root.current_results,
                     require_current=True,
+                    candidate_dependency=child_dependency(aggregate, current),
                 )[0]
                 != "READY"
             ):
@@ -674,6 +771,8 @@ class InMemoryApplicationRepository:
                     "confirmed_scheme": aggregate.scheme.scheme_id,
                     "scope": "fixed-initial-graph-default/v1",
                 },
+                candidate_dependency=(child_dependency(aggregate, current).model_dump(mode="json")
+                                      if child_dependency(aggregate, current) else None),
             )
             admission = admission.model_copy(
                 update={"admission_binding_id": value_identity(admission, "admission_binding_id")}
@@ -726,10 +825,14 @@ class InMemoryApplicationRepository:
             raise BindingDenied("RESULT_UNKNOWN", "reservation is not a known recoverable failure")
         profile = frozen_profile(aggregate, task)
         budget = profile.recovery_budget
+        from src.application.risk_replan import recovery_carried
+
+        carried = recovery_carried(aggregate, task, prior)
         if (budget is None or prior.generation >= budget.max_total_attempts_per_task
-                or prior.admission.graph != root.frozen_graph
+                or (prior.admission.graph != root.frozen_graph and not carried)
                 or prior.admission.task_fingerprint != task_fingerprint(task)
-                or saved["profile_digest"] != root.execution_profile_snapshot_digest
+                or (saved["profile_digest"] != root.execution_profile_snapshot_digest
+                    and not carried)
                 or saved["scenario_digest"] != root.scenario_snapshot_digest
                 or saved["requirements"] != prior.admission.authorized_input_requirements
                 or digest(aggregate.goal) != prior.admission.goal_hash
@@ -756,8 +859,14 @@ class InMemoryApplicationRepository:
     @classmethod
     def _validate_pending(cls, aggregate):
         root = validate_root(aggregate)
+        from src.application.risk_replan import control
+
+        replan = control(aggregate)
+        allowed = {"FAILED", "COMMITTED"}
+        if replan is not None and replan.wait_reason == "FOLLOW_UP_EXECUTION":
+            allowed.add("CANDIDATE_RETAINED")
         failed = [a for a in root.attempts.values() if a.status == "FAILED"]
-        if not failed or any(a.status not in {"FAILED", "COMMITTED"}
+        if not failed or any(a.status not in allowed
                              for a in root.attempts.values()):
             raise BindingDenied("RESULT_UNKNOWN", "unsettled node reservation")
         for prior in failed:
@@ -815,6 +924,9 @@ class InMemoryApplicationRepository:
     async def dispatch_node(self, admission):
         async with self._binding_transaction(admission.run_id) as aggregate:
             root = self._validate_admission(aggregate, admission, "RESERVED")
+            from src.application.risk_replan import admission_allowed
+
+            admission_allowed(aggregate, aggregate.runtime.task(admission.task_id), dispatch=True)
             from datetime import UTC, datetime
 
             root.attempts[admission.task_id] = root.attempts[admission.task_id].model_copy(
@@ -850,6 +962,10 @@ class InMemoryApplicationRepository:
             root = self._validate_admission(aggregate, admission, require_started=True)
             await self.verify_materials(materials, run_id=admission.run_id)
             snapshot = canonical_value(payload)
+            if step_id == "agent-context":
+                from src.application.risk_replan import validate_context_scope
+
+                validate_context_scope(aggregate, admission, snapshot)
             resolved = ResolvedInputBinding(
                 resolved_input_binding_id="",
                 admission_binding_id=admission.admission_binding_id,
@@ -878,6 +994,27 @@ class InMemoryApplicationRepository:
         self, admission, *, task, artifacts, output_records, resolved_ids, observed=None
     ):
         async with self._binding_transaction(admission.run_id) as aggregate:
+            if aggregate.node_binding.replan is not None:
+                from src.application.risk_replan import control
+
+                state = control(aggregate)
+                if (task.task_id == state.candidate.task_id
+                        and admission.admission_binding_id == state.candidate.admission_binding_id):
+                    replay = [r for r in output_records
+                              if r.record_id == state.candidate.output_record.record_id]
+                    if (replay != [state.candidate.output_record]
+                            or tuple(resolved_ids) != state.candidate.resolved_input_binding_ids):
+                        raise BindingDenied("REPLAN_CANDIDATE_REPLAY_CONFLICT")
+                    return state.candidate
+                if state.finalization is not None and (
+                        task.task_id == state.finalization.fulfilling_child_task_id):
+                    existing = aggregate.node_binding.results[
+                        aggregate.node_binding.current_results[task.task_id]]
+                    if (existing.admission_binding_id != admission.admission_binding_id
+                            or existing.output_records != tuple(output_records)
+                            or existing.resolved_input_binding_ids != tuple(resolved_ids)):
+                        raise BindingDenied("REPLAN_FINALIZATION_REPLAY_CONFLICT")
+                    return existing
             root = self._validate_admission(aggregate, admission, require_started=True)
             expected_ids = {
                 key
@@ -950,6 +1087,23 @@ class InMemoryApplicationRepository:
                     ):
                         raise BindingDenied("IDENTITY_MISMATCH", "scoped artifact versus Result")
             self._validate_wp04_result(aggregate, task, artifacts)
+            from src.application.risk_replan import capture
+
+            candidates = [item for item in artifacts.agent_outputs
+                          if item.task_id == task.task_id and item.structured_output is not None
+                          and item.structured_output.requires_follow_up]
+            if task.task_type == "risk_analysis" and candidates:
+                evidence = await self._current_recovery_records(admission.run_id, task.task_id)
+                accepted = [r for r in evidence if r.kind == "ATTEMPT_COMPLETED"
+                            and r.outcome == "PASS"
+                            and r.node_reservation_id == admission.attempt_reservation_id]
+                if (len(accepted) != 1 or (observed or {}).get("attempt_ids")
+                        != [accepted[0].attempt_id]
+                        or accepted[0].scope.run_id != admission.run_id
+                        or accepted[0].scope.task_id != task.task_id):
+                    raise BindingDenied("REPLAN_CANDIDATE_ATTEMPT_REQUIRED")
+                return capture(aggregate, admission, task, artifacts, output_records, actual,
+                               observed or {})
             result = ResultBinding(
                 result_id="",
                 producer_task_id=task.task_id,
@@ -1009,6 +1163,10 @@ class InMemoryApplicationRepository:
                 aggregate.artifacts.task_outputs[task.task_id] = canonical_value(
                     artifacts.task_outputs[task.task_id]
                 )
+            if task.task_type == "risk_follow_up" and root.replan is not None:
+                from src.application.risk_replan import finalize_parent
+
+                finalize_parent(aggregate, result)
         return result
 
     @staticmethod

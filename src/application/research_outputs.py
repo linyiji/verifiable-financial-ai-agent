@@ -89,6 +89,8 @@ def availability_map(aggregate, task=None):
             item.model_dump(mode="json")
             for item in aggregate.artifacts.agent_outputs
             if item.status == "SUCCESS" and item.task_id in scope
+            and (aggregate.node_binding is None
+                 or item.task_id in aggregate.node_binding.current_results)
         ],
         "financial_branches": [
             item.model_dump(mode="json")

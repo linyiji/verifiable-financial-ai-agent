@@ -11,7 +11,7 @@ from sqlalchemy import insert, select, text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
-from src.application.persistence import RuntimeEventRow
+from src.application.persistence import ResearchRunAggregateRow, RuntimeEventRow
 from src.domain.base import utc_now
 from src.domain.runtime_event import RuntimeEvent, RuntimeEventType
 from src.observability.performance import annotate, observe
@@ -23,6 +23,7 @@ from src.runtime.events import (
     RuntimeEventCursor,
     _validate_after_sequence,
     build_cursor_preflight,
+    validate_event_log,
 )
 
 POSTGRES_EVENT_SEQUENCE_FUNCTION_SQL = """
@@ -260,6 +261,15 @@ class PostgresRuntimeEventStore:
 
     @staticmethod
     async def _lock_run_event_writes(session: AsyncSession, run_id: str) -> None:
+        # Root transactions publish events while holding this row. Acquire it
+        # before the advisory/allocator locks: the event FK also locks the root,
+        # so advisory-first would deadlock against a root-owned publication.
+        await session.execute(
+            select(ResearchRunAggregateRow.run_id)
+            .where(ResearchRunAggregateRow.run_id == run_id)
+            .with_for_update()
+            .execution_options(autoflush=False)
+        )
         await session.execute(text(POSTGRES_RUN_EVENT_WRITE_LOCK_SQL), {"run_id": run_id})
 
     @staticmethod
@@ -274,6 +284,18 @@ class PostgresRuntimeEventStore:
         if row is None:
             return
         event = PostgresRuntimeEventStore._decode_row(run_id, row)
+        if event.type is RuntimeEventType.REPLAN_REOPEN_STALE_REJECTED:
+            # A denial tail must not hide the terminal event from ordinary
+            # writers. Validate its history, including the typed audit exception.
+            rows = (await session.scalars(
+                select(RuntimeEventRow).where(RuntimeEventRow.run_id == run_id)
+                .order_by(RuntimeEventRow.sequence)
+            )).all()
+            terminal = validate_event_log(run_id, PostgresRuntimeEventStore._decode_rows(
+                run_id=run_id, rows=rows, committed_sequence=0,
+            ))
+            if terminal is not None:
+                raise EventSequenceError(f"run {run_id} is already terminal")
         if event.type in {RuntimeEventType.RUN_COMPLETED, RuntimeEventType.RUN_FAILED}:
             raise EventSequenceError(f"run {run_id} is already terminal")
 

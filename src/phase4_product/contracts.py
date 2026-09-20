@@ -46,6 +46,7 @@ RunStatusV1 = Literal[
     "AWAITING_CONFIRMATION",
     "PLANNING",
     "RUNNING",
+    "WAITING_REPLAN",
     "REVIEW",
     "PROVING",
     "RELEASED",
@@ -66,6 +67,7 @@ RunStageV1 = Literal[
 TaskStatusV1 = Literal[
     "CREATED",
     "WAITING",
+    "WAITING_REPLAN",
     "READY",
     "RUNNING",
     "WAITING_FOR_CAPABILITY",
@@ -706,6 +708,7 @@ class TerminalStateV1(FrozenWireModel):
 
 
 class AtomicRunProjectionV1(FrozenWireModel):
+    risk_replan: dict | None = Field(default=None, exclude_if=lambda value: value is None)
     projection_schema_version: Literal["phase4-run-projection/v1"] = "phase4-run-projection/v1"
     projection_revision: int = Field(ge=1)
     projection_sequence: int = Field(ge=0)
