@@ -139,6 +139,8 @@ async def recover_closure(
             .where(ResearchRunAggregateRow.run_id == run_id)
             .with_for_update()
         )
+        if row is not None:
+            SQLAlchemyApplicationRepository._from_row(row)
         if row is not None and (
             row.payload.get("node_binding") is not None or row.payload.get("node_binding_required")
         ):
@@ -155,7 +157,7 @@ async def recover_closure(
             select(ClosureRecoveryRecordRow).where(ClosureRecoveryRecordRow.run_id == run_id)
         ):
             raise ValueError("Closure recovery attempt already consumed; no retry")
-        aggregate = SQLAlchemyApplicationRepository._to_aggregate(row.payload)
+        aggregate = SQLAlchemyApplicationRepository._from_row(row)
         if aggregate.artifacts.released_result is not None or aggregate.artifacts.review is None:
             raise ValueError("Expected failed, reviewed, unreleased Run")
         diagnostic = aggregate.artifacts.closure_diagnostic
@@ -224,6 +226,8 @@ async def recover_closure(
                 .where(ResearchRunAggregateRow.run_id == run_id)
                 .with_for_update()
             )
+            if row is not None:
+                SQLAlchemyApplicationRepository._from_row(row)
             if row is not None and (
                 row.payload.get("node_binding") is not None
                 or row.payload.get("node_binding_required")

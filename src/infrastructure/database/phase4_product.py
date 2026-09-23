@@ -250,6 +250,9 @@ def _aggregate_payload(commit: AtomicConfirmCommit) -> dict[str, Any]:
         ),
     )
     initialize_binding(aggregate, snapshot=commit.execution_snapshot)
+    from src.application.repository import create_confirmed_risk_binding
+
+    create_confirmed_risk_binding(aggregate, commit.execution_snapshot)
     return SQLAlchemyApplicationRepository._payload(aggregate)
 
 
@@ -393,6 +396,7 @@ class SQLAlchemyPhase4AdmissionRepository:
                 run_id=commit.run.run_id,
                 object_id=commit.run.research_object_id,
                 status=commit.run.status.value,
+                aggregate_schema_version=2,
                 payload=_aggregate_payload(commit),
                 updated_at=commit.run.updated_at,
                 projection_revision=1,
@@ -495,13 +499,15 @@ class SQLAlchemyPhase4ProjectionRepository:
         )
         if root is None:
             raise product_error("NOT_FOUND", "research run was not found")
+        from src.application.persistence import SQLAlchemyApplicationRepository
+
+        aggregate = SQLAlchemyApplicationRepository._from_row(root)
         if root.payload.get("node_binding") is not None or root.payload.get(
             "node_binding_required"
         ):
-            from src.application.persistence import SQLAlchemyApplicationRepository
             from src.application.repository import validate_root
 
-            validate_root(SQLAlchemyApplicationRepository._to_aggregate(root.payload))
+            validate_root(aggregate)
             if write_set.tasks:
                 raise BindingDenied("STALE_WRITE_REJECTED", "bound task projection excluded")
             if (

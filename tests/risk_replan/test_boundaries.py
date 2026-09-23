@@ -50,12 +50,22 @@ async def test_unknown_orphan_holds_apply_and_affected_consumer_fails(tmp_path):
     orphan.node_binding.attempts[task_id] = orphan.node_binding.attempts[task_id].model_copy(
         update={"status": "RESULT_UNKNOWN"}
     )
+    with pytest.raises(
+        BindingDenied, match="CONFIRMED_AUTHORITY_MISMATCH: current binding reference"
+    ):
+        await apply(service.repository, orphan)
+    orphan.runtime.binding_ref = orphan.node_binding.reference()
     assert await apply(service.repository, orphan) is None
     assert orphan.node_binding.frozen_graph == value.node_binding.frozen_graph
     affected = deepcopy(value)
     affected.node_binding.attempts[value.run.run_id + ":synthesis"] = (
         affected.node_binding.attempts[task_id]
     )
+    with pytest.raises(
+        BindingDenied, match="CONFIRMED_AUTHORITY_MISMATCH: current binding reference"
+    ):
+        await apply(service.repository, affected)
+    affected.runtime.binding_ref = affected.node_binding.reference()
     with pytest.raises(BindingDenied, match="AFFECTED_CONSUMER"):
         await apply(service.repository, affected)
     assert len(calls) == 3
@@ -173,7 +183,14 @@ async def test_extension_codec_and_missing_agent(tmp_path):
                 validate_runtime_event_payload(kind, {})
     bad = deepcopy(value)
     bad.node_binding.replan["unknown"] = True
-    with pytest.raises(ValidationError):
+    with pytest.raises(
+        BindingDenied, match="CONFIRMED_AUTHORITY_MISMATCH: current binding reference"
+    ):
+        validate_root(bad)
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        control(bad)
+    bad.runtime.binding_ref = bad.node_binding.reference()
+    with pytest.raises(BindingDenied, match="CONFIRMED_AUTHORITY_MISMATCH: root/snapshot"):
         validate_root(bad)
 
 

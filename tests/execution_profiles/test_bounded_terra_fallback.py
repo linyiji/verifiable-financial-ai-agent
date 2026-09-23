@@ -70,7 +70,7 @@ async def test_new_profiles_and_frozen_defaults(tmp_path, kind, monkeypatch):
     assert p.recovery_budget.model_dump() == old_budget
     monkeypatch.setattr(profiles, "default_recovery_profile", lambda p: p)
     monkeypatch.setattr(profiles, "accepted_terra_proof", lambda _: None)
-    fresh = Repository._to_aggregate(json.loads(json.dumps(Repository._payload(value))))
+    fresh = Repository._to_aggregate(json.loads(json.dumps(Repository._payload(value))), 2)
     assert profiles.validate_runtime_profile(service, fresh, task) == p
     recovery = profiles.recovery_for(profiles.configured_agent(service, task, None))
     ctx, scope, request = request_scope(task)
@@ -251,14 +251,14 @@ async def test_no_fallback_and_terminal_semantics(tmp_path, kind, case):
         value.node_binding.execution_profile_snapshot_digest = (
             snap.execution_profile_snapshot_digest
         )
-    from src.domain.research_object import ResearchObject
+    from tests.wp02.confirmation_fixture import confirm_template
 
-    await service.repository.add_object(
-        ResearchObject(
-            object_id="OBJECT-WP02", symbol="ALPHA", company_name="Local", exchange="LOCAL"
-        )
-    )
-    await service.repository.add_run(value)
+    selection = {}
+    if case in {"missing_proof", "registry_only"}:
+        selection = dict(scenario=snap.scenario, node_profiles={
+            kind: next(n.profile for n in snap.nodes if n.task_id == task.task_id),
+        })
+    value = await confirm_template(service, value, symbol="ALPHA", **selection)
     if case == "terminal":
         pending = await service.execute_run(value.run.run_id)
         assert pending.node_binding.lifecycle == "RECOVERY_PENDING"
@@ -336,7 +336,6 @@ def test_historical_snapshot_codec():
 @pytest.mark.parametrize("kind", KINDS)
 async def test_old_confirm_and_pending_decision_survive(tmp_path, kind):
     from src.application.repository import initialize_binding
-    from src.domain.research_object import ResearchObject
 
     service, value, _, clients = await configured_family(tmp_path, kind, persist=False)
     raw = Path(__file__).with_name("fixtures").joinpath(f"fallback_v1_{kind}.json").read_text()
@@ -346,19 +345,14 @@ async def test_old_confirm_and_pending_decision_survive(tmp_path, kind):
     task, old = bound(value)
     assert old.profile_version == "1"
     assert profiles.validate_runtime_profile(service, value, task) == old
-    await service.repository.add_object(
-        ResearchObject(
-            object_id="OBJECT-WP02",
-            symbol="ALPHA",
-            company_name="Local",
-            exchange="LOCAL",
-        )
-    )
-    await service.repository.add_run(value)
+    from tests.wp02.confirmation_fixture import confirm_template
+
+    value = await confirm_template(service, value, symbol="ALPHA", scenario=snap.scenario)
+    assert value.node_binding.execution_snapshot == json.loads(raw)
     pending = await service.execute_run(value.run.run_id)
     assert pending.node_binding.lifecycle == "RECOVERY_PENDING"
     before = json.loads(json.dumps(Repository._payload(pending)))
-    restored = Repository._to_aggregate(before)
+    restored = Repository._to_aggregate(before, 2)
     assert json.loads(json.dumps(Repository._payload(restored))) == before
     assert profiles.frozen_profile(restored, task) == old
     result = await service.execute_run(value.run.run_id)

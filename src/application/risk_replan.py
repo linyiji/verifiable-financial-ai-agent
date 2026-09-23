@@ -1,6 +1,8 @@
 """Single-Run Risk follow-up control, called only inside the Run owner's transaction."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import Enum
 from uuid import uuid4
 
 from src.domain.enums import ReplanDecision, RunStatus, TaskStatus
@@ -19,6 +21,33 @@ from src.domain.task import ReplanRequest
 
 class ReplanSuspended(Exception):
     """Durable nonterminal human-decision or child barrier; never a task failure."""
+
+
+class _MutationDisposition(Enum):
+    MUTATED = "MUTATED"
+    NO_OP_REPLAY = "NO_OP_REPLAY"
+    REJECTED = "REJECTED"
+
+
+class _ReplanReadOnly(Exception):
+    def __init__(self, result):
+        self.result = result
+
+
+@dataclass
+class _MutationResult:
+    disposition: _MutationDisposition = _MutationDisposition.REJECTED
+
+    def consume(self, result):
+        if self.disposition is _MutationDisposition.NO_OP_REPLAY:
+            raise _ReplanReadOnly(result)
+        if self.disposition is not _MutationDisposition.MUTATED:
+            raise RuntimeError("REPLAN_MUTATION_DISPOSITION_REQUIRED")
+
+
+def _classify(carrier, disposition):
+    if carrier is not None:
+        carrier.disposition = disposition
 
 
 def control(aggregate):
@@ -46,6 +75,7 @@ def proposal(aggregate):
 
 def store(aggregate, state, request=None, value=None):
     aggregate.node_binding.replan = state.model_dump(mode="json")
+    aggregate.runtime.binding_ref = aggregate.node_binding.reference()
     if request is not None:
         request.risk_follow_up = value.model_dump(mode="json")
 
@@ -101,7 +131,7 @@ def frozen_policy(aggregate):
     return policy
 
 
-def validate_candidate(aggregate, candidate):
+def validate_candidate(aggregate, candidate, *, validate_semantic_admission=True):
     from src.domain.node_binding import canonical_value, check_value_identity
 
     root = aggregate.node_binding
@@ -140,6 +170,17 @@ def validate_candidate(aggregate, candidate):
         candidate.output_record.payload_snapshot
     ):
         raise BindingDenied("REPLAN_CANDIDATE_MISMATCH", "retained output")
+    from src.application.risk_admission import derive
+    from src.domain.risk_admission import contract_for
+
+    if validate_semantic_admission and contract_for(aggregate) is not None:
+        receipt = (root.risk_admissions or {}).get(candidate.admission_binding_id)
+        fulfillment = (root.replan or {}).get("finalization")
+        expected = derive(aggregate, reservation.admission, [candidate.output_record],
+                          candidate.resolved_input_binding_ids, fulfillment=fulfillment)
+        if (receipt != expected or receipt["decision"] not in {
+                "FOLLOW_UP_PENDING", "FINAL_SUCCESS"}):
+            raise BindingDenied("RISK_FINAL_ADMISSION_REQUIRED")
     return outputs[0]
 
 
@@ -294,7 +335,12 @@ def capture(aggregate, admission, task, artifacts, records, resolved_ids, observ
     if len(selected) != 1:
         raise BindingDenied("REPLAN_CANDIDATE_MISMATCH")
     output = selected[0]
-    parsed = RiskResearchAgentStructuredOutput.model_validate(output.structured_output.model_dump())
+    from src.domain.agent_output import RiskResearchAgentStructuredOutputMinimalV1
+    from src.domain.risk_admission import contract_for
+
+    schema = (RiskResearchAgentStructuredOutputMinimalV1 if contract_for(aggregate)
+              else RiskResearchAgentStructuredOutput)
+    parsed = schema.model_validate(output.structured_output.model_dump())
     if not parsed.requires_follow_up:
         raise BindingDenied("REPLAN_CANDIDATE_MISMATCH")
     selected_records = [
@@ -322,8 +368,8 @@ def capture(aggregate, admission, task, artifacts, records, resolved_ids, observ
         output_record=selected_records[0],
         source_output_digest=digest(parsed, "risk-candidate-output/v1"),
         source_artifact_sha256=output.artifact_sha256,
-        schema_identity="RiskResearchAgentStructuredOutput",
-        schema_digest=canonical_json_sha256(RiskResearchAgentStructuredOutput.model_json_schema()),
+        schema_identity=schema.__name__,
+        schema_digest=canonical_json_sha256(schema.model_json_schema()),
         profile_digest=digest(profile, "node-execution-profile/v1"),
         created_at=datetime.now(UTC),
     )
@@ -390,7 +436,7 @@ def capture(aggregate, admission, task, artifacts, records, resolved_ids, observ
     return candidate
 
 
-def decide(aggregate, command, *, actor, key):
+def decide(aggregate, command, *, actor, key, _mutation=None):
     """Server-scoped structured decision; caller holds the same Run row lock."""
     state = control(aggregate)
     request, value = proposal(aggregate)
@@ -428,6 +474,7 @@ def decide(aggregate, command, *, actor, key):
         receipt = state.receipts[receipt_key]
         if receipt["request_hash"] != request_hash:
             raise BindingDenied("REPLAN_IDEMPOTENCY_CONFLICT")
+        _classify(_mutation, _MutationDisposition.NO_OP_REPLAY)
         return {**receipt, "historical_replay": True}
     # Equivalent commands retain their original cycle authority across later decisions.
     matching = [r for r in state.receipts.values() if r["request_hash"] == request_hash]
@@ -441,6 +488,7 @@ def decide(aggregate, command, *, actor, key):
                 }
             ),
         )
+        _classify(_mutation, _MutationDisposition.MUTATED)
         return {**receipt, "historical_replay": True}
     failure = None
     if aggregate.run.status in {RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.RELEASED}:
@@ -508,6 +556,7 @@ def decide(aggregate, command, *, actor, key):
         receipt["audit_event_id"] = state.audit[-1]["event_id"]
         state = state.model_copy(update={"receipts": {**state.receipts, receipt_key: receipt}})
         store(aggregate, state)
+        _classify(_mutation, _MutationDisposition.MUTATED)
         return receipt
     validate_candidate(aggregate, state.candidate)
     frozen_policy(aggregate)
@@ -611,6 +660,7 @@ def decide(aggregate, command, *, actor, key):
             decision_id=decision.decision_id,
         )
     store(aggregate, state, request, value)
+    _classify(_mutation, _MutationDisposition.MUTATED)
     return receipt
 
 
@@ -712,7 +762,7 @@ def projection(aggregate):
     return result
 
 
-async def apply(repository, aggregate):
+async def apply(repository, aggregate, *, _mutation=None):
     """Apply only one approved exact diff after old-graph admissions have settled."""
     from src.application.execution_profiles import frozen_profile
     from src.application.risk_replan_profile import validate_child_profile
@@ -731,6 +781,7 @@ async def apply(repository, aggregate):
     if state.transition is not None:
         if value.application_state != "APPLIED" or state.transition.new_graph != root.frozen_graph:
             raise BindingDenied("REPLAN_TRANSITION_MISMATCH")
+        _classify(_mutation, _MutationDisposition.NO_OP_REPLAY)
         return state.transition
     if (
         aggregate.run.status in {RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.RELEASED}
@@ -778,6 +829,7 @@ async def apply(repository, aggregate):
             else:
                 del root.attempts[task_id]
             aggregate.runtime.task(task_id).status = TaskStatus.WAITING
+    aggregate.runtime.binding_ref = root.reference()
     if any(a.status in {"DISPATCHED", "RESULT_UNKNOWN"} for a in root.attempts.values()):
         return None
     old_graph = aggregate.runtime.actual_graph.model_copy(deep=True)
@@ -966,6 +1018,7 @@ async def apply(repository, aggregate):
         decision_id=value.latest_decision_id,
     )
     store(aggregate, state, request, value)
+    _classify(_mutation, _MutationDisposition.MUTATED)
     return transition
 
 
@@ -1145,6 +1198,18 @@ def finalize_parent(aggregate, child_result):
         finalization_binding=binding.model_dump(mode="json"),
         observed_execution={"provenance": "REPLAN_FINALIZED"},
     )
+    from src.application.risk_admission import derive
+
+    receipt = derive(aggregate, reservation.admission, final.output_records,
+                     final.resolved_input_binding_ids,
+                     fulfillment=binding.model_dump(mode="json"))
+    if receipt is not None:
+        if receipt["decision"] != "FINAL_SUCCESS":
+            raise BindingDenied("RISK_FINAL_ADMISSION_REQUIRED")
+        root.risk_admissions = {**(root.risk_admissions or {}),
+                                reservation.admission.admission_binding_id: receipt}
+        final = final.model_copy(update={"observed_execution": {
+            **final.observed_execution, "risk_admission_digest": receipt["receipt_digest"]}})
     result_id = value_identity(final, "result_id", "result_digest")
     final = final.model_copy(update={"result_id": result_id, "result_digest": result_id})
     root.results[result_id] = final
@@ -1206,10 +1271,11 @@ def admission_allowed(aggregate, task, *, dispatch):
     raise ReplanSuspended()
 
 
-def validate_replan_root(aggregate):
+def validate_replan_root(aggregate, *, validate_semantic_admission=True):
     state = control(aggregate)
     request, value = proposal(aggregate)
-    validate_candidate(aggregate, state.candidate)
+    validate_candidate(aggregate, state.candidate,
+                       validate_semantic_admission=validate_semantic_admission)
     frozen_policy(aggregate)
     root = aggregate.node_binding
     if state.transition is not None:

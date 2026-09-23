@@ -183,7 +183,10 @@ asyncio.run(main())
         second_request = await request_for(service, again, "second-explicit-resume")
         clients["teamorouter-sol"].fail_risk = False
         await service.repository.resume_external_failure(second_request, actor=second_request.actor)
-        async with asyncio.timeout(60):
+        # Infrastructure ceiling: Risk and Synthesis retain at most 300s each,
+        # plus the 300s eligible orchestration fuse. Production clocks, below,
+        # are the oracle; total resumed wall time may exceed 60s.
+        async with asyncio.timeout(905):
             while True:
                 final = await service.repository.get_run_fresh(failed.run.run_id)
                 if (
@@ -196,6 +199,16 @@ asyncio.run(main())
                 ):
                     break
                 await asyncio.sleep(0.1)
+        liveness = service._resume_liveness_scopes[
+            (failed.run.run_id, control(final).envelopes[-1].cycle_id)
+        ]
+        assert liveness.orchestration < 300
+        assert liveness.max_no_progress < 60
+        record_property("resume_liveness", json.dumps({
+            "orchestration": liveness.orchestration,
+            "max_no_progress": liveness.max_no_progress,
+            "trace": liveness.trace,
+        }))
         assert final.node_binding.frozen_graph == failed.node_binding.frozen_graph
         assert final.node_binding.execution_snapshot == failed.node_binding.execution_snapshot
         risk = next(

@@ -15,7 +15,6 @@ from src.data.ingestion import EvidenceIngestionResult
 from src.data.repository import InMemoryEvidenceRepository
 from src.domain.evidence import AcceptedEvidenceBundle, EvidenceRecord
 from src.domain.recovery import Candidate, retain_attempt_facts
-from src.domain.research_object import ResearchObject
 from src.infrastructure.database.recovery import MemoryRecoveryEvidenceStore
 from tests.unit.agentic.test_adaptive_recovery import Client
 from tests.wp02.test_node_binding import FakeCollector, aggregate
@@ -191,26 +190,9 @@ async def configured(
     value.node_binding = None
     initialize_binding(value, service=service)
     if persist:
-        await repository.add_object(
-            ResearchObject(
-                object_id="OBJECT-WP02",
-                symbol=symbol,
-                company_name="Local synthetic",
-                exchange="LOCAL",
-            )
-        )
-        if sessions is not None:
-            from src.application.persistence import ResearchGoalRow
+        from tests.wp02.confirmation_fixture import confirm_template
 
-            async with sessions() as session, session.begin():
-                session.add(
-                    ResearchGoalRow(
-                        goal_id=value.goal.goal_id,
-                        object_id=value.goal.research_object_id,
-                        payload=value.goal.model_dump(mode="json"),
-                    )
-                )
-        await repository.add_run(value)
+        value = await confirm_template(service, value, symbol=symbol)
     return service, value, collector, clients
 
 

@@ -33,7 +33,7 @@ async def _read_exact_snapshot(backend, object_id: str, run_id: str):
         )
 
 
-async def _hold_admitted_run(_run_id: str) -> None:
+async def _hold_admitted_run(_run_id: str, *, execution_owner=None, settlement_budget=None) -> None:
     # This fixture checks exact admission/reopen watermarks, not live execution.
     # Freeze the asynchronous producer so separate reads compare one snapshot.
     await asyncio.Event().wait()

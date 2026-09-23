@@ -7,6 +7,7 @@ import pytest
 
 from src.application.persistence import SQLAlchemyApplicationRepository
 from src.infrastructure.database.recovery import RecoveryEvidenceStore
+from tests.risk_replan.backend_fixture import durable_snapshot
 from tests.risk_replan.test_flow import command, fixture
 from tests.risk_replan.test_postgresql import database, fresh, pytestmark  # noqa: F401
 from tests.risk_replan.test_recovery import resume
@@ -35,6 +36,7 @@ def fail_write(repo, method, after):
 async def snapshot(sessions, run_id):
     value = await fresh(sessions, run_id)
     value.pop("pid")
+    value["records"] = await durable_snapshot(sessions, run_id)
     return value
 
 
@@ -78,9 +80,13 @@ async def test_atomic_decision_and_graph(database, tmp_path, action, method, aft
     assert await snapshot(sessions, run_id) == before
     first = await execute()
     committed = await snapshot(sessions, run_id)
-    second = await execute()
+    assert committed["root"]["binding_revision"] == before["root"]["binding_revision"] + 1
+    with fail_write(repo, method, after):
+        second = await execute()
     replay = await snapshot(sessions, run_id)
+    assert replay == committed
     assert committed["events"] == replay["events"]
+    assert committed["root"]["binding_revision"] == replay["root"]["binding_revision"]
     assert committed["root"]["replan"]["audit"] == replay["root"]["replan"]["audit"]
     if body is None:
         assert first == second

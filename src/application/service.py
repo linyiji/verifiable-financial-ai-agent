@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -42,7 +43,7 @@ from src.application.repository import (
     initialize_binding,
     validate_root,
 )
-from src.application.research_outputs import availability_map
+from src.application.research_outputs import availability_map_for_run
 from src.assurance import DeterministicReviewer, IndependentFinancialReviewer, ReleaseGate
 from src.assurance.proof_policy import ProofPolicy
 from src.assurance.requirements import requirement_context
@@ -266,6 +267,9 @@ class ResearchApplicationService:
                 research_object=research_object,
                 goal=goal,
             )
+        from src.application.execution_profiles import resolve_report_metric_draft
+
+        scheme = resolve_report_metric_draft(scheme, goal, self)
         draft = ResearchRunDraft(
             draft_id=f"DRAFT-{uuid4()}",
             goal=goal,
@@ -360,7 +364,14 @@ class ResearchApplicationService:
             actual_graph_id=runtime.actual_graph.graph_id,
         )
         aggregate = RunAggregate(run=run, goal=draft.goal, scheme=scheme, runtime=runtime)
-        initialize_binding(aggregate, service=self)
+        from src.application.execution_profiles import resolve_execution_snapshot
+        from src.application.repository import create_confirmed_risk_binding
+        from src.application.research_outputs import configure_output_contracts
+
+        configure_output_contracts(aggregate.runtime)
+        snapshot = resolve_execution_snapshot(scheme, draft.goal, runtime.actual_graph.tasks, self)
+        initialize_binding(aggregate, snapshot=snapshot)
+        create_confirmed_risk_binding(aggregate, snapshot)
         await self.repository.add_run(aggregate)
         await self.event_store.emit(
             run_id=run_id,
@@ -398,6 +409,38 @@ class ResearchApplicationService:
         self._remember("confirm_run", idempotency_key, aggregate)
         return aggregate
 
+    async def _resume_liveness_scope(self, run_id):
+        from src.application.external_failure_resume import current_envelope
+        from src.runtime.scheduler import ResumeLiveness
+
+        entered = asyncio.get_running_loop().time()
+        # Bound the authority lookup before knowing which cycle is current.
+        # Only the returned cycle selects the retained clock; an older expired
+        # cycle must not deny a separately authorized new cycle.
+        async with asyncio.timeout(60):
+            value = await self.repository.get_run_fresh(run_id)
+        if value is None or value.node_binding is None:
+            return None
+        cycle = current_envelope(value)
+        if cycle is None:
+            return None
+        key = (run_id, cycle.cycle_id)
+        scope = getattr(self, "_resume_liveness_scopes", {}).get(key)
+        # A fresh terminal delivery is only a full-set readback, not another
+        # execution cycle. The existing success owner still verifies the result.
+        if scope is None and value.run.status is RunStatus.RELEASED:
+            return None
+        if not hasattr(self, "_resume_liveness_scopes"):
+            self._resume_liveness_scopes = {}
+        if scope is None:
+            # No lost process's live handles are reconstructed here. Existing
+            # claim/recovery fences still decide whether this delivery can run.
+            scope = ResumeLiveness(run_id, cycle.cycle_id)
+            scope.sample = entered
+            self._resume_liveness_scopes[key] = scope
+        scope.checkpoint()
+        return scope
+
     @observe("run.execution", run="run_id")
     async def execute_run(
         self,
@@ -405,14 +448,97 @@ class ResearchApplicationService:
         *,
         emit_run_started: bool = True,
         execution_owner=None,
+        settlement_budget=None,
     ) -> RunAggregate:
-        aggregate = await self.repository.get_run_fresh(run_id)
+        scope = await self._resume_liveness_scope(run_id)
+        if scope is not None:
+            settlement_budget = scope
+        atomic_success = getattr(self.repository, "atomic_terminal_success", False)
+        if atomic_success and settlement_budget is None:
+            from src.application.persistence import TerminalSettlementBudget
+
+            # Start at invocation entry, never at settlement or its retry. A1R
+            # supplies the cycle's remaining non-active budget through this seam.
+            settlement_budget = TerminalSettlementBudget(asyncio.get_running_loop().time() + 300)
+        if atomic_success:
+            settlement_budget.require_remaining()
+        if scope is not None:
+            scope.checkpoint()
+            async with asyncio.timeout(max(0.001, min(
+                60 - scope.no_progress, scope.remaining(),
+            ))):
+                aggregate = await self.repository.get_run_fresh(run_id)
+            scope.checkpoint()
+        else:
+            aggregate = await self.repository.get_run_fresh(run_id)
         if aggregate is None:
             raise BindingDenied("STATE_REFRESH_REQUIRED", run_id)
         if aggregate.node_binding is not None:
-            return await self._execute_bound_run(
-                run_id, emit_run_started=emit_run_started, owner=execution_owner
-            )
+            if scope is None:
+                return await self._execute_bound_run(
+                    run_id, emit_run_started=emit_run_started, owner=execution_owner,
+                    settlement_budget=settlement_budget,
+                )
+            from src.runtime.scheduler import resume_liveness
+
+            active_delivery = getattr(scope, "delivery", None)
+            if active_delivery is not None and not active_delivery.done():
+                raise BindingDenied("OWNER_ALREADY_CLAIMED", "Resume delivery already active")
+            token = resume_liveness.set(scope)
+            job = asyncio.create_task(self._execute_bound_run(
+                run_id, emit_run_started=emit_run_started, owner=execution_owner,
+                settlement_budget=settlement_budget,
+            ))
+            scope.delivery = job
+            watcher = asyncio.create_task(scope.watch())
+            try:
+                done, _ = await asyncio.wait((job, watcher), return_when=asyncio.FIRST_COMPLETED)
+                if watcher in done and not watcher.cancelled() and watcher.exception():
+                    failure = watcher.exception()
+                    # Stop task work, but let an admitted invocation finish its
+                    # existing owner-fenced failure transaction if it reached it.
+                    if not getattr(scope, "failure_settling", False):
+                        job.cancel()
+                        # Give cancellation one loop turn to transfer ownership
+                        # from invocation work to its admitted failure handler.
+                        await asyncio.sleep(0)
+                    deadline = getattr(scope, "failure_settlement_deadline", None)
+                    timeout = (max(0.001, deadline - asyncio.get_running_loop().time())
+                               if deadline is not None else max(0.001, scope.remaining()))
+                    stopped, _ = await asyncio.wait((job,), timeout=timeout)
+                    if not stopped:
+                        # The dedicated terminal window has ended. Cancellation
+                        # now bounds the owner transaction rather than stealing
+                        # its exhausted orchestration remainder.
+                        job.cancel()
+                        await asyncio.wait((job,), timeout=0.001)
+                        job.add_done_callback(lambda t: None if t.cancelled() else t.exception())
+                        raise BindingDenied("RESULT_UNKNOWN", "Resume stop could not settle")
+                    try:
+                        await job
+                    except asyncio.CancelledError:
+                        raise failure from None
+                    raise failure
+                return await job
+            except BaseException:
+                if not job.done():
+                    deadline = getattr(scope, "failure_settlement_deadline", None)
+                    if deadline is not None:
+                        await asyncio.wait((job,), timeout=max(
+                            0.001, deadline - asyncio.get_running_loop().time(),
+                        ))
+                    if not job.done():
+                        job.cancel()
+                        await asyncio.wait((job,), timeout=0.001)
+                        if not job.done():
+                            job.add_done_callback(
+                                lambda t: None if t.cancelled() else t.exception()
+                            )
+                raise
+            finally:
+                watcher.cancel()
+                await asyncio.gather(watcher, return_exceptions=True)
+                resume_liveness.reset(token)
         if aggregate.run.status is not RunStatus.RELEASED:
             raise BindingDenied(
                 "STATE_REFRESH_REQUIRED", "historical Run has no new execution authority"
@@ -450,7 +576,7 @@ class ResearchApplicationService:
                 )
                 if limited:
                     aggregate.artifacts.partial_research = {
-                        **availability_map(aggregate),
+                        **availability_map_for_run(aggregate),
                         "task_outputs": aggregate.artifacts.task_outputs,
                         "status": "PARTIAL_NOT_RELEASED",
                         "completion": completion.model_dump(mode="json"),
@@ -518,11 +644,33 @@ class ResearchApplicationService:
         await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
         return aggregate
 
-    async def _execute_bound_run(self, run_id, *, emit_run_started, owner):
+    async def _execute_bound_run(
+        self, run_id, *, emit_run_started, owner, settlement_budget=None,
+    ):
         if owner is not None and owner.run_id != run_id:
             raise BindingDenied("IDENTITY_MISMATCH", "requested Run versus execution owner")
+        atomic_success = getattr(self.repository, "atomic_terminal_success", False)
+        if atomic_success:
+            replay = await self.repository.read_terminal_success(
+                run_id, budget=settlement_budget, report_store=self.report_publisher,
+            )
+            if replay is not None:
+                root = replay[0].node_binding
+                if owner is not None and (
+                    root.owner_id != owner.owner_id
+                    or root.owner_generation != owner.owner_generation + 1
+                ):
+                    raise BindingDenied("STALE_WRITE_REJECTED", "terminal replay owner")
+                return replay[0]
+        from src.runtime.scheduler import resume_liveness
+
+        scope = resume_liveness.get()
+        if scope is not None:
+            scope.checkpoint()
         owner = owner or await self.repository.claim_execution(run_id)
         aggregate = await self.repository.validate_execution(owner)
+        if scope is not None:
+            scope.checkpoint()
         stage = "TASK_EXECUTION"
         invocation_admitted = False
         try:
@@ -551,11 +699,25 @@ class ResearchApplicationService:
             aggregate = await self.repository.validate_execution(owner)
             stage = "POST_SCHEDULER"
             await self._assure_and_release(aggregate)
-            await self.repository.save_run(aggregate)
+            if not atomic_success:
+                await self.repository.save_run(aggregate)
         except BaseException as exc:
             if not invocation_admitted:
                 # A current Run token alone does not authorize this invocation to close it.
                 raise
+            if scope is not None:
+                # The watcher may expire while owner validation or finalize_failure
+                # awaits PostgreSQL. Its cancellation must not abort that settlement.
+                scope.failure_settling = True
+                scope.failure_settlement_deadline = asyncio.get_running_loop().time() + 180
+                scope.changed.set()
+            failure_budget = None
+            if atomic_success:
+                from src.application.persistence import TerminalSettlementBudget
+
+                deadline = (scope.failure_settlement_deadline if scope is not None
+                            else asyncio.get_running_loop().time() + 180)
+                failure_budget = TerminalSettlementBudget(deadline)
             current = await self.repository.validate_execution(owner)
             from src.application.repository import NodeRecoveryPending
             from src.application.risk_replan import ReplanSuspended
@@ -670,6 +832,7 @@ class ResearchApplicationService:
                     current.artifacts.closure_diagnostic.update(
                         code=binding_failures[0]["code"], binding_failures=binding_failures
                     )
+            failure_kwargs = {"budget": failure_budget} if atomic_success else {}
             await self.repository.finalize_failure(
                 owner, current, unknown=not policy_blocked, event_store=self.event_store,
                 payload={
@@ -680,11 +843,27 @@ class ResearchApplicationService:
                     else getattr(exc, "code", "RESULT_UNKNOWN"),
                     "binding_failures": binding_failures,
                 },
+                **failure_kwargs,
             )
             await self.repository.save_runtime_events(list(await self.event_store.replay(run_id)))
             if policy_blocked:
                 return await self.repository.get_run_fresh(run_id)
             raise
+        if atomic_success:
+            # Settlement owns every outcome from here, including unknown and
+            # integrity denial. None authorizes the failure handler above.
+            from src.runtime.scheduler import resume_liveness
+
+            scope = resume_liveness.get()
+            if scope is not None:
+                scope.checkpoint()
+                scope.settling = True
+                scope.changed.set()
+            committed, _ = await self.repository.finalize_success(
+                owner, aggregate, released_at=datetime.now(UTC),
+                budget=settlement_budget, report_store=self.report_publisher,
+            )
+            return committed
         committed = await self.repository.close_execution(owner)
         if committed.run.status is RunStatus.RELEASED:
             await self._emit_release_completion(committed)
@@ -767,9 +946,12 @@ class ResearchApplicationService:
                 "Required research outputs remain unavailable.",
                 details=completion.model_dump(mode="json"),
             )
+        from src.application.execution_profiles import frozen_report_metrics
+
+        report_contract = frozen_report_metrics(aggregate)
         calculations_before_review = list(aggregate.artifacts.calculations)
         judgments = list(aggregate.artifacts.judgments)
-        strict_financial_release = any(
+        strict_financial_release = report_contract is not None or any(
             calculation.formula_id in set(MATERIAL_FORMULAS[2:])
             for calculation in calculations_before_review
         )
@@ -785,24 +967,38 @@ class ResearchApplicationService:
             {"status": "not_available", "limitation": True},
         )
         source_coverage = None
-        if strict_financial_release:
-            (
-                released_metrics,
-                material_claims,
-                material_dispositions,
-            ) = build_material_financial_release(
-                run_id=run_id,
-                evidence=aggregate.artifacts.evidence,
-                calculations=calculations_before_review,
-                judgments=judgments,
-                unavailable_formulas=frozenset(
-                    formula
-                    for branch in aggregate.artifacts.financial_branches
-                    if branch.status
-                    in {BranchStatus.INSUFFICIENT_DATA, BranchStatus.BLOCKED_BY_RUNTIME}
-                    for formula in BRANCH_FORMULAS[branch.calculation_type]
-                ),
-            )
+        selected_scope = (
+            frozenset(report_contract.resolved_required_metric_ids)
+            & {c.formula_id for c in calculations_before_review if c.status.value == "PASS"}
+            & set(MATERIAL_FORMULAS)
+            if report_contract is not None else None
+        )
+        if strict_financial_release and (report_contract is None or selected_scope):
+            try:
+                (
+                    released_metrics,
+                    material_claims,
+                    material_dispositions,
+                ) = build_material_financial_release(
+                    run_id=run_id,
+                    evidence=aggregate.artifacts.evidence,
+                    calculations=calculations_before_review,
+                    judgments=judgments,
+                    selected_formulas=selected_scope,
+                    unavailable_formulas=frozenset() if report_contract is not None else frozenset(
+                        formula
+                        for branch in aggregate.artifacts.financial_branches
+                        if branch.status
+                        in {BranchStatus.INSUFFICIENT_DATA, BranchStatus.BLOCKED_BY_RUNTIME}
+                        for formula in BRANCH_FORMULAS[branch.calculation_type]
+                    ),
+                )
+            except (ValueError, ArithmeticError) as exc:
+                if report_contract is None:
+                    raise
+                raise ApplicationError(
+                    "CONTRACT_REJECTED", "Invalid report material result"
+                ) from exc
             source_coverage = build_research_source_coverage(research_news_result)
 
         proof_policy = ProofPolicy(require_material_calculations=self.proof_workflow is not None)
@@ -914,11 +1110,20 @@ class ResearchApplicationService:
         }
 
     def _review_requirement_context(self, aggregate, strict):
+        from src.application.execution_profiles import frozen_report_metrics
+
+        contract = frozen_report_metrics(aggregate)
         original = (
             requirement_context(aggregate.scheme, aggregate.artifacts.financial_branches)
             if (strict and aggregate.artifacts.financial_branches)
             else None
         )
+        if contract is not None:
+            original = {
+                **requirement_context(aggregate.scheme, aggregate.artifacts.financial_branches),
+                "report_metric_requirements": contract.model_dump(mode="json"),
+                "used_metric_ids": list(contract.resolved_required_metric_ids),
+            }
         wp04 = self._wp04_context(aggregate)
         return (
             {"financial_requirements": original, "wp04_method_context": wp04}
@@ -991,6 +1196,13 @@ class ResearchApplicationService:
         research_news_result,
     ):
         run_id = aggregate.run.run_id
+        from src.application.execution_profiles import frozen_report_metrics
+
+        report_contract = frozen_report_metrics(aggregate)
+        if report_contract is not None:
+            fresh = await self.repository.get_run_fresh(run_id)
+            if fresh is None or frozen_report_metrics(fresh) != report_contract:
+                raise BindingDenied("CONTRACT_REJECTED", "stale report authority")
         wp04_context = self._wp04_context(aggregate)
         if wp04_context is not None:
             fresh = await self.repository.get_run_fresh(run_id)
@@ -1085,7 +1297,7 @@ class ResearchApplicationService:
         )
         fundamental_calculation_refs = list(record.calculation_refs)
         technical_calculation_refs: list[str] = []
-        if strict_financial_release:
+        if strict_financial_release and report_contract is None:
             (
                 fundamental_calculation_refs,
                 technical_calculation_refs,
@@ -1130,7 +1342,7 @@ class ResearchApplicationService:
         )
         structured = {
             "research_object": aggregate.run.research_object_id,
-            "financial_summary": {
+            "financial_summary": {} if report_contract is not None else {
                 "revenue_growth": str(calculations["revenue_growth"].output_value),
                 "ebitda_margin": str(calculations["ebitda_margin"].output_value),
             },
@@ -1163,7 +1375,11 @@ class ResearchApplicationService:
                 else {"status": "reviewed_execution"}
             ),
         }
-        if strict_financial_release:
+        if report_contract is not None:
+            structured = {"research_object": aggregate.run.research_object_id,
+                          "report_mode": report_contract.report_mode,
+                          "report_metric_contract_digest": report_contract.contract_digest}
+        if strict_financial_release and report_contract is None:
             structured["technical_result"] = {
                 "calculation_refs": technical_calculation_refs,
             }
@@ -1218,24 +1434,24 @@ class ResearchApplicationService:
         milestone("report.structured_ready")
         research_object = await self._object(object_id)
         if self.report_publisher is not None:
-            source_contribution = await self._revenue_growth_source_contribution(
-                aggregate=aggregate,
-                result=result,
-                review_id=review.review_id,
-                review_status=review.status.value,
-                proof_records=tuple(
-                    proof
-                    for proof in proof_outcome.proofs.values()
-                    if isinstance(proof, ProofRecord)
-                ),
-            )
+            source_contributions = []
+            selected = (report_contract.resolved_required_metric_ids
+                        if report_contract is not None else (None,))
+            for formula in selected:
+                source_contributions.append(await self._revenue_growth_source_contribution(
+                    aggregate=aggregate, result=result, review_id=review.review_id,
+                    review_status=review.status.value,
+                    proof_records=tuple(proof for proof in proof_outcome.proofs.values()
+                                        if isinstance(proof, ProofRecord)),
+                    selected_formula=formula,
+                ))
             canonical_report = CanonicalReportMapper.map(
                 result,
                 record,
                 company_name=research_object.company_name,
                 symbol=research_object.symbol,
                 as_of=aggregate.run.as_of,
-                source_contributions=(source_contribution,),
+                source_contributions=tuple(source_contributions),
             )
             with span("report.html_publish"):
                 html_artifact = self.report_publisher.publish_html(canonical_report)
@@ -1336,8 +1552,52 @@ class ResearchApplicationService:
         review_id: str,
         review_status: str,
         proof_records: tuple[ProofRecord, ...],
+        selected_formula: str | None = None,
     ) -> ReportSourceContribution:
-        """Close one demo report anchor to one exact observable execution record."""
+        """Close a selected report anchor to one exact observable execution record."""
+        if selected_formula is not None:
+            from src.application.execution_profiles import frozen_report_metrics
+            from src.assurance.requirements import validate_report_metrics
+
+            contract = frozen_report_metrics(aggregate)
+            if (contract is None or selected_formula not in
+                    set(contract.resolved_required_metric_ids) | set(contract.optional_metric_ids)):
+                raise BindingDenied("CONTRACT_REJECTED", "report authority missing")
+            validate_report_metrics(contract, run_id=aggregate.run.run_id,
+                                    run_as_of=aggregate.run.as_of,
+                                    evidence=aggregate.artifacts.evidence,
+                                    calculations=aggregate.artifacts.calculations,
+                                    metrics=result.released_metrics)
+            from src.application.repository import confirmed_risk_authority
+            from src.domain.node_binding import CALCULATION_FIELDS, canonical_value
+
+            confirmed_risk_authority(aggregate)
+            review = aggregate.artifacts.review
+            if (review is None or review.review_id != review_id or review.status.value != "PASS"
+                    or review_status != "PASS" or result.run_id != aggregate.run.run_id):
+                raise BindingDenied("CONTRACT_REJECTED", "report review/release identity")
+            root = aggregate.node_binding
+            for calculation in aggregate.artifacts.calculations:
+                if calculation.formula_id != selected_formula:
+                    continue
+                current_id = root.current_results.get(calculation.task_id)
+                current = root.results.get(current_id)
+                records = [r for r in current.output_records
+                           if r.kind == "CALCULATION_CORE"
+                           and r.record_id == calculation.calculation_id
+                           ] if current is not None else []
+                if (current is None or current_id in root.invalidation_refs
+                        or current.run_id != aggregate.run.run_id
+                        or current.producer_task_id != calculation.task_id
+                        or calculation.review_record_id != review_id
+                        or calculation.canonical_record_id != result.canonical_record_id
+                        or calculation.calculation_id not in review.reviewed_calculation_refs
+                        or aggregate.runtime.task(calculation.task_id).status.value != "COMPLETED"
+                        or len(records) != 1
+                        or any(canonical_value(getattr(calculation, key))
+                               != records[0].payload_snapshot.get(key)
+                               for key in CALCULATION_FIELDS)):
+                    raise BindingDenied("CONTRACT_REJECTED", "noncurrent report calculation")
 
         run_id = aggregate.run.run_id
         fundamental_outputs = [
@@ -1348,7 +1608,7 @@ class ResearchApplicationService:
         ]
         if not fundamental_outputs:
             return await self._deterministic_growth_contribution(
-                aggregate, result, review_id, review_status, proof_records
+                aggregate, result, review_id, review_status, proof_records, selected_formula
             )
         if len(fundamental_outputs) != 1:
             raise ApplicationError(
@@ -1365,7 +1625,8 @@ class ResearchApplicationService:
         growth_calculations = [
             calculation
             for calculation in aggregate.artifacts.calculations
-            if calculation.capability_id == "revenue_growth"
+            if (calculation.formula_id == selected_formula if selected_formula is not None
+                else calculation.capability_id == "revenue_growth")
         ]
         if len(growth_calculations) != 1:
             raise ApplicationError(
@@ -1378,7 +1639,8 @@ class ResearchApplicationService:
             metric
             for metric in released_metrics
             if metric.calculation_id == calculation.calculation_id
-            and metric.capability_id == "revenue_growth"
+            and (metric.formula_id == selected_formula if selected_formula is not None
+                 else metric.capability_id == "revenue_growth")
         ]
         if len(metrics) != 1:
             raise ApplicationError(
@@ -1424,9 +1686,10 @@ class ResearchApplicationService:
         return ReportSourceContribution(
             run_id=run_id,
             report_id=report_id,
-            report_anchor="metric-revenue-growth",
+            report_anchor=("metric-" + metric.capability_id.replace("_", "-")
+                           if selected_formula is not None else "metric-revenue-growth"),
             execution_anchor=f"execution-{output.output_id}",
-            report_section="Financial Analysis / Revenue Growth",
+            report_section="Financial Analysis / " + metric.name,
             actor_id=output.actor,
             task_id=task.task_id,
             agent_output_id=output.output_id,
@@ -1442,7 +1705,7 @@ class ResearchApplicationService:
                 "Provider-backed Agent invocation completed.",
                 "Strict structured output validation passed.",
                 "Content-addressed Agent output was retained.",
-                "Authoritative Revenue Growth CalculationRecord was linked without "
+                f"Authoritative {metric.name} CalculationRecord was linked without "
                 "UI recalculation.",
             ),
             output_summary=output.structured_output.summary,
@@ -1462,13 +1725,14 @@ class ResearchApplicationService:
         )
 
     async def _deterministic_growth_contribution(
-        self, aggregate, result, review_id, review_status, proofs
+        self, aggregate, result, review_id, review_status, proofs, selected_formula=None
     ):
         run_id = aggregate.run.run_id
         calculations = [
             c
             for c in aggregate.artifacts.calculations
-            if c.capability_id == "revenue_growth"
+            if (c.formula_id == selected_formula if selected_formula is not None
+                else c.capability_id == "revenue_growth")
             and c.run_id == run_id
             and c.status.value == "PASS"
         ]
@@ -1512,9 +1776,10 @@ class ResearchApplicationService:
         return ReportSourceContribution(
             run_id=run_id,
             report_id=result.result_id,
-            report_anchor="metric-revenue-growth",
+            report_anchor=("metric-" + metric.capability_id.replace("_", "-")
+                           if selected_formula is not None else "metric-revenue-growth"),
             execution_anchor="execution-" + calculation.calculation_id,
-            report_section="Financial Analysis / Revenue Growth",
+            report_section="Financial Analysis / " + metric.name,
             actor_id=task.assigned_agent,
             task_id=task.task_id,
             agent_output_id=None,
@@ -1527,7 +1792,7 @@ class ResearchApplicationService:
             observable_process=(
                 "Deterministic calculation completed and was independently reviewed.",
             ),
-            output_summary="Revenue Growth from retained CalculationRecord; narrative unavailable.",
+            output_summary=metric.name + " from retained CalculationRecord; narrative unavailable.",
             limitations=("No successful Fundamental narrative is claimed.",),
             metric_name=metric.name,
             metric_value=metric.display_value,
@@ -1571,6 +1836,14 @@ class ResearchApplicationService:
             calculation.calculation_id: proof_policy.requirement_for(calculation)
             for calculation in aggregate.artifacts.calculations
         }
+        from src.application.execution_profiles import frozen_report_metrics
+
+        if frozen_report_metrics(aggregate) is not None:
+            return ProofWorkflowOutcome(
+                requirements=requirements, proofs={},
+                runtime_state={"status": "NOT_REQUIRED", "semantics": "No proof claim is made."},
+                limitations=("Proof is not required by the configured proof policy.",),
+            )
         first = aggregate.artifacts.calculations[0]
         proof = await PendingProofAdapter().prove(
             ProofRequest(

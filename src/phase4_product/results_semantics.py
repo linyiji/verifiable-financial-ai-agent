@@ -673,7 +673,7 @@ async def read_semantics(sessions, run_id):
         row = await session.get(ResearchRunAggregateRow, run_id)
         if row is None:
             raise product_error("NOT_FOUND", "Research Run not found")
-        aggregate = SQLAlchemyApplicationRepository._to_aggregate(row.payload)
+        aggregate = SQLAlchemyApplicationRepository._from_row(row)
         obj = await session.get(ResearchObjectRow, row.object_id)
         if (
             obj is None

@@ -532,32 +532,30 @@ async def check_typescript_and_schema(events, invalid):
 async def test_other_run_progresses_while_root_locked(database, tmp_path):  # noqa: F811
     from uuid import uuid4
 
-    from src.application.models import ResearchRunDraft
-    from src.domain.research_object import ResearchObject
+    from src.application.models import RunAggregate
+    from src.runtime.state import RuntimeState
+    from tests.wp02.confirmation_fixture import confirm_template
     from tests.wp02.test_node_binding import aggregate
 
     _, sessions = database
-    repo, first, _ = await pending_sql(sessions, tmp_path)
-    value = aggregate(("evidence_collection",))
-    value.node_binding = None
-    value.runtime.binding_ref = None
-    value = repo._to_aggregate(
-        json.loads(json.dumps(repo._payload(value)).replace("WP02", "OTHER-" + uuid4().hex))
-    )
-    await repo.add_object(
-        ResearchObject(
-            object_id=value.run.research_object_id,
-            symbol="OTHER",
-            company_name="Synthetic",
-            exchange="LOCAL",
+    _, first, service = await pending_sql(sessions, tmp_path)
+    source = aggregate(("evidence_collection",))
+    identity = "OTHER-" + uuid4().hex
+
+    def renamed(value):
+        return type(value).model_validate(
+            json.loads(value.model_dump_json().replace("WP02", identity))
         )
+
+    plan = renamed(source.runtime.planned_graph)
+    template = RunAggregate(
+        run=renamed(source.run), goal=renamed(source.goal), scheme=renamed(source.scheme),
+        runtime=RuntimeState.create(run_id=plan.run_id, planned_graph=plan),
     )
-    await repo.add_draft(
-        ResearchRunDraft(draft_id="DRAFT-OTHER", goal=value.goal, scheme_snapshot=value.scheme)
-    )
-    await repo.add_run(value)
+    value = await confirm_template(service, template, symbol="OTHER")
     store = PostgresRuntimeEventStore(sessions)
     before = await store.replay(first.run.run_id)
+    other_before = await store.replay(value.run.run_id)
     async with sessions() as holder, holder.begin():
         await PostgresRuntimeEventStore._lock_run_event_writes(holder, first.run.run_id)
         async with asyncio.timeout(10):
@@ -566,6 +564,6 @@ async def test_other_run_progresses_while_root_locked(database, tmp_path):  # no
                 event_type=RuntimeEventType.RUN_CREATED,
                 payload={"object_id": value.run.research_object_id},
             )
-        assert event.sequence == 1 and event.run_id != first.run.run_id
+        assert event.sequence == len(other_before) + 1 and event.run_id != first.run.run_id
         assert await store.replay(first.run.run_id) == before
-    assert (await store.replay(value.run.run_id)) == [event]
+    assert (await store.replay(value.run.run_id)) == [*other_before, event]

@@ -288,10 +288,18 @@ class AdaptiveRecovery:
             for key in current_unavailable_routes:
                 health[key] = Health.UNAVAILABLE
 
+        cycle_monotonic_deadline = (
+            monotonic() + max(0.0, (cycle.deadline_at - datetime.now(UTC)).total_seconds())
+            if cycle is not None else None
+        )
+
         def remaining():
             seconds = budget.max_total_recovery_time - (monotonic() - started)
             if cycle is not None:
-                seconds = min(seconds, (cycle.deadline_at - datetime.now(UTC)).total_seconds())
+                seconds = min(
+                    seconds, cycle_monotonic_deadline - monotonic(),
+                    (cycle.deadline_at - datetime.now(UTC)).total_seconds(),
+                )
             return max(0.0, seconds)
 
         async def record(kind, outcome, **fields):
@@ -309,6 +317,10 @@ class AdaptiveRecovery:
                 **fields,
             )
             await self.store.append(value)
+            if kind in {"ATTEMPT_STARTED", "ATTEMPT_COMPLETED", "TERMINAL"}:
+                from src.runtime.scheduler import liveness_progress
+
+                liveness_progress(scope.run_id, ("recovery", value.record_id))
             refs.append(value.record_id)
             return value
 
@@ -446,10 +458,57 @@ class AdaptiveRecovery:
                 values["retryable"] = retryable
                 return SafeFailureEvidence(**values)
 
-            task_timeout = asyncio.timeout(remaining())
+            from src.runtime.scheduler import liveness_progress, resume_liveness
+
+            liveness = resume_liveness.get()
+            active_key = None
+            active_deadline = None
+            timeout_seconds = remaining()
+            task_timeout = asyncio.timeout(timeout_seconds)
             try:
-                async with task_timeout:
-                    response = await self.clients[route].complete_structured(**kwargs)
+                if liveness is not None and durable is not None:
+                    provider_policy = getattr(self.clients[route], "execution_policy", None)
+                    provider_bound = getattr(
+                        provider_policy, "overall_workload_deadline_seconds", timeout_seconds,
+                    )
+                    active_deadline = liveness.clock() + min(timeout_seconds, provider_bound)
+                    active_key = liveness.start(
+                        durable[1], attempt_id,
+                        active_deadline, asyncio.current_task(),
+                    )
+                try:
+                    async with task_timeout:
+                        if liveness is None:
+                            response = await self.clients[route].complete_structured(**kwargs)
+                        else:
+                            transport = asyncio.create_task(
+                                self.clients[route].complete_structured(**kwargs)
+                            )
+                            try:
+                                # Timeout cancels this wait, not an unbounded
+                                # cancellation handshake with a transport.
+                                done, _ = await asyncio.wait((transport,))
+                                response = done.pop().result()
+                            finally:
+                                if not transport.done():
+                                    transport.cancel()
+                                    transport.add_done_callback(
+                                        lambda t: None if t.cancelled() else t.exception()
+                                    )
+                finally:
+                    if active_key is not None:
+                        liveness.end(active_key)
+                        active_key = None
+                # A transport may swallow asyncio cancellation and return late.
+                # Its response cannot renew the already expired recovery budget.
+                if task_timeout.expired() or remaining() <= 0:
+                    raise TimeoutError("Recovery response arrived after its deadline")
+                if active_deadline is not None and liveness.clock() >= active_deadline:
+                    raise LLMProviderError(
+                        "Provider response arrived after its owned deadline",
+                        failure_classification=Code.OVERALL_DEADLINE_EXCEEDED,
+                        provider=candidate.provider, model=candidate.model, retryable=False,
+                    )
                 if response.actual_model in {
                     "gpt-5.6-sol",
                     "gpt-5.6-luna",
@@ -471,6 +530,7 @@ class AdaptiveRecovery:
                 output = kwargs["response_model"].model_validate(
                     response.output.model_dump(mode="json")
                 )
+                liveness_progress(scope.run_id, ("typed_return", attempt_id))
                 text = output.model_dump_json()
                 if any(secret in text for secret in self.forbidden):
                     raise ValueError("Unsafe output")
@@ -518,7 +578,7 @@ class AdaptiveRecovery:
                 await record("TERMINAL", "FAIL", route=route, reason_code="NONRECOVERABLE")
                 raise
             except Exception as exc:
-                if task_timeout.expired():
+                if task_timeout.expired() or remaining() <= 0:
                     last_failure = FailureClass.TASK_DEADLINE_EXCEEDED
                     last_failure_route = route
                     await record(

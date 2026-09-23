@@ -144,10 +144,36 @@ def resolve_execution_snapshot(
     """
     prospective_defaults = scenario is None and node_profiles is None
     selection = selected_model(goal.preferences)
+    from src.domain.execution_profile import report_metric_value
+
+    report_contract = report_metric_value(
+        scheme.report_requirements, scheme.assurance_requirements.get("report_metric_requirements")
+    )
+    if report_contract is not None and report_contract.request_digest != digest(
+        goal.preferences.get("report_metric_requirements"), "report-metric-request/v1"
+    ):
+        raise BindingDenied("CONTRACT_REJECTED", "draft report request mismatch")
+    if report_contract is not None:
+        validate_report_draft_correspondence(report_contract, goal)
     scenario = scenario or ScenarioProfile(
         task_categories=tuple(sorted({t.task_type for t in tasks})),
         report_requirements=tuple(scheme.report_requirements),
+        report_metric_requirements=report_contract,
     )
+    if scenario.report_metric_requirements != report_contract:
+        raise BindingDenied("CONTRACT_REJECTED", "report snapshot mismatch")
+    selected_risk = goal.preferences.get("risk_semantic_profile")
+    if selected_risk is not None:
+        from src.domain.risk_admission import PROFILE, freeze_contract
+
+        if selected_risk != PROFILE:
+            raise BindingDenied("RISK_CONTRACT_VERSION_REJECTED")
+        if any(task.task_type == "risk_analysis" for task in tasks):
+            scenario = scenario.model_copy(update={
+                "risk_semantic_contract": freeze_contract(tasks),
+            })
+        elif prospective_defaults:
+            raise BindingDenied("RISK_REQUIREMENTS_REQUIRED")
     nodes = []
     for task in tasks:
         owner = TASK_POLICIES.get(task.task_type)
@@ -253,7 +279,12 @@ def resolve_execution_snapshot(
             )
         )
     if prospective_defaults:
-        tightened = [default_recovery_profile(node.profile) for node in nodes]
+        tightened = [
+            default_recovery_profile(node.profile, risk_contract=scenario.risk_semantic_contract)
+            if scenario.risk_semantic_contract is not None
+            else default_recovery_profile(node.profile)
+            for node in nodes
+        ]
         if any(a != b.profile for a, b in zip(tightened, nodes, strict=True)):
             scenario = scenario.model_copy(update={"execution_family_version": "2"})
             nodes = [
@@ -311,7 +342,12 @@ def narrow_profile(current, selected, scenario):
         raise BindingDenied("PROFILE_VERSION_INCOMPATIBLE", selected.profile_id)
     if selected.accepted_request_proof is not None:
         if (
-            selected.accepted_request_proof != accepted_terra_proof(selected.task_type)
+            selected.accepted_request_proof != accepted_terra_proof(
+                selected.task_type,
+                request_profile=(scenario.risk_semantic_contract["policy"]["profile"]
+                                 if scenario.risk_semantic_contract is not None
+                                 and selected.task_type == "risk_analysis" else None),
+            )
             or selected.profile_version != "2"
             or current.resolved_route != "teamorouter-sol"
             or (selected.task_type == "valuation_analysis"
@@ -543,12 +579,102 @@ def authorize_model_provider(provider):
 BOUNDED_TERRA_POLICY = "OWNER_ADOPTED_BOUNDED_TERRA_RECOVERY_V1"
 
 
-def accepted_terra_proof(task_type):
-    """Two reviewed profile entries, not runtime receipt discovery or certification storage.
+def accepted_terra_proof(task_type, *, request_profile=None):
+    """Reviewed exact families, not runtime receipt discovery or certification storage.
 
     Receipt content digests identify the retained RUN.json and safe request receipt.
     Their output_hash is absent: these are compatibility proofs, never fake Run outputs.
     """
+    if request_profile is not None:
+        from src.domain.risk_admission import PROFILE
+
+        if task_type != "risk_analysis" or request_profile != PROFILE:
+            return None
+        identity = {
+            "context_digest": (
+                "sha256:194d179250754449f281075cdc3e10641a41e501864c64223177f0c8213d0513"
+            ),
+            "contract_digest": (
+                "sha256:15e8772e52044aa424174939d2bac8bb6a575aece2096e40492a49ec6ad98d95"
+            ),
+            "family": {
+                "agent_id": "risk_analyst",
+                "builder_digest": (
+                    "sha256:12f89727e41d5d0da4f55e0810c2325624d1065e6959f36c10a944f853510671"
+                ),
+                "execution_profile_version": "2",
+                "model": "gpt-5.6-terra",
+                "policy_digest": (
+                    "sha256:8050f812b83079c689f55b85a0d25a60a8b92b5803c780f7e94542e0edfb30df"
+                ),
+                "profile": "risk_semantic_outcome_minimal_v1",
+                "provider": "teamorouter",
+                "response_format_digest": (
+                    "sha256:cade1f49fddf9244657aeff2489573863a478fb57989290ee017cdf1477cf65d"
+                ),
+                "route": "teamorouter-terra",
+                "schema_digest": (
+                    "sha256:5bbe54a27f6207c4ca1a856e1d3bf739a0141f1c9d8b4be3d209378e19dcbc6c"
+                ),
+                "schema_identity": "RiskResearchAgentStructuredOutputMinimalV1",
+                "schema_name": "risk_analysis_research_output_minimal_v1",
+                "skill_id": "risk_analysis_v1",
+                "system_prompt_digest": (
+                    "sha256:ce20f83b2af7d8b8098a72dd26ff434789c56636a960a478a8a982f3871c23bd"
+                ),
+                "task_type": "risk_analysis",
+                "template_digest": (
+                    "sha256:089e28db045eb0214d4278dd2f98863299d3b0f8255dcf6da97da66c51d099cb"
+                ),
+                "workload": "RESEARCH_AGENT_EXECUTION",
+            },
+            "family_digest": (
+                "sha256:33da4d390e0ebe305a7c752b12ea776bfcf7df57a24312035bd05058be83537e"
+            ),
+            "messages_digest": (
+                "sha256:500b6f21f26be2266549383400f1df63629f58da62d22524e3a79ddf72a7156c"
+            ),
+            "response_format_digest": (
+                "sha256:cade1f49fddf9244657aeff2489573863a478fb57989290ee017cdf1477cf65d"
+            ),
+            "user_message_digest": (
+                "sha256:c72e5357ceef4197a129ac29de214fa04c710cb5949d9b7ef744e5ff8aed4e5c"
+            ),
+            "wire_digest": (
+                "sha256:4e927789b5918839776e9fc18cae8874e6fad1adb72a9213ecf4fb2108577d44"
+            ),
+            "wire_size": 3739,
+        }
+        evidence = {
+            "proof_id": "D01-TERRA-6dd4f49c-1c49-4162-9421-4c0408e5c4f4",
+            "transport_attempt_id": "5e56934c3a4040809a3c6f0bcfe25980",
+            "live_digest": (
+                "sha256:2a0faba69c1351bfab6095fbd5b74171ef054a2f0edf7b4ee5fcf7570b52f6df"
+            ),
+            "request_digest": (
+                "sha256:4163118d1f9fd9f361692846004f160fe2ff4f32cbecf54b87caf774e27515f0"
+            ),
+        }
+        family = identity["family"]
+        proof = AcceptedRequestProof(
+            adoption_version="bounded-terra-request-proof/v1", profile_version="2",
+            task_type=task_type, skill_id=family["skill_id"], agent_id=family["agent_id"],
+            provider=family["provider"], route=family["route"], model=family["model"],
+            schema_name=family["schema_name"], schema_identity=family["schema_identity"],
+            schema_digest=family["schema_digest"],
+            request_builder="src.agentic.research_agent._messages/v1",
+            builder_digest=family["builder_digest"], template_digest=family["template_digest"],
+            valuation_context_enabled=None, workload_type=family["workload"],
+            status="ACCEPTED_BOUNDED_REQUEST_FAMILY",
+            receipt_id="REC-c97f2b81-d8e5-402f-a67c-1d6af81b693d",
+            attempt_id="ATT-7043e7d1-735d-4abe-9ab2-efadf9150708",
+            receipt_content_digest="sha256:dd268b98c1fba43da28fd6ff5de35eac921dc37447183d61eb4f136d1d6a7435",
+            request_receipt_digest=evidence["request_digest"],
+            d01_identity=identity, d01_evidence=evidence, acceptance_digest="",
+        )
+        return AcceptedRequestProof.model_validate({
+            **proof.model_dump(), "acceptance_digest": proof.content_digest(),
+        })
     if task_type == "risk_analysis":
         values = dict(
             agent_id="risk_analyst", schema_identity="RiskResearchAgentStructuredOutput",
@@ -584,7 +710,7 @@ def accepted_terra_proof(task_type):
     return proof.model_copy(update={"acceptance_digest": proof.content_digest()})
 
 
-def default_recovery_profile(profile):
+def default_recovery_profile(profile, *, risk_contract=None):
     # Explicit selection/configuration and context interaction keep their own authority.
     if (
         profile.task_type not in {"risk_analysis", "valuation_analysis"}
@@ -602,7 +728,12 @@ def default_recovery_profile(profile):
         "allowed_model_routes": ("teamorouter-sol", "teamorouter-terra"),
         "recovery_fallback_routes": ("teamorouter-terra",),
         "recovery_budget": profile.recovery_budget.model_copy(update={"max_capability_checks": 0}),
-        "accepted_request_proof": accepted_terra_proof(profile.task_type),
+        "accepted_request_proof": accepted_terra_proof(
+            profile.task_type,
+            request_profile=(risk_contract["policy"]["profile"]
+                             if risk_contract is not None
+                             and profile.task_type == "risk_analysis" else None),
+        ),
     })
 
 
@@ -654,12 +785,49 @@ def adopted_request_matches(profile, context, scope, candidate, request):
                     and proof.valuation_context_enabled is False
                     and profile.runtime_configuration.get("valuation_context") is False)
             )
+            and _d01_request_matches(proof, profile, context, candidate, request)
             and _adopted_operation_matches(scope)
             and request["messages"] == _messages(context)
             and set(request) == {"messages", "response_model", "schema_name", "workload_type"}
         )
-    except (KeyError, TypeError, AttributeError, OSError):
+    except (KeyError, TypeError, AttributeError, OSError, IndexError, ValueError):
         return False
+
+
+def _d01_request_matches(proof, profile, context, candidate, request):
+    """Reconstruct the exact proven family; witness inputs are evidence, not Run constants."""
+    from src.adapters.llm.teamorouter import _structured_request_template
+    from src.domain.risk_admission import active_contract
+    from src.phase4_product.hashing import canonical_json_sha256
+
+    contract = active_contract() if context.task.task_type == "risk_analysis" else None
+    if proof.d01_identity is None:
+        return contract is None
+    if contract is None:
+        return False
+    template = _structured_request_template(
+        messages=request["messages"], response_model=request["response_model"],
+        schema_name=request["schema_name"],
+    )
+    family = {
+        "profile": contract["policy"]["profile"],
+        "execution_profile_version": profile.profile_version,
+        "task_type": context.task.task_type, "skill_id": context.task.skill_id,
+        "agent_id": context.task.assigned_agent,
+        "provider": candidate.provider, "route": candidate.route, "model": candidate.model,
+        "schema_name": request["schema_name"],
+        "schema_identity": request["response_model"].__name__,
+        "schema_digest": canonical_json_sha256(request["response_model"].model_json_schema()),
+        "builder_digest": proof.builder_digest, "template_digest": proof.template_digest,
+        "system_prompt_digest": "sha256:" + hashlib.sha256(
+            request["messages"][0].content.encode()
+        ).hexdigest(),
+        "response_format_digest": canonical_json_sha256(template["response_format"]),
+        "workload": request["workload_type"],
+        "policy_digest": canonical_json_sha256(contract["policy"]),
+    }
+    return (family == proof.d01_identity["family"]
+            and canonical_json_sha256(family) == proof.d01_identity["family_digest"])
 
 
 def _adopted_operation_matches(scope):
@@ -676,3 +844,150 @@ def _adopted_operation_matches(scope):
         and admission.policy_refs.get("external_resume_cycle")
         and scope.operation_id == "risk-resume:" + admission.policy_refs["external_resume_cycle"]
     )
+
+
+def resolve_report_metric_draft(scheme, goal, service):
+    """Server resolution at draft creation only; conditions never resolve at runtime."""
+    from src.domain.execution_profile import (
+        REPORT_METRIC_MARKER,
+        REPORT_METRIC_SCHEMA,
+        ConditionalReportMetric,
+        FrozenReportMetricRequirementsV1,
+        ReportMetricExpectation,
+        report_metric_value,
+    )
+
+    request = goal.preferences.get("report_metric_requirements")
+    if request is None:
+        if report_metric_value(scheme.report_requirements,
+                               scheme.assurance_requirements.get("report_metric_requirements")):
+            raise BindingDenied("CONTRACT_REJECTED", "unsolicited report opt-in")
+        return scheme
+    allowed = {"schema_version", "report_mode", "required_metric_ids", "optional_metric_ids",
+               "conditional_requirements", "enabled_condition_refs", "period"}
+    if (not isinstance(request, dict) or set(request) - allowed
+            or request.get("schema_version") != REPORT_METRIC_SCHEMA
+            or request.get("report_mode") != "METRIC_FOCUSED"):
+        raise BindingDenied("CONTRACT_REJECTED", "report request version/mode")
+    supported = {"revenue_growth_v1": "revenue_growth", "ebitda_margin_v1": "ebitda_margin"}
+
+    def ids(key):
+        values = request.get(key, [])
+        if (not isinstance(values, list) or any(not isinstance(v, str) for v in values)
+                or len(values) != len(set(values))):
+            raise BindingDenied("CONTRACT_REJECTED", key)
+        return set(values)
+
+    required, optional = ids("required_metric_ids"), ids("optional_metric_ids")
+    enabled = ids("enabled_condition_refs")
+    known_conditions = {f"section:{name}" for name in supported.values()}
+    if not enabled <= known_conditions:
+        raise BindingDenied("CONTRACT_REJECTED", "unknown report condition")
+    provenance = []
+    seen = set()
+    for item in request.get("conditional_requirements", []):
+        if (not isinstance(item, dict)
+                or set(item) != {"condition_ref", "metric_id", "requirement_ref"}
+                or item["condition_ref"] not in known_conditions
+                or not isinstance(item["requirement_ref"], str) or not item["requirement_ref"]):
+            raise BindingDenied("CONTRACT_REJECTED", "conditional report requirement")
+        pair = (item["condition_ref"], item["metric_id"])
+        if pair in seen:
+            raise BindingDenied("CONTRACT_REJECTED", "duplicate conditional requirement")
+        seen.add(pair)
+        active = item["condition_ref"] in enabled
+        provenance.append(ConditionalReportMetric(**item, resolved_enabled=active))
+        if active:
+            required.add(item["metric_id"])
+    selected = required | optional | {p.metric_id for p in provenance}
+    if not selected <= supported.keys() or not required or required & optional:
+        raise BindingDenied("CONTRACT_REJECTED", "unsupported/conflicting report metric selection")
+    period = request.get("period")
+    if not isinstance(period, str) or len(period) != 6 or not period.startswith("FY"):
+        raise BindingDenied("CONTRACT_REJECTED", "explicit annual report period required")
+    try:
+        year = int(period[2:])
+    except ValueError as exc:
+        raise BindingDenied("CONTRACT_REJECTED", "report period") from exc
+    expectations = []
+    for formula in sorted(selected):
+        capability = service.capability_registry.get(supported[formula])
+        source = inspect.getsourcefile(type(capability))
+        expectations.append(ReportMetricExpectation(
+            metric_id=formula, capability_id=capability.definition.capability_id,
+            capability_version=capability.definition.version,
+            implementation_hash="sha256:" + hashlib.sha256(Path(source).read_bytes()).hexdigest(),
+            object_id=goal.research_object_id, period=period,
+            prior_period=f"FY{year - 1}" if formula == "revenue_growth_v1" else None,
+            as_of=goal.as_of,
+        ))
+    data = dict(schema_version=REPORT_METRIC_SCHEMA, report_mode="METRIC_FOCUSED",
+                request_digest=digest(request, "report-metric-request/v1"),
+                resolved_required_metric_ids=tuple(sorted(required)),
+                optional_metric_ids=tuple(sorted(optional)),
+                conditional_requirement_provenance=tuple(sorted(
+                    provenance, key=lambda p: (p.condition_ref, p.metric_id))),
+                metric_expectations=tuple(expectations))
+    contract = FrozenReportMetricRequirementsV1(
+        **data, contract_digest=digest(data, REPORT_METRIC_SCHEMA)
+    )
+    return scheme.model_copy(update={
+        "report_requirements": [*scheme.report_requirements, REPORT_METRIC_MARKER],
+        "assurance_requirements": {**scheme.assurance_requirements,
+                                   "report_metric_requirements": contract.model_dump(mode="json")},
+    })
+
+
+def frozen_report_metrics(aggregate):
+    """Read the marker and both copies; never rebuild from runtime preferences."""
+    from src.domain.execution_profile import report_metric_value
+
+    contract = report_metric_value(aggregate.scheme.report_requirements,
+                                  aggregate.scheme.assurance_requirements.get("report_metric_requirements"))
+    if contract is not None and aggregate.aggregate_schema_version != 2:
+        raise BindingDenied("CONTRACT_REJECTED", "report requires confirmed v2 authority")
+    root = aggregate.node_binding
+    if root is None or root.execution_snapshot is None:
+        if contract is not None:
+            raise BindingDenied("CONTRACT_REJECTED", "missing frozen report authority")
+        return None
+    raw_scenario = root.execution_snapshot.get("scenario", {})
+    snapshot_contract = report_metric_value(
+        raw_scenario.get("report_requirements", ()), raw_scenario.get("report_metric_requirements")
+    )
+    if contract is None and snapshot_contract is None:
+        return None
+    snapshot = ExecutionSnapshot.model_validate(root.execution_snapshot)
+    if snapshot.scenario.report_metric_requirements != contract:
+        raise BindingDenied("CONTRACT_REJECTED", "Scheme/scenario report contract mismatch")
+    if contract is not None and any(
+        e.object_id != aggregate.run.research_object_id or e.as_of != aggregate.run.as_of
+        for e in contract.metric_expectations
+    ):
+        raise BindingDenied("CONTRACT_REJECTED", "report Run identity")
+    return contract
+
+
+def validate_report_draft_correspondence(contract, goal):
+    """Validate the resolved draft without choosing or replacing business requirements."""
+    request = goal.preferences.get("report_metric_requirements", {})
+    required = set(request.get("required_metric_ids", ()))
+    enabled = set(request.get("enabled_condition_refs", ()))
+    requested_conditions = sorted(
+        (c["condition_ref"], c["metric_id"], c["requirement_ref"])
+        for c in request.get("conditional_requirements", ())
+    )
+    retained_conditions = sorted(
+        (c.condition_ref, c.metric_id, c.requirement_ref)
+        for c in contract.conditional_requirement_provenance
+    )
+    required.update(c.metric_id for c in contract.conditional_requirement_provenance
+                    if c.resolved_enabled)
+    if (requested_conditions != retained_conditions
+            or any(c.resolved_enabled != (c.condition_ref in enabled)
+                   for c in contract.conditional_requirement_provenance)
+            or required != set(contract.resolved_required_metric_ids)
+            or set(request.get("optional_metric_ids", ())) != set(contract.optional_metric_ids)
+            or any(e.object_id != goal.research_object_id or e.as_of != goal.as_of
+                   or e.period != request.get("period") for e in contract.metric_expectations)):
+        raise BindingDenied("CONTRACT_REJECTED", "resolved report draft differs from request")

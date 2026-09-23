@@ -228,7 +228,7 @@ class ResearchAgentOutputArtifactStore:
             status=str(payload["status"]),
             input_refs=[str(value) for value in payload["input_refs"]],
             structured_output=(
-                ResearchAgentStructuredOutput.model_validate(structured)
+                structured
                 if isinstance(structured, dict)
                 else None
             ),

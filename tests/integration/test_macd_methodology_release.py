@@ -9,7 +9,7 @@ from src.adapters.finrobot.professional_reporting import (
     ProfessionalHTMLRenderer,
     ProfessionalPDFRenderer,
 )
-from src.application.persistence import ReleasedResearchResultRow
+from src.application.persistence import ReleasedResearchResultRow, ResearchRunAggregateRow
 from src.domain.enums import (
     CorporateActionStatus,
     FinancialActuality,
@@ -110,7 +110,7 @@ async def test_macd_methodology_persists_across_restart_and_renders(tmp_path) ->
     async with engine.begin() as connection:
         await connection.run_sync(
             Base.metadata.create_all,
-            tables=[ReleasedResearchResultRow.__table__],
+            tables=[ReleasedResearchResultRow.__table__, ResearchRunAggregateRow.__table__],
         )
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     await SQLAlchemyRunRecordRepository(sessions).save_released(_released_result())

@@ -345,9 +345,16 @@ async def admit(backend, prior_id, request, key):
         )
         aggregate = RunAggregate(run=run, goal=goal, scheme=scheme, runtime=runtime)
         events = backend._initial_events(run=run, scheme=scheme, planned=planned, timestamp=now)
-        from src.application.repository import initialize_binding
+        from src.application.execution_profiles import resolve_execution_snapshot
+        from src.application.repository import create_confirmed_risk_binding, initialize_binding
+        from src.application.research_outputs import configure_output_contracts
 
-        initialize_binding(aggregate, service=backend.service)
+        configure_output_contracts(runtime)
+        snapshot = resolve_execution_snapshot(
+            scheme, goal, runtime.actual_graph.tasks, backend.service
+        )
+        initialize_binding(aggregate, snapshot=snapshot)
+        create_confirmed_risk_binding(aggregate, snapshot)
         root = SQLAlchemyApplicationRepository._row(aggregate)
         root.projection_sequence = len(events)
         uow.session.add(root)

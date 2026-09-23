@@ -32,6 +32,9 @@ def failure_command(owner, proposed, unknown, payload):
         or payload.get("status") != "FAILED"
     ):
         raise BindingDenied("IDENTITY_MISMATCH", "terminal failure command")
+    if (proposed.node_binding is not None
+            and proposed.runtime.binding_ref != proposed.node_binding.reference()):
+        raise BindingDenied("IDENTITY_MISMATCH", "terminal command root reference")
     identity = digest(canonical_value(owner), SCHEMA)
     return {
         "event_id": "EVT-" + str(uuid5(NAMESPACE_URL, SCHEMA + identity)),
@@ -44,7 +47,7 @@ def failure_command(owner, proposed, unknown, payload):
     }
 
 
-def failure_payload(aggregate, command, predecessor, causal):
+def failure_payload(aggregate, command, predecessor, causal, terminal_revision):
     payload = deepcopy(command["payload"])
     payload["terminal_failure"] = {
         "schema": SCHEMA,
@@ -52,6 +55,7 @@ def failure_payload(aggregate, command, predecessor, causal):
         "run_id": aggregate.run.run_id,
         "completed_at": aggregate.run.completed_at.isoformat(),
         "status": "FAILED",
+        "terminal_failure_projection_revision": terminal_revision,
         "owner": command["owner"],
         "binding_ref": canonical_value(aggregate.node_binding.reference()),
         "root_digest": digest(aggregate_payload(aggregate), SCHEMA),
@@ -88,8 +92,11 @@ def verify_failure_event(event):
 def verify_failure_replay(aggregate, event, command):
     verify_failure_event(event)
     metadata = event.payload.get("terminal_failure", {})
+    business_payload = deepcopy(event.payload)
+    business_payload.pop("terminal_failure", None)
     if (
-        metadata.get("request_digest") != command["request_digest"]
+        business_payload != command["payload"]
+        or metadata.get("request_digest") != command["request_digest"]
         or metadata.get("owner") != command["owner"]
         or metadata.get("binding_ref") != canonical_value(aggregate.node_binding.reference())
         or metadata.get("root_digest") != digest(aggregate_payload(aggregate), SCHEMA)

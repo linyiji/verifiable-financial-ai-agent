@@ -46,14 +46,17 @@ class RecoveryEvidenceStore:
                 .where(ResearchRunAggregateRow.run_id == record.scope.run_id)
                 .with_for_update()
             )
-            if row is not None and row.payload.get("node_binding", {}).get(
+            from src.application.persistence import SQLAlchemyApplicationRepository
+
+            aggregate = (SQLAlchemyApplicationRepository._from_row(row)
+                         if row is not None else None)
+            if row is not None and (row.payload.get("node_binding") or {}).get(
                 "external_failure_resume"
             ) is not None:
-                from src.application.persistence import SQLAlchemyApplicationRepository
                 from src.application.resume_runtime import validate_recovery_writer
 
                 validate_recovery_writer(
-                    SQLAlchemyApplicationRepository._to_aggregate(row.payload), record,
+                    aggregate, record,
                     await self.records_in_session(
                         session, record.scope.run_id, record.scope.task_id
                     ),

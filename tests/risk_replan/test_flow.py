@@ -27,6 +27,7 @@ async def fixture(
     valuation_gate=None,
     persist=True,
     complete_requirements=False,
+    minimal_risk=False,
     symbol="SYNTHETIC",
 ):
     service, aggregate, collector, _ = await configured(
@@ -99,32 +100,27 @@ async def fixture(
                 model=client.model_name,
                 authority_exists=True,
             )
+    if minimal_risk:
+        from datetime import date
+
+        from src.adapters.fmp import FMPProvider
+        from src.application.evidence_collection import LiveFMPEvidenceCollector
+        from src.data.artifacts import LocalRawArtifactStore
+        from tests.external_failure_resume.runtime_fixture import Transport
+
+        aggregate.goal.preferences["risk_semantic_profile"] = "risk_semantic_outcome_minimal_v1"
+        aggregate.goal.as_of = aggregate.run.as_of = date(2026, 9, 4)
+        service.evidence_collector = LiveFMPEvidenceCollector(
+            provider=FMPProvider(Transport()), repository=service.evidence_repository,
+            artifact_store=LocalRawArtifactStore(tmp_path / "minimal-raw"))
     aggregate.node_binding = None
     aggregate.run.planned_graph_id = aggregate.runtime.planned_graph.graph_id
     aggregate.run.actual_graph_id = aggregate.runtime.actual_graph.graph_id
     initialize_binding(aggregate, service=service)
-    from src.domain.research_object import ResearchObject
-
     if persist:
-        await service.repository.add_object(
-            ResearchObject(
-                object_id=aggregate.run.research_object_id,
-                symbol=symbol,
-                company_name="Synthetic",
-                exchange="LOCAL",
-            )
-        )
-    from src.application.models import ResearchRunDraft
+        from tests.wp02.confirmation_fixture import confirm_template
 
-    if persist:
-        await service.repository.add_draft(
-            ResearchRunDraft(
-                draft_id="DRAFT-RISK-REPLAN-SYNTHETIC",
-                goal=aggregate.goal,
-                scheme_snapshot=aggregate.scheme,
-            )
-        )
-        await service.repository.add_run(aggregate)
+        aggregate = await confirm_template(service, aggregate, symbol=symbol)
     calls = []
 
     async def response(request):
@@ -157,6 +153,10 @@ async def fixture(
             requires_follow_up=(follow_up and prompt["task_type"] == "risk_analysis")
             or failure == "recursive",
         )
+        if minimal_risk and prompt["task_type"] == "risk_analysis":
+            output.update(
+                business_outcome="SUFFICIENT", outcome_reason_codes=[], evidence_gap_refs=[]
+            )
         return httpx.Response(
             200,
             json={

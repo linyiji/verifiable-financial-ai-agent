@@ -5,15 +5,17 @@ from copy import deepcopy
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from src.application.persistence import (
     ResearchRunAggregateRow,
     RuntimeEventRow,
     SessionFactoryEvidenceRepository,
     SQLAlchemyApplicationRepository,
+    TerminalSettlementBudget,
 )
 from src.application.resume_runtime import require_terminal_event
+from src.application.terminal_failure import failure_command
 from src.domain.node_binding import BindingDenied
 from src.infrastructure.database.postgresql_events import PostgresRuntimeEventStore
 from src.infrastructure.database.recovery import RecoveryEvidenceStore
@@ -71,6 +73,23 @@ async def test_failure_atomic_rollback_retry_and_mismatch(
     assert not any(e.type.value == "run.failed" for e in await store.replay(run_id))
     monkeypatch.setattr(repo, method, original)
     owner, proposed, kwargs = captured["owner"], captured["proposed"], captured["kwargs"]
+    if fault == "event":
+        command = failure_command(owner, proposed, kwargs["unknown"], kwargs["payload"])
+        async with sessions() as session:
+            row = await session.get(ResearchRunAggregateRow, run_id)
+            command["search_path"] = await session.scalar(text("SELECT current_schema()"))
+            command["baseline"] = {
+                "payload": deepcopy(row.payload), "status": row.status,
+                "projection_revision": row.projection_revision,
+                "projection_sequence": row.projection_sequence,
+                "last_event_sequence": max(
+                    (event.sequence for event in await store.replay(run_id)), default=0,
+                ),
+            }
+        assert await repo._read_failure_outcome(
+            owner, command,
+            TerminalSettlementBudget(asyncio.get_running_loop().time() + 30),
+        ) is None
     # Two independent repository instances compete with exactly the same command.
     events = await asyncio.gather(*(
         SQLAlchemyApplicationRepository(sessions).finalize_failure(owner, proposed, **kwargs)

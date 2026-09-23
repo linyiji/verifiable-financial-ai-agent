@@ -243,7 +243,16 @@ def freeze_child_template(service, scheme, goal, source):
         goal="Validate the material risk signal as a bounded child task",
         reason_code="MATERIAL_RISK_FOLLOW_UP",
     )
-    scenario = ScenarioProfile(task_categories=("risk_follow_up",))
+    from src.domain.execution_profile import report_metric_value
+
+    report_contract = report_metric_value(
+        scheme.report_requirements, scheme.assurance_requirements.get("report_metric_requirements")
+    )
+    scenario = ScenarioProfile(
+        task_categories=("risk_follow_up",),
+        **({"report_requirements": tuple(scheme.report_requirements),
+            "report_metric_requirements": report_contract} if report_contract is not None else {}),
+    )
     current = resolve_execution_snapshot(scheme, goal, [task], service, scenario=scenario).for_task(
         task
     )

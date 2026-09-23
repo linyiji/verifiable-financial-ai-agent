@@ -43,6 +43,9 @@ def validate_cycle_admission(aggregate, admission):
 
 
 def current_risk_success(aggregate):
+    from src.application.repository import confirmed_risk_authority
+
+    confirmed_risk_authority(aggregate)
     cycle = current_envelope(aggregate)
     if cycle is None:
         return False
@@ -60,6 +63,10 @@ def current_risk_success(aggregate):
         or aggregate.runtime.task(cycle.task_id).status.value != "COMPLETED"
     ):
         return False
+    from src.application.risk_admission import _require_final
+    from src.domain.risk_admission import _contract_for_validated
+
+    _require_final(aggregate, result, _contract_for_validated(aggregate))
     return any(
         r.kind == "AGENT_OUTPUT" and r.payload_snapshot.get("status") == "SUCCESS"
         for r in result.output_records

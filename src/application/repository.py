@@ -50,6 +50,9 @@ def initialize_binding(aggregate, *, service=None, snapshot=None):
     if aggregate.node_binding is not None:
         validate_root(aggregate)
         return
+    if (aggregate.aggregate_schema_version != 2
+            or aggregate.confirmed_risk_semantic_binding is not None):
+        raise BindingDenied("AUTHORITY_MISSING", "cannot reconstruct a confirmed root")
     from src.application.execution_profiles import resolve_execution_snapshot
 
     snapshot = snapshot or resolve_execution_snapshot(
@@ -67,11 +70,16 @@ def initialize_binding(aggregate, *, service=None, snapshot=None):
         scenario_snapshot_digest=snapshot.scenario_snapshot_digest,
         execution_profile_snapshot_digest=snapshot.execution_profile_snapshot_digest,
     )
-    validate_root(aggregate)
+    _validate_root(aggregate)
     aggregate.runtime.binding_ref = aggregate.node_binding.reference()
 
 
 def validate_root(aggregate, owner=None):
+    confirmed_risk_authority(aggregate)
+    return _validate_root(aggregate, owner)
+
+
+def _validate_root(aggregate, owner=None):
     root = aggregate.node_binding
     if root is None:
         raise BindingDenied("STATE_REFRESH_REQUIRED", "missing node binding")
@@ -129,6 +137,7 @@ def validate_root(aggregate, owner=None):
 
 
 def compare_whole(current, proposed):
+    compare_confirmed_identity(current, proposed)
     root = validate_root(current)
     other = validate_root(proposed)
     if (root.binding_revision, root.owner_id, root.owner_generation, root.lifecycle) != (
@@ -303,18 +312,37 @@ class InMemoryApplicationRepository:
         return projection(aggregate)
 
     async def decide_replan(self, run_id, command, *, actor, key):
-        from src.application.risk_replan import decide
+        from src.application.risk_replan import _MutationResult, _ReplanReadOnly, decide
 
-        async with self._binding_transaction(run_id) as aggregate:
-            result = decide(aggregate, command, actor=actor, key=key)
+        mutation = _MutationResult()
+        try:
+            async with self._binding_transaction(run_id) as aggregate:
+                result = decide(aggregate, command, actor=actor, key=key, _mutation=mutation)
+                mutation.consume(result)
+        except _ReplanReadOnly as replay:
+            return replay.result
         return result
 
     async def apply_replan(self, run_id):
-        from src.application.risk_replan import apply, audit, control, proposal, store
+        from src.application.risk_replan import (
+            _MutationResult,
+            _ReplanReadOnly,
+            apply,
+            audit,
+            control,
+            proposal,
+            store,
+        )
 
+        mutation = _MutationResult()
         try:
             async with self._binding_transaction(run_id) as aggregate:
-                result = await apply(self, aggregate)
+                result = await apply(self, aggregate, _mutation=mutation)
+                # Pending delivery retains reservation retirement and normal commit semantics.
+                if result is not None:
+                    mutation.consume(result)
+        except _ReplanReadOnly as replay:
+            return replay.result
         except BindingDenied as error:
             async with self._binding_transaction(run_id) as aggregate:
                 state = control(aggregate)
@@ -386,17 +414,21 @@ class InMemoryApplicationRepository:
         async with self._lock:
             if aggregate.run.run_id in self._runs:
                 raise ValueError(f"run already exists: {aggregate.run.run_id}")
+            validate_new_confirmation(aggregate)
             self._runs[aggregate.run.run_id] = deepcopy(aggregate)
 
     async def get_run(self, run_id: str) -> RunAggregate | None:
         current = self._runs.get(run_id)
-        return deepcopy(current) if current and current.node_binding is not None else current
+        if current is not None:
+            confirmed_risk_authority(current)
+        return deepcopy(current)
 
     async def save_run(self, aggregate: RunAggregate) -> None:
         async with self._lock:
             if aggregate.run.run_id not in self._runs:
                 raise KeyError(aggregate.run.run_id)
             current = self._runs[aggregate.run.run_id]
+            compare_confirmed_identity(current, aggregate)
             if current.node_binding is not None or aggregate.node_binding is not None:
                 compare_whole(current, aggregate)
                 aggregate = deepcopy(aggregate)
@@ -408,11 +440,12 @@ class InMemoryApplicationRepository:
         del events
 
     async def list_runs_for_object(self, object_id: str) -> list[RunAggregate]:
-        return [
-            aggregate
-            for aggregate in self._runs.values()
-            if aggregate.run.research_object_id == object_id
-        ]
+        results = []
+        for aggregate in self._runs.values():
+            if aggregate.run.research_object_id == object_id:
+                confirmed_risk_authority(aggregate)
+                results.append(deepcopy(aggregate))
+        return results
 
     @asynccontextmanager
     async def _binding_transaction(self, run_id, *, resume_replay=None):
@@ -436,7 +469,14 @@ class InMemoryApplicationRepository:
                 await self.verify_materials(
                     [control(snapshot).candidate.output_record], run_id=run_id
                 )
+            from src.runtime.scheduler import liveness_committed, liveness_facts
+
+            liveness_before = liveness_facts(snapshot)
             yield snapshot
+            if (current.aggregate_schema_version != snapshot.aggregate_schema_version
+                    or current.confirmed_risk_semantic_binding
+                    != snapshot.confirmed_risk_semantic_binding):
+                raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "transaction identity")
             snapshot.node_binding.binding_revision += 1
             snapshot.runtime.binding_ref = snapshot.node_binding.reference()
             events = (snapshot.node_binding.external_failure_resume or {}).get("audit", [])
@@ -445,11 +485,16 @@ class InMemoryApplicationRepository:
                 from src.application.resume_runtime import publish_memory_events
 
                 await publish_memory_events(self, snapshot, events[prior_count:])
+            confirmed_risk_authority(snapshot)
             self._runs[run_id] = deepcopy(snapshot)
+        liveness_committed(snapshot, liveness_before)
 
     async def get_run_fresh(self, run_id):
         async with self._lock:
-            return deepcopy(self._runs.get(run_id))
+            current = self._runs.get(run_id)
+            if current is not None:
+                confirmed_risk_authority(current)
+            return deepcopy(current)
 
     async def claim_execution(self, run_id):
         async with self._binding_transaction(run_id) as aggregate:
@@ -565,6 +610,9 @@ class InMemoryApplicationRepository:
             for record in result.output_records:
                 if digest(record.payload_snapshot, record.record_schema) != record.content_digest:
                     raise BindingDenied("IDENTITY_MISMATCH", record.record_id)
+            from src.application.risk_admission import require_final
+
+            require_final(aggregate, result)
             bindings.append(result.dependency())
         return tuple(bindings)
 
@@ -826,6 +874,7 @@ class InMemoryApplicationRepository:
                     committed_results=root.current_results,
                     require_current=True,
                     candidate_dependency=child_dependency(aggregate, current),
+                    aggregate=aggregate,
                 )[0]
                 != "READY"
             ):
@@ -849,6 +898,9 @@ class InMemoryApplicationRepository:
                 policy_refs={
                     "confirmed_scheme": aggregate.scheme.scheme_id,
                     "scope": "fixed-initial-graph-default/v1",
+                    **({"risk_semantic_contract": root.execution_snapshot["scenario"][
+                        "risk_semantic_contract"]} if root.execution_snapshot["scenario"].get(
+                            "risk_semantic_contract") is not None else {}),
                     **({"external_resume_cycle": cycle.cycle_id,
                         "external_resume_authorization": cycle.authorization_id,
                         "external_resume_ordinal": cycle.cycle_ordinal} if cycle else {}),
@@ -1083,7 +1135,41 @@ class InMemoryApplicationRepository:
     async def commit_node_result(
         self, admission, *, task, artifacts, output_records, resolved_ids, observed=None
     ):
+        from src.application.risk_admission import RiskResultReplay
+
+        try:
+            return await self._commit_node_result(
+                admission, task=task, artifacts=artifacts, output_records=output_records,
+                resolved_ids=resolved_ids, observed=observed)
+        except RiskResultReplay as replay:
+            return replay.result
+
+    async def _commit_node_result(
+        self, admission, *, task, artifacts, output_records, resolved_ids, observed=None
+    ):
         async with self._binding_transaction(admission.run_id) as aggregate:
+            receipts = aggregate.node_binding.risk_admissions or {}
+            if admission.admission_binding_id in receipts:
+                receipt = receipts[admission.admission_binding_id]
+                existing = [r for r in aggregate.node_binding.results.values()
+                            if r.admission_binding_id == admission.admission_binding_id]
+                if existing:
+                    result = existing[0]
+                    if (result.output_records != tuple(output_records)
+                            or result.resolved_input_binding_ids != tuple(resolved_ids)):
+                        raise BindingDenied("RISK_REPLAY_MISMATCH")
+                    await self.verify_materials(result.output_records, run_id=admission.run_id)
+                    for key in resolved_ids:
+                        await self.verify_materials(
+                            aggregate.node_binding.resolved_inputs[key].material_refs,
+                            run_id=admission.run_id)
+                    from src.application.risk_admission import derive
+
+                    if derive(aggregate, admission, output_records, resolved_ids) != receipt:
+                        raise BindingDenied("RISK_REPLAY_STALE")
+                    from src.application.risk_admission import RiskResultReplay
+
+                    raise RiskResultReplay(result)
             if aggregate.node_binding.replan is not None:
                 from src.application.risk_replan import control
 
@@ -1177,12 +1263,23 @@ class InMemoryApplicationRepository:
                     ):
                         raise BindingDenied("IDENTITY_MISMATCH", "scoped artifact versus Result")
             self._validate_wp04_result(aggregate, task, artifacts)
+            from src.application.risk_admission import derive
+
+            risk_receipt = derive(aggregate, admission, output_records, actual)
+            if risk_receipt is not None:
+                root.risk_admissions = {**(root.risk_admissions or {}),
+                                        admission.admission_binding_id: risk_receipt}
+                observed = {**(observed or {}),
+                            "risk_admission_digest": risk_receipt["receipt_digest"]}
+            nonfinal = risk_receipt is not None and risk_receipt["decision"] != "FINAL_SUCCESS"
             from src.application.risk_replan import capture
 
             candidates = [item for item in artifacts.agent_outputs
                           if item.task_id == task.task_id and item.structured_output is not None
                           and item.structured_output.requires_follow_up]
-            if task.task_type == "risk_analysis" and candidates:
+            if (task.task_type == "risk_analysis" and candidates
+                    and (risk_receipt is None
+                         or risk_receipt["decision"] == "FOLLOW_UP_PENDING")):
                 evidence = await self._current_recovery_records(admission.run_id, task.task_id)
                 accepted = [r for r in evidence if r.kind == "ATTEMPT_COMPLETED"
                             and r.outcome == "PASS"
@@ -1192,6 +1289,7 @@ class InMemoryApplicationRepository:
                         or accepted[0].scope.run_id != admission.run_id
                         or accepted[0].scope.task_id != task.task_id):
                     raise BindingDenied("REPLAN_CANDIDATE_ATTEMPT_REQUIRED")
+                aggregate.runtime.binding_ref = root.reference()
                 return capture(aggregate, admission, task, artifacts, output_records, actual,
                                observed or {})
             result = ResultBinding(
@@ -1213,7 +1311,12 @@ class InMemoryApplicationRepository:
             identity = value_identity(result, "result_id", "result_digest")
             result = result.model_copy(update={"result_id": identity, "result_digest": identity})
             root.results[identity] = result
-            root.current_results[task.task_id] = identity
+            if not nonfinal:
+                root.current_results[task.task_id] = identity
+            else:
+                old = root.current_results.pop(task.task_id, None)
+                if old and old not in root.invalidation_refs:
+                    root.invalidation_refs.append(old)
             from datetime import UTC, datetime
 
             root.attempts[task.task_id] = root.attempts[task.task_id].model_copy(
@@ -1222,15 +1325,29 @@ class InMemoryApplicationRepository:
             from src.domain.enums import TaskStatus
 
             committed_task = task.model_copy(deep=True)
-            committed_task.status = TaskStatus.COMPLETED
+            committed_task.status = TaskStatus.BLOCKED if nonfinal else TaskStatus.COMPLETED
             committed_task.progress = 1.0
+            if nonfinal:
+                from src.domain.output_dependency import OutputOutcome, OutputStatus
+
+                committed_task.output_outcomes = [OutputOutcome(
+                    output_id="agent_output",
+                    status=(OutputStatus.INSUFFICIENT_EVIDENCE
+                            if risk_receipt["decision"] == "EVIDENCE_INSUFFICIENT"
+                            else OutputStatus.FAILED),
+                    refs=[risk_receipt["candidate_output_id"]],
+                    reason_code=risk_receipt["decision"],
+                )]
             aggregate.runtime.actual_graph.tasks = [
                 committed_task if item.task_id == task.task_id else item
                 for item in aggregate.runtime.actual_graph.tasks
             ]
-            aggregate.runtime.completed_output_refs[task.task_id] = [
-                item.record_id for item in output_records
-            ]
+            if not nonfinal:
+                aggregate.runtime.completed_output_refs[task.task_id] = [
+                    item.record_id for item in output_records
+                ]
+            else:
+                aggregate.runtime.completed_output_refs.pop(task.task_id, None)
             # Scoped merge only; other concurrent task patches must survive.
             for field, identity_field in (
                 ("evidence", "evidence_id"),
@@ -1255,10 +1372,13 @@ class InMemoryApplicationRepository:
                 )
             from src.application.resume_runtime import committed_cycle
 
-            committed_cycle(aggregate, task)
+            if not nonfinal:
+                aggregate.runtime.binding_ref = root.reference()
+                committed_cycle(aggregate, task)
             if task.task_type == "risk_follow_up" and root.replan is not None:
                 from src.application.risk_replan import finalize_parent
 
+                aggregate.runtime.binding_ref = root.reference()
                 finalize_parent(aggregate, result)
         return result
 
@@ -1348,3 +1468,238 @@ class InMemoryApplicationRepository:
                 original = self._calculations.get(material.record_id)
                 if original is None or calculation_core(original) != payload:
                     raise BindingDenied("MISSING_INPUT", material.record_id)
+
+
+def _confirmation_snapshot(snapshot, graph):
+    from src.domain.execution_profile import ExecutionSnapshot
+    from src.domain.risk_admission import freeze_contract, validate_contract
+
+    snapshot = ExecutionSnapshot.model_validate(snapshot.model_dump())
+    if {n.task_id for n in snapshot.nodes} != {t.task_id for t in graph.tasks}:
+        raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "snapshot task set")
+    for task in graph.tasks:
+        snapshot.for_task(task)
+        node = next(n for n in snapshot.nodes if n.task_id == task.task_id)
+        if node.output_contract_digest != digest(task.output_requirements, "output-contract/v1"):
+            raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "output requirements")
+    contract = snapshot.scenario.risk_semantic_contract
+    if contract is not None and validate_contract(contract) != freeze_contract(graph.tasks):
+        raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "Risk contract")
+    return snapshot
+
+
+def _initial_confirmation_root(run_id, graph, snapshot):
+    return NodeBindingState(
+        run_id=run_id,
+        execution_mode="DEFAULT",
+        owner_generation=0,
+        owner_id=None,
+        lifecycle="UNCLAIMED",
+        binding_revision=0,
+        frozen_graph=GraphIdentity.of(graph),
+        execution_snapshot=snapshot.model_dump(mode="json"),
+        scenario_snapshot_digest=snapshot.scenario_snapshot_digest,
+        execution_profile_snapshot_digest=snapshot.execution_profile_snapshot_digest,
+    )
+
+
+def create_confirmed_risk_binding(aggregate, snapshot):
+    """Server Confirm only; callers must publish this value in their Confirm transaction."""
+    from datetime import UTC
+
+    from src.domain.risk_admission import (
+        LEGACY_VERSION,
+        PROFILE,
+        RECEIPT_SCHEMA,
+        ConfirmedRiskSemanticBindingV1,
+    )
+
+    if (
+        aggregate.aggregate_schema_version != 2
+        or aggregate.confirmed_risk_semantic_binding is not None
+    ):
+        raise BindingDenied("CONFIRMED_AUTHORITY_CORRUPT", "not a fresh confirmation")
+    snapshot = _confirmation_snapshot(snapshot, aggregate.runtime.actual_graph)
+    root = _initial_confirmation_root(
+        aggregate.run.run_id, aggregate.runtime.actual_graph, snapshot
+    )
+    if aggregate.node_binding != root or aggregate.runtime.binding_ref != root.reference():
+        raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "initial root")
+    confirmed = aggregate.scheme.confirmed_at
+    if confirmed is None or confirmed.tzinfo is None:
+        raise BindingDenied("CONFIRMED_AUTHORITY_CORRUPT", "confirmation time")
+    contract = snapshot.scenario.risk_semantic_contract
+    requested = aggregate.goal.preferences.get("risk_semantic_profile")
+    if (requested == PROFILE) != (contract is not None):
+        raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "requested/resolved Risk contract")
+    values = dict(
+        schema_version=RECEIPT_SCHEMA,
+        run_id=aggregate.run.run_id,
+        object_id=aggregate.run.research_object_id,
+        goal_id=aggregate.goal.goal_id,
+        goal_hash=digest(aggregate.goal),
+        scheme_id=aggregate.scheme.scheme_id,
+        scheme_hash=digest(aggregate.scheme),
+        planned_graph_id=aggregate.run.planned_graph_id,
+        graph_identity=GraphIdentity.of(aggregate.runtime.actual_graph),
+        risk_semantic_mode="D01_V1" if contract is not None else "LEGACY",
+        risk_semantic_contract_version=PROFILE if contract is not None else LEGACY_VERSION,
+        risk_semantic_contract_digest=(
+            contract["contract_digest"]
+            if contract is not None
+            else digest(
+                {"risk_semantic_mode": "LEGACY", "risk_semantic_contract": None},
+                "confirmed-legacy-risk-semantic/v1",
+            )
+        ),
+        scenario_profile_digest=snapshot.scenario_snapshot_digest,
+        execution_profile_snapshot_digest=snapshot.execution_profile_snapshot_digest,
+        execution_snapshot_digest=digest(snapshot, "confirmed-execution-snapshot/v1"),
+        confirmation_binding_reference=root.reference(),
+        confirmed_at=confirmed.astimezone(UTC).isoformat(),
+    )
+    aggregate.confirmed_risk_semantic_binding = ConfirmedRiskSemanticBindingV1(
+        **values, binding_digest=digest(values, RECEIPT_SCHEMA)
+    )
+    confirmed_risk_authority(aggregate)
+
+
+def confirmed_risk_authority(aggregate):
+    """Version-selected authority. Never resolves preferences or today's defaults."""
+    from datetime import UTC
+
+    from src.application.execution_profiles import frozen_report_metrics
+    from src.domain.execution_profile import ExecutionSnapshot
+    from src.domain.risk_admission import ConfirmedRiskAuthority, ConfirmedRiskSemanticBindingV1
+    from src.domain.task import ActualRuntimeGraph
+
+    frozen_report_metrics(aggregate)
+    if type(aggregate.aggregate_schema_version) is not int:
+        raise BindingDenied("CONFIRMED_AUTHORITY_CORRUPT", "schema version")
+    if aggregate.aggregate_schema_version == 1:
+        from src.application.models import _HistoricalCodecProvenance
+
+        if (
+            aggregate._historical_codec_provenance is not _HistoricalCodecProvenance.PERSISTED_V1
+            or aggregate.confirmed_risk_semantic_binding is not None
+        ):
+            raise BindingDenied("CONFIRMED_AUTHORITY_CORRUPT", "mixed historical envelope")
+        return ConfirmedRiskAuthority.HISTORICAL_PRE_BINDING
+    if aggregate.aggregate_schema_version != 2 or aggregate.confirmed_risk_semantic_binding is None:
+        raise BindingDenied("CONFIRMED_AUTHORITY_CORRUPT", "required confirmation receipt")
+    try:
+        receipt = ConfirmedRiskSemanticBindingV1.model_validate(
+            aggregate.confirmed_risk_semantic_binding.model_dump()
+        )
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise BindingDenied("CONFIRMED_AUTHORITY_CORRUPT", "receipt") from exc
+    confirmed = aggregate.scheme.confirmed_at
+    if (
+        confirmed is None
+        or confirmed.tzinfo is None
+        or receipt.confirmed_at != confirmed.astimezone(UTC).isoformat()
+        or receipt.run_id != aggregate.run.run_id
+        or receipt.run_id != aggregate.runtime.run_id
+        or receipt.run_id != aggregate.runtime.planned_graph.run_id
+        or receipt.object_id != aggregate.run.research_object_id
+        or receipt.object_id != aggregate.goal.research_object_id
+        or receipt.object_id != aggregate.scheme.research_object_id
+        or receipt.goal_id != aggregate.run.goal_id
+        or receipt.goal_id != aggregate.goal.goal_id
+        or receipt.goal_id != aggregate.scheme.goal_id
+        or receipt.goal_hash != digest(aggregate.goal)
+        or receipt.scheme_id != aggregate.run.scheme_id
+        or receipt.scheme_id != aggregate.scheme.scheme_id
+        or receipt.scheme_hash != digest(aggregate.scheme)
+        or receipt.planned_graph_id != aggregate.run.planned_graph_id
+        or receipt.planned_graph_id != aggregate.runtime.planned_graph.graph_id
+    ):
+        raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "confirmed identity")
+    root = aggregate.node_binding
+    if root is None:
+        if receipt.risk_semantic_mode == "D01_V1":
+            raise BindingDenied("AUTHORITY_MISSING", receipt.run_id)
+        if GraphIdentity.of(aggregate.runtime.actual_graph) != receipt.graph_identity:
+            raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "rootless legacy graph")
+        return ConfirmedRiskAuthority.CONFIRMED_LEGACY
+    if aggregate.runtime.binding_ref != root.reference():
+        raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "current binding reference")
+    try:
+        NodeBindingState.model_validate(root.model_dump())
+        current = _confirmation_snapshot(
+            ExecutionSnapshot.model_validate(root.execution_snapshot),
+            aggregate.runtime.actual_graph,
+        )
+        original_graph = aggregate.runtime.actual_graph
+        original_snapshot = current
+        if root.replan is not None:
+            from src.application.risk_replan import control, validate_replan_root
+
+            validate_replan_root(aggregate, validate_semantic_admission=False)
+            transition = control(aggregate).transition
+            if transition is not None:
+                original_graph = ActualRuntimeGraph.model_validate(transition.old_graph_snapshot)
+                original_snapshot = _confirmation_snapshot(
+                    ExecutionSnapshot.model_validate(transition.old_execution_snapshot),
+                    original_graph,
+                )
+                if transition.base_graph != receipt.graph_identity:
+                    raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "Replan base")
+        contract = original_snapshot.scenario.risk_semantic_contract
+        mode = "D01_V1" if contract is not None else "LEGACY"
+        contract_digest = (
+            contract["contract_digest"]
+            if contract is not None
+            else digest(
+                {"risk_semantic_mode": "LEGACY", "risk_semantic_contract": None},
+                "confirmed-legacy-risk-semantic/v1",
+            )
+        )
+        if (
+            root.run_id != receipt.run_id
+            or root.frozen_graph != GraphIdentity.of(aggregate.runtime.actual_graph)
+            or GraphIdentity.of(original_graph) != receipt.graph_identity
+            or current.scenario != original_snapshot.scenario
+            or root.scenario_snapshot_digest != current.scenario_snapshot_digest
+            or root.execution_profile_snapshot_digest != current.execution_profile_snapshot_digest
+            or mode != receipt.risk_semantic_mode
+            or contract_digest != receipt.risk_semantic_contract_digest
+            or original_snapshot.scenario_snapshot_digest != receipt.scenario_profile_digest
+            or original_snapshot.execution_profile_snapshot_digest
+            != receipt.execution_profile_snapshot_digest
+            or digest(original_snapshot, "confirmed-execution-snapshot/v1")
+            != receipt.execution_snapshot_digest
+            or _initial_confirmation_root(
+                receipt.run_id, original_graph, original_snapshot
+            ).reference()
+            != receipt.confirmation_binding_reference
+        ):
+            raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "frozen execution identity")
+    except (ValueError, TypeError, KeyError) as exc:
+        raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "root/snapshot") from exc
+    return (
+        ConfirmedRiskAuthority.CONFIRMED_D01_V1
+        if receipt.risk_semantic_mode == "D01_V1"
+        else ConfirmedRiskAuthority.CONFIRMED_LEGACY
+    )
+
+
+def compare_confirmed_identity(current, proposed):
+    confirmed_risk_authority(current)
+    confirmed_risk_authority(proposed)
+    if (
+        current.aggregate_schema_version != proposed.aggregate_schema_version
+        or current.confirmed_risk_semantic_binding != proposed.confirmed_risk_semantic_binding
+    ):
+        raise BindingDenied("CONFIRMED_AUTHORITY_MISMATCH", "immutable confirmation receipt")
+
+
+def validate_new_confirmation(aggregate):
+    confirmed_risk_authority(aggregate)
+    if (
+        aggregate.aggregate_schema_version != 2
+        or aggregate.node_binding is None
+        or aggregate.node_binding.reference()
+        != aggregate.confirmed_risk_semantic_binding.confirmation_binding_reference
+    ):
+        raise BindingDenied("CONFIRMED_AUTHORITY_CORRUPT", "new Run requires initial receipt/root")

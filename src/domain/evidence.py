@@ -136,3 +136,96 @@ class EvidenceRecord(TimestampedModel):
 class AcceptedEvidenceBundle(TimestampedModel):
     run_id: str
     records: list[EvidenceRecord]
+
+
+def risk_input_consistency_guard_v1(*, materials, binding_id, input_digest, policy, scope):
+    """Bounded exact comparison of already verified selected retained semantics.
+
+    This function does not select, normalize, admit or mutate EvidenceRecords.
+    Its caller owns currentness, producer lineage and raw/material verification.
+    """
+    import re
+    from itertools import combinations
+
+    from src.domain.node_binding import BindingDenied, canonical_value, digest
+
+    if len(materials) > policy["max_materials"]:
+        raise BindingDenied("RISK_GUARD_BOUND_EXCEEDED")
+    seen = {}
+    groups = {}
+    exclusions = []
+    reasons = set()
+    dimensions = (
+        "object_id", "normalized_field", "period", "as_of", "period_basis", "actuality",
+        "statement_series", "statement_cohort", "unit", "currency",
+    )
+    for material in materials:
+        if material.record_id in seen and seen[material.record_id] != material:
+            raise BindingDenied("RISK_MATERIAL_ID_COLLISION", material.record_id)
+        seen[material.record_id] = material
+    for identity, material in sorted(seen.items()):
+        if material.kind != "EVIDENCE":
+            continue
+        value = canonical_value(material.payload_snapshot)
+        if value.get("normalized_field") not in {"revenue", "ebitda"}:
+            exclusions.append({"evidence_id": identity,
+                               "reason": "UNSUPPORTED_FOR_AUTOMATIC_CONFLICT_RESOLUTION_V1"})
+            continue
+        period = value.get("period", "")
+        valid_period = (re.fullmatch(r"FY[0-9]{4}", period)
+                        and value.get("period_basis") == "FY") or (
+                            re.fullmatch(r"Q[1-4]FY[0-9]{4}", period)
+                            and value.get("period_basis") == "QUARTER")
+        number = value.get("normalized_value")
+        number = str(number) if type(number) is int else number
+        valid_number = isinstance(number, str) and re.fullmatch(
+            r"-?(0|[1-9][0-9]*)(\.[0-9]+)?", number
+        ) and sum(c.isdigit() for c in number) <= 128 and (
+            len(number.split(".")[1]) if "." in number else 0
+        ) <= 64
+        if not (
+            valid_period and valid_number and value.get("unit") == "CURRENCY"
+            and re.fullmatch(r"[A-Z]{3}", value.get("currency") or "")
+            and value.get("actuality") == "ACTUAL"
+            and all(value.get(d) is not None and str(value[d]).strip() for d in dimensions)
+            and all(value.get(d) is None for d in (
+                "technical_price_basis", "corporate_action_status", "cash_flow_sign_convention"))
+            and value.get("cash_flow_normalization_applied") is False
+        ):
+            reasons.add("STRUCTURED_COMPARISON_UNESTABLISHED")
+            exclusions.append({"evidence_id": identity,
+                               "reason": "STRUCTURED_COMPARISON_UNESTABLISHED"})
+            continue
+        canonical = number.rstrip("0").rstrip(".") if "." in number else number
+        if canonical in {"-0", "0"}:
+            canonical = "0"
+        key = tuple(value[d] for d in dimensions)
+        groups.setdefault(key, []).append((identity, canonical))
+    equal = 0
+    conflicts = []
+    supported = 0
+    for key, members in sorted(groups.items()):
+        for left, right in combinations(sorted(members), 2):
+            supported += 1
+            if supported > policy["max_pairs"]:
+                raise BindingDenied("RISK_GUARD_BOUND_EXCEEDED")
+            if left[1] == right[1]:
+                equal += 1
+            else:
+                reasons.add("UNRESOLVED_STRUCTURED_CONFLICT")
+                conflicts.append({"key": dict(zip(dimensions, key, strict=True)),
+                                  "evidence_refs": [left[0], right[0]]})
+    if policy["required_comparisons"]:
+        # No automatic comparison outside the frozen supported domain is promised.
+        reasons.add("REQUIRED_COMPARISON_UNSUPPORTED")
+    result = {
+        "version": "risk_input_consistency_guard_v1", "scope": scope,
+        "resolved_input_binding_id": binding_id, "input_digest": input_digest,
+        "policy_digest": digest(policy, "risk-input-consistency-policy/v1"),
+        "material_set_digest": digest([seen[k] for k in sorted(seen)], "risk-material-set/v1"),
+        "input_consistency": "UNSATISFIED" if reasons else "PASS",
+        "reason_codes": sorted(reasons), "supported_pair_count": supported,
+        "equal_pair_count": equal, "conflicting_pair_count": len(conflicts),
+        "conflicts": conflicts, "coverage_exclusions": exclusions,
+    }
+    return {**result, "guard_digest": digest(result, "risk-input-consistency-guard/v1")}

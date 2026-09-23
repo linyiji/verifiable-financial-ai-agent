@@ -158,6 +158,10 @@ class PostgresRuntimeEventStore:
                     .where(RuntimeEventRow.event_id == event_id)
                     .values(payload=event.model_dump(mode="json"))
                 )
+            from src.runtime.scheduler import liveness_progress
+
+            if event_type is not RuntimeEventType.TASK_PROGRESS:
+                liveness_progress(run_id, ("event", event.event_id, event.sequence))
             return event
         except (IntegrityError, DBAPIError) as exc:
             raise EventSequenceError("database rejected runtime event sequence") from exc

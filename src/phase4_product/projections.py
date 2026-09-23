@@ -738,9 +738,21 @@ def project_goal(goal: object, *, expected_object_id: str) -> GoalProjectionV1:
         safe_preferences = safe_json_object(
             {key: value for key, value in preferences.items() if key != "model_selection"}
             if selection is not None else preferences,
-            allowed_keys={"currency", "depth", "include_peers"},
+            allowed_keys={
+                **{key: {"currency", "depth", "include_peers", "risk_semantic_profile"}
+                   for key in ("currency", "depth", "include_peers", "risk_semantic_profile")},
+                "report_metric_requirements": {
+                    "schema_version", "report_mode", "required_metric_ids", "optional_metric_ids",
+                    "conditional_requirements", "enabled_condition_refs", "period",
+                    "condition_ref", "metric_id", "requirement_ref",
+                },
+            },
             context="Goal.preferences",
         )
+        if ("risk_semantic_profile" in safe_preferences
+                and safe_preferences["risk_semantic_profile"]
+                != "risk_semantic_outcome_minimal_v1"):
+            raise ValueError("unknown requested Risk semantic profile")
         if selection is not None:
             safe_preferences["model_selection"] = selection.model_dump(mode="json")
     except (UnsafeProjectionData, ValueError) as exc:
@@ -775,14 +787,20 @@ def project_scheme(
         assurance = safe_json_object(
             _field(scheme, "assurance_requirements"),
             allowed_keys={
-                "financial_review",
-                "review_required",
-                "accepted_evidence_only",
-                "deterministic_financial_values",
-                "proof_policy",
-                "required",
-                "reviewer",
-                "policy_id",
+                **{key: {"financial_review", "review_required", "accepted_evidence_only",
+                         "deterministic_financial_values", "proof_policy", "required",
+                         "reviewer", "policy_id"}
+                   for key in ("financial_review", "review_required", "accepted_evidence_only",
+                               "deterministic_financial_values", "proof_policy", "required",
+                               "reviewer", "policy_id")},
+                "report_metric_requirements": {
+                    "schema_version", "report_mode", "resolved_required_metric_ids",
+                    "optional_metric_ids", "conditional_requirement_provenance",
+                    "metric_expectations", "contract_digest", "request_digest",
+                    "condition_ref", "metric_id", "resolved_enabled", "requirement_ref",
+                    "capability_id", "capability_version", "implementation_hash", "object_id",
+                    "period", "prior_period", "as_of", "unit", "period_basis", "actuality",
+                },
             },
             context="Scheme.assurance_requirements",
         )

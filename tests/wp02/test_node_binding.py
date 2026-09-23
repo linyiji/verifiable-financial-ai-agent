@@ -38,6 +38,7 @@ from src.infrastructure.database.execution_ledger import SQLExecutionLedger
 from src.runtime.checkpoint import RuntimeCheckpoint
 from src.runtime.scheduler import DependencyScheduler, TaskExecutionContext
 from src.runtime.state import RuntimeState
+from tests.wp02.confirmation_fixture import confirm_template, persist_template
 
 
 @pytest.fixture(autouse=True)
@@ -181,6 +182,8 @@ class FakeLLM:
         )
 
 
+
+
 async def wired(tmp_path, repository=None, *, persist=True):
     repository = repository or InMemoryApplicationRepository()
     value = aggregate()
@@ -216,12 +219,12 @@ async def wired(tmp_path, repository=None, *, persist=True):
     value.node_binding = None
     initialize_binding(value, service=service)
     if persist:
-        await repository.add_run(value)
+        value = await confirm_template(service, value)
     return service, value, collector, provider
 
 
 async def admitted(repository, value):
-    await repository.add_run(value)
+    await persist_template(repository, value)
     owner = await repository.claim_execution(value.run.run_id)
     task = value.runtime.actual_graph.tasks[0]
     a = await repository.reserve_node(
@@ -276,10 +279,32 @@ async def test_default_service_commits_A_B_R_before_downstream(tmp_path):
     assert collector.calls == 1 and len(provider.calls) == 2
 
 
-def test_serialization_checkpoint_history_unknown_schema():
+def historical_template_payload():
+    # Never-confirmed synthetic historical row; no new-v2 receipt is stripped.
     value = aggregate()
-    payload = SQLAlchemyApplicationRepository._payload(value)
-    restored = SQLAlchemyApplicationRepository._to_aggregate(payload)
+    payload = {
+        name: getattr(value, name).model_dump(mode="json")
+        for name in ("run", "goal", "scheme", "artifacts", "node_binding")
+    }
+    payload["node_binding_required"] = value.node_binding.schema_version
+    state = value.runtime
+    payload["runtime"] = {
+        name: getattr(state, name)
+        for name in ("completed_output_refs", "evidence_refs", "workspace_refs",
+                     "review_state", "proof_state", "cost")
+    }
+    payload["runtime"].update(
+        planned_graph=state.planned_graph.model_dump(mode="json"),
+        actual_graph=state.actual_graph.model_dump(mode="json"),
+        run_status=state.run_status.value,
+        binding_ref=state.binding_ref.model_dump(mode="json"),
+    )
+    return payload
+
+
+def test_serialization_checkpoint_history_unknown_schema():
+    payload = historical_template_payload()
+    restored = SQLAlchemyApplicationRepository._to_aggregate(payload, 1)
     assert SQLAlchemyApplicationRepository._payload(restored) == payload
     checkpoint = RuntimeCheckpoint.capture(checkpoint_id="CHECK-WP02", state=restored.runtime)
     assert (
@@ -289,19 +314,19 @@ def test_serialization_checkpoint_history_unknown_schema():
     assert "owner_id" not in checkpoint.model_dump_json()
     payload["node_binding"]["schema_version"] = "unknown"
     with pytest.raises(ValueError):
-        SQLAlchemyApplicationRepository._to_aggregate(payload)
+        SQLAlchemyApplicationRepository._to_aggregate(payload, 1)
     payload.pop("node_binding")
     with pytest.raises(BindingDenied):
-        SQLAlchemyApplicationRepository._to_aggregate(payload)
+        SQLAlchemyApplicationRepository._to_aggregate(payload, 1)
     payload.pop("node_binding_required")
     payload["runtime"].pop("binding_ref")
-    assert SQLAlchemyApplicationRepository._to_aggregate(payload).node_binding is None
+    assert SQLAlchemyApplicationRepository._to_aggregate(payload, 1).node_binding is None
 
 
 async def test_claim_exclusion_and_stale_whole_save():
     repo = InMemoryApplicationRepository()
     value = aggregate(("evidence_collection",))
-    await repo.add_run(value)
+    await persist_template(repo, value)
     owners = await asyncio.gather(
         *(repo.claim_execution(value.run.run_id) for _ in range(2)), return_exceptions=True
     )
@@ -355,8 +380,11 @@ async def test_unknown_generation_and_missing_context_fail_closed(tmp_path):
 async def test_nondefault_modes_denied(mode):
     repo = InMemoryApplicationRepository()
     value = aggregate()
-    value.node_binding.execution_mode = mode
-    await repo.add_run(value)
+    await persist_template(repo, value)
+    # Explicit durable negative corruption after lawful Confirm.
+    stored = repo._runs[value.run.run_id]
+    stored.node_binding.execution_mode = mode
+    stored.runtime.binding_ref = stored.node_binding.reference()
     with pytest.raises(BindingDenied, match="EXECUTION_MODE_CONFLICT"):
         await repo.claim_execution(value.run.run_id)
 
@@ -434,7 +462,7 @@ async def test_sqlite_cas_rollback_shared_writer_and_v1_denial(tmp_path):
 async def test_same_revision_whole_writer_cannot_change_node_material(tamper):
     repo = InMemoryApplicationRepository()
     value = aggregate(("evidence_collection",))
-    await repo.add_run(value)
+    await persist_template(repo, value)
     changed = await repo.get_run_fresh(value.run.run_id)
     if tamper == "result_ref":
         changed.runtime.actual_graph.tasks[0].result_ref = "forged"
@@ -457,6 +485,8 @@ async def test_input_digest_and_reservation_reject_result_commit():
     repo._runs[value.run.run_id].node_binding.resolved_inputs[step.resolved_input_binding_id] = (
         step.model_copy(update={"input_digest": "bad"})
     )
+    raw = repo._runs[value.run.run_id]
+    raw.runtime.binding_ref = raw.node_binding.reference()
     with pytest.raises(BindingDenied, match="IDENTITY_MISMATCH"):
         await repo.commit_node_result(
             a,
@@ -541,12 +571,12 @@ async def test_native_only_calculations_bind_each_step(tmp_path):
 
     repo = InMemoryApplicationRepository()
     value = aggregate(("evidence_collection", "fundamental_analysis"))
-    await repo.add_run(value)
     await repo.add_object(
         ResearchObject(
             object_id="OBJECT-WP02", symbol="TEST", company_name="Fixture", exchange="LOCAL"
         )
     )
+    await persist_template(repo, value)
     evidence = InMemoryEvidenceRepository()
 
     class FinancialCollector(FakeCollector):
@@ -673,12 +703,12 @@ async def test_independent_task_patches_preserve_both_results():
     value.runtime.planned_graph.tasks[1].dependencies = []
     value.node_binding = None
     initialize_binding(value)
-    await repo.add_run(value)
     await repo.add_object(
         ResearchObject(
             object_id="OBJECT-WP02", symbol="TEST", company_name="Fixture", exchange="LOCAL"
         )
     )
+    await persist_template(repo, value)
     service = ResearchApplicationService(repository=repo)
     current = await service.execute_run(value.run.run_id)
     assert len(current.node_binding.current_results) == 2
@@ -688,7 +718,7 @@ async def test_independent_task_patches_preserve_both_results():
 async def test_run_identity_cannot_change_at_same_revision():
     repo = InMemoryApplicationRepository()
     value = aggregate()
-    await repo.add_run(value)
+    await persist_template(repo, value)
     changed = await repo.get_run_fresh(value.run.run_id)
     changed.run.execution_target = "different"
     with pytest.raises(BindingDenied, match="IDENTITY_MISMATCH"):
@@ -752,7 +782,8 @@ async def test_preexisting_evidence_cannot_be_silently_omitted():
     repo = InMemoryApplicationRepository()
     value = aggregate(("evidence_collection",))
     value.runtime.actual_graph.tasks[0].task_input_evidence_ids = ["missing-original"]
-    await repo.add_run(value)
+    value.runtime.planned_graph.tasks[0].task_input_evidence_ids = ["missing-original"]
+    await persist_template(repo, value)
     owner = await repo.claim_execution(value.run.run_id)
     task = value.runtime.actual_graph.tasks[0]
     with pytest.raises(BindingDenied, match="preexisting Evidence"):
@@ -805,7 +836,7 @@ async def test_every_graph_mutation_rejects_before_swap_or_event(method, argumen
 
     value = aggregate()
     repo = InMemoryApplicationRepository()
-    await repo.add_run(value)
+    await persist_template(repo, value)
     events = InMemoryRuntimeEventStore()
     graph = GraphMutationService(events, repository=repo)
     task = value.runtime.actual_graph.tasks[0].model_copy(update={"task_id": "new"})
@@ -831,7 +862,7 @@ async def test_closure_rejected_before_started_or_assurance(tmp_path):
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     repo = SQLAlchemyApplicationRepository(sessions)
     value = aggregate()
-    await repo.add_run(value)
+    await persist_template(repo, value)
     before = SQLAlchemyApplicationRepository._payload(await repo.get_run_fresh(value.run.run_id))
 
     class ForbiddenService:
@@ -859,10 +890,10 @@ async def test_closure_rejected_before_started_or_assurance(tmp_path):
 
 @pytest.mark.parametrize("missing", ["schema_version", "execution_mode", "owner_generation"])
 def test_required_binding_fields_are_not_invented(missing):
-    payload = SQLAlchemyApplicationRepository._payload(aggregate())
+    payload = historical_template_payload()
     payload["node_binding"].pop(missing)
     with pytest.raises(BindingDenied):
-        SQLAlchemyApplicationRepository._to_aggregate(payload)
+        SQLAlchemyApplicationRepository._to_aggregate(payload, 1)
 
 
 async def test_direct_scheduler_reentry_with_same_owner_is_rejected():
@@ -870,7 +901,7 @@ async def test_direct_scheduler_reentry_with_same_owner_is_rejected():
 
     repo = InMemoryApplicationRepository()
     value = aggregate()
-    await repo.add_run(value)
+    await persist_template(repo, value)
     owner = await repo.claim_execution(value.run.run_id)
     await repo.begin_scheduler(owner)
     events = InMemoryRuntimeEventStore()

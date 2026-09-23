@@ -276,6 +276,8 @@ class NodeBindingState(BaseModel):
     invalidation_refs: list[str] = Field(default_factory=list)
     replan: dict | None = Field(default=None, exclude_if=lambda value: value is None)
 
+    risk_admissions: dict | None = Field(default=None, exclude_if=lambda value: value is None)
+
     external_failure_resume: dict | None = Field(
         default=None, exclude_if=lambda value: value is None
     )

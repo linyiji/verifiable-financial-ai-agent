@@ -128,7 +128,29 @@ class IndependentFinancialReviewer:
         claim_by_metric = _unique(claims, "metric_id", "claim metric")
         formulas = [item.formula_id for item in calculations]
         expected_formulas = set(MATERIAL_FORMULAS)
-        if requirement_context is not None:
+        report_contract = None
+        if requirement_context is not None and "report_metric_requirements" in requirement_context:
+            from src.assurance.requirements import validate_report_metrics
+            from src.domain.execution_profile import FrozenReportMetricRequirementsV1
+
+            report_contract = FrozenReportMetricRequirementsV1.model_validate(
+                requirement_context["report_metric_requirements"]
+            )
+            validate_report_metrics(report_contract, run_id=run_id, run_as_of=run_as_of,
+                                    evidence=evidence, calculations=calculations, metrics=metrics)
+            expected_formulas = set(requirement_context["used_metric_ids"])
+            if expected_formulas != {m.formula_id for m in metrics}:
+                raise ValueError("Report use-set mismatch")
+            _check(
+                checks, "FIN_SCHEME_REQUIREMENT_CLOSURE",
+                set(requirement_context["required_calculations"])
+                <= {c.capability_id for c in calculations}
+                and requirement_context["branches"] == [b.model_dump(mode="json")
+                                                         for b in branch_results],
+                expected={"status": "PASS"}, actual={"required_calculations":
+                                                   requirement_context["required_calculations"]},
+            )
+        if requirement_context is not None and report_contract is None:
             from src.domain.financial_branch import BRANCH_FORMULAS
 
             explicit = set(requirement_context["required_calculations"])
@@ -190,7 +212,9 @@ class IndependentFinancialReviewer:
         _check(
             checks,
             "FIN_MATERIAL_FORMULA_CLOSURE",
-            len(formulas) == len(set(formulas)) and set(formulas) == expected_formulas,
+            len(formulas) == len(set(formulas)) and (
+                expected_formulas <= set(formulas) if report_contract is not None
+                else set(formulas) == expected_formulas),
             refs=[item.calculation_id for item in calculations],
             expected={"formula_ids": sorted(expected_formulas)},
             actual={"formula_ids": sorted(formulas)},
@@ -198,7 +222,8 @@ class IndependentFinancialReviewer:
         _check(
             checks,
             "FIN_TYPED_RELEASE_CARDINALITY",
-            len(calculations) == len(metrics) == len(claims) == len(expected_formulas),
+            (report_contract is not None or len(calculations) == len(expected_formulas))
+            and len(metrics) == len(claims) == len(expected_formulas),
             expected={"count": len(expected_formulas)},
             actual={
                 "calculations": len(calculations),
@@ -293,6 +318,8 @@ class IndependentFinancialReviewer:
                 expected={"bound_to_evidence": True},
                 actual={"bound_to_evidence": snapshot_ok},
             )
+            if report_contract is not None and calculation.formula_id not in expected_formulas:
+                continue
             try:
                 metric_ok = metric is not None and _metric_matches(
                     calculation,
@@ -472,10 +499,11 @@ class IndependentFinancialReviewer:
             checks,
             "FIN_PROOF_REQUIREMENT_CLOSURE",
             set(proof_requirements) == calculation_ids
-            and len(required) == 1
-            and calculation_by_id[required[0]].formula_id == "revenue_growth_v1",
+            and (report_contract is not None or (len(required) == 1
+                 and calculation_by_id[required[0]].formula_id == "revenue_growth_v1")),
             refs=required,
-            expected={"must_prove_formula": "revenue_growth_v1"},
+            expected=({"required_calculation_ids": required} if report_contract is not None
+                      else {"must_prove_formula": "revenue_growth_v1"}),
             actual={"required_calculation_ids": required},
         )
 

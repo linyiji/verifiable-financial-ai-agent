@@ -9,6 +9,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from tests.postgresql.test_postgresql_runtime import _owned_database_settings
+
 
 @pytest.fixture(autouse=True)
 def offline_provider_boundary(monkeypatch: pytest.MonkeyPatch):
@@ -35,11 +37,10 @@ async def _reset_isolated_database(url: str) -> None:
     marker = os.environ.get("VFA_ISOLATED_TEST_DATABASE")
     if (
         not marker
-        or not marker.startswith("recovery_v1_")
         or parsed.database != marker
-        or parsed.host != "postgres"
+        or _owned_database_settings().url != url
     ):
-        raise RuntimeError("explicit isolated recovery test database identity required")
+        raise RuntimeError("explicit task-owned test database identity required")
     engine = create_async_engine(url)
     try:
         async with engine.begin() as connection:

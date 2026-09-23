@@ -69,6 +69,23 @@ class ReleaseGate:
         requirement_context: JsonObject | None = None,
     ) -> ReleaseDecision:
         reasons: list[str] = []
+        report_context = (requirement_context or {}).get(
+            "financial_requirements", requirement_context
+        )
+        if report_context and "report_metric_requirements" in report_context:
+            from src.assurance.requirements import validate_report_metrics
+            from src.domain.execution_profile import FrozenReportMetricRequirementsV1
+
+            try:
+                contract = FrozenReportMetricRequirementsV1.model_validate(
+                    report_context["report_metric_requirements"]
+                )
+                validate_report_metrics(contract, run_id=review.run_id, run_as_of=run_as_of,
+                                        evidence=evidence or (),
+                                        calculations=list((calculations or {}).values()),
+                                        metrics=metrics or ())
+            except (ValueError, TypeError, AttributeError) as exc:
+                reasons.append(getattr(exc, "code", "CONTRACT_REJECTED"))
         if review.requirement_context != requirement_context:
             reasons.append("REVIEW_REQUIREMENT_CONTEXT_MISMATCH")
         if review.status is not ReviewStatus.PASS:
@@ -83,7 +100,8 @@ class ReleaseGate:
             item.formula_id in _STRICT_FINANCIAL_FORMULAS for item in calculations.values()
         )
         strict_lineage = (
-            review.reviewer == "independent-financial-review-v2"
+            bool(report_context and "report_metric_requirements" in report_context)
+            or review.reviewer == "independent-financial-review-v2"
             or any(check.code.startswith("FIN_") for check in review.checks)
             or bool(review.reviewed_metric_refs)
             or bool(review.reviewed_claim_refs)

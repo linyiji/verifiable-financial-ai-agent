@@ -710,6 +710,7 @@ class TerminalStateV1(FrozenWireModel):
 
 
 class AtomicRunProjectionV1(FrozenWireModel):
+    risk_admission: dict | None = Field(default=None, exclude_if=lambda value: value is None)
     external_failure_resume: dict | None = Field(
         default=None, exclude_if=lambda value: value is None
     )

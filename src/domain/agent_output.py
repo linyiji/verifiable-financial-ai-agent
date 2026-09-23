@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -48,6 +49,46 @@ class RiskResearchAgentStructuredOutput(ResearchAgentStructuredOutput):
     requires_follow_up: bool
 
 
+class RiskBusinessOutcomeV1(StrEnum):
+    SUFFICIENT = "SUFFICIENT"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+
+
+class RiskAdmissionDecisionV1(StrEnum):
+    FINAL_SUCCESS = "FINAL_SUCCESS"
+    EVIDENCE_INSUFFICIENT = "EVIDENCE_INSUFFICIENT"
+    FOLLOW_UP_PENDING = "FOLLOW_UP_PENDING"
+    CONTRACT_REJECTED = "CONTRACT_REJECTED"
+
+
+class RiskEvidenceGapRefV1(DomainModel):
+    requirement_ref: str = Field(min_length=1)
+    reason_code: Literal[
+        "REQUIRED_OUTPUT_MISSING", "REQUIRED_EVIDENCE_UNQUALIFIED", "EVIDENCE_COVERAGE_LIMITED"
+    ]
+
+
+class RiskResearchAgentStructuredOutputMinimalV1(ResearchAgentStructuredOutput):
+    requires_follow_up: bool = Field(strict=True)
+    business_outcome: RiskBusinessOutcomeV1
+    outcome_reason_codes: list[Literal[
+        "REQUIRED_OUTPUT_MISSING", "REQUIRED_EVIDENCE_UNQUALIFIED", "EVIDENCE_COVERAGE_LIMITED"
+    ]] = Field(max_length=3)
+    evidence_gap_refs: list[RiskEvidenceGapRefV1] = Field(max_length=1500)
+
+    @model_validator(mode="after")
+    def consistent_outcome(self):
+        pairs = [(g.requirement_ref, g.reason_code) for g in self.evidence_gap_refs]
+        reasons = self.outcome_reason_codes
+        if len(pairs) != len(set(pairs)) or len(reasons) != len(set(reasons)):
+            raise ValueError("duplicate Risk gap or reason")
+        if set(reasons) != {g.reason_code for g in self.evidence_gap_refs}:
+            raise ValueError("Risk reasons must exactly match gaps")
+        if (self.business_outcome == "SUFFICIENT") != (not pairs):
+            raise ValueError("Risk outcome and gaps disagree")
+        return self
+
+
 class ResearchAgentOutputRecord(TimestampedModel):
     """Durable exact-Run/Task binding for one observable model invocation."""
 
@@ -66,7 +107,8 @@ class ResearchAgentOutputRecord(TimestampedModel):
     duration_ms: int = Field(ge=0)
     status: Literal["SUCCESS", "FAILED"]
     input_refs: list[str] = Field(default_factory=list)
-    structured_output: ResearchAgentStructuredOutput | None = None
+    structured_output: (RiskResearchAgentStructuredOutputMinimalV1
+                        | ResearchAgentStructuredOutput | None) = None
     failure_code: str | None = None
     artifact_id: str
     artifact_ref: str

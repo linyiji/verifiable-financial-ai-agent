@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Awaitable, Callable, Mapping
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 from typing import Any
@@ -184,6 +185,9 @@ def _unavailable_history_item(
         status=status,
         updated_at=row.updated_at,
     )
+
+
+_settlement_budget_context = ContextVar("terminal_settlement_budget", default=None)
 
 
 class _ProjectionPublishingEventStore:
@@ -634,6 +638,9 @@ class PostgreSQLPhase4ProductBackend:
                 }
             }
             scheme = scheme.model_copy(update={"assurance_requirements": allowed_assurance})
+            from src.application.execution_profiles import resolve_report_metric_draft
+
+            scheme = resolve_report_metric_draft(scheme, goal, self.service)
             goal_projection = project_goal(goal, expected_object_id=payload.research_object_id)
             scheme_projection = project_scheme(
                 scheme,
@@ -708,6 +715,12 @@ class PostgreSQLPhase4ProductBackend:
                     or stored.confirmation_request_hash != request_hash
                 ):
                     raise self._idempotency_conflict()
+                persisted = await self.service.repository.get_run_fresh(stored.admission.run_id)
+                if persisted is None:
+                    raise self._not_found("research_run", stored.admission.run_id)
+                from src.application.repository import confirmed_risk_authority
+
+                confirmed_risk_authority(persisted)
                 return build_confirm_response(
                     stored.admission, request_id=request_id, idempotency_replayed=True
                 )
@@ -899,6 +912,7 @@ class PostgreSQLPhase4ProductBackend:
                 ).all()
             )
             aggregate = row.payload
+            self.service.repository._from_row(row)
             research_object = ResearchObject.model_validate(obj_row.payload)
             run = ResearchRun.model_validate(aggregate["run"])
             goal = ResearchGoal.model_validate(aggregate["goal"])
@@ -1018,9 +1032,14 @@ class PostgreSQLPhase4ProductBackend:
 
                 projection = projection.model_copy(update={
                     "risk_replan": replan_projection(
-                        self.service.repository._to_aggregate(aggregate))
+                        self.service.repository._from_row(row))
                 })
             root = aggregate.get("node_binding") or {}
+            if root.get("execution_snapshot", {}).get("scenario", {}).get("risk_semantic_contract"):
+                from src.application.risk_admission import projection as risk_admission_projection
+
+                projection = projection.model_copy(update={"risk_admission":
+                    risk_admission_projection(self.service.repository._from_row(row))})
             if root and (root.get("external_failure_resume") is not None
                          or run.status is RunStatus.FAILED):
                 from src.phase4_product.external_resume import LOCAL_ACTOR, public_state
@@ -1792,6 +1811,7 @@ class PostgreSQLPhase4ProductBackend:
         return int(sequence or 0)
 
     async def _scheduler_loop(self) -> None:
+        from src.application.persistence import TerminalSettlementBudget
         from src.domain.node_binding import BindingDenied
 
         while True:
@@ -1801,7 +1821,15 @@ class PostgreSQLPhase4ProductBackend:
                 pass
             self._wake.clear()
             for run_id in await self.service.repository.replan_work_run_ids():
+                settlement_budget = TerminalSettlementBudget(
+                    asyncio.get_running_loop().time() + 300,
+                )
                 try:
+                    if await self.service.repository.read_terminal_success(
+                        run_id, budget=settlement_budget,
+                        report_store=self.service.report_publisher,
+                    ) is not None:
+                        continue
                     current = await self.service.repository.get_run_fresh(run_id)
                     if current.node_binding.replan["wait_reason"] == "DECISION_APPLY":
                         if await self.service.repository.apply_replan(run_id) is None:
@@ -1809,9 +1837,7 @@ class PostgreSQLPhase4ProductBackend:
                     owner = await self.service.repository.claim_execution(run_id)
                 except BindingDenied:
                     continue
-                execution = asyncio.create_task(
-                    self._execute_started_run(run_id, execution_owner=owner)
-                )
+                execution = self._create_execution_task(run_id, owner, settlement_budget)
                 self._executions.add(execution)
                 execution.add_done_callback(self._executions.discard)
             async with self.uow_factory() as uow:
@@ -1824,12 +1850,20 @@ class PostgreSQLPhase4ProductBackend:
             )
             for run_id in pending_runtime:
                 try:
+                    settlement_budget = await self.service._resume_liveness_scope(run_id)
+                    if settlement_budget is None:
+                        settlement_budget = TerminalSettlementBudget(
+                            asyncio.get_running_loop().time() + 300,
+                        )
+                    if await self.service.repository.read_terminal_success(
+                        run_id, budget=settlement_budget,
+                        report_store=self.service.report_publisher,
+                    ) is not None:
+                        continue
                     owner = await self.service.repository.claim_execution(run_id)
-                except BindingDenied:
+                except (BindingDenied, TimeoutError):
                     continue
-                execution = asyncio.create_task(
-                    self._execute_started_run(run_id, execution_owner=owner)
-                )
+                execution = self._create_execution_task(run_id, owner, settlement_budget)
                 self._executions.add(execution)
                 execution.add_done_callback(self._executions.discard)
             for admission_id in due:
@@ -1839,6 +1873,20 @@ class PostgreSQLPhase4ProductBackend:
                     continue
 
     async def _start_admitted_run(self, admission_id: str) -> None:
+        from src.application.persistence import TerminalSettlementBudget
+
+        settlement_budget = TerminalSettlementBudget(asyncio.get_running_loop().time() + 300)
+        # Resolve a stale delivery before any admission lease, owner claim or ID.
+        # Release this read lock before the repository's root-serialized readback.
+        async with self.uow_factory() as uow:
+            admission = await uow.scheduler.get_for_update(admission_id)
+            if admission is None:
+                return
+            run_id = admission.run_id
+        if await self.service.repository.read_terminal_success(
+            run_id, budget=settlement_budget, report_store=self.service.report_publisher,
+        ) is not None:
+            return
         now = datetime.now(UTC)
         async with self.uow_factory() as uow:
             current = await uow.scheduler.get_for_update(admission_id)
@@ -1906,17 +1954,31 @@ class PostgreSQLPhase4ProductBackend:
             ):
                 raise product_error("CONFLICT", "scheduler fence was lost")
             await uow.commit()
-        execution = asyncio.create_task(
-            self._execute_started_run(leased.run_id, execution_owner=owner)
-        )
+        execution = self._create_execution_task(leased.run_id, owner, settlement_budget)
         self._executions.add(execution)
         execution.add_done_callback(self._executions.discard)
 
+    def _create_execution_task(self, run_id, owner, settlement_budget):
+        token = _settlement_budget_context.set(settlement_budget)
+        try:
+            return asyncio.create_task(self._execute_started_run(run_id, execution_owner=owner))
+        finally:
+            _settlement_budget_context.reset(token)
+
     @observe("scheduler.execution_delivery", run="run_id")
-    async def _execute_started_run(self, run_id: str, *, execution_owner=None) -> None:
+    async def _execute_started_run(
+        self, run_id: str, *, execution_owner=None, settlement_budget=None,
+    ) -> None:
+        from src.application.persistence import TerminalSettlementBudget
+
+        if settlement_budget is None:
+            settlement_budget = _settlement_budget_context.get()
+        if settlement_budget is None:
+            settlement_budget = TerminalSettlementBudget(asyncio.get_running_loop().time() + 300)
         try:
             current = await self.service.execute_run(
-                run_id, emit_run_started=False, execution_owner=execution_owner
+                run_id, emit_run_started=False, execution_owner=execution_owner,
+                settlement_budget=settlement_budget,
             )
         except asyncio.CancelledError:
             raise
@@ -1926,6 +1988,7 @@ class PostgreSQLPhase4ProductBackend:
             return
         await self._publish_latest_projection_watermark(
             run_id,
+            settlement_budget=settlement_budget,
             expected_binding_ref=current.node_binding.reference()
             if current and current.node_binding
             else None,
@@ -1933,9 +1996,28 @@ class PostgreSQLPhase4ProductBackend:
 
     @observe("event.terminal_publication", run="run_id")
     async def _publish_latest_projection_watermark(
-        self, run_id: str, *, expected_binding_ref=None
+        self, run_id: str, *, expected_binding_ref=None, settlement_budget=None
     ) -> None:
         """Publish the completed aggregate and its durable event tail as one snapshot fence."""
+
+        current = await self.service.repository.get_run_fresh(run_id)
+        if (current is not None and current.node_binding is not None
+                and current.run.status is RunStatus.RELEASED):
+            from src.application.persistence import TerminalSettlementBudget
+            from src.domain.node_binding import BindingDenied
+
+            if settlement_budget is None:
+                settlement_budget = TerminalSettlementBudget(
+                    asyncio.get_running_loop().time() + 300,
+                )
+            replay = await self.service.repository.read_terminal_success(
+                run_id, budget=settlement_budget, report_store=self.service.report_publisher,
+            )
+            if replay is None or replay[0].node_binding.reference() != expected_binding_ref:
+                raise BindingDenied(
+                    "STALE_WRITE_REJECTED", "terminal watermark generation/revision",
+                )
+            return
 
         async with self.sessions() as session, session.begin():
             row = await session.scalar(
@@ -1945,12 +2027,12 @@ class PostgreSQLPhase4ProductBackend:
             )
             if row is None:
                 raise self._not_found("research_run", run_id)
+            current = SQLAlchemyApplicationRepository._from_row(row)
             if row.payload.get("node_binding") is not None or row.payload.get(
                 "node_binding_required"
             ):
                 from src.domain.node_binding import BindingDenied
 
-                current = SQLAlchemyApplicationRepository._to_aggregate(row.payload)
                 if (
                     expected_binding_ref is None
                     or expected_binding_ref != current.node_binding.reference()

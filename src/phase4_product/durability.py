@@ -277,6 +277,8 @@ class AtomicConfirmCommit:
     execution_snapshot: ExecutionSnapshot | None = None
 
     def __post_init__(self, idempotency_key: str) -> None:
+        if self.execution_snapshot is None:
+            raise ValueError("new Confirm requires exact execution snapshot")
         if self.execution_snapshot is not None:
             snapshot = ExecutionSnapshot.model_validate(self.execution_snapshot.model_dump())
             if {n.task_id for n in snapshot.nodes} != {t.task_id for t in self.tasks}:

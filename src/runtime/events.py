@@ -407,6 +407,10 @@ class InMemoryRuntimeEventStore:
             if event_type is RuntimeEventType.CLOSURE_RECOVERY_STARTED:
                 validate_event_log(run_id, [*current, event])
             current.append(event.model_copy(deep=True))
+        from src.runtime.scheduler import liveness_progress
+
+        if event_type is not RuntimeEventType.TASK_PROGRESS:
+            liveness_progress(run_id, ("event", event.event_id, event.sequence))
         await self._notify(run_id)
         return event
 

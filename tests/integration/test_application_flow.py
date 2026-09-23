@@ -5,26 +5,11 @@ from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from apps.api.main import create_app
-from src.application.persistence import (
-    CalculationRecordRow,
-    CanonicalExecutionRecordRow,
-    ReleasedResearchResultRow,
-    ResearchGoalRow,
-    ResearchSchemeSnapshotRow,
-    ReviewRecordRow,
-    RuntimeEventRow,
-    SessionFactoryEvidenceRepository,
-    SQLAlchemyApplicationRepository,
-    TaskRow,
-)
 from src.application.service import ResearchApplicationService
 from src.domain.enums import EvidenceStatus, ProofStatus, ReplanDecision, RunStatus, TaskOrigin
 from src.domain.runtime_event import RuntimeEventType
-from src.infrastructure.database.base import Base
 from src.phase4_product.projections import project_path_change
 
 
@@ -255,55 +240,9 @@ def test_product_http_never_implicitly_admits_with_no_backend() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sql_repository_restores_released_aggregate(tmp_path) -> None:
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'application.db'}")
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
-    repository = SQLAlchemyApplicationRepository(sessions)
-    evidence_repository = SessionFactoryEvidenceRepository(sessions)
-    service = ResearchApplicationService(
-        repository=repository,
-        evidence_repository=evidence_repository,
-    )
-    research_object = await service.create_object(
-        symbol="NVDA", company_name="NVIDIA", exchange="NASDAQ"
-    )
-    draft = await service.prepare_run(
-        research_object_id=research_object.object_id,
-        research_goal="Evaluate",
-        as_of=date(2026, 9, 3),
-        preferences={},
-    )
-    aggregate = await service.confirm_run(draft_id=draft.draft_id, confirm_scheme=True)
-    await service.execute_run(aggregate.run.run_id)
+async def test_sql_repository_restores_released_aggregate(tmp_path, monkeypatch) -> None:
+    # Positive record/release assertions are conserved on actual PostgreSQL in
+    # test_replan_released_record_repository_conservation (BR06/07/11).
+    from tests.risk_replan.backend_fixture import assert_sqlite_replan_denied
 
-    restored = await SQLAlchemyApplicationRepository(sessions).get_run(aggregate.run.run_id)
-    assert restored is not None
-    assert restored.run.status is RunStatus.RELEASED
-    assert restored.artifacts.canonical_record is not None
-    assert restored.artifacts.projections is not None
-    assert restored.artifacts.projections.canonical_record_id == (
-        restored.artifacts.canonical_record.record_id
-    )
-    restored_evidence = await SessionFactoryEvidenceRepository(sessions).list_by_run(
-        aggregate.run.run_id
-    )
-    assert len(restored_evidence) == 4
-
-    expected_counts = {
-        ResearchGoalRow: 1,
-        ResearchSchemeSnapshotRow: 1,
-        TaskRow: 8,
-        CalculationRecordRow: 2,
-        ReviewRecordRow: 1,
-        CanonicalExecutionRecordRow: 1,
-        ReleasedResearchResultRow: 1,
-    }
-    async with sessions() as session:
-        for row_type, expected in expected_counts.items():
-            count = await session.scalar(select(func.count()).select_from(row_type))
-            assert count == expected
-        event_count = await session.scalar(select(func.count()).select_from(RuntimeEventRow))
-        assert event_count is not None and event_count >= 10
-    await engine.dispose()
+    await assert_sqlite_replan_denied(tmp_path, monkeypatch)

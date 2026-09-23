@@ -1,5 +1,6 @@
 """Local contract predicates only; no claims of scheduler/SQL acceptance."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from src.application.external_failure_resume import (
     validate_control,
     validate_expectations,
 )
+from src.application.service import ResearchApplicationService
 from src.domain.enums import RunStatus, TaskStatus
 from src.domain.external_failure_resume import (
     VERSION,
@@ -42,11 +44,13 @@ from src.domain.recovery import (
     SafeFailureEvidence,
     Scope,
 )
+from tests.wp02.confirmation_fixture import confirm_template
 from tests.wp02.test_node_binding import aggregate
 
 
 def fixture():
-    value = aggregate(("risk_analysis",))
+    service = ResearchApplicationService()
+    value = asyncio.run(confirm_template(service, aggregate(("risk_analysis",))))
     root = value.node_binding
     task = value.runtime.actual_graph.tasks[0]
     root.owner_generation = 1
@@ -176,6 +180,7 @@ def fixture():
             reason_code="POLICY_DENIED",
         )
     )
+    value.runtime.binding_ref = root.reference()
     return value, task, records
 
 
@@ -346,6 +351,7 @@ def test_uncertain_or_ineligible_failure_denied(mutation):
             records[i] = records[i].model_copy(update={"route": "teamorouter-luna"})
     else:
         value.node_binding.current_results[task.task_id] = "fabricated"
+        value.runtime.binding_ref = value.node_binding.reference()
     before = legacy_snapshot(value)
     with pytest.raises(BindingDenied):
         settled_failure(value, task.task_id, records)

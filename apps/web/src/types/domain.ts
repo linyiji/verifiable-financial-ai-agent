@@ -545,6 +545,7 @@ export interface NormalizedTerminalState {
 export interface RunProjection {
   readonly externalFailureResume?: SafeJsonObject;
   readonly riskReplan?: SafeJsonObject;
+  readonly riskAdmission?: SafeJsonObject;
   readonly projectionSchemaVersion: typeof RUN_PROJECTION_SCHEMA_VERSION;
   readonly projectionRevision: number;
   readonly projectionSequence: number;
@@ -3100,7 +3101,8 @@ export function decodeRunProjection(
       "execution",
       "terminal",
       "external_failure_resume",
-      "risk_replan"
+      "risk_replan",
+      "risk_admission"
     ],
     "$"
   );
@@ -3415,6 +3417,18 @@ export function decodeRunProjection(
       return fail(`$.${name}.availability`, "terminal Run resource cannot remain PENDING");
     }
   }
+  let riskAdmission: SafeJsonObject | undefined;
+  if (input.risk_admission !== undefined) {
+    riskAdmission = decodeSafeJsonObject(input.risk_admission, "$.risk_admission");
+    if (riskAdmission.schema_version !== "risk-admission-projection/v1"
+        || riskAdmission.run_id !== run.runId
+        || riskAdmission.profile !== "risk_semantic_outcome_minimal_v1"
+        || ![null, "FINAL_SUCCESS", "EVIDENCE_INSUFFICIENT", "FOLLOW_UP_PENDING", "CONTRACT_REJECTED"]
+          .includes(riskAdmission.decision as string | null)
+        || (riskAdmission.current_final === true && riskAdmission.decision !== "FINAL_SUCCESS")) {
+      return fail("$.risk_admission", "Invalid current Risk admission");
+    }
+  }
   let riskReplan: SafeJsonObject | undefined;
   if (input.risk_replan !== undefined) {
     riskReplan = decodeSafeJsonObject(input.risk_replan, "$.risk_replan");
@@ -3432,6 +3446,7 @@ export function decodeRunProjection(
   return freezeDeep({
     ...(externalFailureResume === undefined ? {} : { externalFailureResume }),
     ...(riskReplan === undefined ? {} : { riskReplan }),
+    ...(riskAdmission === undefined ? {} : { riskAdmission }),
     projectionSchemaVersion: RUN_PROJECTION_SCHEMA_VERSION,
     projectionRevision,
     projectionSequence,

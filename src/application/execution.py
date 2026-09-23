@@ -16,7 +16,7 @@ from src.agentic.research_agent import ResearchAgentInvocationError
 from src.agentic.specialist import SpecialistExecutionContext, SpecialistResult
 from src.application.repository import node_invocation, node_recovery
 from src.application.research_outputs import (
-    availability_map,
+    availability_map_for_run,
     configure_output_contracts,
     publish_output,
 )
@@ -87,7 +87,10 @@ class IntegratedTaskExecutor:
         task: Task,
         context: TaskExecutionContext,
     ) -> TaskExecutionResult:
+        from src.application.repository import confirmed_risk_authority
+
         if self._aggregate.node_binding is None:
+            confirmed_risk_authority(self._aggregate)
             raise BindingDenied("STATE_REFRESH_REQUIRED", "legacy Executor is read only")
         if (
             context.admission is None
@@ -95,7 +98,14 @@ class IntegratedTaskExecutor:
             or context.admission.task_id != task.task_id
         ):
             raise BindingDenied("STATE_REFRESH_REQUIRED", "missing admission context")
+        from src.runtime.scheduler import resume_liveness
+
+        liveness = resume_liveness.get()
+        if liveness is not None:
+            liveness.checkpoint()
         fresh = await self._service.repository.enter_node_execution(context.admission)
+        if liveness is not None:
+            liveness.checkpoint()
         invocation = IntegratedTaskExecutor(self._service, fresh)
         if (
             invocation.admission_requirements(task)
@@ -108,6 +118,8 @@ class IntegratedTaskExecutor:
         )
 
         profile = validate_runtime_profile(self._service, fresh, task)
+        if liveness is not None:
+            liveness.checkpoint()
         profile_token = execution_profile_context.set((task.run_id, task.task_id, profile, {}))
         token = node_invocation.set(context.admission)
         reservation = fresh.node_binding.attempts[task.task_id]
@@ -134,6 +146,8 @@ class IntegratedTaskExecutor:
                         attributes={"skill": task.skill_id},
                     ):
                         result = await invocation._execute_instrumented_task(task)
+                        if liveness is not None:
+                            liveness.checkpoint()
                         return await invocation._commit_bound_result(task, result)
         except BaseException as exc:
             if task.wp04_method_requirement is not None and not invocation._wp04.get('terminal_observed'):
@@ -243,7 +257,7 @@ class IntegratedTaskExecutor:
                 "acquisition",
                 {
                     "task": canonical_value(self._aggregate.runtime.task(task.task_id)),
-                    "availability": availability_map(self._aggregate, task),
+                    "availability": availability_map_for_run(self._aggregate, task),
                 },
             )
         handler = self._handler_for(task)
@@ -453,7 +467,7 @@ class IntegratedTaskExecutor:
         )
 
     async def _observe_wp04(self, task, phase, support, diagnostic, numeric, calculation=None):
-        from src.domain.financial_validation import MethodObservation, MethodDenied
+        from src.domain.financial_validation import MethodDenied, MethodObservation
         from src.domain.node_binding import task_fingerprint
         admission = node_invocation.get()
         req = task.wp04_method_requirement
@@ -525,10 +539,14 @@ class IntegratedTaskExecutor:
 
     async def _execute_wp04(self, task, inputs, context):
         from decimal import localcontext
+
         from src.capabilities.financial.growth import capture_revenue_growth_decimal_observation
         from src.domain.financial_validation import (
-            MethodDenied, WP04_FLAGS_SCHEMA, WP04_DECIMAL_POLICY,
-            wp04_decimal_context, validate_decimal_observation,
+            WP04_DECIMAL_POLICY,
+            WP04_FLAGS_SCHEMA,
+            MethodDenied,
+            validate_decimal_observation,
+            wp04_decimal_context,
         )
         state = self._wp04
         req = task.wp04_method_requirement
@@ -710,7 +728,7 @@ class IntegratedTaskExecutor:
             ):
                 raise BindingDenied("IDENTITY_MISMATCH", "calculation implementation")
         if task.wp04_method_requirement is not None and calculation.capability_id == 'revenue_growth':
-            from src.domain.financial_validation import validate_decimal_observation, MethodDenied
+            from src.domain.financial_validation import MethodDenied, validate_decimal_observation
             metadata = calculation.parameters.get('wp04_method_binding', {})
             validate_decimal_observation(metadata.get('decimal_flags_observation'))
             self._service._verify_wp04_load(task.wp04_method_requirement.descriptor)
@@ -749,11 +767,23 @@ class IntegratedTaskExecutor:
 
     async def _execute_risk_analysis(self, task: Task) -> TaskExecutionResult:
         self._require_bound_invocation(task)
-        agent_result = await self._invoke_research_agent(
-            task,
-            supporting_output={"status": "agent_assessment_required"},
-        )
+        try:
+            agent_result = await self._invoke_research_agent(
+                task, supporting_output={"status": "agent_assessment_required"})
+        except LocalOutputFailure:
+            from src.domain.risk_admission import active_contract
+
+            failed = [o for o in self._aggregate.artifacts.agent_outputs
+                      if o.task_id == task.task_id and o.failure_code == "semantic_schema_failure"]
+            if active_contract() is None or len(failed) != 1:
+                raise
+            return TaskExecutionResult(result_ref=failed[0].artifact_ref,
+                                       output_refs=(failed[0].output_id,))
         if agent_result is not None:
+            from src.domain.risk_admission import active_contract
+
+            if active_contract() is not None:
+                return self._accept_research_agent_output(task, agent_result, supporting_output={})
             if (agent_result.agent_output is not None
                     and agent_result.agent_output.structured_output.requires_follow_up
                     and self._aggregate.node_binding is not None):
@@ -1111,7 +1141,7 @@ class IntegratedTaskExecutor:
         self._require_bound_invocation(task)
         supporting_output = {
             "status": "best_effort_not_released",
-            **availability_map(self._aggregate, task),
+            **availability_map_for_run(self._aggregate, task),
         }
         agent_result = await self._invoke_research_agent(
             task,
@@ -1179,7 +1209,7 @@ class IntegratedTaskExecutor:
 
         normalized_evidence = self._normalized_evidence_for_task(task)
         upstream_outputs = self._upstream_agent_outputs(task)
-        availability = availability_map(self._aggregate, task)
+        availability = availability_map_for_run(self._aggregate, task)
         recovery_store = self._service.recovery_evidence_store
         recovery_scope = {item["task_id"] for item in availability["output_availability"]}
         recovery_scope.add(task.task_id)
@@ -1257,6 +1287,12 @@ class IntegratedTaskExecutor:
                 "input_refs": input_refs,
             },
         )
+        from src.domain.risk_admission import active_contract
+
+        contract = active_contract()
+        if task.task_type == "risk_analysis" and contract is not None:
+            context.inputs["risk_requirements"] = contract["requirements"]
+            context.inputs["risk_obligation_refs"] = contract["obligation_refs"]
         if task.task_type == "risk_follow_up":
             from src.application.risk_follow_up import build_risk_follow_up_context
 
@@ -1961,6 +1997,7 @@ def wp04_bind_inputs(requirement, candidates, run_as_of):
     """C2 exact role selection and retained raw scale witness, without arithmetic rounding."""
     import json
     import re
+
     from src.domain.evidence import EvidenceRecord
     from src.domain.financial_validation import MethodDenied, wp04_decimal
     records = []

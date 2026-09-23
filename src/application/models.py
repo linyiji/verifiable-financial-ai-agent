@@ -1,3 +1,5 @@
+from enum import Enum
+
 from pydantic import Field
 
 from src.domain.agent_output import ResearchAgentOutputRecord
@@ -15,6 +17,7 @@ from src.domain.research_goal import ResearchGoal
 from src.domain.research_run import ResearchRun
 from src.domain.research_scheme import ResearchSchemeSnapshot
 from src.domain.review import ReviewRecord
+from src.domain.risk_admission import ConfirmedRiskSemanticBindingV1
 from src.domain.task import ReplanRequest
 from src.output.projections import CanonicalRecordProjections
 from src.output.report import FinancialReport
@@ -58,6 +61,10 @@ class CompletedRunArtifacts(DomainModel):
     parallel_task_peak: int = 0
 
 
+class _HistoricalCodecProvenance(Enum):
+    PERSISTED_V1 = "persisted-aggregate-format/v1"
+
+
 class RunAggregate:
     """Mutable application aggregate; repository snapshots detach its domain values."""
 
@@ -69,7 +76,12 @@ class RunAggregate:
         scheme: ResearchSchemeSnapshot,
         runtime: RuntimeState,
         node_binding: NodeBindingState | None = None,
+        aggregate_schema_version: int = 2,
+        confirmed_risk_semantic_binding: ConfirmedRiskSemanticBindingV1 | None = None,
     ) -> None:
+        self._historical_codec_provenance = None
+        self.aggregate_schema_version = aggregate_schema_version
+        self.confirmed_risk_semantic_binding = confirmed_risk_semantic_binding
         self.run = run
         self.goal = goal
         self.scheme = scheme

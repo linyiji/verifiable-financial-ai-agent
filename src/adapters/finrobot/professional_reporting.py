@@ -93,6 +93,22 @@ class CanonicalReportMapper:
             source_contributions
         ):
             raise CanonicalReportMappingError("report source anchors must be unique")
+        if released.structured_financial_results.get("report_mode") == "METRIC_FOCUSED":
+            metrics = {metric.calculation_id: metric for metric in released.released_metrics}
+            if (len(metrics) != len(released.released_metrics)
+                    or len(source_contributions) != len(metrics)
+                    or {s.calculation_id for s in source_contributions} != set(metrics)
+                    or set(released.structured_financial_results) != {
+                        "research_object", "report_mode", "report_metric_contract_digest"
+                    }):
+                raise CanonicalReportMappingError("Selected metric/source scope is incomplete")
+            for source in source_contributions:
+                metric = metrics[source.calculation_id]
+                if (source.formula_id != metric.formula_id
+                        or source.metric_value != metric.display_value
+                        or source.metric_unit != metric.display_unit
+                        or set(source.evidence_refs) != set(metric.evidence_ids)):
+                    raise CanonicalReportMappingError("Selected metric source identity mismatch")
 
         provenance = {
             "semantic_schema": REPORT_SEMANTIC_SCHEMA,

@@ -156,12 +156,18 @@ class LLMResearchAgent:
             if task.task_type == "risk_analysis"
             else StandardResearchAgentStructuredOutput
         )
+        from src.domain.agent_output import RiskResearchAgentStructuredOutputMinimalV1
+        from src.domain.risk_admission import SCHEMA, active_contract
+
+        minimal_risk = task.task_type == "risk_analysis" and active_contract() is not None
+        if minimal_risk:
+            response_model = RiskResearchAgentStructuredOutputMinimalV1
         started = perf_counter()
         try:
             request = dict(
                 messages=_messages(context),
                 response_model=response_model,
-                schema_name=f"{task.task_type}_research_output_v1",
+                schema_name=SCHEMA if minimal_risk else f"{task.task_type}_research_output_v1",
                 workload_type="RESEARCH_AGENT_EXECUTION",
             )
             response = (
@@ -218,6 +224,7 @@ class LLMResearchAgent:
                 },
             )
             if task.task_type == "risk_analysis" and response.output.requires_follow_up
+            and not minimal_risk
             else None
         )
         return SpecialistResult(

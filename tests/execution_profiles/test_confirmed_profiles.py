@@ -58,7 +58,7 @@ def invocation(value, kind="evidence_collection", override=None):
 
 def fresh(value):
     return SQLAlchemyApplicationRepository._to_aggregate(
-        json.loads(json.dumps(SQLAlchemyApplicationRepository._payload(value)))
+        json.loads(json.dumps(SQLAlchemyApplicationRepository._payload(value))), 2
     )
 
 
@@ -88,7 +88,7 @@ async def test_case_03_fresh_process(tmp_path):
 from src.application.persistence import SQLAlchemyApplicationRepository as R
 from src.application.repository import validate_root
 from src.application.execution_profiles import frozen_profile
-v=R._to_aggregate(json.load(open(sys.argv[1])))
+v=R._to_aggregate(json.load(open(sys.argv[1])), 2)
 validate_root(v)
 print(json.dumps([v.node_binding.scenario_snapshot_digest,
 v.node_binding.execution_profile_snapshot_digest,
@@ -166,23 +166,35 @@ async def test_case_09_default_behavior():
         assert p.allowed_model_routes == TASK_POLICIES[t.task_type].candidates
 
 
-async def test_case_10_missing_corrupt_binding():
-    _, value = await confirmed()
-    missing = fresh(value)
-    missing.node_binding.execution_snapshot = None
-    with pytest.raises(BindingDenied, match="PROFILE_BINDING_MISSING"):
-        validate_root(missing)
-    corrupt = fresh(value)
-    corrupt.node_binding.execution_snapshot["nodes"][0]["profile"]["profile_version"] = "tampered"
-    with pytest.raises(ValueError, match="Corrupt execution profile"):
-        validate_root(corrupt)
+@pytest.mark.parametrize("corruption", ["missing", "corrupt"])
+async def test_case_10_missing_corrupt_binding(corruption):
+    # A0 section 4: a changed authoritative v2 root fails whole-confirmation
+    # identity before the inner profile decoder. No execution is admitted.
+    service, value = await confirmed()
+    original = SQLAlchemyApplicationRepository._payload(value)
+    altered = fresh(value)
+    if corruption == "missing":
+        altered.node_binding.execution_snapshot = None
+    else:
+        profile_data = altered.node_binding.execution_snapshot["nodes"][0]["profile"]
+        profile_data["profile_version"] = "tampered"
+    altered.runtime.binding_ref = altered.node_binding.reference()
+    receipt = altered.confirmed_risk_semantic_binding.model_dump(mode="json")
+    with pytest.raises(BindingDenied, match="CONFIRMED_AUTHORITY_MISMATCH: root/snapshot"):
+        validate_root(altered)
+    assert altered.confirmed_risk_semantic_binding.model_dump(mode="json") == receipt
+    assert not altered.node_binding.attempts
+    assert not altered.node_binding.current_results
+    assert not altered.node_binding.results
+    persisted = await service.repository.get_run_fresh(value.run.run_id)
+    assert SQLAlchemyApplicationRepository._payload(persisted) == original
 
 
 async def test_case_11_graph_identity_change():
     _, value = await confirmed()
     altered = fresh(value)
     altered.runtime.actual_graph.version += 1
-    with pytest.raises(BindingDenied, match="graph identity"):
+    with pytest.raises(BindingDenied, match="CONFIRMED_AUTHORITY_MISMATCH: root/snapshot"):
         compare_whole(value, altered)
 
 
@@ -586,3 +598,24 @@ async def test_current_request_plan_addition_does_not_grant_product_permission(m
         profiles.resolve_execution_snapshot(
             value.scheme, value.goal, value.runtime.actual_graph.tasks
         )
+
+
+@pytest.mark.parametrize("corruption", ["missing", "corrupt"])
+def test_historical_v1_inner_profile_denials(corruption):
+    from tests.wp02.test_node_binding import historical_template_payload
+
+    # A never-confirmed synthetic version-1 payload exercises the original
+    # decoder boundary. It is never inserted as a newly confirmed Run.
+    payload = historical_template_payload()
+    value = SQLAlchemyApplicationRepository._to_aggregate(payload, 1)
+    if corruption == "missing":
+        value.node_binding.execution_snapshot = None
+    else:
+        value.node_binding.execution_snapshot["nodes"][0]["profile"]["profile_version"] = "tampered"
+    value.runtime.binding_ref = value.node_binding.reference()
+    expected = "PROFILE_BINDING_MISSING" if corruption == "missing" else "Corrupt execution profile"
+    with pytest.raises(ValueError, match=expected):
+        validate_root(value)
+    assert not value.node_binding.attempts
+    assert not value.node_binding.results
+    assert value.confirmed_risk_semantic_binding is None

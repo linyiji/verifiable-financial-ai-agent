@@ -23,7 +23,7 @@ class ExecutionContinuationGate:
 
 
 def resolve_outputs(state, task, *, committed_results=None, require_current=False,
-                    candidate_dependency=None):
+                    candidate_dependency=None, aggregate=None):
     candidate_parent = None
     if candidate_dependency is not None:
         from src.domain.risk_replan import CandidateDependency
@@ -34,6 +34,20 @@ def resolve_outputs(state, task, *, committed_results=None, require_current=Fals
                 or state.task(task.parent_task_id).task_type != "risk_analysis"):
             raise ValueError("Candidate dependency is restricted to the exact Risk child")
         candidate_parent = task.parent_task_id
+    if aggregate is not None:
+        from src.application.risk_admission import dependency_state
+
+        committed_results, contract, risk_task = dependency_state(aggregate)
+        # Preserve the existing frozen-contract prerequisite settlement: Risk
+        # may be blocked before invocation because required inputs are missing.
+        if (contract and contract["task_id"] in task.dependencies
+                and state.task(contract["task_id"]).status in SETTLED
+                and contract["task_id"] not in committed_results):
+            return "BLOCKED", [contract["task_id"]]
+        if risk_task == task.task_id or (
+            risk_task in task.dependencies and risk_task != candidate_parent
+        ):
+            return "BLOCKED", [risk_task]
     # With a binding marker, local outputs are navigation hints only. The caller
     # must supply the freshly resolved root pointers (admission revalidates bytes).
     if (

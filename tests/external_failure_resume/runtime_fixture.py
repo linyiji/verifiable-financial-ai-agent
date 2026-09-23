@@ -42,7 +42,9 @@ class RiskFailure(Client):
     risk_calls = 0
 
     async def complete_structured(self, **kwargs):
-        if kwargs["schema_name"] == "risk_analysis_research_output_v1" and self.fail_risk:
+        if kwargs["schema_name"] in {
+            "risk_analysis_research_output_v1", "risk_analysis_research_output_minimal_v1"
+        } and self.fail_risk:
             self.risk_calls += 1
             self.calls += 1
             retain_attempt_facts(dispatch_state="NOT_DISPATCHED", dispatch_basis="LOCAL_PREFLIGHT")
@@ -53,10 +55,21 @@ class RiskFailure(Client):
                 model=self.model_name,
                 retryable=True,
             )
+        if kwargs["schema_name"] == "risk_analysis_research_output_minimal_v1":
+            from src.adapters.llm.provider import LLMStructuredResponse
+
+            self.calls += 1
+            return LLMStructuredResponse(output=kwargs["response_model"].model_validate(dict(
+                summary="Synthetic resumed Risk", key_findings=["Current selected evidence"],
+                risks=[], limitations=[], requires_follow_up=False, business_outcome="SUFFICIENT",
+                outcome_reason_codes=[], evidence_gap_refs=[])), provider=self.provider_name,
+                requested_model=self.model_name, actual_model=self.model_name,
+                attempted_models=(self.model_name,), input_tokens=12, output_tokens=6)
         return await super().complete_structured(**kwargs)
 
 
-async def legal_fixture(root, *, repository=None, evidence=None, store=None, event_store=None):
+async def legal_fixture(root, *, repository=None, evidence=None, store=None, event_store=None,
+                        minimal=False):
     evidence = evidence or InMemoryEvidenceRepository()
     store = store or MemoryRecoveryEvidenceStore()
     clients = {
@@ -100,7 +113,9 @@ async def legal_fixture(root, *, repository=None, evidence=None, store=None, eve
         research_object_id=obj.object_id,
         research_goal="Synthetic legal external-failure closure",
         as_of=date(2026, 9, 4),
-        preferences={},
+        preferences=(
+            {"risk_semantic_profile": "risk_semantic_outcome_minimal_v1"} if minimal else {}
+        ),
     )
     value = await service.confirm_run(draft_id=draft.draft_id, confirm_scheme=True)
     return service, value, clients

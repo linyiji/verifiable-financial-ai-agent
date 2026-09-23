@@ -84,20 +84,24 @@ def build_material_financial_release(
     calculations: Sequence[CalculationRecord],
     judgments: Sequence[JsonObject],
     unavailable_formulas: frozenset[str] = frozenset(),
+    selected_formulas: frozenset[str] | None = None,
 ) -> tuple[
     tuple[ReleasedFinancialMetric, ...],
     tuple[MaterialFinancialClaim, ...],
     tuple[MaterialCalculationDisposition, ...],
 ]:
+    scope = set(MATERIAL_FORMULAS) if selected_formulas is None else set(selected_formulas)
+    if not scope <= _FORMULAS.keys():
+        raise ValueError("unsupported report material scope")
     by_formula: dict[str, CalculationRecord] = {}
     for calculation in calculations:
-        if calculation.formula_id not in _FORMULAS:
+        if calculation.formula_id not in scope:
             continue
         if calculation.formula_id in by_formula:
             raise ValueError(f"duplicate material formula: {calculation.formula_id}")
         by_formula[calculation.formula_id] = calculation
-    missing = set(MATERIAL_FORMULAS) - by_formula.keys()
-    extra = by_formula.keys() - set(MATERIAL_FORMULAS)
+    missing = scope - by_formula.keys()
+    extra = by_formula.keys() - scope
     if missing != unavailable_formulas or extra:
         raise ValueError(
             f"material calculation set mismatch; missing={sorted(missing)}, extra={sorted(extra)}"
@@ -106,7 +110,7 @@ def build_material_financial_release(
     metrics: list[ReleasedFinancialMetric] = []
     claims: list[MaterialFinancialClaim] = []
     dispositions: list[MaterialCalculationDisposition] = []
-    for formula_id in MATERIAL_FORMULAS:
+    for formula_id in (MATERIAL_FORMULAS if selected_formulas is None else sorted(scope)):
         if formula_id in unavailable_formulas:
             continue
         calculation = by_formula[formula_id]
@@ -214,7 +218,10 @@ def _metric(
     inputs: tuple[EvidenceRecord, ...],
 ) -> ReleasedFinancialMetric:
     spec = _FORMULAS[calculation.formula_id]
-    technical = calculation.formula_id not in MATERIAL_FORMULAS[:3]
+    technical = calculation.formula_id not in {
+        "revenue_growth_v1", "ebitda_margin_v1",
+        "operating_cash_flow_plus_signed_capex_divided_by_revenue_v1",
+    }
     anchor = max(inputs, key=lambda item: (item.as_of, item.evidence_id))
     if technical:
         period = "DAILY"

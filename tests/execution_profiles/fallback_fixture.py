@@ -2,7 +2,6 @@
 
 from src.application.repository import initialize_binding
 from src.domain.recovery import Candidate
-from src.domain.research_object import ResearchObject
 from tests.same_node_recovery.test_durable import LocalClient, configured
 
 
@@ -33,25 +32,7 @@ async def configured_family(tmp_path, kind, *, persist=True, **kwargs):
     value.node_binding = None
     initialize_binding(value, service=service)
     if persist:
-        await service.repository.add_object(
-            ResearchObject(
-                object_id="OBJECT-WP02",
-                symbol=kwargs.get("symbol", "ALPHA"),
-                company_name="Local synthetic",
-                exchange="LOCAL",
-            )
-        )
-        sessions = kwargs.get("sessions")
-        if sessions is not None:
-            from src.application.persistence import ResearchGoalRow
+        from tests.wp02.confirmation_fixture import confirm_template
 
-            async with sessions() as session, session.begin():
-                session.add(
-                    ResearchGoalRow(
-                        goal_id=value.goal.goal_id,
-                        object_id=value.goal.research_object_id,
-                        payload=value.goal.model_dump(mode="json"),
-                    )
-                )
-        await service.repository.add_run(value)
+        value = await confirm_template(service, value, symbol=kwargs.get("symbol", "ALPHA"))
     return service, value, collector, clients
