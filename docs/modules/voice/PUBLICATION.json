@@ -254,6 +254,36 @@
     "tests/voice/test_skill_plan_v2.py": "8d0b08b80169bfb991f827d9918bfebf315fbea6913f3b26fe2de281ee93fa49",
     "tests/voice/test_skill_summary_boundary.py": "118e7e7b44550444ffdcaccc8d6cb4610c7905426d2cde25711fd42c7dd6ce57",
     "tests/voice/test_voice_dialogue_v04.py": "40ac685814c63eac391456039fbc7f619ef3b95986f57bdda7b1af83feab033a",
-    "tests/voice/test_window_budget.py": "a934e5a6d89bb1b3f26a3130d87b05a50a98eb381488a1c012aec07e5a6fd6fa"
+    "tests/voice/test_window_budget.py": "a934e5a6d89bb1b3f26a3130d87b05a50a98eb381488a1c012aec07e5a6fd6fa",
+    "apps/web/package-lock.json": "807edca3e7134ea2a86faf97ae8d4428482daf70df4e0e1e7c371029d5f809ca",
+    ".github/workflows/local-contracts.yml": "75bf7a87980ba7cc8f5cfa8289231a90f2e08ebadfdd6f67aeff5958c13bdc4a"
+  },
+  "lockfile_repair_20261028": {
+    "failed_run": "https://github.com/linyiji/verifiable-financial-ai-agent/actions/runs/40622948551",
+    "failed_commit": "f6de1e6e8bc752d365fb830a0766f4d4efc0e6ef",
+    "cause": "npm ci correctly rejected package.json/package-lock.json mismatch for LiveKit, Playwright and transitive dependencies",
+    "toolchain": {
+      "node": "24.21.0",
+      "npm": "11.19.0",
+      "CI_node_selector": "24",
+      "local_platform": "macOS arm64; GitHub runner ubuntu-latest checked separately"
+    },
+    "generation": "npm install --package-lock-only --ignore-scripts --no-audit --no-fund",
+    "package_constraints": "UNCHANGED",
+    "existing_locked_package_versions_unchanged": 68,
+    "new_locked_packages": 16,
+    "lockfile_sha256": "807edca3e7134ea2a86faf97ae8d4428482daf70df4e0e1e7c371029d5f809ca",
+    "clean_npm_ci": "PASS; node_modules absent before npm ci, no borrowed dependency links",
+    "typecheck_voice": "PASS",
+    "workflow_frontend_checks": [
+      "readonly-memory-navigation.test.mjs: 8/8 PASS",
+      "object-workspace-v2.test.mjs: 24 checks PASS",
+      "npm run build: PASS"
+    ],
+    "workflow_change": "Add typecheck:voice; npm ci and all existing checks retained",
+    "GitHub_final_result": "See checks on this commit; exact run and conclusion in Owner local receipt",
+    "model_ASR_TTS_RTC_competition_new_calls": 0,
+    "R8_acceptance": "UNCHANGED; dependency synchronization is not new RTC acceptance",
+    "install_warnings": "npm reported 2 high-severity audit findings; no audit fix or unrelated upgrades performed"
   }
 }

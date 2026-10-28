@@ -46,4 +46,5 @@ jobs:
         run: |
           node scripts/readonly-memory-navigation.test.mjs
           node scripts/object-workspace-v2.test.mjs
+          npm run typecheck:voice
           npm run build
