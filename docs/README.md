@@ -56,3 +56,9 @@ Unlinked historical engineering files in `docs/archive/engineering/` are exempt 
 full translation. They are not current evaluator instructions; archive manifests and
 checksums describe the original package. A newly linked archive document requires a
 Chinese mirror before it becomes part of the current product reading path.
+
+## VeFin Voice | Voice communication module
+
+A stateful communication loop joining speech input, task context, knowledge, dialogue guidance and audio delivery. This PR includes actual voice source and required dependencies. Local R8 acceptance and publication offline checks are recorded separately; ordinary defaults and QUALITY_PENDING remain unchanged.
+
+[Module guide and acceptance scope](modules/voice/README.md)

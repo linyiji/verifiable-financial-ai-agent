@@ -1,0 +1,16 @@
+{
+  "id": "debit-consultation-summary-v1",
+  "version": "1",
+  "goal": "解释适用入口、了解预计月份及人工跟进意愿、交付咨询摘要；不提交或变更",
+  "fields": [
+    "month",
+    "followup"
+  ],
+  "allowed_unknown": true,
+  "year": "UNKNOWN_UNLESS_EXPLICIT",
+  "capabilities": [
+    "conversation",
+    "public_knowledge"
+  ],
+  "write_operations": false
+}

@@ -168,3 +168,9 @@ Next: Evaluation → POT → Evidence-driven Provider / Model Selection. Full Ev
 An early external validation milestone, confirmed by the Owner. The product's identity and current capability boundaries remain those described above.
 
 [Recognition record](docs/recognition/AIX_ORIGIN_SUMMIT.md).
+
+## VeFin Voice | Voice communication module
+
+A stateful communication loop joining speech input, task context, knowledge, dialogue guidance and audio delivery. This PR includes actual voice source and required dependencies. Local R8 acceptance and publication offline checks are recorded separately; ordinary defaults and QUALITY_PENDING remain unchanged.
+
+[Module guide and acceptance scope](docs/modules/voice/README.md)

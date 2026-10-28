@@ -74,6 +74,29 @@ class LLMSettings(BaseModel):
         return self.api_key is not None and bool(self.api_key.get_secret_value())
 
 
+class VoiceLLMSettings(BaseModel):
+    """Voice-only route; never inherits research routing or credentials."""
+
+    provider: str
+    api_key: SecretStr | None
+    base_url: str
+    model: str
+    model_deadline_seconds: float
+    dialogue_deadline_seconds: float
+
+    @property
+    def enabled(self) -> bool:
+        return self.api_key is not None and bool(self.api_key.get_secret_value())
+
+
+class SpeechSettings(BaseModel):
+    provider: str
+    model: str
+    language: str | None
+    url: str
+    api_key: SecretStr | None
+
+
 class LangfuseSettings(BaseModel):
     public_key: SecretStr | None
     secret_key: SecretStr | None
@@ -139,6 +162,18 @@ class Settings(BaseSettings):
     langfuse_secret_key: SecretStr | None = None
     langfuse_base_url: str | None = None
 
+    deepseek_api_key: SecretStr | None = None
+    vefin_voice_llm_provider: str = "deepseek_official"
+    vefin_voice_llm_base_url: str = "https://api.deepseek.com"
+    vefin_voice_llm_model: str = "deepseek-flash"
+    vefin_voice_llm_deadline_seconds: float = 5.0
+    vefin_voice_dialogue_deadline_seconds: float = 8.0
+    vefin_asr_provider: str = "faster-whisper"
+    vefin_asr_model: str = "base"
+    vefin_asr_language: str | None = None
+    vefin_asr_url: str = ""
+    vefin_asr_api_key: SecretStr | None = None
+
     @property
     def database(self) -> DatabaseSettings:
         return DatabaseSettings(url=self.database_url)
@@ -202,6 +237,25 @@ class Settings(BaseSettings):
         return RuntimeSettings(
             artifact_root=self.artifact_root,
             workspace_root=self.workspace_root,
+        )
+
+    @property
+    def voice_llm(self) -> VoiceLLMSettings:
+        return VoiceLLMSettings(
+            provider=self.vefin_voice_llm_provider,
+            api_key=self.deepseek_api_key,
+            base_url=self.vefin_voice_llm_base_url,
+            model=self.vefin_voice_llm_model,
+            model_deadline_seconds=self.vefin_voice_llm_deadline_seconds,
+            dialogue_deadline_seconds=self.vefin_voice_dialogue_deadline_seconds,
+        )
+
+    @property
+    def speech(self) -> SpeechSettings:
+        return SpeechSettings(
+            provider=self.vefin_asr_provider, model=self.vefin_asr_model,
+            language=self.vefin_asr_language or None, url=self.vefin_asr_url,
+            api_key=self.vefin_asr_api_key,
         )
 
     def safe_summary(self) -> dict[str, str | bool | int]:

@@ -1,0 +1,17 @@
+{
+  "consultation-dialogue": {
+    "enabled": true,
+    "version": "0.1.0",
+    "manifest": "skills/consultation-dialogue/manifest.json",
+    "versions": {
+      "0.2.0": {
+        "enabled": true,
+        "manifest": "skills/consultation-dialogue/v2/manifest.json"
+      },
+      "0.3.0": {
+        "enabled": true,
+        "manifest": "skills/consultation-dialogue/v3/manifest.json"
+      }
+    }
+  }
+}
