@@ -293,6 +293,12 @@ def create_app(service: ResearchApplicationService | None = None) -> FastAPI:
         )
 
     app.include_router(router)
+    from apps.api.voice_sessions import install_voice
+    from apps.api.research_identity import qa_router
+
+    install_voice(app)
+    app.state.local_qa_sessions = {}
+    app.include_router(qa_router)
     install_phase4_error_handlers(app)
 
     return app

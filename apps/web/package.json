@@ -9,17 +9,20 @@
     "test:m4": "node --experimental-strip-types scripts/m4-review.test.mjs",
     "test:m5": "node --experimental-strip-types scripts/m5-execution.test.mjs",
     "test:m6": "node --experimental-strip-types scripts/m6-closure.test.mjs",
-    "preview": "vite"
+    "preview": "vite",
+    "typecheck:voice": "tsc --noEmit -p tsconfig.voice.json"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
     "vite": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "livekit-client": "2.22.3"
   },
   "devDependencies": {
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "playwright-core": "^1.55.1"
   }
 }

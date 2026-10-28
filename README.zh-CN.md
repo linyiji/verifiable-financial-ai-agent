@@ -161,3 +161,9 @@ Controlled Alpha 指有引导的评估就绪，不代表已验证规模化用户
 Owner 已确认这一早期外部验证里程碑。当前产品身份和能力边界仍以上述实现与验证为准。
 
 [Recognition 记录](docs/recognition/AIX_ORIGIN_SUMMIT.zh-CN.md)。
+
+## VeFin Voice｜语音沟通模块
+
+将语音输入、任务上下文、知识来源、对话引导和语音交付组成持续承接状态的沟通闭环。真实语音源码及必要依赖已在本PR同步；本机R8限定验收与本PR离线检查分别记录。普通默认及QUALITY_PENDING不变。
+
+[模块说明与验收边界](docs/modules/voice/README.zh-CN.md)

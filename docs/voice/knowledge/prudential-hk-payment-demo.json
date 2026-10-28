@@ -1,0 +1,85 @@
+{
+  "schema": "public-knowledge-registry-v1",
+  "sources": [
+    {
+      "id": "prudential-hk-payment-20261027",
+      "title": "如何更改人壽保單的繳費方法及自動轉賬資料",
+      "url": "https://www.prudential.com.hk/tc/claims-and-services/myprudential/self-service/change-payment-method/",
+      "enabled": true,
+      "identity": "PUBLIC_DEMO_NOT_ENTERPRISE_DELEGATION",
+      "scope": {
+        "institution": "Prudential Hong Kong",
+        "region": "HK",
+        "product": "life_policy",
+        "channel": "myPrudential"
+      },
+      "scope_aliases": [
+        "保誠香港",
+        "香港保誠",
+        "Prudential Hong Kong"
+      ],
+      "out_of_scope_terms": [
+        "友邦",
+        "宏利",
+        "安盛",
+        "另一間",
+        "其他公司",
+        "澳門",
+        "內地",
+        "新加坡",
+        "電話辦理",
+        "櫃位辦理"
+      ],
+      "fetched_at": "2026-10-27T13:40:31.673769+08:00",
+      "publication_date": "UNKNOWN",
+      "effective_date": "UNKNOWN",
+      "source_html_sha256": "c9c425ebfb86e55632a9a65bf914adec8b52958635b56d597c53daed035f1133",
+      "passages": [
+        {
+          "id": "entry",
+          "topic": "navigation",
+          "text": "客戶可於myPrudential 更改人壽保單的繳費方法及自動轉賬資料\n登入myPrudential後，請選擇「繳費設定」。\n請按「請選擇保單」並選擇想更改的保單。",
+          "sha256": "718d0aed3aecf85f53dbad735201548a5ee11ce82f24664bdaf7a753e3580eda",
+          "retrieval_terms": [
+            "入口",
+            "去邊",
+            "邊度",
+            "怎樣",
+            "點樣",
+            "如何",
+            "途徑",
+            "繳費設定",
+            "myPrudential"
+          ],
+          "locator": "官方页面：如何更改人壽保單的繳費方法及自動轉賬資料/entry"
+        },
+        {
+          "id": "exclusions",
+          "topic": "applicability",
+          "text": "「繳費設定」功能並不適用於以下類別的保單：\n整付保費\n未生效的保單\n仍在處理中的「繳費設定」申請",
+          "sha256": "3731930585d5f9ffb2b6e657fa8740ac8759758ca32ad170342c38536175e475",
+          "retrieval_terms": [
+            "適用",
+            "所有保單",
+            "邊類",
+            "限制"
+          ],
+          "locator": "官方页面：如何更改人壽保單的繳費方法及自動轉賬資料/exclusions"
+        },
+        {
+          "id": "bank",
+          "topic": "bank_details",
+          "text": "您可以設定、變更或取消自動轉帳。如設定或變更自動轉賬，請輸入您的銀行戶口資料。",
+          "sha256": "eb876bc723529e4848bf2db74fbb85a2c6eff60ee601ee7c2bf51304b27e1c50",
+          "retrieval_terms": [
+            "銀行資料",
+            "戶口資料",
+            "設定",
+            "取消"
+          ],
+          "locator": "官方页面：如何更改人壽保單的繳費方法及自動轉賬資料/bank"
+        }
+      ]
+    }
+  ]
+}

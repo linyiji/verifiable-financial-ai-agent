@@ -93,6 +93,8 @@ class LLMRequestError(LLMProviderError):
 class StructuredOutputError(LLMProviderError):
     """Provider answered, but its content failed the requested Pydantic schema."""
 
+    diagnostic: dict | None = None
+
 
 class LLMMessage(BaseModel):
     role: str

@@ -1,0 +1,19 @@
+{
+  "schema_version": "vefin.communication-skill.v1",
+  "id": "consultation-dialogue",
+  "version": "0.1.0",
+  "method_file": "SKILL.md",
+  "task_template_ref": "communication/debit-consultation-summary-v1.json",
+  "contract": "voice.skill-consultation.v1",
+  "personas": {
+    "steady-advisor": "communication/personas/steady-advisor.json",
+    "efficient-partner": "communication/personas/efficient-partner.json",
+    "curious-interviewer": "communication/personas/curious-interviewer.json"
+  },
+  "policies": {
+    "responsive": "communication/policies/responsive.json",
+    "collaborative": "communication/policies/collaborative.json",
+    "goal-led": "communication/policies/goal-led.json"
+  },
+  "scripts": []
+}

@@ -1,0 +1,68 @@
+{
+  "template_notice": "PUBLIC_REDACTED_STRUCTURE_ONLY_NO_AUTHORIZATION_OR_BUDGET",
+  "isolation": "SELF_TEST_ONLY_NOT_PRODUCT_DEFAULT",
+  "communication_revision": "voice.communication.v2",
+  "instruction_revision": "procedure-provenance-v3-consultation-v1",
+  "max_tokens": 256,
+  "json_mode": true,
+  "automatic_retries": 0,
+  "model_deadline_seconds": 5,
+  "dialogue_deadline_seconds": 8,
+  "turn_deadline_seconds": 120,
+  "require_llm_tls_preflight": true,
+  "llm_trust_env": false,
+  "reserve_answer_budget": true,
+  "llm_calls_per_turn": 2,
+  "nodes": {
+    "asr": {
+      "provider": "qwen",
+      "model": "qwen-audio-3.1-asr-flash",
+      "region": "cn-beijing",
+      "configuration_file": "~/.config/vefin/qwen.json"
+    },
+    "llm": [
+      {
+        "id": "deepseek",
+        "provider": "deepseek_official",
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash"
+      }
+    ],
+    "tts": {
+      "provider": "qwen_beijing",
+      "model": "qwen3-tts-flash-realtime",
+      "voice": "Kiki",
+      "language_type": "Auto",
+      "sample_rate": 16000,
+      "mode": "commit",
+      "connect_seconds": 5,
+      "completion_seconds": 20,
+      "first_pcm_target_seconds": 5,
+      "reuse_session": true
+    }
+  },
+  "credential_references": {
+    "qwen": "~/.config/vefin/qwen.json",
+    "deepseek": "~/.config/vefin/deepseek.env"
+  },
+  "communication_skill": {
+    "id": "consultation-dialogue",
+    "version": "0.3.0",
+    "persona": "efficient-partner",
+    "policy": "goal-led",
+    "depth": "core",
+    "verbosity": "concise",
+    "sha256": "1a05f043c5b19ff4653b6de50c7d2af608b6e0d0b85c3a3f306fceb29eb16f86"
+  },
+  "knowledge": {
+    "mode": "PUBLIC_DEMO_ONLY",
+    "registry": "docs/voice/knowledge/prudential-hk-payment-demo.json",
+    "scope": {
+      "institution": "Prudential Hong Kong",
+      "region": "HK",
+      "product": "life_policy",
+      "channel": "myPrudential"
+    },
+    "authorized": true
+  }
+}

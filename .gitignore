@@ -33,3 +33,9 @@ credentials/distribution/
 *.gateway.sqlite*
 .idea/
 .vscode/
+
+# Local voice evidence and operator-only configuration
+/output/
+/evidence/
+/deploy/voice/runtime/
+*.pcm_s16le

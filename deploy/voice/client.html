@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VeFin 本地连续语音验收</title>
+<h1>VeFin 本地连续语音验收</h1>
+<p>仅用于本机验收。语音转写须核对后在研究界面明确发送；本页不会启动研究。</p>
+<label>本地用户凭证 <input id="bearer" type="password" autocomplete="off"></label>
+<p><button id="connect">建立 / 重连同一通话</button> <button id="end">结束通话</button></p>
+<p><label>Voice Session ID <input id="session"></label></p>
+<p><label>已授权 Task ID <input id="task"></label>
+<label>Chat ID（可选） <input id="chat"></label> <button id="bind">绑定</button></p>
+<p id="state" aria-live="polite">尚未连接</p>
+<p>开口说话后停顿约一秒；播报时再次开口应中断播报。建议佩戴耳机。</p>
+<button id="play">开启语音播放</button>
+<div id="audio"></div>
+<pre id="events" aria-live="polite"></pre>
+<script type="module">
+import { Room, RoomEvent, createLocalAudioTrack } from
+  'https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/+esm';
+const el = id => document.getElementById(id);
+let room, microphone, cursor = 0, polling, deadline;
+let busy = false;
+let createKey = crypto.randomUUID();
+async function request(path, method = 'GET', body) {
+  const response = await fetch(path, { method, headers: {
+    'Authorization': `Bearer ${el('bearer').value}`, 'Content-Type': 'application/json',
+    'Idempotency-Key': createKey
+  }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const result = await response.json();
+  if (response.status === 410) cleanup();
+  if (!response.ok) throw new Error(`${response.status}: ${result.error?.code}`);
+  return result;
+}
+const path = suffix => `/api/voice-sessions/${el('session').value}${suffix}`;
+function cleanup() { clearInterval(polling); clearTimeout(deadline); microphone?.stop(); room?.disconnect(); el('audio').replaceChildren(); }
+function log(text) { el('events').textContent += text + '\n'; }
+function action(handler) {
+  return async () => { try { await handler(); } catch (error) { log(error.message); } };
+}
+el('connect').onclick = action(async () => {
+  if (busy) return; busy = true; el('state').textContent = '正在获取房间凭证';
+  try {
+  if (!el('session').value) {
+    const session = await request('/api/voice-sessions', 'POST', {});
+    el('session').value = session.id; cursor = 0;
+  }
+  const credentials = await request(path('/credentials'), 'POST');
+  const expires = new Date(credentials.session.expires_at).getTime();
+  clearTimeout(deadline);
+  deadline = setTimeout(() => { cleanup(); el('state').textContent = '通话已到期'; }, Math.max(0, Math.min(credentials.session.remaining_seconds * 1000, expires - Date.now())));
+  if (room) await room.disconnect();
+  if (microphone) microphone.stop();
+  room = new Room({reconnectPolicy: {nextRetryDelayInMs: () => null}});
+  room.on(RoomEvent.Disconnected, () => { microphone?.stop(); el('state').textContent = '连接已断开，请重连同一会话'; });
+  room.on(RoomEvent.TrackSubscribed, track => {
+    if (track.kind === 'audio') el('audio').appendChild(track.attach());
+  });
+  room.on(RoomEvent.TrackUnsubscribed, track => track.detach().forEach(node => node.remove()));
+  el('state').textContent = '请允许麦克风权限';
+  microphone = await createLocalAudioTrack({echoCancellation: true, noiseSuppression: true});
+  el('state').textContent = '麦克风已获取，正在连接房间';
+  await room.connect(credentials.url, credentials.token, {maxRetries: 0});
+  void room.startAudio();
+  await room.localParticipant.publishTrack(microphone);
+  el('state').textContent = '麦克风已发布，等待 Worker';
+  clearInterval(polling);
+  polling = setInterval(action(async () => {
+    const replay = await request(path(`/events?after=${cursor}`));
+    for (const event of replay.events) log(JSON.stringify(event));
+    cursor = replay.next_cursor;
+    el('state').textContent = `${replay.session.status} · ${replay.session.remaining_seconds} 秒 · ${el('session').value}`;
+    if (replay.session.status === 'ended' || Date.now() >= expires) {
+      clearInterval(polling); microphone?.stop(); await room.disconnect();
+    }
+  }), 1000);
+  } catch (error) { cleanup(); el('state').textContent = '连接失败：' + error.message; throw error; } finally { busy = false; }
+});
+el('play').onclick = action(async () => { await room?.startAudio(); });
+el('bind').onclick = action(async () => {
+  log(JSON.stringify(await request(path('/binding'), 'PUT', {
+    task_id: el('task').value, chat_session_id: el('chat').value || null
+  })));
+});
+el('end').onclick = action(async () => {
+  cleanup();
+  const session = await request(path('/end'), 'POST');
+  clearInterval(polling); microphone?.stop(); await room?.disconnect();
+  el('state').textContent = `${session.status} · ${session.ended_reason}`;
+  el('session').value = ''; cursor = 0; createKey = crypto.randomUUID();
+});
+</script>
+</html>

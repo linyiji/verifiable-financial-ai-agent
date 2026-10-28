@@ -1,0 +1,289 @@
+{
+  "module": "VeFin Voice",
+  "publication_base_commit": "ea2002ca571c869c59936f64067ec0d7c7eaabd1",
+  "R8_package_sha256": "1a05f043c5b19ff4653b6de50c7d2af608b6e0d0b85c3a3f306fceb29eb16f86",
+  "R8_profile_sha256": "0abf446e13a27e323f25697702532a8e30f4bc4f5076771cdd7f281055ee124c",
+  "profile_published": false,
+  "evidence_basis": "Owner local R8 report, final executed-file manifest and explicit human feedback read on 2026-10-28; raw captures/audio/private runtime omitted",
+  "R8_files": {
+    "src/adapters/voice_dialogue_model.py": {
+      "R8_sha256": "b3edf6b999e83efe3bab3b5fd2780709502420b08af141e6ca645f0bede3fa96",
+      "published_sha256": "b3edf6b999e83efe3bab3b5fd2780709502420b08af141e6ca645f0bede3fa96",
+      "same_bytes": true
+    },
+    "tests/voice/test_skill_plan_v2.py": {
+      "R8_sha256": "8a93252940c857089e9337dba7dc35e3ff60d4de4b0260d643b0c0e119655499",
+      "published_sha256": "8d0b08b80169bfb991f827d9918bfebf315fbea6913f3b26fe2de281ee93fa49",
+      "same_bytes": false
+    },
+    "skills/consultation-dialogue/v2/manifest.json": {
+      "R8_sha256": "6209424f4f75f05b2c8c74a152bdb4279d0820d16d09b26b34d05321f07f2238",
+      "published_sha256": "6209424f4f75f05b2c8c74a152bdb4279d0820d16d09b26b34d05321f07f2238",
+      "same_bytes": true
+    },
+    "src/adapters/voice_call_budget.py": {
+      "R8_sha256": "900c852f9138478225ebad0242f66db63bf8661dfd24a5f781ea08b8543728d7",
+      "published_sha256": "900c852f9138478225ebad0242f66db63bf8661dfd24a5f781ea08b8543728d7",
+      "same_bytes": true
+    },
+    "scripts/voice_skill_text.py": {
+      "R8_sha256": "0c02b3b6f43d61d178d4300dba756aa7024a2cea2eee940b454944db51638251",
+      "published_sha256": "0c02b3b6f43d61d178d4300dba756aa7024a2cea2eee940b454944db51638251",
+      "same_bytes": true
+    },
+    "src/adapters/voice_candidate_http.py": {
+      "R8_sha256": "7070f441743afad108e69f63205eb8aeebfa999d4654774e93dbc6185276ab28",
+      "published_sha256": "7070f441743afad108e69f63205eb8aeebfa999d4654774e93dbc6185276ab28",
+      "same_bytes": true
+    },
+    "src/application/voice_skill.py": {
+      "R8_sha256": "34a5094fe14efa13e5607deda8f74b9a92098eebe4935683cd6b43654bde5e87",
+      "published_sha256": "34a5094fe14efa13e5607deda8f74b9a92098eebe4935683cd6b43654bde5e87",
+      "same_bytes": true
+    },
+    "tests/voice/test_skill_intent_scope.py": {
+      "R8_sha256": "5e5b7009763e4d85d4c9b73de7f84f07f6323ae8dae44b41345a5c5ae30ccfd0",
+      "published_sha256": "5e5926e02df90b016953957abdd01584af4dfa942920fc61bcf3ebe0501b385b",
+      "same_bytes": false
+    },
+    "src/application/voice_skill_plan.py": {
+      "R8_sha256": "0c8099a79bad7c9ffd4125d9b6dde69593d9050bdf74aeca3eb6f8dbfcab25b8",
+      "published_sha256": "0c8099a79bad7c9ffd4125d9b6dde69593d9050bdf74aeca3eb6f8dbfcab25b8",
+      "same_bytes": true
+    },
+    "scripts/voice_rtc_multiturn.mjs": {
+      "R8_sha256": "56587f274efb3b2fc798066319155da8bf7da7b00695febd8b552a07732f860c",
+      "published_sha256": "56587f274efb3b2fc798066319155da8bf7da7b00695febd8b552a07732f860c",
+      "same_bytes": true
+    },
+    "apps/voice_worker/main.py": {
+      "R8_sha256": "7c17c8f7e534e7e1c85d9e49e76cf6c480531a7d7a9b310682fdf06444b37484",
+      "published_sha256": "7c17c8f7e534e7e1c85d9e49e76cf6c480531a7d7a9b310682fdf06444b37484",
+      "same_bytes": true
+    },
+    "communication/debit-consultation-summary-v3.json": {
+      "R8_sha256": "0b0dd7cb81dd2f49a99c22b59a7b6c1a08bfc3a9fa9f9133a13f8bdc87e6711d",
+      "published_sha256": "0b0dd7cb81dd2f49a99c22b59a7b6c1a08bfc3a9fa9f9133a13f8bdc87e6711d",
+      "same_bytes": true
+    },
+    "docs/voice/knowledge/prudential-hk-payment-demo.json": {
+      "R8_sha256": "a0d557e597d64d7c2c543974623ff13fbec915a4560e945d59be9980310e4607",
+      "published_sha256": "a0d557e597d64d7c2c543974623ff13fbec915a4560e945d59be9980310e4607",
+      "same_bytes": true
+    },
+    "communication/skill-registry.json": {
+      "R8_sha256": "bc04ed99520f16f9b4618e4604195e6aa31d30d1cc88f23bfc3d72cabc40505a",
+      "published_sha256": "bc04ed99520f16f9b4618e4604195e6aa31d30d1cc88f23bfc3d72cabc40505a",
+      "same_bytes": true
+    },
+    "tests/voice/test_skill_summary_boundary.py": {
+      "R8_sha256": "92266152812633ad153567b3416bf4f8caa9b27025fddb34b0d16b64f85186d6",
+      "published_sha256": "118e7e7b44550444ffdcaccc8d6cb4610c7905426d2cde25711fd42c7dd6ce57",
+      "same_bytes": false
+    },
+    "src/application/voice_dialogue.py": {
+      "R8_sha256": "fb0cb189e0f0718c9835b6b171ce851a80642c63d43050fc2033d8713e703cd9",
+      "published_sha256": "fb0cb189e0f0718c9835b6b171ce851a80642c63d43050fc2033d8713e703cd9",
+      "same_bytes": true
+    },
+    "src/application/voice_natural_dialogue.py": {
+      "R8_sha256": "8586fd1910ad4130f3c06de0c75d1190d39b86c66983696b376ebe0684b56de0",
+      "published_sha256": "8586fd1910ad4130f3c06de0c75d1190d39b86c66983696b376ebe0684b56de0",
+      "same_bytes": true
+    },
+    "tests/voice/test_skill_partial_handoff.py": {
+      "R8_sha256": "9d9d8291d89c59c456d472cdf43349167369aee6af6e383994f4f4734461e6b0",
+      "published_sha256": "92836a510eb1b7e73943bf7e50b172c1defccd0f2cbe2cefbd899a81ad7b6b1e",
+      "same_bytes": false
+    },
+    "skills/consultation-dialogue/v3/manifest.json": {
+      "R8_sha256": "b9e8b1c28a4a649a2c410964828a4a8e925de2a2c1d42a006e2b2c337416ace8",
+      "published_sha256": "b9e8b1c28a4a649a2c410964828a4a8e925de2a2c1d42a006e2b2c337416ace8",
+      "same_bytes": true
+    },
+    "scripts/voice_rtc_browser_fixture.js": {
+      "R8_sha256": "dfc4b27001cdfc37b67de7b2bb100faf318cb9f313a2380802b2cecf0edf7d17",
+      "published_sha256": "dfc4b27001cdfc37b67de7b2bb100faf318cb9f313a2380802b2cecf0edf7d17",
+      "same_bytes": true
+    },
+    "skills/consultation-dialogue/v2/SKILL.md": {
+      "R8_sha256": "4ea630ac1410a1f412d6bb92a04264374974d3e67510b8f992f1173d55c3381a",
+      "published_sha256": "4ea630ac1410a1f412d6bb92a04264374974d3e67510b8f992f1173d55c3381a",
+      "same_bytes": true
+    },
+    "src/application/voice_sessions.py": {
+      "R8_sha256": "2943532fd5640e9e874a238a79a5447def8a5835e065f34b28add9275df084b3",
+      "published_sha256": "6bbb32f4d4d54827296bb7a8b943e88d501b5574610fabc0b848494d0d81b41c",
+      "same_bytes": false
+    },
+    "apps/api/voice_sessions.py": {
+      "R8_sha256": "e56d5478111f70744919cde854366d8c0056959709b48c5a84b5d3652c9efb06",
+      "published_sha256": "e56d5478111f70744919cde854366d8c0056959709b48c5a84b5d3652c9efb06",
+      "same_bytes": true
+    },
+    "skills/consultation-dialogue/v3/SKILL.md": {
+      "R8_sha256": "026a8e1728e03d32995bd29d26652812ef29240d838ef61773069b596652a3c4",
+      "published_sha256": "026a8e1728e03d32995bd29d26652812ef29240d838ef61773069b596652a3c4",
+      "same_bytes": true
+    },
+    "communication/debit-consultation-summary-v2.json": {
+      "R8_sha256": "c67a7b0ab4e5b8999a668638c305a67a4599d76e06b55131a2ffa6cd431424f3",
+      "published_sha256": "c67a7b0ab4e5b8999a668638c305a67a4599d76e06b55131a2ffa6cd431424f3",
+      "same_bytes": true
+    },
+    "tests/voice/fixtures/skill-r2-last-raw.json": {
+      "R8_sha256": "7cde782ecf0d2f991f904eb34c8607463c12e1643412ef157ac6aaf7bec497d4",
+      "published_sha256": null,
+      "same_bytes": false
+    },
+    "src/adapters/voice_candidate_profile.py": {
+      "R8_sha256": "3e869a16d65130787cd4fe28c31a4a80866adc600ff6f623ad61ae18ec720b2f",
+      "published_sha256": "7f7c157824d5193fd562fad69d907f34ed7fb7a8460caa6252e986c3a1ba085f",
+      "same_bytes": false
+    }
+  },
+  "differences": [
+    "Updated-main API composition is retained, voice hooks added instead of copying local research app",
+    "Only required voice settings and optional diagnostics added to newer shared contracts",
+    "Candidate private root/path references are portable while constrained under selected private root",
+    "Missing legacy research task/chat/authority bridge fails explicitly; no account/backoffice operations connected",
+    "Public test copy omits private historical raw and uses existing synthetic cases",
+    "Only browser transport/client primitives exported; complete research product UI and CVC deployment excluded"
+  ],
+  "project_external_calls_this_task": {
+    "LLM": 0,
+    "ASR": 0,
+    "TTS": 0,
+    "RTC": 0,
+    "competition": 0
+  },
+  "validation_scope": "Offline publication checks only; no new live acceptance",
+  "validation": {
+    "offline_tests_passed": 217,
+    "offline_tests_skipped": 2,
+    "skip_reason": "Legacy research task/chat product bridge not included",
+    "typescript_voice_typecheck": "PASS against existing installed dependencies",
+    "worker_api_imports": "PASS",
+    "harness_syntax": "PASS",
+    "relative_document_links": 155,
+    "relative_document_links_broken": 0,
+    "internal_dependencies": "PASS; two optional missing business bridges explicitly fail closed",
+    "fresh_install": "NOT_EXECUTED",
+    "RTC_reacceptance": "NOT_EXECUTED",
+    "external_project_calls": 0
+  },
+  "implementation_files": {
+    "apps/api/main.py": "5122ce374389346e5fcd2323d0d88aa20e85a2d4c8a41fda168323eabec78ca8",
+    "apps/api/research_identity.py": "a8f79d895e8a5c506788b2ead51e557da00de5e0d896d8eb2fe648a893e83fd1",
+    "apps/api/voice_sessions.py": "e56d5478111f70744919cde854366d8c0056959709b48c5a84b5d3652c9efb06",
+    "apps/voice_worker/__init__.py": "209bddcd73d795a3f4ad7ff07cdaa4ada1590006b396c185713ae623c757744d",
+    "apps/voice_worker/macos_tts.py": "3c41ac67701788c1a17dd8448940ffd1a34866845a500a9006d206da29ab973e",
+    "apps/voice_worker/main.py": "7c17c8f7e534e7e1c85d9e49e76cf6c480531a7d7a9b310682fdf06444b37484",
+    "apps/voice_worker/quality.py": "2f2bd1dd2cca87368be1612e932f4ab78a5e0c40c249e1cc87059febcb88eba4",
+    "apps/web/package.json": "35e8795b94cf85ef9105d0f712d6284d4e3dea840cb20c9762be6d74807ca163",
+    "apps/web/src/features/voice/adapter.ts": "a2bc4993692790ad06bbb660ccbef92a3bcb8e7ea01001f9bfa556d4f01fe94b",
+    "apps/web/src/features/voice/client.ts": "36a594f3235d9b05271d792020d8eee4894686496dd258d8f5ce5285e2f69248",
+    "apps/web/src/features/voice/livekit.ts": "acd586883a0fcd76e97ca8a9b6bde535a92bffcc7d909ac0dd447534dcab2f93",
+    "apps/web/src/features/voice/types.ts": "2aeb267fb94c9613979cc815607f0fa3d9985736b4148199e1f75ddb5e82e4f1",
+    "apps/web/tsconfig.voice.json": "1455b3bfb8043cf8f01a96619b5829587f94be01b3767c5d4bad71add0497475",
+    "communication/debit-consultation-summary-v1.json": "be02e007e6f3397e1a75aeb243051883c074e442e156bec36fc7e7f7104c1290",
+    "communication/debit-consultation-summary-v2.json": "c67a7b0ab4e5b8999a668638c305a67a4599d76e06b55131a2ffa6cd431424f3",
+    "communication/debit-consultation-summary-v3.json": "0b0dd7cb81dd2f49a99c22b59a7b6c1a08bfc3a9fa9f9133a13f8bdc87e6711d",
+    "communication/personas/curious-interviewer.json": "17bf15181b25fd2c32f22a9c1bfd225302d336e7994111cd940587fa3bea6ca2",
+    "communication/personas/efficient-partner.json": "0666b266c8ac9946d5a318f1c0db3a6fe91afc57f5a73d19241502bf445a23b7",
+    "communication/personas/steady-advisor.json": "1cebdac3d38a791c2055d4198953b48e8a1863cdbb08c17050680638113a7f90",
+    "communication/policies/collaborative.json": "ff4e03dafa4411e156f910747e6e613d68ae66d6de79df935d049562bf9a7eb9",
+    "communication/policies/goal-led.json": "5702a07df91446a4ad17b2d385125ffc4a452bfa071d2e028e6ba1169a0992ae",
+    "communication/policies/responsive.json": "5ca07dcc804bc8c13a25ce0c872409a1ed0b1acc651573757f82bcaf2ee54207",
+    "communication/skill-registry.json": "bc04ed99520f16f9b4618e4604195e6aa31d30d1cc88f23bfc3d72cabc40505a",
+    "contracts/api/voice_session.py": "11ad753510ce0aae0fba076b0dccf80fd8f05369cfda5a8c9ed426f378ce58cb",
+    "docs/voice/knowledge/prudential-hk-payment-demo.json": "a0d557e597d64d7c2c543974623ff13fbec915a4560e945d59be9980310e4607",
+    "examples/voice/profile.example.json": "8e6b6c3a9472ca6bfda81996fe67ecb154e8a0548a61286d16e1f61fa0aceef2",
+    "scripts/voice_grounding_continuation.py": "1d838f49eca46306dbcc7dca4c36c3665b9677eba7f34dd0357d06901d08ff48",
+    "scripts/voice_rtc_browser_fixture.js": "dfc4b27001cdfc37b67de7b2bb100faf318cb9f313a2380802b2cecf0edf7d17",
+    "scripts/voice_rtc_multiturn.mjs": "56587f274efb3b2fc798066319155da8bf7da7b00695febd8b552a07732f860c",
+    "scripts/voice_rtc_review_gate.mjs": "6d9085465b4fdd8c2dc0038625620df72b42ad035891b589c27d1699c6fbedd6",
+    "scripts/voice_skill_text.py": "0c02b3b6f43d61d178d4300dba756aa7024a2cea2eee940b454944db51638251",
+    "skills/consultation-dialogue/manifest.json": "93a95cbaaf178e57567da09c1d4422fdfd948e42657abc55100e9380ffe88b26",
+    "skills/consultation-dialogue/v2/manifest.json": "6209424f4f75f05b2c8c74a152bdb4279d0820d16d09b26b34d05321f07f2238",
+    "skills/consultation-dialogue/v3/manifest.json": "b9e8b1c28a4a649a2c410964828a4a8e925de2a2c1d42a006e2b2c337416ace8",
+    "src/adapters/asr_audio_encoding.py": "fdb5013eb5b279ad464a8ecf8c86bf27db18e59000577d169ab9dba099e78ed0",
+    "src/adapters/candidate_asr.py": "f6cc44bc9b3bb9e06d0e2bef97942b4caeb1184f566f331795db1ecb966aeaf4",
+    "src/adapters/livekit_media.py": "0449bdaa8f644b80a79d469484239b7fe0235ff3d2624bcd7cd649fdab7cc863",
+    "src/adapters/llm/provider.py": "d5f431fada52e12d8e3335e7e878d52b70bc71618823d59f81c1006bc1ddf7cd",
+    "src/adapters/qwen_voice_output.py": "fa36611a6b37f4c6eb6f2726cd17d0498451c3ea2f763184cb3bbd5e8a854999",
+    "src/adapters/speech.py": "6b354c0a7f06767b5420e9f8259ff541c218f63855e3761be09a0de718be11c0",
+    "src/adapters/voice_audio_codec.py": "2be538366421de5cf532ddbed8daa24d07385124dc17363b41e0f53677e61381",
+    "src/adapters/voice_call_budget.py": "900c852f9138478225ebad0242f66db63bf8661dfd24a5f781ea08b8543728d7",
+    "src/adapters/voice_candidate_http.py": "7070f441743afad108e69f63205eb8aeebfa999d4654774e93dbc6185276ab28",
+    "src/adapters/voice_candidate_profile.py": "7f7c157824d5193fd562fad69d907f34ed7fb7a8460caa6252e986c3a1ba085f",
+    "src/adapters/voice_dialogue_model.py": "b3edf6b999e83efe3bab3b5fd2780709502420b08af141e6ca645f0bede3fa96",
+    "src/adapters/voice_knowledge.py": "84eb35a35de6d602a4de429bc800734db06fc63e9cf679cb14c4f43752ffbfd6",
+    "src/adapters/voice_output.py": "15e5e6dda04879159816ca3feaa0941f78935a839de3486c4d752e3bb376d254",
+    "src/application/speech_service.py": "7351776d9182f4e22c9f6f36702e404581a0d09fef07ed66a4741aa0a208982d",
+    "src/application/voice_authority.py": "27b515d861a511c0176a201164f99a0c71f2b678250158735a650aa54bd1193a",
+    "src/application/voice_communication.py": "ae0e45027166e57f551479f9530356e14b4743abf241c5b5aee2b6591a6f91a0",
+    "src/application/voice_consultation.py": "fd852127d20cdc070910cc64f84382747c0c2f8d8396ab7f8415730ed0b787dc",
+    "src/application/voice_dialogue.py": "fb0cb189e0f0718c9835b6b171ce851a80642c63d43050fc2033d8713e703cd9",
+    "src/application/voice_dispatcher.py": "e80a2b900b13016f928b2fa441210e7d640fe74ddfdb1901552760481e759392",
+    "src/application/voice_errors.py": "bfd6518a9b9d68c1951293f6aa765ef3d2953a3c8724caea745b15f66d853c00",
+    "src/application/voice_meaning.py": "be924957ed60e04251854539347bb2bea596e9216bf826424998facbfa6b1570",
+    "src/application/voice_natural_dialogue.py": "8586fd1910ad4130f3c06de0c75d1190d39b86c66983696b376ebe0684b56de0",
+    "src/application/voice_provider_status.py": "b7b445319cc2c5cea128f23f7ec391016d3a95a3b37c046551917a3b0c8ab1d5",
+    "src/application/voice_references.py": "cde59d75115f5038f32cbba379b6c1eac3cc07efeea48d108f2502648380cb13",
+    "src/application/voice_segmenter.py": "b55d0ba22cf81b4c71da3584647567201eb1a8ad372f1932ecfe312099808c0e",
+    "src/application/voice_sessions.py": "6bbb32f4d4d54827296bb7a8b943e88d501b5574610fabc0b848494d0d81b41c",
+    "src/application/voice_skill.py": "34a5094fe14efa13e5607deda8f74b9a92098eebe4935683cd6b43654bde5e87",
+    "src/application/voice_skill_plan.py": "0c8099a79bad7c9ffd4125d9b6dde69593d9050bdf74aeca3eb6f8dbfcab25b8",
+    "src/application/voice_transcript_assembler.py": "816572991775f8af84320233a03d8b491268fc1cebf61d644abccb33131d8086",
+    "src/domain/voice_job.py": "becc7b3f802fbb9ab27209ef23839d90789b1c962c531fcbc1766962e7d1a454",
+    "src/infrastructure/config/settings.py": "c6a0bdd34ab8e4d545bcca3433b0db9a9522260a66a9c89b42180db21047cfed",
+    "src/infrastructure/database/sqlite_configuration.py": "ed608d4a0601861e601854a6d6d8f6dac8ed9385959bc3ae34fa83395bb3ba30",
+    "src/infrastructure/database/voice_tables.py": "20353c9d4c56bd124ae40a15056f74d83a20e09b436a9f7cd93fa49ad16e665d",
+    "tests/voice/test_candidate_asr.py": "d46849c73a6f79fa0a602eff625dca8783274653c752dff3802f2186efa8b4d6",
+    "tests/voice/test_communication_skill.py": "28c588ada85c1d9eb83e56ccdc73cb5e190ff1fbbf09a5aa70f9fea9a00272a4",
+    "tests/voice/test_continuous_voice_backend.py": "2bf2014885cbcd5f620a2f56826622748a836902e69d762cdcefb21f33d25f72",
+    "tests/voice/test_delivery_progress.py": "ad229574d3fd2f24f5933310c0cbc538082c69b46e4243f0f7ea862baec748a7",
+    "tests/voice/test_natural_dialogue.py": "8d2bc214a78c4f37b98f0b09df17a5d3fdfc6c888e7dbba03835578929b32438",
+    "tests/voice/test_prompt_schema_contract.py": "d470e7431ca6ad85423c65b90dd6592a12373e50cd863d28d957d24e694cd706",
+    "tests/voice/test_public_knowledge.py": "15b0275edc1a423eca0dd049b070c4c13eaad695f5d80503fcafdbce259ba034",
+    "tests/voice/test_publication_contract.py": "b944742dc737defa32ef914a159b6418c2a20978bba9a868d6f567fa55e62978",
+    "tests/voice/test_qwen_voice_output.py": "80ed397d05cad017af17e724ce3ecdbf76e98c9e11438c8e82d53dfdfc571401",
+    "tests/voice/test_skill_intent_scope.py": "5e5926e02df90b016953957abdd01584af4dfa942920fc61bcf3ebe0501b385b",
+    "tests/voice/test_skill_partial_handoff.py": "92836a510eb1b7e73943bf7e50b172c1defccd0f2cbe2cefbd899a81ad7b6b1e",
+    "tests/voice/test_skill_plan_v2.py": "8d0b08b80169bfb991f827d9918bfebf315fbea6913f3b26fe2de281ee93fa49",
+    "tests/voice/test_skill_summary_boundary.py": "118e7e7b44550444ffdcaccc8d6cb4610c7905426d2cde25711fd42c7dd6ce57",
+    "tests/voice/test_voice_dialogue_v04.py": "40ac685814c63eac391456039fbc7f619ef3b95986f57bdda7b1af83feab033a",
+    "tests/voice/test_window_budget.py": "a934e5a6d89bb1b3f26a3130d87b05a50a98eb381488a1c012aec07e5a6fd6fa",
+    "apps/web/package-lock.json": "807edca3e7134ea2a86faf97ae8d4428482daf70df4e0e1e7c371029d5f809ca",
+    ".github/workflows/local-contracts.yml": "75bf7a87980ba7cc8f5cfa8289231a90f2e08ebadfdd6f67aeff5958c13bdc4a"
+  },
+  "lockfile_repair_20261028": {
+    "failed_run": "https://github.com/linyiji/verifiable-financial-ai-agent/actions/runs/40622948551",
+    "failed_commit": "f6de1e6e8bc752d365fb830a0766f4d4efc0e6ef",
+    "cause": "npm ci correctly rejected package.json/package-lock.json mismatch for LiveKit, Playwright and transitive dependencies",
+    "toolchain": {
+      "node": "24.21.0",
+      "npm": "11.19.0",
+      "CI_node_selector": "24",
+      "local_platform": "macOS arm64; GitHub runner ubuntu-latest checked separately"
+    },
+    "generation": "npm install --package-lock-only --ignore-scripts --no-audit --no-fund",
+    "package_constraints": "UNCHANGED",
+    "existing_locked_package_versions_unchanged": 68,
+    "new_locked_packages": 16,
+    "lockfile_sha256": "807edca3e7134ea2a86faf97ae8d4428482daf70df4e0e1e7c371029d5f809ca",
+    "clean_npm_ci": "PASS; node_modules absent before npm ci, no borrowed dependency links",
+    "typecheck_voice": "PASS",
+    "workflow_frontend_checks": [
+      "readonly-memory-navigation.test.mjs: 8/8 PASS",
+      "object-workspace-v2.test.mjs: 24 checks PASS",
+      "npm run build: PASS"
+    ],
+    "workflow_change": "Add typecheck:voice; npm ci and all existing checks retained",
+    "GitHub_final_result": "See checks on this commit; exact run and conclusion in Owner local receipt",
+    "model_ASR_TTS_RTC_competition_new_calls": 0,
+    "R8_acceptance": "UNCHANGED; dependency synchronization is not new RTC acceptance",
+    "install_warnings": "npm reported 2 high-severity audit findings; no audit fix or unrelated upgrades performed"
+  }
+}
